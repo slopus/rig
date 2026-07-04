@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@sinclair/typebox':
+        specifier: ^0.34.49
+        version: 0.34.49
     devDependencies:
       '@types/node':
         specifier: ^24.0.10
@@ -306,6 +310,9 @@ packages:
     resolution: {integrity: sha512-BfzEnDJOt9T8M989/lA37EcJgat01wLRnoi5dQf3QzOH7jzpqTAzdDbVfRljVr5r+jzKqpbHeyOfAaXxAd0PAA==}
     cpu: [x64]
     os: [win32]
+
+  '@sinclair/typebox@0.34.49':
+    resolution: {integrity: sha512-brySQQs7Jtn0joV8Xh9ZV/hZb9Ozb0pmazDIASBkYKCjXrXU3mpcFahmK/z4YDhGkQvP9mWJbVyahdtU5wQA+A==}
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
@@ -726,6 +733,8 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.62.2':
     optional: true
+
+  '@sinclair/typebox@0.34.49': {}
 
   '@types/chai@5.2.3':
     dependencies:
