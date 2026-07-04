@@ -47,6 +47,17 @@ Install ohmypi once, open a project, and get a capable coding harness with promp
 
 When a project needs different behavior, configure it locally. When a machine changes, avoid rebuilding the whole setup from memory. When an inference provider changes, keep the same project workflow and let ohmypi handle the provider-specific differences where possible.
 
+## Development
+
+This is a single-package TypeScript project. Source files live in `sources/`, with `sources/main.ts` as the CLI entry point.
+
+```sh
+pnpm install
+pnpm run check
+pnpm test
+pnpm run build
+```
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.

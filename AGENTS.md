@@ -1,5 +1,9 @@
 # Agent Instructions
 
+## Package manager
+
+Always use `pnpm` for this project. Do not use `npm`, `npx`, or `yarn` for installs, scripts, dependency changes, or lockfile updates unless the user explicitly asks for a different package manager.
+
 ## Sync to main
 
 When the user says `sync to main`, treat it as an explicit instruction to upstream the current work directly to `main`.
