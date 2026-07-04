@@ -58,6 +58,52 @@ describe("CodingAssistantApp", () => {
     expect(rendered).toContain("You: hi");
     expect(rendered).toContain("Agent: hello from agent");
   });
+
+  it("renders full transcript so PI TUI owns the bottom viewport and scrollback", async () => {
+    const model = defineModel({
+      id: "openai/gpt-test",
+      name: "GPT Test",
+      thinkingLevels: ["off"],
+    });
+    const contexts: Context[] = [];
+    const provider = defineProvider({
+      id: "codex",
+      models: [model],
+      stream(_model, context) {
+        contexts.push(context);
+        return streamText(`answer ${contexts.length}`);
+      },
+    });
+    const harness = createJustBashToolHarness();
+    const agent = new Agent({
+      provider,
+      modelId: model.id,
+      context: harness.context,
+      printToConsole: false,
+    });
+    const app = new CodingAssistantApp({
+      agent,
+      cwd: harness.context.fs.cwd,
+      idFactory: createDeterministicIds(),
+      processManager: new NativeProxessManager(),
+      tui: fakeTui({ rows: 8 }),
+    });
+
+    submit(app, "first");
+    await app.waitForIdle();
+    submit(app, "second");
+    await app.waitForIdle();
+    submit(app, "third");
+    await app.waitForIdle();
+    submit(app, "fourth");
+    await app.waitForIdle();
+
+    const lines = app.render(80);
+    const rendered = stripAnsi(lines.join("\n"));
+    expect(lines.length).toBeGreaterThan(8);
+    expect(rendered).toContain("You: first");
+    expect(rendered).toContain("Agent: answer 4");
+  });
 });
 
 function createDeterministicIds(): () => string {
@@ -65,7 +111,7 @@ function createDeterministicIds(): () => string {
   return () => `app-id-${++next}`;
 }
 
-function fakeTui(): TUI {
+function fakeTui(options: { rows?: number; columns?: number } = {}): TUI {
   return {
     addChild: vi.fn(),
     requestRender: vi.fn(),
@@ -73,10 +119,15 @@ function fakeTui(): TUI {
     start: vi.fn(),
     stop: vi.fn(),
     terminal: {
-      rows: 20,
-      columns: 80,
+      rows: options.rows ?? 20,
+      columns: options.columns ?? 80,
     },
   } as unknown as TUI;
+}
+
+function submit(app: CodingAssistantApp, text: string): void {
+  app.handleInput(text);
+  app.handleInput("\n");
 }
 
 function streamText(text: string): InferenceStream {

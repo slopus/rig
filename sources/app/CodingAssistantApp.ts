@@ -152,18 +152,13 @@ export class CodingAssistantApp implements Component, Focusable {
 
   render(width: number): string[] {
     const safeWidth = Math.max(20, width);
-    const rows = Math.max(10, this.#tui.terminal.rows);
     const header = this.#renderHeader(safeWidth);
     const footer = this.#renderFooter(safeWidth);
     const input = this.#renderInput(safeWidth);
-    const transcriptHeight = Math.max(
-      1,
-      rows - header.length - footer.length - input.length,
-    );
 
     return [
       ...header,
-      ...this.#renderTranscript(safeWidth, transcriptHeight),
+      ...this.#renderTranscript(safeWidth),
       ...footer,
       ...input,
     ];
@@ -440,7 +435,7 @@ export class CodingAssistantApp implements Component, Focusable {
     ];
   }
 
-  #renderTranscript(width: number, maxLines: number): string[] {
+  #renderTranscript(width: number): string[] {
     const sourceEntries = this.#entries.length === 0
       ? [{ id: "ready", role: "system" as const, text: "Ready." }]
       : this.#entries;
@@ -450,9 +445,7 @@ export class CodingAssistantApp implements Component, Focusable {
       lines.push(...this.#renderEntry(entry, width));
     }
 
-    const tail = lines.slice(-maxLines);
-    const padding = Array.from({ length: Math.max(0, maxLines - tail.length) }, () => "");
-    return [...padding, ...tail];
+    return lines;
   }
 
   #renderEntry(entry: AppTranscriptEntry, width: number): string[] {
