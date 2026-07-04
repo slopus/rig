@@ -49,10 +49,14 @@ export interface AgentOptions {
   now?: () => number;
   console?: AgentConsole;
   printToConsole?: boolean;
+  onEvent?: (event: AssistantMessageEvent) => void | Promise<void>;
+  onMessage?: (message: Message) => void | Promise<void>;
 }
 
 export interface AgentRunOptions {
   signal?: AbortSignal;
+  onEvent?: (event: AssistantMessageEvent) => void | Promise<void>;
+  onMessage?: (message: Message) => void | Promise<void>;
 }
 
 export interface AgentRunResult extends AgentLoopResult {
@@ -72,6 +76,8 @@ export class Agent {
   #now: () => number;
   #console: AgentConsole;
   #printToConsole: boolean;
+  #onEvent: ((event: AssistantMessageEvent) => void | Promise<void>) | undefined;
+  #onMessage: ((message: Message) => void | Promise<void>) | undefined;
   #messages: Message[] = [];
   #queue: QueuedAgentMessage[] = [];
   #status: AgentStatus = "idle";
@@ -92,6 +98,8 @@ export class Agent {
     this.#now = options.now ?? Date.now;
     this.#console = options.console ?? console;
     this.#printToConsole = options.printToConsole ?? true;
+    this.#onEvent = options.onEvent;
+    this.#onMessage = options.onMessage;
   }
 
   get status(): AgentStatus {
@@ -183,8 +191,8 @@ export class Agent {
         idFactory: this.#idFactory,
         now: this.#now,
         context: this.context,
-        onEvent: (event) => this.#printEvent(event),
-        onMessage: (message) => this.#printMessage(message),
+        onEvent: async (event) => this.#handleEvent(event, options),
+        onMessage: async (message) => this.#handleMessage(message, options),
       };
       if (this.#effort !== undefined) loopOptions.effort = this.#effort;
       if (this.#instructions !== undefined) loopOptions.instructions = this.#instructions;
@@ -258,5 +266,23 @@ export class Agent {
         `[agent:${this.id}] tool_call ${event.toolCall.name}:${event.toolCall.id}`,
       );
     }
+  }
+
+  async #handleMessage(
+    message: Message,
+    options: AgentRunOptions,
+  ): Promise<void> {
+    this.#printMessage(message);
+    await this.#onMessage?.(message);
+    await options.onMessage?.(message);
+  }
+
+  async #handleEvent(
+    event: AssistantMessageEvent,
+    options: AgentRunOptions,
+  ): Promise<void> {
+    this.#printEvent(event);
+    await this.#onEvent?.(event);
+    await options.onEvent?.(event);
   }
 }

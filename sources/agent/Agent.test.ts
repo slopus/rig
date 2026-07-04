@@ -39,6 +39,8 @@ describe("Agent", () => {
       },
     });
     const logs: unknown[][] = [];
+    const observedEvents: string[] = [];
+    const observedMessages: string[] = [];
     const harness = createJustBashToolHarness();
     const agent = new Agent({
       provider,
@@ -51,6 +53,12 @@ describe("Agent", () => {
         log(...data) {
           logs.push(data);
         },
+      },
+      onEvent(event) {
+        observedEvents.push(event.type);
+      },
+      onMessage(message) {
+        observedMessages.push(message.id);
       },
     });
 
@@ -82,6 +90,8 @@ describe("Agent", () => {
       "[user:id-4] Say done.",
       "[agent:id-7] agent-done",
     ]);
+    expect(observedEvents).toEqual(["start", "done"]);
+    expect(observedMessages).toEqual(["id-7"]);
   });
 
   it("selects codex tools for GPT models and allows explicit tool overrides", () => {
