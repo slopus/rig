@@ -4,10 +4,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: [
-      "sources/**/*.test.ts"
+      "sources/**/*.live.test.ts",
     ],
-    exclude: [
-      "sources/**/*.live.test.ts"
-    ]
-  }
+  },
 });

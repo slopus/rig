@@ -20,7 +20,7 @@ export interface TextContent {
 export interface ThinkingContent {
   type: "thinking";
   thinking: string;
-  thinkingSignature?: string;
+  encrypted?: string;
   redacted?: boolean;
 }
 

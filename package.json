@@ -14,6 +14,7 @@
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc --noEmit",
     "test": "vitest run",
+    "test:live": "OHMYPI_LIVE_TEST=1 vitest run -c vitest.live.config.ts",
     "test:watch": "vitest"
   },
   "keywords": [
@@ -29,6 +30,7 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
+    "@mariozechner/pi-ai": "^0.73.1",
     "@sinclair/typebox": "^0.34.49"
   }
 }
