@@ -21,7 +21,7 @@ export const piGrepTool = defineTool({
     limit: Type.Optional(Type.Number({ description: "Maximum number of matches to return (default: 100)" })),
   }),
   returnType: textOutputSchema,
-  execute: async (args, context) => {
+  execute: async (args, context, execution) => {
     const grepOptions: Parameters<typeof runRipgrep>[0] = {
       pattern: args.pattern,
       outputMode: "content",
@@ -32,6 +32,7 @@ export const piGrepTool = defineTool({
     if (args.ignoreCase !== undefined) grepOptions.ignoreCase = args.ignoreCase;
     if (args.literal !== undefined) grepOptions.literal = args.literal;
     if (args.context !== undefined) grepOptions.context = args.context;
+    if (execution.signal !== undefined) grepOptions.signal = execution.signal;
     const result = await runRipgrep(grepOptions, context);
     return { text: result.text.length > 0 ? result.text : "No matches found" };
   },

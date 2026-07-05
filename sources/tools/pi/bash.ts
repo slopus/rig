@@ -15,9 +15,10 @@ export const piBashTool = defineTool({
     timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
   }),
   returnType: textOutputSchema,
-  execute: async ({ command, timeout }, context) => {
+  execute: async ({ command, timeout }, context, execution) => {
     const options: Parameters<typeof runShellCommand>[1] = { maxOutputBytes: 512_000 };
     if (timeout !== undefined) options.timeoutMs = timeout * 1000;
+    if (execution.signal !== undefined) options.signal = execution.signal;
     const result = await runShellCommand(command, options, context);
     const text = [result.stdout, result.stderr].filter(Boolean).join("\n") || "(no output)";
     if (result.exitCode !== 0 && result.exitCode !== null) {

@@ -5,6 +5,7 @@ import type { AgentContext } from "../../agent/context/AgentContext.js";
 import type {
   AnyDefinedTool,
   DefinedTool,
+  ToolExecutionOptions,
 } from "../../agent/types.js";
 import { createJustBashAgentContext } from "../../agent/context/createJustBashAgentContext.js";
 
@@ -54,7 +55,7 @@ export function createJustBashToolHarness(
       tool: DefinedTool<TArgsSchema, TReturnSchema>,
       args: Static<TArgsSchema>,
     ): Promise<Static<TReturnSchema>> {
-      return tool.execute(args, context);
+      return tool.execute(args, context, {});
     },
     async runToolByName(tools, name, args) {
       const tool = tools.find((candidate) => candidate.name === name);
@@ -62,11 +63,12 @@ export function createJustBashToolHarness(
         throw new Error(`Unknown tool: ${name}`);
       }
 
-      const execute = tool.execute as (
+      const execute = tool.execute as unknown as (
         args: unknown,
         context: AgentContext,
+        options: ToolExecutionOptions,
       ) => Promise<unknown> | unknown;
-      return execute(args, context);
+      return execute(args, context, {});
     },
   };
 }

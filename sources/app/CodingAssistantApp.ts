@@ -8,6 +8,7 @@ import {
   truncateToWidth,
   visibleWidth,
   wrapTextWithAnsi,
+  type AutocompleteItem,
   type Component,
   type EditorTheme,
   type Focusable,
@@ -22,6 +23,17 @@ import {
 } from "../agent/index.js";
 import type { NativeProxessManager } from "../processes/index.js";
 import type { AppTranscriptEntry } from "./AppTranscriptEntry.js";
+import { createSelectionPanel } from "./createSelectionPanel.js";
+import { createSlashCommands } from "./createSlashCommands.js";
+import { describeModelChoice } from "./describeModelChoice.js";
+import { describeReasoningLevel } from "./describeReasoningLevel.js";
+import { formatActivityElapsedTime } from "./formatActivityElapsedTime.js";
+import { humanizeProviderId } from "./humanizeProviderId.js";
+import { humanizeReasoningLevel } from "./humanizeReasoningLevel.js";
+import {
+  ACTIVITY_WAVE_FRAME_COUNT,
+  renderActivityWave,
+} from "./renderActivityWave.js";
 import { renderAgentMarkdown } from "./renderAgentMarkdown.js";
 
 const RESET = "\x1b[0m";
@@ -47,17 +59,20 @@ const INPUT_PROMPT = "› ";
 const INPUT_LINE_INDENT = "  ";
 const CURSOR_BLINK_MS = 530;
 const CURSOR_TYPING_DEBOUNCE_MS = 530;
+const ACTIVITY_ANIMATION_MS = 120;
 const REASONING_DOWN_RAW_KEYS = new Set(["\x1b,", "\x1b[1;2B"]);
 const REASONING_UP_RAW_KEYS = new Set(["\x1b.", "\x1b[1;2A"]);
+const MODEL_MENU_RAW_KEYS = new Set(["\x1bm", "\x1bM"]);
+const SLASH_COMMAND_MAX_VISIBLE = 6;
 
 const EDITOR_THEME: EditorTheme = {
   borderColor: (text) => text,
   selectList: {
     selectedPrefix: (text) => text,
-    selectedText: (text) => text,
-    description: (text) => text,
-    scrollInfo: (text) => text,
-    noMatch: (text) => text,
+    selectedText: (text) => `${OH_MY_PI_ORANGE}${text}${RESET}${INPUT_FG}`,
+    description: (text) => `${DIM}${SURFACE_MUTED_FG}${text}${RESET}${INPUT_FG}`,
+    scrollInfo: (text) => `${DIM}${SURFACE_MUTED_FG}${text}${RESET}${INPUT_FG}`,
+    noMatch: (text) => `${SURFACE_MUTED_FG}${text}${RESET}${INPUT_FG}`,
   },
 };
 
@@ -70,6 +85,7 @@ export interface CodingAssistantAppOptions {
   tui: TUI;
   idFactory?: () => string;
   onExit?: () => void | Promise<void>;
+  now?: () => number;
   version?: string;
 }
 
@@ -77,6 +93,7 @@ export class CodingAssistantApp implements Component, Focusable {
   readonly #agent: Agent;
   readonly #cwd: string;
   readonly #idFactory: () => string;
+  readonly #now: () => number;
   readonly #editor: Editor;
   readonly #onExit: (() => void | Promise<void>) | undefined;
   readonly #processManager: NativeProxessManager;
@@ -87,6 +104,9 @@ export class CodingAssistantApp implements Component, Focusable {
   #abortController: AbortController | undefined;
   #abortNotified = false;
   #activeRun: Promise<void> | undefined;
+  #activityAnimationFrame = 0;
+  #activityStartedAtMs: number | undefined;
+  #activityAnimationTimer: ReturnType<typeof setInterval> | undefined;
   #cursorBlinkTimer: ReturnType<typeof setInterval> | undefined;
   #cursorTyping = false;
   #cursorTypingDebounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -96,6 +116,11 @@ export class CodingAssistantApp implements Component, Focusable {
   #exitResolve: (() => void) | undefined;
   #focused = false;
   #pendingPrompts: string[] = [];
+  #selectionPanel: Component | undefined;
+  #dismissedSlashCommandText: string | undefined;
+  #slashCommandSelectionIndex = 0;
+  readonly #slashCommands = createSlashCommands();
+  #runToken = 0;
   #running = false;
   #seenToolCallIds = new Set<string>();
   #statusText = "Idle";
@@ -106,6 +131,7 @@ export class CodingAssistantApp implements Component, Focusable {
     this.#agent = options.agent;
     this.#cwd = options.cwd;
     this.#idFactory = options.idFactory ?? createId;
+    this.#now = options.now ?? Date.now;
     this.#onExit = options.onExit;
     this.#processManager = options.processManager;
     this.#tui = options.tui;
@@ -152,6 +178,7 @@ export class CodingAssistantApp implements Component, Focusable {
     this.#exiting = true;
     this.#statusText = "Stopped";
     this.#abortController?.abort();
+    this.#stopActivityAnimation();
     this.#stopCursorBlink();
     this.#editor.setText("");
     this.#requestRender();
@@ -189,6 +216,16 @@ export class CodingAssistantApp implements Component, Focusable {
       return;
     }
 
+    if (this.#selectionPanel !== undefined) {
+      if (matchesKey(data, "ctrl+c") || data === "\x03") {
+        void this.stop();
+        return;
+      }
+      this.#selectionPanel.handleInput?.(data);
+      this.#requestRender();
+      return;
+    }
+
     if (matchesKey(data, "ctrl+c") || data === "\x03") {
       void this.stop();
       return;
@@ -199,9 +236,19 @@ export class CodingAssistantApp implements Component, Focusable {
       return;
     }
 
+    if (this.#handleSlashCommandAutocompleteInput(data)) {
+      this.#requestRender();
+      return;
+    }
+
     if (matchesKey(data, "escape")) {
       this.#markTypingActivity();
       this.#handleEscape();
+      this.#requestRender();
+      return;
+    }
+
+    if (this.#handleModelMenuShortcut(data)) {
       this.#requestRender();
       return;
     }
@@ -213,6 +260,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
     this.#markTypingActivity();
     this.#editor.handleInput(data);
+    this.#syncSlashCommandAutocompleteState();
     this.#requestRender();
   }
 
@@ -237,7 +285,9 @@ export class CodingAssistantApp implements Component, Focusable {
       ...header,
       ...this.#renderTranscript(safeWidth),
       "",
-      ...input,
+      ...(this.#selectionPanel === undefined
+        ? input
+        : this.#selectionPanel.render(safeWidth)),
       ...footer,
       "",
       "",
@@ -271,7 +321,17 @@ export class CodingAssistantApp implements Component, Focusable {
   }
 
   #handleCommand(prompt: string): boolean {
-    if (prompt === "/exit" || prompt === "/quit") {
+    if (prompt === "/model") {
+      this.#openModelMenu();
+      return true;
+    }
+
+    if (prompt === "/new") {
+      this.#resetSession();
+      return true;
+    }
+
+    if (prompt === "/exit") {
       void this.stop();
       return true;
     }
@@ -284,11 +344,7 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     if (prompt === "/abort") {
-      if (this.#running && this.#abortController !== undefined) {
-        this.#abortController.abort();
-        this.#statusText = "Aborting";
-        this.#appendAbortNotice();
-      } else {
+      if (!this.#abortActiveRun()) {
         this.#appendEntry({
           role: "event",
           title: "abort",
@@ -299,6 +355,22 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     return false;
+  }
+
+  #resetSession(): void {
+    this.#abortActiveRun({ silent: true });
+    this.#runToken += 1;
+    this.#pendingPrompts = [];
+    this.#entries = [];
+    this.#seenToolCallIds.clear();
+    this.#streamEntryId = undefined;
+    this.#abortNotified = false;
+    this.#statusText = "Idle";
+    this.#agent.reset();
+    this.#appendEntry({
+      role: "system",
+      text: "Session reset. Started a new session.",
+    });
   }
 
   #startDrainQueue(): void {
@@ -325,26 +397,37 @@ export class CodingAssistantApp implements Component, Focusable {
 
   async #runPrompt(prompt: string): Promise<void> {
     const controller = new AbortController();
+    const runToken = ++this.#runToken;
     this.#abortController = controller;
     this.#abortNotified = false;
     this.#running = true;
     this.#statusText = "Running";
     this.#streamEntryId = undefined;
+    this.#activityStartedAtMs = this.#now();
+    this.#startActivityAnimation();
     this.#requestRender();
 
     try {
       const result = await this.#agent.send(prompt, {
         signal: controller.signal,
-        onEvent: (event) => this.#handleAgentEvent(event),
-        onMessage: (message) => this.#handleAgentMessage(message),
+        onEvent: (event) => this.#handleAgentEvent(event, runToken),
+        onMessage: (message) => this.#handleAgentMessage(message, runToken),
       });
+      if (!this.#isCurrentRun(runToken)) {
+        return;
+      }
 
-      this.#statusText =
-        result.stopReason === "stop" ? "Idle" : `Stopped: ${result.stopReason}`;
       if (result.stopReason === "aborted") {
+        this.#statusText = "Idle";
         this.#appendAbortNotice();
+      } else {
+        this.#statusText =
+          result.stopReason === "stop" ? "Idle" : `Stopped: ${result.stopReason}`;
       }
     } catch (error) {
+      if (!this.#isCurrentRun(runToken)) {
+        return;
+      }
       if (controller.signal.aborted) {
         this.#statusText = "Idle";
         this.#appendAbortNotice();
@@ -353,28 +436,57 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#appendEntry({ role: "error", text: this.#formatError(error) });
       }
     } finally {
+      if (!this.#isCurrentRun(runToken)) {
+        return;
+      }
       if (this.#abortController === controller) {
         this.#abortController = undefined;
       }
       this.#running = false;
+      this.#stopActivityAnimation();
       this.#streamEntryId = undefined;
       this.#requestRender();
     }
   }
 
   #handleEscape(): void {
-    if (this.#running && this.#abortController !== undefined) {
-      this.#statusText = "Aborting";
-      this.#abortController.abort();
-      this.#appendAbortNotice();
+    if (this.#abortActiveRun()) {
       return;
     }
 
     void this.stop();
   }
 
-  #handleAgentEvent(event: AgentLoopEvent): void {
-    if (this.#stopped) {
+  #abortActiveRun(options: { silent?: boolean } = {}): boolean {
+    if (!this.#running || this.#abortController === undefined) {
+      return false;
+    }
+
+    const controller = this.#abortController;
+    this.#runToken += 1;
+    controller.abort();
+    this.#abortController = undefined;
+    this.#pendingPrompts = [];
+    this.#running = false;
+    this.#statusText = "Idle";
+    this.#streamEntryId = undefined;
+    this.#stopActivityAnimation();
+    void this.#processManager.killAll({ forceAfterMs: 500 }).catch((error: unknown) => {
+      this.#appendEntry({ role: "error", text: this.#formatError(error) });
+    });
+    if (options.silent !== true) {
+      this.#appendAbortNotice();
+    }
+    this.#requestRender();
+    return true;
+  }
+
+  #isCurrentRun(runToken: number): boolean {
+    return !this.#stopped && runToken === this.#runToken;
+  }
+
+  #handleAgentEvent(event: AgentLoopEvent, runToken: number): void {
+    if (!this.#isCurrentRun(runToken)) {
       return;
     }
 
@@ -404,6 +516,11 @@ export class CodingAssistantApp implements Component, Focusable {
     } else if (event.type === "done") {
       this.#statusText = event.reason === "toolUse" ? "Running tools" : "Idle";
     } else if (event.type === "error") {
+      if (event.reason === "aborted") {
+        this.#statusText = "Idle";
+        this.#appendAbortNotice();
+        return;
+      }
       this.#statusText = "Error";
       this.#appendEntry({
         role: "error",
@@ -420,11 +537,15 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     this.#abortNotified = true;
-    this.#appendEntry({ role: "event", title: "abort", text: "Run aborted." });
+    this.#appendEntry({
+      role: "error",
+      title: "Session interrupted",
+      text: "The active run was stopped.",
+    });
   }
 
-  #handleAgentMessage(message: Message): void {
-    if (message.role !== "agent") {
+  #handleAgentMessage(message: Message, runToken: number): void {
+    if (!this.#isCurrentRun(runToken) || message.role !== "agent") {
       return;
     }
 
@@ -514,8 +635,8 @@ export class CodingAssistantApp implements Component, Focusable {
   }
 
   #renderHeader(width: number): string[] {
-    const model = `${this.#modelDisplayName()} (${this.#agent.model.id})`;
-    const provider = this.#agent.provider.id;
+    const model = this.#modelDisplayName();
+    const provider = humanizeProviderId(this.#agent.provider.id);
     return [
       ...this.#renderStartupBox(width, [
         `${OH_MY_PI_ORANGE}>_${RESET} ${BOLD}Oh My Pi${NOT_BOLD_OR_DIM} ${this.#version}`,
@@ -540,12 +661,12 @@ export class CodingAssistantApp implements Component, Focusable {
       lines.push(...this.#renderEntry(entry, width));
     }
 
-    const activity = this.#activityText();
-    if (activity !== undefined && this.#shouldRenderActivityAsLastMessage()) {
+    const activityLabel = this.#activityLabel();
+    if (activityLabel !== undefined && this.#shouldRenderActivityAsLastMessage()) {
       if (lines.length > 0) {
         lines.push("");
       }
-      lines.push(...this.#renderActivityLine(activity, width));
+      lines.push(...this.#renderActivityLine(activityLabel, width));
     }
 
     return lines;
@@ -565,8 +686,8 @@ export class CodingAssistantApp implements Component, Focusable {
       return this.#renderToolEntry(entry, width, false);
     }
     if (entry.role === "error") {
-      return entry.title === undefined
-        ? this.#renderNoticeEntry("Error", entry.text, width, RED)
+      return entry.detail === undefined
+        ? this.#renderNoticeEntry(entry.title ?? "Error", entry.text, width, RED)
         : this.#renderToolEntry(entry, width, true);
     }
     if (entry.role === "event") {
@@ -577,6 +698,11 @@ export class CodingAssistantApp implements Component, Focusable {
   }
 
   #renderFooter(width: number): string[] {
+    const slashCommandSuggestions = this.#slashCommandSuggestions();
+    if (slashCommandSuggestions.length > 0) {
+      return this.#renderSlashCommandAutocomplete(width, slashCommandSuggestions);
+    }
+
     const parts = [`${FOOTER_MODEL_FG}${this.#modelWithReasoningDisplayName()}${RESET}`];
     parts.push(`${FOOTER_CWD_FG}${this.#cwdDisplayName()}${RESET}`);
     if (this.#pendingPrompts.length > 0) {
@@ -585,6 +711,117 @@ export class CodingAssistantApp implements Component, Focusable {
 
     const line = `${" ".repeat(visibleWidth(INPUT_PROMPT))}${parts.join(`${DIM} • ${RESET}`)}`;
     return [this.#fitLine(line, width)];
+  }
+
+  #renderSlashCommandAutocomplete(
+    width: number,
+    suggestions: readonly AutocompleteItem[],
+  ): string[] {
+    const selectedIndex = Math.min(this.#slashCommandSelectionIndex, suggestions.length - 1);
+    const startIndex = Math.max(
+      0,
+      Math.min(
+        selectedIndex - Math.floor(SLASH_COMMAND_MAX_VISIBLE / 2),
+        suggestions.length - SLASH_COMMAND_MAX_VISIBLE,
+      ),
+    );
+    const visibleSuggestions = suggestions.slice(
+      startIndex,
+      startIndex + SLASH_COMMAND_MAX_VISIBLE,
+    );
+
+    return visibleSuggestions.map((item, index) => {
+      const absoluteIndex = startIndex + index;
+      const isSelected = absoluteIndex === selectedIndex;
+      const marker = isSelected ? "→ " : "  ";
+      const label = this.#fitAndPadLine(item.label, 8);
+      const description = item.description ?? "";
+      const line = isSelected
+        ? `${OH_MY_PI_ORANGE}${marker}${label}${description}${RESET}`
+        : `${marker}${label}${DIM}${SURFACE_MUTED_FG}${description}${RESET}`;
+      return this.#fitLine(
+        line,
+        width,
+      );
+    });
+  }
+
+  #openModelMenu(): void {
+    if (this.#exiting || this.#stopped) {
+      return;
+    }
+
+    const selectedModelId = this.#agent.model.id;
+    const panel = createSelectionPanel({
+      title: "Choose Model",
+      subtitle: "Enter selects, Esc cancels",
+      selectedValue: selectedModelId,
+      items: this.#agent.provider.models.map((model) => ({
+        value: model.id,
+        label: model.name,
+        description: describeModelChoice(
+          model,
+          this.#agent.provider.id,
+          model.id === selectedModelId,
+        ),
+      })),
+      onSelect: (item) => {
+        this.#closeSelectionPanel();
+        this.#openReasoningMenu(item.value);
+      },
+      onCancel: () => {
+        this.#closeSelectionPanel();
+      },
+    });
+    this.#showSelectionPanel(panel);
+  }
+
+  #openReasoningMenu(modelId: string): void {
+    const model = this.#agent.provider.models.find((candidate) => candidate.id === modelId);
+    if (model === undefined) {
+      return;
+    }
+
+    const currentEffort = this.#agent.snapshot().effort;
+    const defaultEffort = model.defaultThinkingLevel;
+    const selectedEffort = currentEffort !== undefined && model.thinkingLevels.includes(currentEffort)
+      ? currentEffort
+      : defaultEffort;
+    const panel = createSelectionPanel({
+      title: "Choose Reasoning",
+      subtitle: model.name,
+      selectedValue: selectedEffort,
+      items: model.thinkingLevels.map((level) => ({
+        value: level,
+        label: humanizeReasoningLevel(level),
+        description: describeReasoningLevel(level, {
+          isCurrent: model.id === this.#agent.model.id && level === currentEffort,
+          isDefault: level === defaultEffort,
+        }),
+      })),
+      onSelect: (item) => {
+        this.#agent.setModel(model.id, item.value);
+        this.#appendEntry({
+          role: "event",
+          title: "model",
+          text: `Model changed to ${model.name} with ${humanizeReasoningLevel(item.value)} reasoning.`,
+        });
+        this.#closeSelectionPanel();
+        this.#requestRender();
+      },
+      onCancel: () => {
+        this.#closeSelectionPanel();
+      },
+    });
+    this.#showSelectionPanel(panel);
+  }
+
+  #showSelectionPanel(component: Component): void {
+    this.#selectionPanel = component;
+  }
+
+  #closeSelectionPanel(): void {
+    this.#selectionPanel = undefined;
   }
 
   #renderInput(width: number): string[] {
@@ -801,6 +1038,28 @@ export class CodingAssistantApp implements Component, Focusable {
   }
 
   #activityText(): string | undefined {
+    const label = this.#activityLabel();
+    if (label === undefined) {
+      return undefined;
+    }
+
+    const elapsed = this.#activityElapsedText();
+    if (elapsed === undefined) {
+      return label;
+    }
+
+    return `${label} (${elapsed})`;
+  }
+
+  #activityElapsedText(): string | undefined {
+    if (this.#activityStartedAtMs === undefined) {
+      return undefined;
+    }
+
+    return formatActivityElapsedTime(this.#now() - this.#activityStartedAtMs);
+  }
+
+  #activityLabel(): string | undefined {
     if (this.#statusText === "Idle") {
       return undefined;
     }
@@ -826,14 +1085,20 @@ export class CodingAssistantApp implements Component, Focusable {
       || lastEntry.role === "system";
   }
 
-  #renderActivityLine(text: string, width: number): string[] {
+  #renderActivityLine(label: string, width: number): string[] {
     const prefix = `${OH_MY_PI_ORANGE}•${RESET} `;
-    const prefixWidth = visibleWidth(prefix);
-    const wrapped = wrapTextWithAnsi(text, Math.max(1, width - prefixWidth));
-    const indent = " ".repeat(prefixWidth);
-    return wrapped.map((line, index) =>
-      this.#fitLine(`${index === 0 ? prefix : indent}${line}`, width),
-    );
+    const frame = this.#activityAnimationFrame;
+    const elapsed = this.#activityElapsedText();
+    const elapsedSuffix = elapsed === undefined
+      ? ""
+      : ` ${DIM}${SURFACE_MUTED_FG}(${elapsed})${RESET}`;
+
+    return [
+      this.#fitLine(
+        `${prefix}${renderActivityWave(label, frame)}${elapsedSuffix}`,
+        width,
+      ),
+    ];
   }
 
   #hideCursor(line: string): string {
@@ -870,6 +1135,87 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     return true;
+  }
+
+  #handleModelMenuShortcut(data: string): boolean {
+    if (MODEL_MENU_RAW_KEYS.has(data) || matchesKey(data, "alt+m")) {
+      this.#openModelMenu();
+      return true;
+    }
+
+    return false;
+  }
+
+  #handleSlashCommandAutocompleteInput(data: string): boolean {
+    const suggestions = this.#slashCommandSuggestions();
+    if (suggestions.length === 0) {
+      return false;
+    }
+
+    if (matchesKey(data, "up")) {
+      this.#slashCommandSelectionIndex =
+        (this.#slashCommandSelectionIndex + suggestions.length - 1) % suggestions.length;
+      return true;
+    }
+
+    if (matchesKey(data, "down")) {
+      this.#slashCommandSelectionIndex =
+        (this.#slashCommandSelectionIndex + 1) % suggestions.length;
+      return true;
+    }
+
+    if (matchesKey(data, "escape")) {
+      this.#dismissedSlashCommandText = this.#editor.getText();
+      return true;
+    }
+
+    if (matchesKey(data, "enter") || matchesKey(data, "tab")) {
+      const selected = suggestions[this.#slashCommandSelectionIndex] ?? suggestions[0];
+      if (selected === undefined) {
+        return true;
+      }
+
+      this.#dismissedSlashCommandText = undefined;
+      this.#submit(`/${selected.value}`);
+      return true;
+    }
+
+    return false;
+  }
+
+  #slashCommandSuggestions(): readonly AutocompleteItem[] {
+    const text = this.#editor.getText();
+    if (
+      text.length === 0
+      || text === this.#dismissedSlashCommandText
+      || text.includes("\n")
+      || !text.startsWith("/")
+      || /\s/u.test(text)
+    ) {
+      return [];
+    }
+
+    const query = text.slice(1).toLowerCase();
+    const suggestions = this.#slashCommands.filter((command) =>
+      command.value.toLowerCase().startsWith(query)
+      || command.aliases.some((alias) => alias.toLowerCase().startsWith(query)),
+    );
+    if (this.#slashCommandSelectionIndex >= suggestions.length) {
+      this.#slashCommandSelectionIndex = 0;
+    }
+
+    return suggestions;
+  }
+
+  #syncSlashCommandAutocompleteState(): void {
+    const text = this.#editor.getText();
+    if (
+      this.#dismissedSlashCommandText !== undefined
+      && text !== this.#dismissedSlashCommandText
+    ) {
+      this.#dismissedSlashCommandText = undefined;
+    }
+    this.#slashCommandSuggestions();
   }
 
   #reasoningShortcutDirection(data: string): "down" | "up" | undefined {
@@ -916,14 +1262,14 @@ export class CodingAssistantApp implements Component, Focusable {
   }
 
   #modelDisplayName(): string {
-    return this.#agent.model.id.split("/").at(-1) ?? this.#agent.model.id;
+    return this.#agent.model.name;
   }
 
   #modelWithReasoningDisplayName(): string {
     const effort = this.#agent.snapshot().effort ?? this.#agent.model.defaultThinkingLevel;
     return effort === undefined
       ? this.#modelDisplayName()
-      : `${this.#modelDisplayName()}-${effort}`;
+      : `${this.#modelDisplayName()} ${humanizeReasoningLevel(effort)}`;
   }
 
   #cwdDisplayName(): string {
@@ -998,7 +1344,9 @@ export class CodingAssistantApp implements Component, Focusable {
       content = content.slice(0, -1);
     }
 
-    return content.filter((line) => !line.includes(" more "));
+    return content.filter((line) =>
+      !line.includes(" more ") && !this.#isEditorBorderLine(line)
+    );
   }
 
   #isEditorBorderLine(line: string): boolean {
@@ -1058,6 +1406,42 @@ export class CodingAssistantApp implements Component, Focusable {
     clearInterval(this.#cursorBlinkTimer);
     this.#cursorBlinkTimer = undefined;
     this.#cursorVisible = true;
+  }
+
+  #startActivityAnimation(): void {
+    if (this.#activityAnimationTimer !== undefined || this.#stopped) {
+      return;
+    }
+
+    this.#activityAnimationFrame = 0;
+    this.#activityAnimationTimer = setInterval(() => {
+      if (this.#stopped || this.#exiting) {
+        return;
+      }
+
+      this.#activityAnimationFrame =
+        (this.#activityAnimationFrame + 1) % ACTIVITY_WAVE_FRAME_COUNT;
+      if (
+        this.#activityText() !== undefined
+        && this.#shouldRenderActivityAsLastMessage()
+      ) {
+        this.#requestRender();
+      }
+    }, ACTIVITY_ANIMATION_MS);
+    this.#activityAnimationTimer.unref?.();
+  }
+
+  #stopActivityAnimation(): void {
+    if (this.#activityAnimationTimer === undefined) {
+      this.#activityAnimationFrame = 0;
+      this.#activityStartedAtMs = undefined;
+      return;
+    }
+
+    clearInterval(this.#activityAnimationTimer);
+    this.#activityAnimationTimer = undefined;
+    this.#activityAnimationFrame = 0;
+    this.#activityStartedAtMs = undefined;
   }
 
   #requestRender(): void {

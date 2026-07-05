@@ -18,9 +18,10 @@ export const piFindTool = defineTool({
     limit: Type.Optional(Type.Number({ description: "Maximum number of results (default: 1000)" })),
   }),
   returnType: textOutputSchema,
-  execute: async ({ pattern, path, limit }, context) => {
+  execute: async ({ pattern, path, limit }, context, execution) => {
     const options: Parameters<typeof globFiles>[0] = { pattern, limit: limit ?? DEFAULT_LIMIT };
     if (path !== undefined) options.path = path;
+    if (execution.signal !== undefined) options.signal = execution.signal;
     const files = await globFiles(options, context);
     return { text: files.length > 0 ? files.join("\n") : "No files found matching pattern" };
   },

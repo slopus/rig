@@ -20,6 +20,7 @@ export interface GrepOptions {
   offset?: number;
   multiline?: boolean;
   cwd?: string;
+  signal?: AbortSignal;
 }
 
 export interface GrepResult {
@@ -54,16 +55,18 @@ export async function runRipgrep(
   if (options.after !== undefined) args.push("--after-context", String(options.after));
   args.push(options.pattern, target);
 
-  const command = await runCommand(
-    {
-      command: "rg",
-      args,
-      cwd,
-      timeoutMs: 30_000,
-      maxOutputBytes: 512_000,
-    },
-    context,
-  );
+  const commandOptions: Parameters<typeof runCommand>[0] = {
+    command: "rg",
+    args,
+    cwd,
+    timeoutMs: 30_000,
+    maxOutputBytes: 512_000,
+  };
+  if (options.signal !== undefined) {
+    commandOptions.signal = options.signal;
+  }
+
+  const command = await runCommand(commandOptions, context);
 
   if (command.exitCode !== 0 && command.exitCode !== 1) {
     throw new Error(command.stderr || command.stdout || `rg exited ${command.exitCode}`);
@@ -87,6 +90,7 @@ export interface GlobOptions {
   path?: string;
   cwd?: string;
   limit?: number;
+  signal?: AbortSignal;
 }
 
 export async function globFiles(
@@ -97,7 +101,7 @@ export async function globFiles(
   const root = options.path ? resolveToolPath(options.path, cwd) : cwd;
   const regex = globToRegExp(options.pattern);
   const files: { path: string; mtimeMs: number }[] = [];
-  await walkFiles(root, context, async (filePath, mtimeMs) => {
+  await walkFiles(root, context, options.signal, async (filePath, mtimeMs) => {
     const rel = relative(root, filePath).split(sep).join("/");
     if (regex.test(rel) || regex.test(filePath.split(sep).join("/"))) {
       files.push({ path: filePath, mtimeMs });
@@ -110,10 +114,19 @@ export async function globFiles(
 async function walkFiles(
   root: string,
   context: AgentContext,
+  signal: AbortSignal | undefined,
   onFile: (path: string, mtimeMs: number) => Promise<void> | void,
 ): Promise<void> {
+  if (signal?.aborted) {
+    throw new Error("Search aborted.");
+  }
+
   const entries = await context.fs.readdir(root);
   for (const name of entries) {
+    if (signal?.aborted) {
+      throw new Error("Search aborted.");
+    }
+
     if (name === ".git" || name === "node_modules") {
       continue;
     }
@@ -121,7 +134,7 @@ async function walkFiles(
     const full = join(root, name);
     const stats = await context.fs.stat(full);
     if (stats.isDirectory) {
-      await walkFiles(full, context, onFile);
+      await walkFiles(full, context, signal, onFile);
     } else if (stats.isFile) {
       await onFile(full, stats.mtimeMs);
     }

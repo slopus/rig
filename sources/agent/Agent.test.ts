@@ -158,6 +158,256 @@ describe("Agent", () => {
 
     expect(overrideAgent.tools.map((tool) => tool.name)).toEqual(["noop"]);
   });
+
+  it("switches model and reasoning effort", () => {
+    const smallModel = defineModel({
+      id: "openai/gpt-small",
+      name: "GPT Small",
+      thinkingLevels: ["low", "medium"],
+      defaultThinkingLevel: "low",
+    });
+    const proModel = defineModel({
+      id: "openai/gpt-pro",
+      name: "GPT Pro",
+      thinkingLevels: ["low", "high"],
+      defaultThinkingLevel: "low",
+    });
+    const provider = defineProvider({
+      id: "codex",
+      models: [smallModel, proModel],
+      stream() {
+        return streamFor({
+          role: "assistant",
+          content: [],
+          api: "test",
+          provider: "codex",
+          model: "openai/gpt-pro",
+          usage: zeroUsage(),
+          stopReason: "stop",
+          timestamp: 1,
+        });
+      },
+    });
+    const harness = createJustBashToolHarness();
+    const agent = new Agent({
+      provider,
+      modelId: smallModel.id,
+      context: harness.context,
+      printToConsole: false,
+    });
+
+    agent.setModel(proModel.id, "high");
+
+    expect(agent.model.id).toBe(proModel.id);
+    expect(agent.snapshot().modelId).toBe(proModel.id);
+    expect(agent.snapshot().effort).toBe("high");
+  });
+
+  it("resets transcript and queued messages", async () => {
+    const model = defineModel({
+      id: "openai/gpt-test",
+      name: "GPT Test",
+      thinkingLevels: ["off"],
+      defaultThinkingLevel: "off",
+    });
+    const provider = defineProvider({
+      id: "codex",
+      models: [model],
+      stream() {
+        return streamFor({
+          role: "assistant",
+          content: [{ type: "text", text: "done" }],
+          api: "test",
+          provider: "codex",
+          model: "openai/gpt-test",
+          usage: zeroUsage(),
+          stopReason: "stop",
+          timestamp: 1,
+        });
+      },
+    });
+    const harness = createJustBashToolHarness();
+    const agent = new Agent({
+      provider,
+      modelId: model.id,
+      context: harness.context,
+      printToConsole: false,
+    });
+
+    await agent.send("hello");
+    agent.enqueueUserMessage("queued");
+    expect(agent.snapshot().messages.length).toBeGreaterThan(0);
+    expect(agent.snapshot().queue.length).toBe(1);
+
+    agent.reset();
+
+    expect(agent.status).toBe("idle");
+    expect(agent.snapshot().messages).toEqual([]);
+    expect(agent.snapshot().queue).toEqual([]);
+    expect(agent.snapshot().lastRunId).toBeUndefined();
+  });
+
+  it("keeps transcript valid after aborting during tool execution", async () => {
+    const model = defineModel({
+      id: "openai/gpt-test",
+      name: "GPT Test",
+      thinkingLevels: ["off"],
+      defaultThinkingLevel: "off",
+    });
+    const contexts: Context[] = [];
+    const provider = defineProvider({
+      id: "codex",
+      models: [model],
+      stream(_model, context) {
+        contexts.push(context);
+        if (contexts.length === 1) {
+          return streamFor({
+            role: "assistant",
+            content: [
+              {
+                type: "toolCall",
+                id: "call-wait",
+                name: "wait",
+                arguments: { value: "hold" },
+              },
+            ],
+            api: "test",
+            provider: "codex",
+            model: "openai/gpt-test",
+            usage: zeroUsage(),
+            stopReason: "toolUse",
+            timestamp: 1,
+          });
+        }
+
+        return streamFor({
+          role: "assistant",
+          content: [{ type: "text", text: "next done" }],
+          api: "test",
+          provider: "codex",
+          model: "openai/gpt-test",
+          usage: zeroUsage(),
+          stopReason: "stop",
+          timestamp: 2,
+        });
+      },
+    });
+    const controller = new AbortController();
+    const started = deferred<void>();
+    const waitTool = defineTool({
+      name: "wait",
+      label: "Wait",
+      description: "Waits until aborted.",
+      arguments: Type.Object({ value: Type.String() }),
+      returnType: Type.Object({ value: Type.String() }),
+      async execute(args: { value: string }, _context, execution) {
+        started.resolve();
+        await new Promise<void>((resolve) => {
+          execution.signal?.addEventListener("abort", () => resolve(), {
+            once: true,
+          });
+        });
+        return args;
+      },
+      toLLM(result: { value: string }) {
+        return [{ type: "text", text: result.value }];
+      },
+      toUI(result: { value: string }) {
+        return `finished ${result.value}`;
+      },
+      locks: [],
+    });
+    const harness = createJustBashToolHarness();
+    const agent = new Agent({
+      provider,
+      modelId: model.id,
+      context: harness.context,
+      tools: [waitTool],
+      printToConsole: false,
+    });
+
+    const abortedRun = agent.send("start tool", { signal: controller.signal });
+    await started.promise;
+    controller.abort();
+    await abortedRun;
+
+    expect(agent.messages.at(-1)).toMatchObject({
+      role: "agent",
+      blocks: [
+        {
+          type: "tool_result",
+          toolCallId: "call-wait",
+          toolName: "wait",
+          rendered: [{ type: "text", text: "Interrupted by user." }],
+          isError: true,
+        },
+      ],
+    });
+
+    await agent.send("next message");
+
+    expect(contexts[1]?.messages).toMatchObject([
+      { role: "user" },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "call-wait",
+            name: "wait",
+          },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "call-wait",
+        toolName: "wait",
+        content: [{ type: "text", text: "Interrupted by user." }],
+        isError: true,
+      },
+      { role: "user" },
+    ]);
+  });
+
+  it("does not allow reset to start an overlapping in-flight run", async () => {
+    const model = defineModel({
+      id: "openai/gpt-test",
+      name: "GPT Test",
+      thinkingLevels: ["off"],
+      defaultThinkingLevel: "off",
+    });
+    const started = deferred<void>();
+    const release = deferred<void>();
+    const provider = defineProvider({
+      id: "codex",
+      models: [model],
+      stream() {
+        return streamAfterRelease(started.resolve, release.promise);
+      },
+    });
+    const harness = createJustBashToolHarness();
+    const agent = new Agent({
+      provider,
+      modelId: model.id,
+      context: harness.context,
+      printToConsole: false,
+    });
+
+    const firstRun = agent.send("first");
+    await started.promise;
+
+    agent.reset();
+
+    expect(agent.status).toBe("running");
+    await expect(agent.send("second")).rejects.toThrow("already running");
+
+    release.resolve();
+    await firstRun;
+
+    expect(agent.status).toBe("idle");
+    expect(agent.messages).toEqual([]);
+    expect(agent.queue).toEqual([]);
+  });
 });
 
 function createDeterministicIds(): () => string {
@@ -187,6 +437,46 @@ function streamFor(message: AssistantMessage): InferenceStream {
       };
     },
     async result() {
+      return message;
+    },
+  };
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+} {
+  let resolve: (value: T | PromiseLike<T>) => void = () => {};
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve;
+  });
+  return { promise, resolve };
+}
+
+function streamAfterRelease(
+  started: () => void,
+  release: Promise<void>,
+): InferenceStream {
+  const message: AssistantMessage = {
+    role: "assistant",
+    content: [{ type: "text", text: "done" }],
+    api: "test",
+    provider: "codex",
+    model: "openai/gpt-test",
+    usage: zeroUsage(),
+    stopReason: "stop",
+    timestamp: 1,
+  };
+
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield { type: "start" as const, partial: message };
+      started();
+      await release;
+      yield { type: "done" as const, reason: "stop" as const, message };
+    },
+    async result() {
+      await release;
       return message;
     },
   };

@@ -16,6 +16,7 @@ export interface RunCommandOptions {
   cwd?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  signal?: AbortSignal;
 }
 
 export interface RunCommandResult {
@@ -36,6 +37,7 @@ export async function runShellCommand(
   };
   if (options.timeoutMs !== undefined) runOptions.timeoutMs = options.timeoutMs;
   if (options.maxOutputBytes !== undefined) runOptions.maxOutputBytes = options.maxOutputBytes;
+  if (options.signal !== undefined) runOptions.signal = options.signal;
   return context.bash.run(runOptions);
 }
 
@@ -49,6 +51,7 @@ export async function runCommand(
   };
   if (options.timeoutMs !== undefined) runOptions.timeoutMs = options.timeoutMs;
   if (options.maxOutputBytes !== undefined) runOptions.maxOutputBytes = options.maxOutputBytes;
+  if (options.signal !== undefined) runOptions.signal = options.signal;
   return context.bash.run(runOptions);
 }
 

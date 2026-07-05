@@ -1,0 +1,40 @@
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
+
+export interface SlashCommandItem extends AutocompleteItem {
+  aliases: readonly string[];
+}
+
+export function createSlashCommands(): SlashCommandItem[] {
+  return [
+    {
+      value: "model",
+      label: "/model",
+      description: "Choose the model and reasoning level.",
+      aliases: [],
+    },
+    {
+      value: "new",
+      label: "/new",
+      description: "Reset this session and start fresh.",
+      aliases: ["reset"],
+    },
+    {
+      value: "exit",
+      label: "/exit",
+      description: "Close Oh My Pi.",
+      aliases: [],
+    },
+    {
+      value: "clear",
+      label: "/clear",
+      description: "Clear the visible conversation.",
+      aliases: [],
+    },
+    {
+      value: "abort",
+      label: "/abort",
+      description: "Stop the current response.",
+      aliases: [],
+    },
+  ];
+}

@@ -23,9 +23,10 @@ export const claudeBashTool = defineTool({
     ),
   }),
   returnType: shellToolOutputSchema,
-  execute: async ({ command, timeout }, context) => {
+  execute: async ({ command, timeout }, context, execution) => {
     const options: Parameters<typeof runShellCommand>[1] = {};
     if (timeout !== undefined) options.timeoutMs = timeout;
+    if (execution.signal !== undefined) options.signal = execution.signal;
     return runShellCommand(command, options, context);
   },
   toLLM: shellOutputToText,

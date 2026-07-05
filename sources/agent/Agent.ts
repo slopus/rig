@@ -66,12 +66,13 @@ export interface AgentRunResult extends AgentLoopResult {
 export class Agent {
   readonly id: string;
   readonly provider: Provider;
-  readonly model: Model;
   readonly context: AgentContext;
 
+  #model: Model;
   #effort: string | undefined;
   #instructions: string | undefined;
   #tools: readonly AnyDefinedTool[];
+  #usesExplicitTools: boolean;
   #idFactory: () => string;
   #now: () => number;
   #console: AgentConsole;
@@ -82,18 +83,21 @@ export class Agent {
   #queue: QueuedAgentMessage[] = [];
   #status: AgentStatus = "idle";
   #lastRunId: string | undefined;
+  #activeRunId: string | undefined;
+  #resetVersion = 0;
 
   constructor(options: AgentOptions) {
     this.#idFactory = options.idFactory ?? createId;
     this.id = this.#idFactory();
     this.provider = options.provider;
-    this.model = this.#findModel(options.modelId);
+    this.#model = this.#findModel(options.modelId);
     this.context = options.context;
-    this.#effort = options.effort ?? this.model.defaultThinkingLevel;
+    this.#effort = options.effort ?? this.#model.defaultThinkingLevel;
     this.#instructions = options.instructions;
+    this.#usesExplicitTools = options.tools !== undefined;
     this.#tools = options.tools ?? selectToolsForModel({
       provider: options.provider,
-      model: this.model,
+      model: this.#model,
     });
     this.#now = options.now ?? Date.now;
     this.#console = options.console ?? console;
@@ -104,6 +108,10 @@ export class Agent {
 
   get status(): AgentStatus {
     return this.#status;
+  }
+
+  get model(): Model {
+    return this.#model;
   }
 
   get messages(): readonly Message[] {
@@ -126,8 +134,30 @@ export class Agent {
     this.#effort = effort;
   }
 
+  setModel(modelId: string, effort: string | undefined): void {
+    const model = this.#findModel(modelId);
+    this.#model = model;
+    this.#effort = effort ?? model.defaultThinkingLevel;
+    if (!this.#usesExplicitTools) {
+      this.#tools = selectToolsForModel({
+        provider: this.provider,
+        model,
+      });
+    }
+  }
+
   setTools(tools: readonly AnyDefinedTool[]): void {
     this.#tools = tools;
+  }
+
+  reset(): void {
+    this.#messages = [];
+    this.#queue = [];
+    this.#lastRunId = undefined;
+    this.#resetVersion += 1;
+    if (this.#activeRunId === undefined) {
+      this.#status = "idle";
+    }
   }
 
   addSteering(text: string): SystemMessage {
@@ -167,24 +197,30 @@ export class Agent {
     text: string | readonly ContentBlock[],
     options: AgentRunOptions = {},
   ): Promise<AgentRunResult> {
+    if (this.#activeRunId !== undefined) {
+      throw new Error(`Agent '${this.id}' is already running`);
+    }
+
     this.enqueueUserMessage(text);
     return this.run(options);
   }
 
   async run(options: AgentRunOptions = {}): Promise<AgentRunResult> {
-    if (this.#status === "running") {
+    if (this.#activeRunId !== undefined) {
       throw new Error(`Agent '${this.id}' is already running`);
     }
 
     const runId = this.#idFactory();
+    const resetVersion = this.#resetVersion;
     this.#lastRunId = runId;
+    this.#activeRunId = runId;
     this.#status = "running";
     this.#drainQueueToTranscript();
 
     try {
       const loopOptions: Parameters<typeof runAgentLoop>[0] = {
         provider: this.provider,
-        modelId: this.model.id,
+        modelId: this.#model.id,
         tools: this.#tools,
         messages: this.#messages,
         sessionId: runId,
@@ -200,14 +236,28 @@ export class Agent {
 
       const result = await runAgentLoop(loopOptions);
 
-      this.#messages = [...result.messages];
-      this.#status = result.stopReason === "aborted" ? "aborted" : "idle";
+      if (this.#activeRunId === runId) {
+        this.#activeRunId = undefined;
+      }
+      if (this.#resetVersion === resetVersion) {
+        this.#messages = [...result.messages];
+        this.#status = result.stopReason === "aborted" ? "aborted" : "idle";
+      } else if (this.#status === "running") {
+        this.#status = "idle";
+      }
       return {
         ...result,
         runId,
       };
     } catch (error) {
-      this.#status = options.signal?.aborted ? "aborted" : "idle";
+      if (this.#activeRunId === runId) {
+        this.#activeRunId = undefined;
+      }
+      if (this.#resetVersion === resetVersion) {
+        this.#status = options.signal?.aborted ? "aborted" : "idle";
+      } else if (this.#status === "running") {
+        this.#status = "idle";
+      }
       throw error;
     }
   }
@@ -216,7 +266,7 @@ export class Agent {
     return {
       id: this.id,
       providerId: this.provider.id,
-      modelId: this.model.id,
+      modelId: this.#model.id,
       status: this.#status,
       messages: [...this.#messages],
       queue: [...this.#queue],

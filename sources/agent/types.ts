@@ -87,6 +87,10 @@ export type LockForArgs<TArgs> = (args: TArgs) => string;
 export type Lock<TArgs> = LockConstant | LockForArgs<TArgs>;
 
 /** A fully typed tool with execution, LLM serialization, and concurrency control. */
+export interface ToolExecutionOptions {
+  signal?: AbortSignal;
+}
+
 export interface DefinedTool<
   TArgsSchema extends TSchema = TSchema,
   TReturnSchema extends TSchema = TSchema,
@@ -99,6 +103,7 @@ export interface DefinedTool<
   execute: (
     args: Static<TArgsSchema>,
     context: AgentContext,
+    options: ToolExecutionOptions,
   ) => Promise<Static<TReturnSchema>> | Static<TReturnSchema>;
   toLLM: (result: Static<TReturnSchema>) => readonly ContentBlock[];
   toUI: (
@@ -115,7 +120,11 @@ export interface AnyDefinedTool {
   description: string;
   arguments: TSchema;
   returnType: TSchema;
-  execute: (args: never, context: AgentContext) => Promise<unknown> | unknown;
+  execute: (
+    args: never,
+    context: AgentContext,
+    options: ToolExecutionOptions,
+  ) => Promise<unknown> | unknown;
   toLLM: (result: never) => readonly ContentBlock[];
   toUI: (result: never, args: never) => string;
   locks: readonly Lock<never>[];
@@ -144,6 +153,7 @@ export function defineTool<
   execute: (
     args: Static<TArgsSchema>,
     context: AgentContext,
+    options: ToolExecutionOptions,
   ) => Promise<Static<TReturnSchema>> | Static<TReturnSchema>;
   toLLM: (result: Static<TReturnSchema>) => readonly ContentBlock[];
   toUI: (

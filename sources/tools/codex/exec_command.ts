@@ -17,12 +17,13 @@ export const codexExecCommandTool = defineTool({
     login: Type.Optional(Type.Boolean({ description: "True runs the shell with -l/-i semantics; false disables them. Defaults to true." })),
   }),
   returnType: shellToolOutputSchema,
-  execute: async ({ cmd, workdir, yield_time_ms, max_output_tokens }, context) => {
+  execute: async ({ cmd, workdir, yield_time_ms, max_output_tokens }, context, execution) => {
     const options: Parameters<typeof runShellCommand>[1] = {
       maxOutputBytes: Math.max(4_000, (max_output_tokens ?? 10_000) * 4),
     };
     if (workdir !== undefined) options.cwd = workdir;
     if (yield_time_ms !== undefined) options.timeoutMs = yield_time_ms;
+    if (execution.signal !== undefined) options.signal = execution.signal;
     return runShellCommand(cmd, options, context);
   },
   toLLM: shellOutputToText,

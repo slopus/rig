@@ -172,6 +172,7 @@ describe("agent loop live", () => {
         fs: expect.objectContaining({ cwd: "/workspace" }),
         bash: expect.objectContaining({ cwd: "/workspace" }),
       }),
+      {},
     );
     expect(addToLLM).toHaveBeenCalledExactlyOnceWith({ total: 7 });
     expect(addToUI).toHaveBeenCalledExactlyOnceWith({ total: 7 }, {
@@ -184,6 +185,7 @@ describe("agent loop live", () => {
         fs: expect.objectContaining({ cwd: "/workspace" }),
         bash: expect.objectContaining({ cwd: "/workspace" }),
       }),
+      {},
     );
     expect(shoutToLLM).toHaveBeenCalledExactlyOnceWith({
       shouted: "DUBLIN",
@@ -371,12 +373,120 @@ describe("agent loop live", () => {
       ],
     });
   });
+
+  it("passes the abort signal to active tool calls and omits results after abort", async () => {
+    const model = defineModel({
+      id: "mock/model",
+      name: "Mock Model",
+      thinkingLevels: ["off"],
+      defaultThinkingLevel: "off",
+    });
+    const provider = defineProvider({
+      id: "mock",
+      models: [model],
+      stream() {
+        return streamFor(
+          assistantMessage(
+            [
+              {
+                type: "toolCall",
+                id: "call-wait",
+                name: "wait",
+                arguments: { value: "hold" },
+              },
+            ],
+            "toolUse",
+          ),
+        );
+      },
+    });
+
+    const controller = new AbortController();
+    const started = deferred<void>();
+    const observedSignals: boolean[] = [];
+    const waitTool = defineTool({
+      name: "wait",
+      label: "Wait",
+      description: "Waits until the run is aborted.",
+      arguments: Type.Object({ value: Type.String() }),
+      returnType: Type.Object({ value: Type.String() }),
+      async execute(args: { value: string }, _context, execution) {
+        observedSignals.push(execution.signal === controller.signal);
+        started.resolve();
+        if (execution.signal === undefined) {
+          throw new Error("Missing abort signal.");
+        }
+
+        await new Promise<void>((resolve) => {
+          execution.signal?.addEventListener("abort", () => resolve(), {
+            once: true,
+          });
+        });
+        return args;
+      },
+      toLLM(result: { value: string }) {
+        return [{ type: "text", text: result.value }];
+      },
+      toUI(result: { value: string }) {
+        return `finished ${result.value}`;
+      },
+      locks: [],
+    });
+
+    const harness = createJustBashToolHarness();
+    const resultPromise = runAgentLoop({
+      provider,
+      modelId: "mock/model",
+      tools: [waitTool],
+      messages: [
+        {
+          role: "user",
+          id: "user-1",
+          blocks: [{ type: "text", text: "Run a waiting tool." }],
+        },
+      ],
+      context: harness.context,
+      signal: controller.signal,
+    });
+
+    await started.promise;
+    controller.abort();
+
+    const result = await resultPromise;
+    expect(observedSignals).toEqual([true]);
+    expect(result.stopReason).toBe("aborted");
+    expect(result.messages).toHaveLength(3);
+    expect(result.messages[2]).toMatchObject({
+      role: "agent",
+      blocks: [
+        {
+          type: "tool_result",
+          toolCallId: "call-wait",
+          toolName: "wait",
+          rendered: [{ type: "text", text: "Interrupted by user." }],
+          display: "Interrupted by user.",
+          isError: true,
+        },
+      ],
+    });
+  });
 });
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+} {
+  let resolve: (value: T | PromiseLike<T>) => void = () => {};
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve;
+  });
+  return { promise, resolve };
 }
 
 function streamFor(message: AssistantMessage): InferenceStream {

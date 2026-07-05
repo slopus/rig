@@ -67,7 +67,7 @@ export const claudeGrepTool = defineTool({
     ),
   }),
   returnType: textOutputSchema,
-  execute: async (args, context) => {
+  execute: async (args, context, execution) => {
     const options: Parameters<typeof runRipgrep>[0] = {
       pattern: args.pattern,
       outputMode: args.output_mode ?? "files_with_matches",
@@ -84,6 +84,7 @@ export const claudeGrepTool = defineTool({
     if (args.head_limit !== undefined) options.headLimit = args.head_limit;
     if (args.offset !== undefined) options.offset = args.offset;
     if (args.multiline !== undefined) options.multiline = args.multiline;
+    if (execution.signal !== undefined) options.signal = execution.signal;
     const result = await runRipgrep(options, context);
     return {
       text: result.text.length > 0 ? result.text : "No matches found",

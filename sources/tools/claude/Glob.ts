@@ -23,9 +23,10 @@ export const claudeGlobTool = defineTool({
     ),
   }),
   returnType: textOutputSchema,
-  execute: async ({ pattern, path }, context) => {
+  execute: async ({ pattern, path }, context, execution) => {
     const options: Parameters<typeof globFiles>[0] = { pattern, limit: 100 };
     if (path !== undefined) options.path = path;
+    if (execution.signal !== undefined) options.signal = execution.signal;
     const files = await globFiles(options, context);
     return {
       text: files.length > 0 ? files.join("\n") : "No files found",

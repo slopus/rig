@@ -135,17 +135,31 @@ export async function runAgentLoop(
     }
 
     if (options.signal?.aborted) {
-      return { messages: transcript, stopReason: "aborted" };
+      return appendInterruptedToolResults({
+        toolCalls,
+        transcript,
+        providerMessages,
+        idFactory,
+        now,
+        onMessage: options.onMessage,
+      });
     }
 
     const toolResultBlocks = await Promise.all(
       toolCalls.map((toolCall) =>
-        executeToolCall(toolCall, toolsByName, toolContext),
+        executeToolCall(toolCall, toolsByName, toolContext, options.signal),
       ),
     );
 
     if (options.signal?.aborted) {
-      return { messages: transcript, stopReason: "aborted" };
+      return appendInterruptedToolResults({
+        toolCalls,
+        transcript,
+        providerMessages,
+        idFactory,
+        now,
+        onMessage: options.onMessage,
+      });
     }
 
     for (const resultBlock of toolResultBlocks) {
@@ -160,6 +174,35 @@ export async function runAgentLoop(
     transcript.push(toolResultMessage);
     await options.onMessage?.(toolResultMessage);
   }
+}
+
+async function appendInterruptedToolResults(options: {
+  toolCalls: readonly ProviderToolCall[];
+  transcript: Message[];
+  providerMessages: ProviderMessage[];
+  idFactory: () => string;
+  now: () => number;
+  onMessage: ((message: Message) => void | Promise<void>) | undefined;
+}): Promise<AgentLoopResult> {
+  const toolResultBlocks = options.toolCalls.map(interruptedToolResultBlock);
+  for (const resultBlock of toolResultBlocks) {
+    options.providerMessages.push(
+      toProviderToolResultMessage(resultBlock, options.now),
+    );
+  }
+
+  const toolResultMessage: AgentMessage = {
+    role: "agent",
+    id: options.idFactory(),
+    blocks: toolResultBlocks,
+  };
+  options.transcript.push(toolResultMessage);
+  await options.onMessage?.(toolResultMessage);
+
+  return {
+    messages: options.transcript,
+    stopReason: "aborted",
+  };
 }
 
 function findModel(provider: Provider, modelId: string): Model {
@@ -423,6 +466,7 @@ async function executeToolCall(
   toolCall: ProviderToolCall,
   toolsByName: ReadonlyMap<string, AnyDefinedTool>,
   context: AgentContext,
+  signal: AbortSignal | undefined,
 ): Promise<ToolResultBlock> {
   const tool = toolsByName.get(toolCall.name);
   if (!tool) {
@@ -443,10 +487,13 @@ async function executeToolCall(
     const execute = tool.execute as (
       args: unknown,
       context: AgentContext,
+      options: { signal?: AbortSignal },
     ) => Promise<unknown> | unknown;
     const toLLM = tool.toLLM as (result: unknown) => readonly ContentBlock[];
     const toUI = tool.toUI as (result: unknown, args: unknown) => string;
-    const result = await execute(toolCall.arguments, context);
+    const executionOptions: { signal?: AbortSignal } = {};
+    if (signal !== undefined) executionOptions.signal = signal;
+    const result = await execute(toolCall.arguments, context, executionOptions);
 
     return {
       type: "tool_result",
@@ -480,6 +527,12 @@ function errorToolResultBlock(
     display: message,
     isError: true,
   };
+}
+
+function interruptedToolResultBlock(
+  toolCall: ProviderToolCall,
+): ToolResultBlock {
+  return errorToolResultBlock(toolCall, "Interrupted by user.");
 }
 
 function errorToMessage(error: unknown): string {

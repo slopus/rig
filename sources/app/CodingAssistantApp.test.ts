@@ -48,8 +48,8 @@ describe("CodingAssistantApp", () => {
     const rendered = stripAnsi(raw);
     const renderedLines = rendered.split("\n");
     expect(rendered).toContain(">_ Oh My Pi 1.2.3");
-    expect(rendered).toContain("Model: gpt-test (openai/gpt-test)");
-    expect(rendered).toContain("Provider: codex");
+    expect(rendered).toContain("Model: GPT Test");
+    expect(rendered).toContain("Provider: Codex");
     expect(rendered).toContain("Directory:");
     expect(rendered).toContain("Ask Oh My Pi to do anything");
     expect(renderedLines[0]?.length).toBeLessThan(80);
@@ -60,12 +60,12 @@ describe("CodingAssistantApp", () => {
     expect(rendered).not.toContain("cwd:");
     expect(raw).toContain("\x1b[48;5;236m");
     expect(raw).toContain("\x1b[38;5;202m\x1b[1m›\x1b[22m\x1b[38;5;255m");
-    expect(raw).toContain("\x1b[38;5;252mgpt-test");
+    expect(raw).toContain("\x1b[38;5;252mGPT Test");
     expect(raw).toContain("\x1b[38;5;245m/workspace");
     expect(rendered).toContain("› Ask Oh My Pi to do anything");
     expect(rendered).not.toContain("›  Ask Oh My Pi to do anything");
-    expect(rendered).toContain("gpt-test");
-    expect(rendered).toContain("gpt-test-off");
+    expect(rendered).toContain("GPT Test");
+    expect(rendered).toContain("GPT Test Off");
     expect(rendered).toContain("/workspace");
     expect(rendered).not.toContain("reasoning off");
     expect(rendered).not.toContain("/clear /abort /quit");
@@ -84,7 +84,7 @@ describe("CodingAssistantApp", () => {
       line.includes("› h"),
     );
     const footerLineIndex = strippedLines.findIndex((line) =>
-      line.startsWith("  gpt-test"),
+      line.startsWith("  GPT Test"),
     );
     expect(inputLineIndex).toBeGreaterThan(0);
     expect(footerLineIndex).toBe(inputLineIndex + 2);
@@ -123,9 +123,9 @@ describe("CodingAssistantApp", () => {
     });
 
     const codexRaw = codexApp.render(80).join("\n");
-    expect(codexRaw).toContain("\x1b[38;5;252mgpt-test");
+    expect(codexRaw).toContain("\x1b[38;5;252mGPT Test");
     expect(codexRaw).toContain("\x1b[38;5;245m/workspace");
-    expect(codexRaw).not.toContain("\x1b[36mgpt-test");
+    expect(codexRaw).not.toContain("\x1b[36mGPT Test");
 
     const claudeModel = defineModel({
       id: "claude-sonnet-test",
@@ -155,9 +155,9 @@ describe("CodingAssistantApp", () => {
     });
 
     const claudeRaw = claudeApp.render(80).join("\n");
-    expect(claudeRaw).toContain("\x1b[38;5;252mclaude-sonnet");
+    expect(claudeRaw).toContain("\x1b[38;5;252mClaude Sonnet");
     expect(claudeRaw).toContain("\x1b[38;5;245m/workspace");
-    expect(claudeRaw).not.toContain("\x1b[38;2;215;119;87mclaude-sonnet");
+    expect(claudeRaw).not.toContain("\x1b[38;2;215;119;87mClaude Sonnet");
   });
 
   it("uses the model id without vendor as the displayed model name", () => {
@@ -189,8 +189,8 @@ describe("CodingAssistantApp", () => {
     });
 
     const rendered = stripAnsi(app.render(80).join("\n"));
-    expect(rendered).toContain("Model: gpt-5.5 (openai/gpt-5.5)");
-    expect(rendered).toContain("gpt-5.5-off • /workspace");
+    expect(rendered).toContain("Model: GPT-5.5");
+    expect(rendered).toContain("GPT-5.5 Off • /workspace");
     expect(rendered).not.toContain("gpt-5-5");
     expect(rendered).not.toContain("reasoning off");
   });
@@ -223,11 +223,11 @@ describe("CodingAssistantApp", () => {
       tui: fakeTui(),
     });
 
-    expect(stripAnsi(app.render(80).join("\n"))).toContain("gpt-test-low");
+    expect(stripAnsi(app.render(80).join("\n"))).toContain("GPT Test Low");
 
     app.handleInput("\x1b.");
     expect(agent.snapshot().effort).toBe("medium");
-    expect(stripAnsi(app.render(80).join("\n"))).toContain("gpt-test-medium");
+    expect(stripAnsi(app.render(80).join("\n"))).toContain("GPT Test Medium");
 
     app.handleInput("\x1b,");
     expect(agent.snapshot().effort).toBe("low");
@@ -237,6 +237,312 @@ describe("CodingAssistantApp", () => {
 
     app.handleInput("\x1b[1;2B");
     expect(agent.snapshot().effort).toBe("low");
+  });
+
+  it("replaces the composer with a two-step model and reasoning menu", () => {
+    const smallModel = defineModel({
+      id: "openai/gpt-small",
+      name: "GPT Small",
+      thinkingLevels: ["low", "medium"],
+      defaultThinkingLevel: "low",
+    });
+    const proModel = defineModel({
+      id: "openai/gpt-pro",
+      name: "GPT Pro",
+      thinkingLevels: ["low", "high"],
+      defaultThinkingLevel: "low",
+    });
+    const provider = defineProvider({
+      id: "codex",
+      models: [smallModel, proModel],
+      stream() {
+        return streamText("unused");
+      },
+    });
+    const harness = createJustBashToolHarness();
+    const agent = new Agent({
+      provider,
+      modelId: smallModel.id,
+      context: harness.context,
+      printToConsole: false,
+    });
+    const app = new CodingAssistantApp({
+      agent,
+      cwd: harness.context.fs.cwd,
+      processManager: new NativeProxessManager(),
+      tui: fakeTui(),
+    });
+
+    submit(app, "/model");
+
+    const modelMenuLines = app.render(80);
+    const modelMenu = stripAnsi(modelMenuLines.join("\n"));
+    const modelMenuTitle = modelMenuLines.find((line) =>
+      stripAnsi(line).includes("Choose Model"),
+    );
+    const selectedModelLine = modelMenuLines.find((line) =>
+      stripAnsi(line).includes("→ GPT Small"),
+    );
+    expect(modelMenu).toContain("Choose Model");
+    expect(modelMenuTitle).toContain("\x1b[48;5;236m");
+    expect(stripAnsi(modelMenuTitle ?? "")).toContain("Choose Model");
+    expect(stripAnsi(modelMenuTitle ?? "")).not.toContain("›");
+    expect(stripAnsi(modelMenuTitle ?? "")).not.toContain("│");
+    expect(selectedModelLine).toContain("\x1b[38;5;202m");
+    expect(selectedModelLine).not.toContain("\x1b[1m");
+    expect(modelMenu).toContain("GPT Small");
+    expect(modelMenu).toContain("GPT Pro");
+    expect(modelMenu).toContain("Current model");
+    expect(modelMenu).toContain("Codex model");
+    expect(modelMenu).toContain("Default reasoning: Low");
+    expect(modelMenu).not.toContain("Available model");
+    expect(modelMenu).toContain("Use ↑/↓ to move, Enter to select, Esc to cancel.");
+    expect(modelMenu).not.toContain("Ask Oh My Pi to do anything");
+
+    app.handleInput("\x1b[B");
+    app.handleInput("\r");
+
+    const reasoningMenu = stripAnsi(app.render(80).join("\n"));
+    expect(reasoningMenu).toContain("Choose Reasoning");
+    expect(reasoningMenu).toContain("GPT Pro");
+    expect(reasoningMenu).toContain("Low");
+    expect(reasoningMenu).toContain("High");
+    expect(reasoningMenu).toContain("Use light reasoning for simple coding tasks.");
+    expect(reasoningMenu).toContain("Spend more time on harder changes.");
+    expect(reasoningMenu).not.toContain("Ask Oh My Pi to do anything");
+
+    app.handleInput("\x1b[B");
+    app.handleInput("\r");
+
+    const rendered = stripAnsi(app.render(80).join("\n"));
+    expect(agent.model.id).toBe(proModel.id);
+    expect(agent.snapshot().effort).toBe("high");
+    expect(rendered).toContain("GPT Pro High");
+    expect(rendered).toContain("Model changed to GPT Pro with High reasoning.");
+    expect(rendered).toContain("Ask Oh My Pi to do anything");
+  });
+
+  it("opens the model menu with Alt+M", () => {
+    const model = defineModel({
+      id: "openai/gpt-test",
+      name: "GPT Test",
+      thinkingLevels: ["off"],
+      defaultThinkingLevel: "off",
+    });
+    const provider = defineProvider({
+      id: "codex",
+      models: [model],
+      stream() {
+        return streamText("unused");
+      },
+    });
+    const harness = createJustBashToolHarness();
+    const agent = new Agent({
+      provider,
+      modelId: model.id,
+      context: harness.context,
+      printToConsole: false,
+    });
+    const app = new CodingAssistantApp({
+      agent,
+      cwd: harness.context.fs.cwd,
+      processManager: new NativeProxessManager(),
+      tui: fakeTui(),
+    });
+
+    app.handleInput("\x1bm");
+
+    const rendered = stripAnsi(app.render(80).join("\n"));
+    expect(rendered).toContain("Choose Model");
+    expect(rendered).not.toContain("Ask Oh My Pi to do anything");
+  });
+
+  it("shows slash command autocomplete with command descriptions", async () => {
+    const model = defineModel({
+      id: "openai/gpt-test",
+      name: "GPT Test",
+      thinkingLevels: ["off"],
+      defaultThinkingLevel: "off",
+    });
+    const provider = defineProvider({
+      id: "codex",
+      models: [model],
+      stream() {
+        return streamText("unused");
+      },
+    });
+    const harness = createJustBashToolHarness();
+    const agent = new Agent({
+      provider,
+      modelId: model.id,
+      context: harness.context,
+      printToConsole: false,
+    });
+    const app = new CodingAssistantApp({
+      agent,
+      cwd: harness.context.fs.cwd,
+      processManager: new NativeProxessManager(),
+      tui: fakeTui(),
+    });
+
+    app.focused = true;
+    app.handleInput("/");
+    await delay(30);
+
+    const rawLines = app.render(80);
+    const rendered = stripAnsi(rawLines.join("\n"));
+    const commandLine = rawLines.find((line) => stripAnsi(line).includes("/model"));
+    expect(commandLine).not.toContain("\x1b[48;5;236m");
+    expect(commandLine).toContain("\x1b[38;5;202m");
+    expect(commandLine).not.toContain("\x1b[1m");
+    expect(rendered).toContain("/model");
+    expect(rendered).toContain("Choose the model and reasoning level.");
+    expect(rendered).toContain("/new");
+    expect(rendered).toContain("Reset this session and start fresh.");
+    expect(rendered).toContain("/exit");
+    expect(rendered).toContain("Close Oh My Pi.");
+    expect(rendered).toContain("/clear");
+    expect(rendered).toContain("Clear the visible conversation.");
+    expect(rendered).toContain("/abort");
+    expect(rendered).toContain("Stop the current response.");
+    expect(rendered).not.toContain("GPT Test Off •");
+    expect(rendered).not.toContain("/quit");
+
+    app.handleInput("\r");
+    const modelPicker = stripAnsi(app.render(80).join("\n"));
+    expect(modelPicker).toContain("Choose Model");
+    expect(modelPicker).not.toContain("/model");
+  });
+
+  it("finds new session command by reset and clears agent state", async () => {
+    const model = defineModel({
+      id: "openai/gpt-test",
+      name: "GPT Test",
+      thinkingLevels: ["off"],
+      defaultThinkingLevel: "off",
+    });
+    const provider = defineProvider({
+      id: "codex",
+      models: [model],
+      stream() {
+        return streamText("previous answer");
+      },
+    });
+    const harness = createJustBashToolHarness();
+    const agent = new Agent({
+      provider,
+      modelId: model.id,
+      context: harness.context,
+      printToConsole: false,
+    });
+    const app = new CodingAssistantApp({
+      agent,
+      cwd: harness.context.fs.cwd,
+      processManager: new NativeProxessManager(),
+      tui: fakeTui(),
+    });
+
+    submit(app, "previous prompt");
+    await app.waitForIdle();
+    expect(agent.snapshot().messages.length).toBeGreaterThan(0);
+
+    app.handleInput("/reset");
+    const resetAutocomplete = stripAnsi(app.render(80).join("\n"));
+    expect(resetAutocomplete).toContain("/new");
+    expect(resetAutocomplete).toContain("Reset this session and start fresh.");
+    app.handleInput("\r");
+
+    const rendered = stripAnsi(app.render(80).join("\n"));
+    expect(agent.snapshot().messages).toEqual([]);
+    expect(rendered).toContain("Session reset. Started a new session.");
+    expect(rendered).not.toContain("previous prompt");
+    expect(rendered).not.toContain("previous answer");
+  });
+
+  it("cancels the model menu with Escape and still exits with Ctrl+C", async () => {
+    const model = defineModel({
+      id: "openai/gpt-test",
+      name: "GPT Test",
+      thinkingLevels: ["off"],
+      defaultThinkingLevel: "off",
+    });
+    const provider = defineProvider({
+      id: "codex",
+      models: [model],
+      stream() {
+        return streamText("unused");
+      },
+    });
+    const harness = createJustBashToolHarness();
+    const agent = new Agent({
+      provider,
+      modelId: model.id,
+      context: harness.context,
+      printToConsole: false,
+    });
+    const tui = fakeTui();
+    const app = new CodingAssistantApp({
+      agent,
+      cwd: harness.context.fs.cwd,
+      processManager: new NativeProxessManager(),
+      tui,
+    });
+
+    app.handleInput("\x1bm");
+    app.handleInput("\x1b");
+
+    expect(stripAnsi(app.render(80).join("\n"))).toContain("Ask Oh My Pi to do anything");
+
+    app.handleInput("\x1bm");
+    app.handleInput("\x03");
+    await delay(30);
+
+    expect(tui.stop).toHaveBeenCalled();
+  });
+
+  it("renders one red session interruption notice when Escape aborts a run", async () => {
+    const model = defineModel({
+      id: "openai/gpt-test",
+      name: "GPT Test",
+      thinkingLevels: ["off"],
+      defaultThinkingLevel: "off",
+    });
+    const started = deferred<void>();
+    const provider = defineProvider({
+      id: "codex",
+      models: [model],
+      stream(_model, _context, options) {
+        return streamAbortAfterSignal(options?.signal, started.resolve);
+      },
+    });
+    const harness = createJustBashToolHarness();
+    const agent = new Agent({
+      provider,
+      modelId: model.id,
+      context: harness.context,
+      printToConsole: false,
+    });
+    const app = new CodingAssistantApp({
+      agent,
+      cwd: harness.context.fs.cwd,
+      processManager: new NativeProxessManager(),
+      tui: fakeTui(),
+    });
+
+    submit(app, "work");
+    await started.promise;
+    app.handleInput("\x1b");
+    await app.waitForIdle();
+
+    const raw = app.render(80).join("\n");
+    const rendered = stripAnsi(raw);
+    expect(raw).toContain("\x1b[31m");
+    expect(rendered.match(/Session interrupted/gu)).toHaveLength(1);
+    expect(rendered).toContain("The active run was stopped.");
+    expect(rendered).not.toContain("request aborted");
+    expect(rendered).not.toContain("message aborted");
+    expect(rendered).not.toContain("Run aborted.");
+    expect(rendered).not.toContain("Stopped: aborted");
   });
 
   it("keeps the composer cursor steady while typing and blinks after idle", () => {
@@ -894,6 +1200,7 @@ describe("CodingAssistantApp", () => {
       thinkingLevels: ["high"],
       defaultThinkingLevel: "high",
     });
+    let now = 10_000;
     const gate = createThinkingStreamGate("done");
     const provider = defineProvider({
       id: "codex",
@@ -913,17 +1220,28 @@ describe("CodingAssistantApp", () => {
     const app = new CodingAssistantApp({
       agent,
       cwd: harness.context.fs.cwd,
+      now: () => now,
       processManager: new NativeProxessManager(),
       tui: fakeTui(),
     });
 
     submit(app, "think");
     await gate.startedThinking;
+    now = 75_000;
 
-    const renderedWhileThinking = stripAnsi(app.render(80).join("\n"));
-    expect(renderedWhileThinking).toContain("• Thinking");
-    expect(renderedWhileThinking).toContain("gpt-test-high");
+    const rawWhileThinking = app.render(80);
+    const thinkingLine = rawWhileThinking.find((line) =>
+      stripAnsi(line).includes("• Thinking"),
+    ) ?? "";
+    const renderedWhileThinking = stripAnsi(rawWhileThinking.join("\n"));
+    expect(renderedWhileThinking).toContain("• Thinking (1m 5s)");
+    expect(renderedWhileThinking).toContain("GPT Test High");
     expect(renderedWhileThinking).not.toContain("Idle |");
+    expect(thinkingLine).toContain("\x1b[38;5;255m");
+    expect(thinkingLine).toContain("\x1b[38;5;244m");
+    expect(thinkingLine).toContain("\x1b[2m\x1b[38;5;245m(1m 5s)");
+    expect(thinkingLine).not.toContain("\x1b[38;5;255m(");
+    expect(thinkingLine).not.toContain("\x1b[38;5;244m(");
 
     gate.release();
     await app.waitForIdle();
@@ -1039,6 +1357,17 @@ function delay(ms: number): Promise<void> {
   });
 }
 
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+} {
+  let resolve: (value: T | PromiseLike<T>) => void = () => {};
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve;
+  });
+  return { promise, resolve };
+}
+
 function fakeTui(options: { rows?: number; columns?: number } = {}): TUI {
   return {
     addChild: vi.fn(),
@@ -1134,6 +1463,43 @@ function streamMessage(message: AssistantMessage): InferenceStream {
         type: "done" as const,
         reason: message.stopReason,
         message,
+      };
+    },
+    async result() {
+      return message;
+    },
+  };
+}
+
+function streamAbortAfterSignal(
+  signal: AbortSignal | undefined,
+  started: () => void,
+): InferenceStream {
+  const message: AssistantMessage = {
+    role: "assistant",
+    content: [],
+    api: "test",
+    provider: "codex",
+    model: "openai/gpt-test",
+    usage: zeroUsage(),
+    stopReason: "aborted",
+    timestamp: 1,
+    errorMessage: "request aborted: message aborted",
+  };
+
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield { type: "start" as const, partial: message };
+      started();
+      if (!signal?.aborted) {
+        await new Promise<void>((resolve) => {
+          signal?.addEventListener("abort", () => resolve(), { once: true });
+        });
+      }
+      yield {
+        type: "error" as const,
+        reason: "aborted" as const,
+        error: message,
       };
     },
     async result() {

@@ -8,6 +8,10 @@ Always use `pnpm` for this project. Do not use `npm`, `npx`, or `yarn` for insta
 
 Favor one function per file when adding or reshaping source code.
 
+## User-facing text
+
+All strings displayed to users must be human-readable English. Prefer natural, human-like labels and messages over raw identifiers, internal enum values, file names, protocol names, or placeholder text. Convert technical values into clear display text before rendering them in the UI or CLI.
+
 ## Remote pushes
 
 Never push to any remote unless the user explicitly requests a push or sync in the current task. Do not infer push permission from completed local work.
