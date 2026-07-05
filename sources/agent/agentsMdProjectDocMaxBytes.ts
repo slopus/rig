@@ -1,0 +1,1 @@
+export const AGENTS_MD_PROJECT_DOC_MAX_BYTES = 32 * 1024;

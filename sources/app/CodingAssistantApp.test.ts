@@ -87,11 +87,12 @@ describe("CodingAssistantApp", () => {
       line.startsWith("  GPT Test"),
     );
     expect(inputLineIndex).toBeGreaterThan(0);
-    expect(footerLineIndex).toBe(inputLineIndex + 2);
+    expect(footerLineIndex).toBe(inputLineIndex + 3);
     expect(rawLines[inputLineIndex - 1]).toContain("\x1b[48;5;236m");
     expect(rawLines[inputLineIndex]).toContain("\x1b[48;5;236m");
     expect(rawLines[inputLineIndex]).toContain("\x1b[38;5;255m");
     expect(rawLines[inputLineIndex + 1]).toContain("\x1b[48;5;236m");
+    expect(rawLines[inputLineIndex + 2]).toBe("");
   });
 
   it("renders footer model and cwd with neutral distinct colors", () => {
@@ -266,9 +267,13 @@ describe("CodingAssistantApp", () => {
       context: harness.context,
       printToConsole: false,
     });
+    const defaultModelChanges: Array<{ effort: string; modelId: string }> = [];
     const app = new CodingAssistantApp({
       agent,
       cwd: harness.context.fs.cwd,
+      onDefaultModelChange: (preference) => {
+        defaultModelChanges.push(preference);
+      },
       processManager: new NativeProxessManager(),
       tui: fakeTui(),
     });
@@ -317,6 +322,7 @@ describe("CodingAssistantApp", () => {
     const rendered = stripAnsi(app.render(80).join("\n"));
     expect(agent.model.id).toBe(proModel.id);
     expect(agent.snapshot().effort).toBe("high");
+    expect(defaultModelChanges).toEqual([{ modelId: proModel.id, effort: "high" }]);
     expect(rendered).toContain("GPT Pro High");
     expect(rendered).toContain("Model changed to GPT Pro with High reasoning.");
     expect(rendered).toContain("Ask Oh My Pi to do anything");
@@ -879,7 +885,7 @@ describe("CodingAssistantApp", () => {
       app.focused = true;
       const visibleCursor = app.render(80).join("\n");
       expect(visibleCursor).toContain("\x1b_pi:c\x07");
-      expect(visibleCursor).not.toContain("\x1b[48;5;244m\x1b[38;5;232mA");
+      expect(visibleCursor).toContain("\x1b[48;5;244m\x1b[38;5;232mA");
       expect(stripAnsi(visibleCursor)).toContain("› Ask Oh My Pi to do anything");
       expect(stripAnsi(visibleCursor)).not.toContain("›  Ask Oh My Pi to do anything");
 
@@ -888,6 +894,7 @@ describe("CodingAssistantApp", () => {
       const hiddenCursor = app.render(80).join("\n");
       expect(hiddenCursor).not.toContain("\x1b[48;5;244m\x1b[38;5;232mA");
       expect(stripAnsi(hiddenCursor)).toContain("› Ask Oh My Pi to do anything");
+      expect(stripAnsi(hiddenCursor)).not.toContain("›  Ask Oh My Pi to do anything");
       expect(tui.requestRender).toHaveBeenCalled();
       app.focused = false;
     } finally {

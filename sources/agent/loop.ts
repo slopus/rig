@@ -2,13 +2,13 @@ import { createId } from "@paralleldrive/cuid2";
 import { Value } from "@sinclair/typebox/value";
 
 import type { AgentContext } from "./context/AgentContext.js";
+import { createSystemPrompt } from "./createSystemPrompt.js";
 import type {
   AgentBlock,
   AgentMessage,
   AnyDefinedTool,
   ContentBlock,
   Message,
-  SystemMessage,
   ToolCallBlock,
   ToolResultBlock,
   UserMessage,
@@ -71,7 +71,15 @@ export async function runAgentLoop(
     now,
     providerId: options.provider.id,
   });
-  const systemPrompt = buildSystemPrompt(options.instructions, options.messages);
+  const systemPrompt = await createSystemPrompt({
+    provider: options.provider,
+    model,
+    ...(options.instructions !== undefined
+      ? { instructions: options.instructions }
+      : {}),
+    messages: options.messages,
+    context: options.context,
+  });
   const providerTools = options.tools.map(toProviderTool);
   const toolsByName = new Map(options.tools.map((tool) => [tool.name, tool]));
   const toolContext = options.context;
@@ -232,36 +240,6 @@ function toProviderContext(
     messages: [...messages],
     ...(tools.length > 0 ? { tools: [...tools] } : {}),
   };
-}
-
-function buildSystemPrompt(
-  instructions: string | undefined,
-  messages: readonly Message[],
-): string | undefined {
-  const parts: string[] = [];
-  if (instructions !== undefined && instructions.length > 0) {
-    parts.push(instructions);
-  }
-
-  for (const message of messages) {
-    if (message.role === "system") {
-      parts.push(systemMessageToText(message));
-    }
-  }
-
-  return parts.length > 0 ? parts.join("\n\n") : undefined;
-}
-
-function systemMessageToText(message: SystemMessage): string {
-  return message.blocks.map(systemBlockToText).join("");
-}
-
-function systemBlockToText(block: ContentBlock): string {
-  if (block.type === "text") {
-    return block.text;
-  }
-
-  throw new Error("System image blocks are not supported by providers");
 }
 
 function toProviderMessages(

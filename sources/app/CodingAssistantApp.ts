@@ -84,9 +84,15 @@ export interface CodingAssistantAppOptions {
   processManager: NativeProxessManager;
   tui: TUI;
   idFactory?: () => string;
+  onDefaultModelChange?: (preference: DefaultModelPreference) => void | Promise<void>;
   onExit?: () => void | Promise<void>;
   now?: () => number;
   version?: string;
+}
+
+export interface DefaultModelPreference {
+  effort: string;
+  modelId: string;
 }
 
 export class CodingAssistantApp implements Component, Focusable {
@@ -95,6 +101,9 @@ export class CodingAssistantApp implements Component, Focusable {
   readonly #idFactory: () => string;
   readonly #now: () => number;
   readonly #editor: Editor;
+  readonly #onDefaultModelChange:
+    | ((preference: DefaultModelPreference) => void | Promise<void>)
+    | undefined;
   readonly #onExit: (() => void | Promise<void>) | undefined;
   readonly #processManager: NativeProxessManager;
   readonly #tui: TUI;
@@ -132,6 +141,7 @@ export class CodingAssistantApp implements Component, Focusable {
     this.#cwd = options.cwd;
     this.#idFactory = options.idFactory ?? createId;
     this.#now = options.now ?? Date.now;
+    this.#onDefaultModelChange = options.onDefaultModelChange;
     this.#onExit = options.onExit;
     this.#processManager = options.processManager;
     this.#tui = options.tui;
@@ -288,6 +298,7 @@ export class CodingAssistantApp implements Component, Focusable {
       ...(this.#selectionPanel === undefined
         ? input
         : this.#selectionPanel.render(safeWidth)),
+      "",
       ...footer,
       "",
       "",
@@ -801,6 +812,7 @@ export class CodingAssistantApp implements Component, Focusable {
       })),
       onSelect: (item) => {
         this.#agent.setModel(model.id, item.value);
+        this.#persistDefaultModel(model.id, item.value);
         this.#appendEntry({
           role: "event",
           title: "model",
@@ -1014,7 +1026,13 @@ export class CodingAssistantApp implements Component, Focusable {
 
   #emptyInputLine(): string {
     const marker = this.#focused ? CURSOR_MARKER : "";
-    return `${this.#inputPrompt()}${marker}${SURFACE_MUTED_FG}${INPUT_PLACEHOLDER}${INPUT_FG}`;
+    if (!this.#focused || !this.#cursorVisible) {
+      return `${this.#inputPrompt()}${marker}${SURFACE_MUTED_FG}${INPUT_PLACEHOLDER}${INPUT_FG}`;
+    }
+
+    const firstCharacter = INPUT_PLACEHOLDER[0] ?? " ";
+    const rest = INPUT_PLACEHOLDER.slice(firstCharacter.length);
+    return `${this.#inputPrompt()}${marker}${CURSOR_BG}${CURSOR_FG}${firstCharacter}${RESET}${SURFACE_MUTED_FG}${rest}${INPUT_FG}`;
   }
 
   #surfaceLine(line: string, width: number): string {
@@ -1132,9 +1150,33 @@ export class CodingAssistantApp implements Component, Focusable {
     const nextEffort = this.#nextReasoningEffort(direction);
     if (nextEffort !== undefined) {
       this.#agent.setEffort(nextEffort);
+      this.#persistDefaultModel(this.#agent.model.id, nextEffort);
     }
 
     return true;
+  }
+
+  #persistDefaultModel(modelId: string, effort: string): void {
+    if (this.#onDefaultModelChange === undefined) {
+      return;
+    }
+
+    void Promise.resolve(
+      this.#onDefaultModelChange({
+        modelId,
+        effort,
+      }),
+    ).catch(() => {
+      if (this.#stopped || this.#exiting) {
+        return;
+      }
+      this.#appendEntry({
+        role: "event",
+        title: "config",
+        text: "Could not update the config file.",
+      });
+      this.#requestRender();
+    });
   }
 
   #handleModelMenuShortcut(data: string): boolean {

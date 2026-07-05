@@ -9,6 +9,10 @@ export type {
 } from "./Agent.js";
 export { runAgentLoop } from "./loop.js";
 export type { AgentLoopEvent, AgentLoopResult, RunAgentLoopOptions } from "./loop.js";
+export { createSystemPrompt } from "./createSystemPrompt.js";
+export type { CreateSystemPromptOptions } from "./createSystemPrompt.js";
+export { loadAgentsMdInstructions } from "./loadAgentsMdInstructions.js";
+export { selectSystemPromptForModel } from "./selectSystemPromptForModel.js";
 export { printAgentMessageToConsole } from "./printAgentMessageToConsole.js";
 export type { AgentConsole } from "./printAgentMessageToConsole.js";
 export { agentMessageToText } from "./agentMessageToText.js";

@@ -38,6 +38,7 @@
     "@earendil-works/pi-tui": "^0.80.3",
     "@mariozechner/pi-ai": "^0.73.1",
     "@paralleldrive/cuid2": "^3.3.0",
-    "@sinclair/typebox": "^0.34.49"
+    "@sinclair/typebox": "^0.34.49",
+    "smol-toml": "^1.7.0"
   }
 }
