@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { ProtocolHttpClient } from "../client/ProtocolHttpClient.js";
 import { createEventIdFactory, type SessionEvent } from "../protocol/index.js";
+import { modelOpenaiGpt55 } from "../providers/models.js";
 import { InMemorySessionStore } from "./InMemorySessionStore.js";
 import { createProtocolHttpServer } from "./createProtocolHttpServer.js";
 
@@ -15,6 +16,48 @@ describe("createProtocolHttpServer", () => {
         try {
             const client = new ProtocolHttpClient({ socketPath, token: "wrong" });
             await expect(client.health()).rejects.toThrow("Unauthorized");
+        } finally {
+            await close();
+        }
+    });
+
+    it("serves daemon readiness and model catalog", async () => {
+        const { client, close } = await startServer();
+        try {
+            const health = await client.health();
+            const models = await client.models();
+
+            expect(health).toMatchObject({
+                healthy: true,
+                ready: true,
+                status: "ready",
+            });
+            expect(health.catalog?.models.map((model) => model.id)).toContain(modelOpenaiGpt55.id);
+            expect(models.catalog.models.map((model) => model.id)).toContain(modelOpenaiGpt55.id);
+        } finally {
+            await close();
+        }
+    });
+
+    it("changes session effort through a dedicated endpoint", async () => {
+        const { client, close } = await startServer();
+        try {
+            const created = await client.createSession({
+                cwd: "/tmp/ohmypi-protocol-test",
+                modelId: modelOpenaiGpt55.id,
+            });
+
+            const changed = await client.changeEffort(created.session.id, { effort: "high" });
+            const events = await client.getEvents(created.session.id, created.session.lastEventId);
+
+            expect(changed.session.effort).toBe("high");
+            expect(events.events.at(-1)).toMatchObject({
+                data: {
+                    effort: "high",
+                    modelId: modelOpenaiGpt55.id,
+                },
+                type: "effort_changed",
+            });
         } finally {
             await close();
         }

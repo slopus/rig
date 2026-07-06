@@ -16,6 +16,31 @@ export interface SessionInterruption {
     runId?: string;
 }
 
+export interface ProviderModelCatalog {
+    providerId: string;
+    models: readonly Model[];
+}
+
+export interface ModelCatalog {
+    defaultModelId: string;
+    models: readonly Model[];
+    providers: readonly ProviderModelCatalog[];
+}
+
+export type ServerInitializationStatus = "starting" | "ready" | "error";
+
+export interface HealthResponse {
+    catalog?: ModelCatalog;
+    errorMessage?: string;
+    healthy: boolean;
+    ready: boolean;
+    status: ServerInitializationStatus;
+}
+
+export interface ListModelsResponse {
+    catalog: ModelCatalog;
+}
+
 export interface ProtocolSession {
     id: string;
     agentId: string;
@@ -23,6 +48,7 @@ export interface ProtocolSession {
     providerId: string;
     modelId: string;
     effort?: string;
+    modelLocked: boolean;
     models: readonly Model[];
     status: SessionStatus;
     title?: string;
@@ -38,6 +64,7 @@ export interface SessionSummary {
     cwd: string;
     providerId: string;
     modelId: string;
+    effort?: string;
     status: SessionStatus;
     title?: string;
     titleError?: string;
@@ -84,6 +111,10 @@ export interface ChangeModelRequest {
     modelId: string;
 }
 
+export interface ChangeEffortRequest {
+    effort?: string;
+}
+
 export interface AbortRunResponse {
     aborted: boolean;
     eventId?: EventId;
@@ -100,7 +131,8 @@ export type SessionEvent =
     | AbortRequestedEvent
     | SessionResetEvent
     | SessionTitleChangedEvent
-    | ModelChangedEvent;
+    | ModelChangedEvent
+    | EffortChangedEvent;
 
 export interface BaseSessionEvent<TType extends string, TData> {
     createdAt: number;
@@ -176,6 +208,15 @@ export type SessionTitleChangedEvent = BaseSessionEvent<
 
 export type ModelChangedEvent = BaseSessionEvent<
     "model_changed",
+    {
+        effort?: string;
+        modelId: string;
+        snapshot: AgentSnapshot;
+    }
+>;
+
+export type EffortChangedEvent = BaseSessionEvent<
+    "effort_changed",
     {
         effort?: string;
         modelId: string;

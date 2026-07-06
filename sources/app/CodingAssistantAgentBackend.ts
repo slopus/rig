@@ -7,6 +7,7 @@ import type {
 import type { Model, Provider } from "../providers/types.js";
 
 export interface CodingAssistantAgentBackend {
+    readonly canChangeModel: boolean;
     readonly context: AgentContext;
     readonly id: string;
     readonly provider: Provider;

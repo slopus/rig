@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 
 import type { UserMessage } from "../agent/types.js";
+import type { ModelCatalog } from "../protocol/index.js";
+import { defineModel } from "../providers/types.js";
 import type { PersistedQueuedRun, PersistedSessionState } from "./InMemorySession.js";
 import { PersistentSessionStore } from "./PersistentSessionStore.js";
 
@@ -241,6 +243,69 @@ describe("PersistentSessionStore", () => {
         }
     });
 
+    it("locks restored sessions to their original model but allows effort changes", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        const catalog = testModelCatalog();
+        try {
+            const store = new PersistentSessionStore({ databasePath, modelCatalog: catalog });
+            const userMessage = textUserMessage("message-1", "started");
+            const state = sessionState({
+                effort: "low",
+                messages: [
+                    {
+                        isPartial: false,
+                        message: userMessage,
+                        position: 0,
+                        runId: "run-1",
+                    },
+                ],
+                modelId: "openai/test",
+                models: catalog.models,
+            });
+            store.saveSession(state);
+            const entry = state.messages[0];
+            expect(entry).toBeDefined();
+            if (entry !== undefined) {
+                store.upsertMessage(state.id, entry);
+            }
+            store.close();
+
+            const restoredStore = new PersistentSessionStore({
+                databasePath,
+                modelCatalog: catalog,
+            });
+            try {
+                const restored = restoredStore.get(state.id);
+
+                expect(restored?.snapshot().modelLocked).toBe(true);
+                expect(() =>
+                    restored?.changeModel({ effort: "high", modelId: "anthropic/test" }),
+                ).toThrow("Model cannot be changed");
+
+                restored?.changeEffort({ effort: "high" });
+
+                const snapshot = restored?.snapshot();
+                const events = restored?.events.since(undefined) ?? [];
+                expect(snapshot).toMatchObject({
+                    effort: "high",
+                    modelId: "openai/test",
+                    modelLocked: true,
+                });
+                expect(events.at(-1)).toMatchObject({
+                    data: {
+                        effort: "high",
+                        modelId: "openai/test",
+                    },
+                    type: "effort_changed",
+                });
+            } finally {
+                restoredStore.close();
+            }
+        } finally {
+            await cleanup();
+        }
+    });
+
     it("repairs interrupted title generation on restart", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         try {
@@ -277,6 +342,29 @@ async function createDatabasePath(): Promise<{
     return {
         cleanup: () => rm(directory, { force: true, recursive: true }),
         databasePath: join(directory, "sessions.sqlite"),
+    };
+}
+
+function testModelCatalog(): ModelCatalog {
+    const openai = defineModel({
+        id: "openai/test",
+        name: "OpenAI Test",
+        thinkingLevels: ["low", "high"],
+        defaultThinkingLevel: "low",
+    });
+    const anthropic = defineModel({
+        id: "anthropic/test",
+        name: "Anthropic Test",
+        thinkingLevels: ["low", "high"],
+        defaultThinkingLevel: "low",
+    });
+    return {
+        defaultModelId: openai.id,
+        models: [openai, anthropic],
+        providers: [
+            { providerId: "codex", models: [openai] },
+            { providerId: "claude-sdk", models: [anthropic] },
+        ],
     };
 }
 

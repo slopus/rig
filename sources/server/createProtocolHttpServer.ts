@@ -3,43 +3,68 @@ import { timingSafeEqual } from "node:crypto";
 
 import type {
     AbortRunResponse,
+    ChangeEffortRequest,
     ChangeModelRequest,
     CreateSessionRequest,
     CreateSessionResponse,
+    HealthResponse,
+    ListModelsResponse,
     ListSessionsResponse,
+    ModelCatalog,
     SessionEvent,
     ShutdownServerResponse,
     SubmitMessageRequest,
     SubmitMessageResponse,
 } from "../protocol/index.js";
 import { InMemorySessionStore } from "./InMemorySessionStore.js";
+import { createModelCatalog } from "./createModelCatalog.js";
 import type { SessionEventLog } from "./SessionEventLog.js";
 import type { SessionStore } from "./SessionStore.js";
 
 export interface ProtocolHttpServerOptions {
+    initialization?: Promise<ModelCatalog>;
+    modelCatalog?: ModelCatalog;
     onShutdown?: () => void;
     store?: SessionStore;
     token: string;
 }
 
 export function createProtocolHttpServer(options: ProtocolHttpServerOptions): Server {
-    const store = options.store ?? new InMemorySessionStore();
+    const modelCatalog = options.modelCatalog ?? createModelCatalog();
+    const store =
+        options.store ??
+        new InMemorySessionStore({
+            modelCatalog,
+        });
+    const state = createInitializationState({ ...options, modelCatalog });
 
     return createServer((request, response) => {
-        void handleRequest(request, response, store, options.token, options.onShutdown).catch(
-            (error: unknown) => {
-                sendJson(response, 500, {
-                    error: error instanceof Error ? error.message : String(error),
-                });
-            },
-        );
+        void handleRequest(
+            request,
+            response,
+            store,
+            state,
+            options.token,
+            options.onShutdown,
+        ).catch((error: unknown) => {
+            sendJson(response, 500, {
+                error: error instanceof Error ? error.message : String(error),
+            });
+        });
     });
+}
+
+interface InitializationState {
+    catalog: ModelCatalog | undefined;
+    errorMessage: string | undefined;
+    ready: boolean;
 }
 
 async function handleRequest(
     request: IncomingMessage,
     response: ServerResponse,
     store: SessionStore,
+    initialization: InitializationState,
     token: string,
     onShutdown: (() => void) | undefined,
 ): Promise<void> {
@@ -56,13 +81,23 @@ async function handleRequest(
     }
 
     if (request.method === "GET" && route.name === "health") {
-        sendJson(response, 200, { healthy: true });
+        sendJson<HealthResponse>(response, 200, healthResponse(initialization));
         return;
     }
 
     if (request.method === "POST" && route.name === "shutdown") {
         sendJson<ShutdownServerResponse>(response, 202, { shuttingDown: true });
         setImmediate(() => onShutdown?.());
+        return;
+    }
+
+    if (!initialization.ready || initialization.catalog === undefined) {
+        sendJson(response, 503, healthResponse(initialization));
+        return;
+    }
+
+    if (request.method === "GET" && route.name === "models") {
+        sendJson<ListModelsResponse>(response, 200, { catalog: initialization.catalog });
         return;
     }
 
@@ -114,6 +149,12 @@ async function handleRequest(
         return;
     }
 
+    if (request.method === "PATCH" && route.name === "effort") {
+        const body = await readJson<ChangeEffortRequest>(request);
+        sendJson(response, 200, { session: session.changeEffort(body) });
+        return;
+    }
+
     if (request.method === "PATCH" && route.name === "model") {
         const body = await readJson<ChangeModelRequest>(request);
         sendJson(response, 200, { session: session.changeModel(body) });
@@ -136,6 +177,53 @@ async function handleRequest(
     }
 
     sendJson(response, 405, { error: "Method not allowed" });
+}
+
+function createInitializationState(options: ProtocolHttpServerOptions): InitializationState {
+    const state: InitializationState = {
+        catalog: options.modelCatalog,
+        errorMessage: undefined,
+        ready: options.initialization === undefined,
+    };
+    if (options.initialization !== undefined) {
+        void options.initialization.then(
+            (catalog) => {
+                state.catalog = catalog;
+                state.errorMessage = undefined;
+                state.ready = true;
+            },
+            (error: unknown) => {
+                state.errorMessage = error instanceof Error ? error.message : String(error);
+                state.ready = false;
+            },
+        );
+    }
+    return state;
+}
+
+function healthResponse(initialization: InitializationState): HealthResponse {
+    if (initialization.ready && initialization.catalog !== undefined) {
+        return {
+            catalog: initialization.catalog,
+            healthy: true,
+            ready: true,
+            status: "ready",
+        };
+    }
+    if (initialization.errorMessage !== undefined) {
+        return {
+            errorMessage: initialization.errorMessage,
+            healthy: false,
+            ready: false,
+            status: "error",
+        };
+    }
+
+    return {
+        healthy: true,
+        ready: false,
+        status: "starting",
+    };
 }
 
 function parseLimit(value: string | null): number | undefined {
@@ -162,13 +250,22 @@ function isAuthorized(request: IncomingMessage, token: string): boolean {
 }
 
 function matchRoute(pathname: string):
-    | { name: "health" | "sessions" | "shutdown"; sessionId?: undefined }
+    | { name: "health" | "models" | "sessions" | "shutdown"; sessionId?: undefined }
     | {
-          name: "abort" | "events" | "messages" | "model" | "reset" | "session" | "stream";
+          name:
+              | "abort"
+              | "effort"
+              | "events"
+              | "messages"
+              | "model"
+              | "reset"
+              | "session"
+              | "stream";
           sessionId: string;
       }
     | undefined {
     if (pathname === "/health") return { name: "health" };
+    if (pathname === "/models") return { name: "models" };
     if (pathname === "/sessions") return { name: "sessions" };
     if (pathname === "/shutdown") return { name: "shutdown" };
 
@@ -182,6 +279,7 @@ function matchRoute(pathname: string):
     if (parts.length !== 3) return undefined;
 
     if (parts[2] === "abort") return { name: "abort", sessionId };
+    if (parts[2] === "effort") return { name: "effort", sessionId };
     if (parts[2] === "events") return { name: "events", sessionId };
     if (parts[2] === "messages") return { name: "messages", sessionId };
     if (parts[2] === "model") return { name: "model", sessionId };

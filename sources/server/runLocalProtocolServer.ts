@@ -1,6 +1,7 @@
 import { chmod, open } from "node:fs/promises";
 
 import { createProtocolHttpServer } from "./createProtocolHttpServer.js";
+import { createModelCatalog } from "./createModelCatalog.js";
 import { getLocalServerPaths } from "./LocalServerPaths.js";
 import { prepareLocalServerDirectory } from "./prepareLocalServerDirectory.js";
 import { PersistentSessionStore } from "./PersistentSessionStore.js";
@@ -22,9 +23,11 @@ export async function runLocalProtocolServer(
     const token = await readLocalServerToken(tokenPath);
     await removeStaleSocket(socketPath);
 
-    const store = new PersistentSessionStore({ databasePath: paths.databasePath });
+    const modelCatalog = createModelCatalog({ cwd: process.cwd() });
+    const store = new PersistentSessionStore({ databasePath: paths.databasePath, modelCatalog });
     let stopServer: (() => void) | undefined;
     const server = createProtocolHttpServer({
+        modelCatalog,
         onShutdown: () => stopServer?.(),
         store,
         token,

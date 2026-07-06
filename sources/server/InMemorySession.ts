@@ -9,9 +9,11 @@ import {
     type CreateCodingAssistantAgentOptions,
 } from "../app/createCodingAssistantAgent.js";
 import type {
+    ChangeEffortRequest,
     ChangeModelRequest,
     CreateSessionRequest,
     EventId,
+    ModelCatalog,
     ProtocolSession,
     SessionEvent,
     SessionInterruption,
@@ -23,6 +25,7 @@ import type {
 } from "../protocol/index.js";
 import type { Model, StopReason } from "../providers/types.js";
 import { generateSessionTitle } from "./generateSessionTitle.js";
+import { getProviderIdForModel } from "./getProviderIdForModel.js";
 import { SessionEventLog } from "./SessionEventLog.js";
 
 export interface PersistedSessionMessage {
@@ -73,6 +76,7 @@ export interface InMemorySessionOptions {
     emitCreatedEvent?: boolean;
     events?: readonly SessionEvent[];
     now?: () => number;
+    modelCatalog: ModelCatalog;
     onAppendEvent?: (event: SessionEvent) => void;
     persistence?: InMemorySessionPersistence;
     request: CreateSessionRequest;
@@ -104,6 +108,7 @@ export class InMemorySession {
     #interruption: SessionInterruption | undefined;
     #lastMessageAt: number | undefined;
     #messages: PersistedSessionMessage[] = [];
+    #modelCatalog: ModelCatalog;
     #modelId: string;
     #models: readonly Model[];
     #now: () => number;
@@ -123,15 +128,25 @@ export class InMemorySession {
     constructor(options: InMemorySessionOptions) {
         this.#createEventId = options.createEventId;
         this.#now = options.now ?? Date.now;
+        this.#modelCatalog = options.modelCatalog;
         this.#persistence = options.persistence;
         this.#request = { ...options.request };
         this.id = options.restore?.id ?? createId();
         this.#agentId = options.restore?.agentId ?? createId();
-        this.#providerId = options.restore?.providerId ?? "codex";
-        this.#modelId = options.restore?.modelId ?? options.request.modelId ?? "openai/gpt-5.5";
+        this.#modelId =
+            options.restore?.modelId ??
+            options.request.modelId ??
+            this.#modelCatalog.defaultModelId;
+        this.#providerId =
+            getProviderIdForModel(this.#modelCatalog, this.#modelId) ??
+            options.restore?.providerId ??
+            "codex";
         this.#effort = options.restore?.effort ?? options.request.effort;
         this.#instructions = options.restore?.instructions ?? options.request.instructions;
-        this.#models = options.restore?.models ?? [];
+        this.#models =
+            this.#modelCatalog.models.length > 0
+                ? this.#modelCatalog.models
+                : (options.restore?.models ?? []);
         this.#status = options.restore?.status ?? "idle";
         this.#lastMessageAt = options.restore?.lastMessageAt;
         this.#restoredActiveRunId = options.restore?.activeRunId;
@@ -155,7 +170,10 @@ export class InMemorySession {
         this.events = new SessionEventLog(eventLogOptions);
 
         if (options.restore === undefined) {
-            this.#ensureRuntime();
+            this.#ensureKnownModel(this.#modelId);
+            if (this.#effort === undefined) {
+                this.#effort = this.#selectedModel().defaultThinkingLevel;
+            }
             this.#saveSession();
             if (options.emitCreatedEvent !== false) {
                 this.emitCreatedEvent();
@@ -188,18 +206,52 @@ export class InMemorySession {
     }
 
     changeModel(request: ChangeModelRequest): ProtocolSession {
-        const runtime = this.#ensureRuntime();
-        runtime.agent.setModel(request.modelId, request.effort);
-        const snapshot = runtime.agent.snapshot();
-        this.#modelId = snapshot.modelId;
-        this.#effort = snapshot.effort;
-        this.#models = runtime.provider.models;
-        this.#providerId = runtime.provider.id;
-        this.#tools = snapshot.tools;
+        if (this.#modelLocked() && request.modelId !== this.#modelId) {
+            throw new Error("Model cannot be changed after the first message in a session.");
+        }
+
+        const model = this.#ensureKnownModel(request.modelId);
+        const providerId = getProviderIdForModel(this.#modelCatalog, model.id);
+        if (providerId === undefined) {
+            throw new Error(`Unknown provider for model '${model.id}'.`);
+        }
+
+        if (request.modelId === this.#modelId) {
+            return this.changeEffort(
+                request.effort !== undefined ? { effort: request.effort } : {},
+            );
+        }
+
+        if (this.#runtime !== undefined) {
+            throw new Error("Model cannot be changed after the session runtime has started.");
+        }
+
+        this.#modelId = model.id;
+        this.#providerId = providerId;
+        this.#effort = request.effort ?? model.defaultThinkingLevel;
+        this.#models = this.#modelCatalog.models;
         this.#interruption = undefined;
         this.#append("model_changed", {
-            ...(request.effort !== undefined ? { effort: request.effort } : {}),
-            modelId: request.modelId,
+            ...(this.#effort !== undefined ? { effort: this.#effort } : {}),
+            modelId: this.#modelId,
+            snapshot: this.#agentSnapshot(),
+        });
+        return this.snapshot();
+    }
+
+    changeEffort(request: ChangeEffortRequest): ProtocolSession {
+        const model = this.#selectedModel();
+        const effort = request.effort ?? model.defaultThinkingLevel;
+        if (!model.thinkingLevels.includes(effort)) {
+            throw new Error(`Model '${model.id}' does not support '${effort}' reasoning.`);
+        }
+
+        this.#effort = effort;
+        this.#runtime?.agent.setEffort(effort);
+        this.#interruption = undefined;
+        this.#append("effort_changed", {
+            effort,
+            modelId: this.#modelId,
             snapshot: this.#agentSnapshot(),
         });
         return this.snapshot();
@@ -262,6 +314,7 @@ export class InMemorySession {
             cwd: this.#request.cwd,
             providerId: this.#providerId,
             modelId: this.#modelId,
+            modelLocked: this.#modelLocked(),
             models: this.#models,
             status: this.#status,
             snapshot,
@@ -280,6 +333,7 @@ export class InMemorySession {
             cwd: this.#request.cwd,
             providerId: this.#providerId,
             modelId: this.#modelId,
+            ...(this.#effort !== undefined ? { effort: this.#effort } : {}),
             status: this.#status,
             titleStatus: this.#titleStatus,
             createdAt: this.events.firstCreatedAt() ?? this.#now(),
@@ -452,6 +506,14 @@ export class InMemorySession {
             .map((message) => message.message);
     }
 
+    #ensureKnownModel(modelId: string): Model {
+        const model = this.#modelCatalog.models.find((candidate) => candidate.id === modelId);
+        if (model === undefined) {
+            throw new Error(`Unknown model '${modelId}'.`);
+        }
+        return model;
+    }
+
     #ensureRuntime(): CodingAssistantRuntime {
         if (this.#runtime !== undefined) {
             return this.#runtime;
@@ -474,7 +536,7 @@ export class InMemorySession {
         this.#modelId = snapshot.modelId;
         this.#effort = snapshot.effort;
         this.#instructions = snapshot.instructions;
-        this.#models = runtime.provider.models;
+        this.#models = this.#modelCatalog.models;
         this.#tools = snapshot.tools;
         this.#saveSession();
         return runtime;
@@ -498,6 +560,14 @@ export class InMemorySession {
 
     #saveSession(): void {
         this.#persistence?.saveSession(this.state());
+    }
+
+    #modelLocked(): boolean {
+        return this.#messages.some((message) => !message.isPartial);
+    }
+
+    #selectedModel(): Model {
+        return this.#ensureKnownModel(this.#modelId);
     }
 
     #startTitleGeneration(firstMessage: string): void {

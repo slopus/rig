@@ -2,10 +2,13 @@ import { request as httpRequest } from "node:http";
 
 import type {
     AbortRunResponse,
+    ChangeEffortRequest,
     ChangeModelRequest,
     CreateSessionRequest,
     CreateSessionResponse,
     EventId,
+    HealthResponse,
+    ListModelsResponse,
     ListSessionsResponse,
     ProtocolSession,
     SessionEvent,
@@ -50,12 +53,27 @@ export class ProtocolHttpClient {
         );
     }
 
+    changeEffort(
+        sessionId: string,
+        request: ChangeEffortRequest,
+    ): Promise<{ session: ProtocolSession }> {
+        return this.#requestJson(
+            "PATCH",
+            `/sessions/${encodeURIComponent(sessionId)}/effort`,
+            request,
+        );
+    }
+
     createSession(request: CreateSessionRequest): Promise<CreateSessionResponse> {
         return this.#requestJson("POST", "/sessions", request);
     }
 
-    health(): Promise<{ healthy: boolean }> {
+    health(): Promise<HealthResponse> {
         return this.#requestJson("GET", "/health");
+    }
+
+    models(): Promise<ListModelsResponse> {
+        return this.#requestJson("GET", "/models");
     }
 
     listSessions(limit?: number): Promise<ListSessionsResponse> {

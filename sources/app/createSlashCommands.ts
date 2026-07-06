@@ -13,6 +13,12 @@ export function createSlashCommands(): SlashCommandItem[] {
             aliases: [],
         },
         {
+            value: "effort",
+            label: "/effort",
+            description: "Change reasoning for this session.",
+            aliases: ["ford", "reasoning"],
+        },
+        {
             value: "configure",
             label: "/configure",
             description: "Configure app settings.",

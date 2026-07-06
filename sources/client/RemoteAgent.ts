@@ -18,10 +18,11 @@ export interface RemoteAgentOptions {
 export class RemoteAgent implements CodingAssistantAgentBackend {
     readonly context: AgentContext;
     readonly id: string;
-    readonly provider: Provider;
 
     #client: ProtocolHttpClient;
     #modelId: string;
+    #models: readonly Model[];
+    #providerId: string;
     #session: ProtocolSession;
 
     constructor(options: RemoteAgentOptions) {
@@ -30,9 +31,18 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         this.context = options.context;
         this.id = options.session.agentId;
         this.#modelId = options.session.modelId;
-        this.provider = defineProvider({
-            id: options.session.providerId,
-            models: options.session.models,
+        this.#models = options.session.models;
+        this.#providerId = options.session.providerId;
+    }
+
+    get canChangeModel(): boolean {
+        return !this.#session.modelLocked;
+    }
+
+    get provider(): Provider {
+        return defineProvider({
+            id: this.#providerId,
+            models: this.#models,
             stream() {
                 throw new Error("RemoteAgent does not expose provider streaming locally.");
             },
@@ -40,7 +50,7 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
     }
 
     get model(): Model {
-        const model = this.provider.models.find((candidate) => candidate.id === this.#modelId);
+        const model = this.#models.find((candidate) => candidate.id === this.#modelId);
         if (model === undefined) {
             throw new Error(`Unknown remote model '${this.#modelId}'.`);
         }
@@ -50,6 +60,7 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
     reset(): void {
         this.#session = {
             ...this.#session,
+            modelLocked: false,
             status: "idle",
             snapshot: {
                 ...this.#session.snapshot,
@@ -59,13 +70,15 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
             },
         };
         void this.#client.reset(this.#session.id).then((response) => {
-            this.#session = response.session;
-            this.#modelId = response.session.modelId;
+            this.#replaceSession(response.session);
         });
     }
 
     async send(text: string, options: AgentRunOptions = {}): Promise<AgentRunResult> {
-        const submitted = await this.#client.submitMessage(this.#session.id, { text });
+        const submitted = await this.#client.submitMessage(this.#session.id, {
+            ...(options.displayText !== undefined ? { displayText: options.displayText } : {}),
+            text,
+        });
         const streamController = new AbortController();
         let finished:
             | {
@@ -92,38 +105,15 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
                     return;
                 }
 
-                if (event.type === "agent_event") {
-                    await options.onEvent?.(event.data.event);
-                    return;
-                }
-
-                if (event.type === "agent_message") {
-                    this.#session = {
-                        ...this.#session,
-                        snapshot: {
-                            ...this.#session.snapshot,
-                            messages: [...this.#session.snapshot.messages, event.data.message],
-                        },
-                    };
-                    await options.onMessage?.(event.data.message);
-                    return;
-                }
+                this.applySessionEvent(event);
 
                 if (event.type === "run_error") {
-                    this.#session = {
-                        ...this.#session,
-                        status: "error",
-                    };
                     failure = new Error(event.data.errorMessage);
                     streamController.abort();
                     return;
                 }
 
                 if (event.type === "run_finished") {
-                    this.#session = {
-                        ...this.#session,
-                        status: event.data.stopReason === "aborted" ? "aborted" : "completed",
-                    };
                     finished = {
                         ...(event.data.agentRunId !== undefined
                             ? { agentRunId: event.data.agentRunId }
@@ -165,13 +155,18 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
                 ...(effort !== undefined ? { effort } : {}),
             },
         };
-        void this.#client.changeModel(this.#session.id, {
-            ...(effort !== undefined ? { effort } : {}),
-            modelId: this.#modelId,
+        const request = effort !== undefined ? { effort } : {};
+        void this.#client.changeEffort(this.#session.id, request).then((response) => {
+            this.#replaceSession(response.session);
         });
     }
 
     setModel(modelId: string, effort: string | undefined): void {
+        if (!this.canChangeModel && modelId !== this.#modelId) {
+            this.setEffort(effort);
+            return;
+        }
+
         this.#modelId = modelId;
         this.#session = {
             ...this.#session,
@@ -183,15 +178,126 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
                 modelId,
             },
         };
-        void this.#client.changeModel(this.#session.id, {
-            ...(effort !== undefined ? { effort } : {}),
-            modelId,
-        });
+        void this.#client
+            .changeModel(this.#session.id, {
+                ...(effort !== undefined ? { effort } : {}),
+                modelId,
+            })
+            .then((response) => {
+                this.#replaceSession(response.session);
+            });
     }
 
     snapshot(): AgentSnapshot {
         return this.#session.snapshot;
     }
+
+    applySessionEvent(event: SessionEvent): void {
+        if (event.sessionId !== this.#session.id) {
+            return;
+        }
+
+        if (event.type === "session_created") {
+            this.#replaceSession(event.data.session);
+            return;
+        }
+
+        if (event.type === "message_submitted") {
+            this.#session = {
+                ...this.#session,
+                modelLocked: true,
+                status: this.#session.status === "running" ? "running" : "queued",
+                snapshot: {
+                    ...this.#session.snapshot,
+                    messages: appendUniqueMessage(
+                        this.#session.snapshot.messages,
+                        event.data.message,
+                    ),
+                },
+            };
+            return;
+        }
+
+        if (event.type === "agent_message") {
+            this.#session = {
+                ...this.#session,
+                snapshot: {
+                    ...this.#session.snapshot,
+                    messages: appendUniqueMessage(
+                        this.#session.snapshot.messages,
+                        event.data.message,
+                    ),
+                },
+            };
+            return;
+        }
+
+        if (event.type === "run_started") {
+            this.#session = { ...this.#session, status: "running" };
+            return;
+        }
+
+        if (event.type === "run_error") {
+            this.#session = { ...this.#session, status: "error" };
+            return;
+        }
+
+        if (event.type === "run_finished") {
+            this.#session = {
+                ...this.#session,
+                status: event.data.stopReason === "aborted" ? "aborted" : "completed",
+            };
+            return;
+        }
+
+        if (event.type === "session_reset") {
+            this.#session = {
+                ...this.#session,
+                modelLocked: false,
+                snapshot: event.data.snapshot,
+                status: "idle",
+            };
+            return;
+        }
+
+        if (event.type === "model_changed" || event.type === "effort_changed") {
+            this.#modelId = event.data.modelId;
+            this.#providerId = providerIdFromModelId(event.data.modelId, this.#providerId);
+            this.#session = {
+                ...this.#session,
+                ...(event.data.effort !== undefined ? { effort: event.data.effort } : {}),
+                modelId: event.data.modelId,
+                snapshot: event.data.snapshot,
+            };
+        }
+    }
+
+    #replaceSession(session: ProtocolSession): void {
+        this.#session = session;
+        this.#modelId = session.modelId;
+        this.#models = session.models;
+        this.#providerId = session.providerId;
+    }
+}
+
+function providerIdFromModelId(modelId: string, fallback: string): string {
+    if (modelId.startsWith("anthropic/")) {
+        return "claude-sdk";
+    }
+    if (modelId.startsWith("openai/")) {
+        return "codex";
+    }
+    return fallback;
+}
+
+function appendUniqueMessage(
+    messages: AgentSnapshot["messages"],
+    message: AgentSnapshot["messages"][number],
+): AgentSnapshot["messages"] {
+    if (messages.some((candidate) => candidate.id === message.id)) {
+        return messages;
+    }
+    return [...messages, message];
 }
 
 function isRunEvent(event: SessionEvent, runId: string): boolean {

@@ -5,7 +5,7 @@ import { runAgentLoop, type AgentLoopEvent, type AgentLoopResult } from "./loop.
 import { printAgentMessageToConsole, type AgentConsole } from "./printAgentMessageToConsole.js";
 import { selectToolsForModel } from "./selectToolsForModel.js";
 import type { AnyDefinedTool, ContentBlock, Message, SystemMessage, UserMessage } from "./types.js";
-import type { AssistantMessageEvent, Model, Provider, StopReason } from "../providers/types.js";
+import type { Model, Provider } from "../providers/types.js";
 
 export type AgentStatus = "idle" | "running" | "aborted";
 
@@ -45,6 +45,7 @@ export interface AgentOptions {
 }
 
 export interface AgentRunOptions {
+    displayText?: string;
     signal?: AbortSignal;
     onEvent?: (event: AgentLoopEvent) => void | Promise<void>;
     onMessage?: (message: Message) => void | Promise<void>;
@@ -118,6 +119,14 @@ export class Agent {
 
     get tools(): readonly AnyDefinedTool[] {
         return this.#tools;
+    }
+
+    get canChangeModel(): boolean {
+        return (
+            this.#messages.length === 0 &&
+            this.#queue.length === 0 &&
+            this.#activeRunId === undefined
+        );
     }
 
     setInstructions(instructions: string | undefined): void {

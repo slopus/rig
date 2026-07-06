@@ -33,7 +33,6 @@ import { createSlashCommands, type SlashCommandItem } from "./createSlashCommand
 import { describeModelChoice } from "./describeModelChoice.js";
 import { describeReasoningLevel } from "./describeReasoningLevel.js";
 import { formatActivityElapsedTime } from "./formatActivityElapsedTime.js";
-import { humanizeProviderId } from "./humanizeProviderId.js";
 import { humanizeReasoningLevel } from "./humanizeReasoningLevel.js";
 import { ACTIVITY_WAVE_FRAME_COUNT, renderActivityWave } from "./renderActivityWave.js";
 import { renderAgentMarkdown } from "./renderAgentMarkdown.js";
@@ -85,7 +84,9 @@ export interface CodingAssistantAppOptions {
     agent: CodingAssistantAgentBackend;
     cwd: string;
     initialSessionEvents?: readonly SessionEvent[];
+    modelLocked?: boolean;
     processManager: NativeProxessManager;
+    sessionBacked?: boolean;
     tui: TUI;
     idFactory?: () => string;
     onDefaultModelChange?: (preference: DefaultModelPreference) => void | Promise<void>;
@@ -103,6 +104,11 @@ export interface DefaultModelPreference {
 
 export interface AppSettings {
     showReasoning: boolean;
+}
+
+interface PendingPrompt {
+    displayText: string;
+    text: string;
 }
 
 export class CodingAssistantApp implements Component, Focusable {
@@ -135,11 +141,13 @@ export class CodingAssistantApp implements Component, Focusable {
     #exiting = false;
     #exitResolve: (() => void) | undefined;
     #focused = false;
-    #pendingPrompts: string[] = [];
+    #pendingPrompts: PendingPrompt[] = [];
     #selectionPanel: Component | undefined;
     #dismissedSlashCommandText: string | undefined;
     #activeSubmission: Promise<void> | undefined;
     #showReasoning: boolean;
+    #sessionBacked: boolean;
+    #modelLocked: boolean;
     #slashCommandSelectionIndex = 0;
     readonly #slashCommands = createSlashCommands();
     #skillCommands: SlashCommandItem[] = [];
@@ -164,7 +172,9 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#onSettingsChange = options.onSettingsChange;
         this.#onExit = options.onExit;
         this.#processManager = options.processManager;
+        this.#sessionBacked = options.sessionBacked ?? false;
         this.#showReasoning = options.showReasoning ?? false;
+        this.#modelLocked = options.modelLocked ?? !options.agent.canChangeModel;
         this.#tui = options.tui;
         this.#version = options.version ?? "0.0.0";
         this.#editor = new Editor(this.#tui, EDITOR_THEME, { paddingX: 0 });
@@ -199,11 +209,13 @@ export class CodingAssistantApp implements Component, Focusable {
         }
     }
 
-    start(): void {
+    start(options: { tuiAlreadyStarted?: boolean } = {}): void {
         this.#tui.addChild(this);
         this.focused = true;
         this.#tui.setFocus(this);
-        this.#tui.start();
+        if (options.tuiAlreadyStarted !== true) {
+            this.#tui.start();
+        }
         this.#requestRender();
     }
 
@@ -239,6 +251,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
     applySessionEvent(event: SessionEvent): void {
         if (event.type === "message_submitted") {
+            this.#modelLocked = true;
             this.#appendEntry({ role: "user", text: event.data.displayText });
             return;
         }
@@ -284,6 +297,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
         if (event.type === "session_reset") {
             this.#entries = [];
+            this.#modelLocked = false;
             this.#seenToolCallIds.clear();
             this.#streamEntryId = undefined;
             this.#thinkingEntryIdsByContentIndex.clear();
@@ -296,6 +310,24 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         if (event.type === "session_title_changed") {
+            return;
+        }
+
+        if (event.type === "model_changed") {
+            this.#appendEntry({
+                role: "event",
+                title: "model",
+                text: `Model changed to ${this.#modelDisplayName()}.`,
+            });
+            return;
+        }
+
+        if (event.type === "effort_changed") {
+            this.#appendEntry({
+                role: "event",
+                title: "reasoning",
+                text: `Reasoning changed to ${humanizeReasoningLevel(event.data.effort ?? "off")}.`,
+            });
             return;
         }
     }
@@ -436,8 +468,11 @@ export class CodingAssistantApp implements Component, Focusable {
             return;
         }
 
-        this.#appendEntry({ role: "user", text: prompt });
-        if (this.#running) {
+        this.#modelLocked = true;
+        if (!this.#sessionBacked) {
+            this.#appendEntry({ role: "user", text: prompt });
+        }
+        if (this.#running && !this.#sessionBacked) {
             this.#appendEntry({
                 role: "event",
                 title: "queue",
@@ -445,7 +480,7 @@ export class CodingAssistantApp implements Component, Focusable {
             });
         }
 
-        this.#pendingPrompts.push(prompt);
+        this.#pendingPrompts.push({ displayText: prompt, text: prompt });
         this.#startDrainQueue();
         this.#requestRender();
     }
@@ -491,8 +526,11 @@ export class CodingAssistantApp implements Component, Focusable {
             parsed[2] ?? "",
         );
 
-        this.#appendEntry({ role: "user", text: prompt });
-        if (this.#running) {
+        this.#modelLocked = true;
+        if (!this.#sessionBacked) {
+            this.#appendEntry({ role: "user", text: prompt });
+        }
+        if (this.#running && !this.#sessionBacked) {
             this.#appendEntry({
                 role: "event",
                 title: "queue",
@@ -500,13 +538,18 @@ export class CodingAssistantApp implements Component, Focusable {
             });
         }
 
-        this.#pendingPrompts.push(expandedPrompt);
+        this.#pendingPrompts.push({ displayText: prompt, text: expandedPrompt });
         this.#startDrainQueue();
     }
 
     #handleCommand(prompt: string): boolean {
         if (prompt === "/model") {
             this.#openModelMenu();
+            return true;
+        }
+
+        if (prompt === "/effort" || prompt === "/ford") {
+            this.#openReasoningMenu(this.#agent.model.id);
             return true;
         }
 
@@ -553,6 +596,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#runToken += 1;
         this.#pendingPrompts = [];
         this.#entries = [];
+        this.#modelLocked = false;
         this.#seenToolCallIds.clear();
         this.#streamEntryId = undefined;
         this.#thinkingEntryIdsByContentIndex.clear();
@@ -588,7 +632,7 @@ export class CodingAssistantApp implements Component, Focusable {
         }
     }
 
-    async #runPrompt(prompt: string): Promise<void> {
+    async #runPrompt(prompt: PendingPrompt): Promise<void> {
         const controller = new AbortController();
         const runToken = ++this.#runToken;
         this.#abortController = controller;
@@ -608,10 +652,15 @@ export class CodingAssistantApp implements Component, Focusable {
                 return;
             }
 
-            const result = await this.#agent.send(prompt, {
+            const result = await this.#agent.send(prompt.text, {
+                displayText: prompt.displayText,
                 signal: controller.signal,
-                onEvent: (event) => this.#handleAgentEvent(event, runToken),
-                onMessage: (message) => this.#handleAgentMessage(message, runToken),
+                ...(this.#sessionBacked
+                    ? {}
+                    : {
+                          onEvent: (event) => this.#handleAgentEvent(event, runToken),
+                          onMessage: (message) => this.#handleAgentMessage(message, runToken),
+                      }),
             });
             if (!this.#isCurrentRun(runToken)) {
                 return;
@@ -969,13 +1018,11 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #renderHeader(width: number): string[] {
-        const model = this.#modelDisplayName();
-        const provider = humanizeProviderId(this.#agent.provider.id);
         return [
             ...this.#renderStartupBox(width, [
                 `${OH_MY_PI_ORANGE}>_${RESET} ${BOLD}Oh My Pi${NOT_BOLD_OR_DIM} ${this.#version}`,
-                `Model: ${model}`,
-                `Provider: ${provider}`,
+                "Agentic coding CLI for local project work.",
+                "Keeps sessions in a private local daemon.",
                 `Directory: ${this.#directoryName()}`,
             ]),
             "",
@@ -1108,18 +1155,32 @@ export class CodingAssistantApp implements Component, Focusable {
         const selectedModelId = this.#agent.model.id;
         const panel = createSelectionPanel({
             title: "Choose Model",
-            subtitle: "Enter selects, Esc cancels",
+            subtitle: this.#modelLocked
+                ? "Model is locked for this session"
+                : "Enter selects, Esc cancels",
             selectedValue: selectedModelId,
             items: this.#agent.provider.models.map((model) => ({
                 value: model.id,
                 label: model.name,
                 description: describeModelChoice(
                     model,
-                    this.#agent.provider.id,
+                    this.#providerIdForModel(model.id),
                     model.id === selectedModelId,
+                    { locked: this.#modelLocked && model.id !== selectedModelId },
                 ),
             })),
             onSelect: (item) => {
+                if (this.#modelLocked && item.value !== selectedModelId) {
+                    this.#appendEntry({
+                        role: "event",
+                        title: "model",
+                        text: "Model cannot be changed after the first message. Use /effort to change reasoning.",
+                    });
+                    this.#closeSelectionPanel();
+                    this.#requestRender();
+                    return;
+                }
+
                 this.#closeSelectionPanel();
                 this.#openReasoningMenu(item.value);
             },
@@ -1155,13 +1216,26 @@ export class CodingAssistantApp implements Component, Focusable {
                 }),
             })),
             onSelect: (item) => {
-                this.#agent.setModel(model.id, item.value);
-                this.#persistDefaultModel(model.id, item.value);
-                this.#appendEntry({
-                    role: "event",
-                    title: "model",
-                    text: `Model changed to ${model.name} with ${humanizeReasoningLevel(item.value)} reasoning.`,
-                });
+                if (this.#modelLocked || model.id === this.#agent.model.id) {
+                    this.#agent.setEffort(item.value);
+                    if (!this.#sessionBacked) {
+                        this.#appendEntry({
+                            role: "event",
+                            title: "reasoning",
+                            text: `Reasoning changed to ${humanizeReasoningLevel(item.value)}.`,
+                        });
+                    }
+                } else {
+                    this.#agent.setModel(model.id, item.value);
+                    this.#persistDefaultModel(model.id, item.value);
+                    if (!this.#sessionBacked) {
+                        this.#appendEntry({
+                            role: "event",
+                            title: "model",
+                            text: `Model changed to ${model.name} with ${humanizeReasoningLevel(item.value)} reasoning.`,
+                        });
+                    }
+                }
                 this.#closeSelectionPanel();
                 this.#requestRender();
             },
@@ -1568,7 +1642,9 @@ export class CodingAssistantApp implements Component, Focusable {
         const nextEffort = this.#nextReasoningEffort(direction);
         if (nextEffort !== undefined) {
             this.#agent.setEffort(nextEffort);
-            this.#persistDefaultModel(this.#agent.model.id, nextEffort);
+            if (!this.#modelLocked) {
+                this.#persistDefaultModel(this.#agent.model.id, nextEffort);
+            }
         }
 
         return true;
@@ -1626,6 +1702,16 @@ export class CodingAssistantApp implements Component, Focusable {
             });
             this.#requestRender();
         });
+    }
+
+    #providerIdForModel(modelId: string): string {
+        if (modelId.startsWith("anthropic/")) {
+            return "claude-sdk";
+        }
+        if (modelId.startsWith("openai/")) {
+            return "codex";
+        }
+        return this.#agent.provider.id;
     }
 
     #handleModelMenuShortcut(data: string): boolean {

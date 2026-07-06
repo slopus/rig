@@ -49,8 +49,10 @@ describe("CodingAssistantApp", () => {
         const rendered = stripAnsi(raw);
         const renderedLines = rendered.split("\n");
         expect(rendered).toContain(">_ Oh My Pi 1.2.3");
-        expect(rendered).toContain("Model: GPT Test");
-        expect(rendered).toContain("Provider: Codex");
+        expect(rendered).toContain("Agentic coding CLI for local project work.");
+        expect(rendered).toContain("Keeps sessions in a private local daemon.");
+        expect(rendered).not.toContain("Model: GPT Test");
+        expect(rendered).not.toContain("Provider: Codex");
         expect(rendered).toContain("Directory:");
         expect(rendered).toContain("Ask Oh My Pi to do anything");
         expect(renderedLines[0]?.length).toBeLessThan(80);
@@ -188,7 +190,7 @@ describe("CodingAssistantApp", () => {
         });
 
         const rendered = stripAnsi(app.render(80).join("\n"));
-        expect(rendered).toContain("Model: GPT-5.5");
+        expect(rendered).not.toContain("Model: GPT-5.5");
         expect(rendered).toContain("GPT-5.5 Off • /workspace");
         expect(rendered).not.toContain("gpt-5-5");
         expect(rendered).not.toContain("reasoning off");
@@ -327,6 +329,102 @@ describe("CodingAssistantApp", () => {
         expect(rendered).toContain("Ask Oh My Pi to do anything");
     });
 
+    it("keeps model choices visible but locked after a session starts", () => {
+        const smallModel = defineModel({
+            id: "openai/gpt-small",
+            name: "GPT Small",
+            thinkingLevels: ["low", "high"],
+            defaultThinkingLevel: "low",
+        });
+        const proModel = defineModel({
+            id: "openai/gpt-pro",
+            name: "GPT Pro",
+            thinkingLevels: ["low", "high"],
+            defaultThinkingLevel: "low",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [smallModel, proModel],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: smallModel.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            modelLocked: true,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        submit(app, "/model");
+
+        const modelMenu = stripAnsi(app.render(100).join("\n"));
+        expect(modelMenu).toContain("Choose Model");
+        expect(modelMenu).toContain("Model is locked for this session");
+        expect(modelMenu).toContain("GPT Small");
+        expect(modelMenu).toContain("GPT Pro");
+        expect(modelMenu).toContain("Locked for this session");
+
+        app.handleInput("\x1b[B");
+        app.handleInput("\r");
+
+        const rendered = stripAnsi(app.render(100).join("\n"));
+        expect(agent.model.id).toBe(smallModel.id);
+        expect(rendered).toContain("Model cannot be changed after the first message.");
+    });
+
+    it("changes only reasoning from the effort command", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["low", "high"],
+            defaultThinkingLevel: "low",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            modelLocked: true,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        submit(app, "/ford");
+
+        const effortMenu = stripAnsi(app.render(100).join("\n"));
+        expect(effortMenu).toContain("Choose Reasoning");
+        expect(effortMenu).toContain("GPT Test");
+
+        app.handleInput("\x1b[B");
+        app.handleInput("\r");
+
+        const rendered = stripAnsi(app.render(100).join("\n"));
+        expect(agent.model.id).toBe(model.id);
+        expect(agent.snapshot().effort).toBe("high");
+        expect(rendered).toContain("Reasoning changed to High.");
+    });
+
     it("opens the model menu with Alt+M", () => {
         const model = defineModel({
             id: "openai/gpt-test",
@@ -404,6 +502,8 @@ describe("CodingAssistantApp", () => {
         expect(commandLine).not.toContain("\x1b[1m");
         expect(rendered).toContain("/model");
         expect(rendered).toContain("Choose the model and reasoning level.");
+        expect(rendered).toContain("/effort");
+        expect(rendered).toContain("Change reasoning for this session.");
         expect(rendered).toContain("/configure");
         expect(rendered).toContain("Configure app settings.");
         expect(rendered).toContain("/new");
@@ -412,8 +512,6 @@ describe("CodingAssistantApp", () => {
         expect(rendered).toContain("Close Oh My Pi.");
         expect(rendered).toContain("/clear");
         expect(rendered).toContain("Clear the visible conversation.");
-        expect(rendered).toContain("/abort");
-        expect(rendered).toContain("Stop the current response.");
         expect(rendered).not.toContain("GPT Test Off •");
         expect(rendered).not.toContain("/quit");
 

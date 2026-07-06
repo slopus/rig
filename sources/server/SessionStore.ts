@@ -1,4 +1,5 @@
 import type {
+    ChangeEffortRequest,
     ChangeModelRequest,
     CreateSessionRequest,
     SessionSummary,
@@ -6,6 +7,7 @@ import type {
 import type { InMemorySession } from "./InMemorySession.js";
 
 export interface SessionStore {
+    changeEffort(sessionId: string, request: ChangeEffortRequest): InMemorySession | undefined;
     changeModel(sessionId: string, request: ChangeModelRequest): InMemorySession | undefined;
     create(request: CreateSessionRequest): InMemorySession;
     get(sessionId: string): InMemorySession | undefined;

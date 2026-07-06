@@ -17,7 +17,13 @@ export interface LocalProtocolServerConnection {
     token: string;
 }
 
-export async function ensureLocalProtocolServer(): Promise<LocalProtocolServerConnection> {
+export interface EnsureLocalProtocolServerOptions {
+    onStatus?: (message: string) => void;
+}
+
+export async function ensureLocalProtocolServer(
+    options: EnsureLocalProtocolServerOptions = {},
+): Promise<LocalProtocolServerConnection> {
     const paths = getEnvironmentLocalServerPaths();
     await prepareLocalServerDirectory(paths.directory);
     const existingToken = await readTokenIfPresent(paths.tokenPath);
@@ -26,16 +32,23 @@ export async function ensureLocalProtocolServer(): Promise<LocalProtocolServerCo
             socketPath: paths.socketPath,
             token: existingToken,
         });
-        if (await isHealthy(client)) {
+        const health = await readHealth(client);
+        if (health?.ready === true) {
+            await waitForReady(client, options);
             return { client, paths, token: existingToken };
+        }
+        if (health?.healthy === true) {
+            options.onStatus?.("Restarting local daemon.");
+            await stopIncompatibleDaemon(client);
         }
     }
 
+    options.onStatus?.("Starting local daemon.");
     await removeStaleSocket(paths.socketPath);
     const token = await writeLocalServerToken(paths.tokenPath);
     await spawnLocalServer(paths);
     const client = new ProtocolHttpClient({ socketPath: paths.socketPath, token });
-    await waitForHealth(client);
+    await waitForReady(client, options);
     return { client, paths, token };
 }
 
@@ -56,12 +69,22 @@ export async function readTokenIfPresent(tokenPath: string): Promise<string | un
     }
 }
 
-async function isHealthy(client: ProtocolHttpClient): Promise<boolean> {
+async function readHealth(
+    client: ProtocolHttpClient,
+): Promise<Awaited<ReturnType<ProtocolHttpClient["health"]>> | undefined> {
     try {
-        const response = await client.health();
-        return response.healthy;
+        return await client.health();
     } catch {
-        return false;
+        return undefined;
+    }
+}
+
+async function stopIncompatibleDaemon(client: ProtocolHttpClient): Promise<void> {
+    try {
+        await client.shutdown();
+        await delay(100);
+    } catch {
+        // The follow-up stale socket cleanup handles older servers that cannot shut down cleanly.
     }
 }
 
@@ -88,11 +111,24 @@ async function spawnLocalServer(paths: LocalServerPaths): Promise<void> {
     }
 }
 
-async function waitForHealth(client: ProtocolHttpClient): Promise<void> {
+async function waitForReady(
+    client: ProtocolHttpClient,
+    options: EnsureLocalProtocolServerOptions,
+): Promise<void> {
     const deadline = Date.now() + 5_000;
+    let reportedInitializing = false;
     while (Date.now() < deadline) {
-        if (await isHealthy(client)) {
-            return;
+        try {
+            const health = await client.health();
+            if (health.ready) {
+                return;
+            }
+            if (!reportedInitializing) {
+                options.onStatus?.("Waiting for daemon initialization.");
+                reportedInitializing = true;
+            }
+        } catch {
+            // The socket may not be accepting connections yet.
         }
         await delay(50);
     }

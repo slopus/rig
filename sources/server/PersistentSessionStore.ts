@@ -4,8 +4,10 @@ import { DatabaseSync } from "node:sqlite";
 
 import { createEventIdFactory } from "../protocol/index.js";
 import type {
+    ChangeEffortRequest,
     ChangeModelRequest,
     CreateSessionRequest,
+    ModelCatalog,
     SessionEvent,
     SessionInterruption,
     SessionSummary,
@@ -20,20 +22,24 @@ import {
     type PersistedSessionMessage,
     type PersistedSessionState,
 } from "./InMemorySession.js";
+import { createModelCatalog } from "./createModelCatalog.js";
 import type { SessionStore } from "./SessionStore.js";
 
 export interface PersistentSessionStoreOptions {
     databasePath: string;
+    modelCatalog?: ModelCatalog;
     now?: () => number;
 }
 
 export class PersistentSessionStore implements SessionStore, InMemorySessionPersistence {
     #createEventId = createEventIdFactory();
     #database: DatabaseSync;
+    #modelCatalog: ModelCatalog;
     #now: () => number;
     #sessions = new Map<string, InMemorySession>();
 
     constructor(options: PersistentSessionStoreOptions) {
+        this.#modelCatalog = options.modelCatalog ?? createModelCatalog();
         this.#now = options.now ?? Date.now;
         if (options.databasePath !== ":memory:") {
             mkdirSync(dirname(options.databasePath), { mode: 0o700, recursive: true });
@@ -60,6 +66,16 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         return session;
     }
 
+    changeEffort(sessionId: string, request: ChangeEffortRequest): InMemorySession | undefined {
+        const session = this.get(sessionId);
+        if (session === undefined) {
+            return undefined;
+        }
+
+        session.changeEffort(request);
+        return session;
+    }
+
     clearMessages(sessionId: string): void {
         this.#database.prepare("DELETE FROM session_messages WHERE session_id = ?").run(sessionId);
     }
@@ -72,6 +88,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         const session = new InMemorySession({
             createEventId: this.#createEventId,
             emitCreatedEvent: false,
+            modelCatalog: this.#modelCatalog,
             onAppendEvent: (event) => this.#appendEvent(event),
             persistence: this,
             request,
@@ -138,6 +155,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     cwd,
                     provider_id,
                     model_id,
+                    effort,
                     status,
                     title,
                     title_status,
@@ -157,6 +175,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             .all(options.limit ?? 500);
 
         return rows.map((row) => {
+            const effort = readOptionalString(row, "effort");
             const title = readOptionalString(row, "title");
             const titleError = readOptionalString(row, "title_error");
             const lastMessageAt = readOptionalNumber(row, "last_message_at_ms");
@@ -166,6 +185,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 cwd: readString(row, "cwd"),
                 providerId: readString(row, "provider_id"),
                 modelId: readString(row, "model_id"),
+                ...(effort !== undefined ? { effort } : {}),
                 status: readString(row, "status") as SessionSummary["status"],
                 titleStatus: readString(row, "title_status") as SessionTitleStatus,
                 createdAt: readNumber(row, "created_at_ms"),
@@ -547,6 +567,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         return new InMemorySession({
             createEventId: this.#createEventId,
             events: this.#loadEvents(sessionId),
+            modelCatalog: this.#modelCatalog,
             onAppendEvent: (event) => this.#appendEvent(event),
             persistence: this,
             request,

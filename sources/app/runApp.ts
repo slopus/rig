@@ -9,6 +9,7 @@ import { CodingAssistantApp } from "./CodingAssistantApp.js";
 import { type CreateCodingAssistantAgentOptions } from "./createCodingAssistantAgent.js";
 import { createStopOnceHandler } from "./createStopOnceHandler.js";
 import { readPackageVersion } from "./readPackageVersion.js";
+import { StartupStatusApp } from "./StartupStatusApp.js";
 
 export interface RunAppOptions {
     apiKey?: string;
@@ -39,15 +40,40 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     if (options.modelId !== undefined) agentOptions.modelId = options.modelId;
     let showReasoning = options.showReasoning ?? loadedConfig.config.settings.showReasoning;
 
-    const localServer = await ensureLocalProtocolServer();
-    const session =
-        options.resumeSessionId === undefined
-            ? await localServer.client.createSession(agentOptions)
-            : await localServer.client.getSession(options.resumeSessionId);
-    const history =
-        options.resumeSessionId === undefined
-            ? { events: [] as SessionEvent[] }
-            : await localServer.client.getEvents(session.session.id);
+    // Keep the terminal in TUI mode while the daemon starts so startup work is visible.
+    const tui = new TUI(new ProcessTerminal(), false);
+    const startup = new StartupStatusApp({
+        cwd,
+        tui,
+        version: readPackageVersion(),
+    });
+    startup.start();
+
+    const { history, localServer, session } = await (async () => {
+        try {
+            const connection = await ensureLocalProtocolServer({
+                onStatus: (message) => {
+                    startup.setStatus(message);
+                },
+            });
+            startup.setStatus("Opening session.");
+            const openedSession =
+                options.resumeSessionId === undefined
+                    ? await connection.client.createSession(agentOptions)
+                    : await connection.client.getSession(options.resumeSessionId);
+            startup.setStatus("Loading transcript.");
+            const loadedHistory =
+                options.resumeSessionId === undefined
+                    ? { events: [] as SessionEvent[] }
+                    : await connection.client.getEvents(openedSession.session.id);
+
+            return { history: loadedHistory, localServer: connection, session: openedSession };
+        } catch (error) {
+            startup.stop();
+            tui.stop();
+            throw error;
+        }
+    })();
     const processManager = new NativeProxessManager();
     const sessionCwd = session.session.cwd;
     const context = createNodeAgentContext({ cwd: sessionCwd, processManager });
@@ -57,13 +83,11 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         session: session.session,
     });
     const resumeCommand = `ohmypi resume ${session.session.id}`;
-    // The app renders a softened fake cursor; keep the terminal cursor hidden
-    // so the two blink loops do not compete.
-    const tui = new TUI(new ProcessTerminal(), false);
     const app = new CodingAssistantApp({
         agent,
         cwd: sessionCwd,
         initialSessionEvents: history.events,
+        modelLocked: session.session.modelLocked,
         onDefaultModelChange: (preference) =>
             writeRuntimeConfig(loadedConfig.paths.runtime, {
                 defaults: {
@@ -85,28 +109,23 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
             });
         },
         processManager,
+        sessionBacked: true,
         showReasoning,
         tui,
         version: readPackageVersion(),
     });
+    startup.stop();
     const followController = new AbortController();
-    if (
-        options.resumeSessionId !== undefined &&
-        (session.session.status === "queued" || session.session.status === "running")
-    ) {
-        const lastHistoryEventId = history.events.at(-1)?.id;
-        void localServer.client.watchSessionEvents({
-            ...(lastHistoryEventId !== undefined ? { after: lastHistoryEventId } : {}),
-            onEvent: (event) => {
-                app.applySessionEvent(event);
-                if (event.type === "run_finished" || event.type === "run_error") {
-                    followController.abort();
-                }
-            },
-            sessionId: session.session.id,
-            signal: followController.signal,
-        });
-    }
+    const lastHistoryEventId = history.events.at(-1)?.id ?? session.session.lastEventId;
+    void localServer.client.watchSessionEvents({
+        ...(lastHistoryEventId !== undefined ? { after: lastHistoryEventId } : {}),
+        onEvent: (event) => {
+            agent.applySessionEvent(event);
+            app.applySessionEvent(event);
+        },
+        sessionId: session.session.id,
+        signal: followController.signal,
+    });
 
     const requestStop = createStopOnceHandler(
         () => app.stop(),
@@ -122,7 +141,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     process.on("SIGTERM", stop);
 
     try {
-        app.start();
+        app.start({ tuiAlreadyStarted: true });
         await app.waitForExit();
     } finally {
         process.off("SIGINT", stop);
