@@ -31,7 +31,9 @@ export interface AgentOptions {
     provider: Provider;
     modelId: string;
     context: AgentContext;
+    id?: string;
     effort?: string;
+    messages?: readonly Message[];
     instructions?: string;
     tools?: readonly AnyDefinedTool[];
     idFactory?: () => string;
@@ -77,7 +79,7 @@ export class Agent {
 
     constructor(options: AgentOptions) {
         this.#idFactory = options.idFactory ?? createId;
-        this.id = this.#idFactory();
+        this.id = options.id ?? this.#idFactory();
         this.provider = options.provider;
         this.#model = this.#findModel(options.modelId);
         this.context = options.context;
@@ -95,6 +97,7 @@ export class Agent {
         this.#printToConsole = options.printToConsole ?? true;
         this.#onEvent = options.onEvent;
         this.#onMessage = options.onMessage;
+        this.#messages = [...(options.messages ?? [])];
     }
 
     get status(): AgentStatus {

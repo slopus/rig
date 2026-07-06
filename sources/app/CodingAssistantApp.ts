@@ -16,7 +16,6 @@ import {
 } from "@earendil-works/pi-tui";
 
 import {
-    type Agent,
     type AgentLoopEvent,
     type Message,
     type Skill,
@@ -26,7 +25,9 @@ import {
 } from "../agent/index.js";
 import { parseSkillFrontmatter } from "../agent/skills/parseSkillFrontmatter.js";
 import type { NativeProxessManager } from "../processes/index.js";
+import type { SessionEvent } from "../protocol/index.js";
 import type { AppTranscriptEntry } from "./AppTranscriptEntry.js";
+import type { CodingAssistantAgentBackend } from "./CodingAssistantAgentBackend.js";
 import { createSelectionPanel } from "./createSelectionPanel.js";
 import { createSlashCommands, type SlashCommandItem } from "./createSlashCommands.js";
 import { describeModelChoice } from "./describeModelChoice.js";
@@ -58,6 +59,7 @@ const FOOTER_QUEUED_FG = "\x1b[38;5;246m";
 const INPUT_PLACEHOLDER = "Ask Oh My Pi to do anything";
 const INPUT_PROMPT = "› ";
 const INPUT_LINE_INDENT = "  ";
+const PENDING_TOOL_CALL_TITLE = "Working";
 const CURSOR_BLINK_MS = 530;
 const CURSOR_TYPING_DEBOUNCE_MS = 530;
 const ACTIVITY_ANIMATION_MS = 120;
@@ -80,8 +82,9 @@ const EDITOR_THEME: EditorTheme = {
 const MAX_TRANSCRIPT_ENTRIES = 500;
 
 export interface CodingAssistantAppOptions {
-    agent: Agent;
+    agent: CodingAssistantAgentBackend;
     cwd: string;
+    initialSessionEvents?: readonly SessionEvent[];
     processManager: NativeProxessManager;
     tui: TUI;
     idFactory?: () => string;
@@ -103,7 +106,7 @@ export interface AppSettings {
 }
 
 export class CodingAssistantApp implements Component, Focusable {
-    readonly #agent: Agent;
+    readonly #agent: CodingAssistantAgentBackend;
     readonly #cwd: string;
     readonly #idFactory: () => string;
     readonly #now: () => number;
@@ -150,6 +153,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #stopped = false;
     #streamEntryId: string | undefined;
     #thinkingEntryIdsByContentIndex = new Map<number, string>();
+    #toolCallEntryIdsByContentIndex = new Map<number, string>();
 
     constructor(options: CodingAssistantAppOptions) {
         this.#agent = options.agent;
@@ -171,6 +175,10 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#editor.onSubmit = (value) => {
             this.#submit(value);
         };
+
+        for (const event of options.initialSessionEvents ?? []) {
+            this.applySessionEvent(event);
+        }
 
         void this.#refreshSkillCommands();
     }
@@ -227,6 +235,69 @@ export class CodingAssistantApp implements Component, Focusable {
 
     waitForExit(): Promise<void> {
         return this.#exitPromise;
+    }
+
+    applySessionEvent(event: SessionEvent): void {
+        if (event.type === "message_submitted") {
+            this.#appendEntry({ role: "user", text: event.data.displayText });
+            return;
+        }
+
+        if (event.type === "run_started") {
+            this.#running = true;
+            this.#statusText = "Running";
+            this.#activityStartedAtMs = this.#now();
+            this.#startActivityAnimation();
+            this.#requestRender();
+            return;
+        }
+
+        if (event.type === "agent_event") {
+            this.#applyAgentEvent(event.data.event);
+            return;
+        }
+
+        if (event.type === "agent_message") {
+            this.#applyAgentMessage(event.data.message);
+            return;
+        }
+
+        if (event.type === "run_finished") {
+            this.#running = false;
+            this.#statusText =
+                event.data.stopReason === "stop" ? "Idle" : `Stopped: ${event.data.stopReason}`;
+            this.#stopActivityAnimation();
+            this.#streamEntryId = undefined;
+            this.#thinkingEntryIdsByContentIndex.clear();
+            this.#toolCallEntryIdsByContentIndex.clear();
+            this.#requestRender();
+            return;
+        }
+
+        if (event.type === "run_error") {
+            this.#running = false;
+            this.#statusText = "Error";
+            this.#stopActivityAnimation();
+            this.#appendEntry({ role: "error", text: event.data.errorMessage });
+            return;
+        }
+
+        if (event.type === "session_reset") {
+            this.#entries = [];
+            this.#seenToolCallIds.clear();
+            this.#streamEntryId = undefined;
+            this.#thinkingEntryIdsByContentIndex.clear();
+            this.#toolCallEntryIdsByContentIndex.clear();
+            this.#appendEntry({
+                role: "system",
+                text: "Session reset. Started a new session.",
+            });
+            return;
+        }
+
+        if (event.type === "session_title_changed") {
+            return;
+        }
     }
 
     async waitForIdle(): Promise<void> {
@@ -458,6 +529,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#entries = [];
             this.#streamEntryId = undefined;
             this.#thinkingEntryIdsByContentIndex.clear();
+            this.#toolCallEntryIdsByContentIndex.clear();
             this.#appendEntry({ role: "system", text: "Transcript cleared." });
             return true;
         }
@@ -484,6 +556,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#seenToolCallIds.clear();
         this.#streamEntryId = undefined;
         this.#thinkingEntryIdsByContentIndex.clear();
+        this.#toolCallEntryIdsByContentIndex.clear();
         this.#abortNotified = false;
         this.#statusText = "Idle";
         this.#agent.reset();
@@ -524,6 +597,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#statusText = "Running";
         this.#streamEntryId = undefined;
         this.#thinkingEntryIdsByContentIndex.clear();
+        this.#toolCallEntryIdsByContentIndex.clear();
         this.#activityStartedAtMs = this.#now();
         this.#startActivityAnimation();
         this.#requestRender();
@@ -572,6 +646,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#stopActivityAnimation();
             this.#streamEntryId = undefined;
             this.#thinkingEntryIdsByContentIndex.clear();
+            this.#toolCallEntryIdsByContentIndex.clear();
             this.#requestRender();
         }
     }
@@ -598,6 +673,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#statusText = "Idle";
         this.#streamEntryId = undefined;
         this.#thinkingEntryIdsByContentIndex.clear();
+        this.#toolCallEntryIdsByContentIndex.clear();
         this.#stopActivityAnimation();
         void this.#processManager.killAll({ forceAfterMs: 500 }).catch((error: unknown) => {
             this.#appendEntry({ role: "error", text: this.#formatError(error) });
@@ -618,10 +694,15 @@ export class CodingAssistantApp implements Component, Focusable {
             return;
         }
 
+        this.#applyAgentEvent(event);
+    }
+
+    #applyAgentEvent(event: AgentLoopEvent): void {
         if (event.type === "inference_iteration_start") {
             this.#statusText = "Running";
             this.#streamEntryId = undefined;
             this.#thinkingEntryIdsByContentIndex.clear();
+            this.#toolCallEntryIdsByContentIndex.clear();
             if (event.iteration > 1) {
                 this.#appendEntry({ role: "separator", text: "" });
             }
@@ -639,15 +720,14 @@ export class CodingAssistantApp implements Component, Focusable {
         } else if (event.type === "thinking_end") {
             this.#statusText = "Thinking";
             this.#finishThinkingText(event.contentIndex, event.content);
+        } else if (event.type === "toolcall_start") {
+            this.#statusText = "Running";
+            this.#ensureToolCallEntry(event.contentIndex);
+        } else if (event.type === "toolcall_delta") {
+            this.#statusText = "Running";
+            this.#ensureToolCallEntry(event.contentIndex);
         } else if (event.type === "toolcall_end") {
-            this.#seenToolCallIds.add(event.toolCall.id);
-            this.#statusText = `Calling ${event.toolCall.name}`;
-            this.#appendEntry({
-                id: event.toolCall.id,
-                role: "tool",
-                title: event.toolCall.name,
-                text: this.#formatToolCall(event.toolCall.name, event.toolCall.arguments),
-            });
+            this.#finishToolCall(event.contentIndex, event.toolCall);
         } else if (event.type === "done") {
             this.#statusText = event.reason === "toolUse" ? "Running tools" : "Idle";
         } else if (event.type === "error") {
@@ -681,6 +761,14 @@ export class CodingAssistantApp implements Component, Focusable {
 
     #handleAgentMessage(message: Message, runToken: number): void {
         if (!this.#isCurrentRun(runToken) || message.role !== "agent") {
+            return;
+        }
+
+        this.#applyAgentMessage(message);
+    }
+
+    #applyAgentMessage(message: Message): void {
+        if (message.role !== "agent") {
             return;
         }
 
@@ -779,6 +867,59 @@ export class CodingAssistantApp implements Component, Focusable {
 
         const entry = this.#ensureThinkingEntry(contentIndex);
         entry.text = text;
+    }
+
+    #ensureToolCallEntry(contentIndex: number): AppTranscriptEntry {
+        const existingId = this.#toolCallEntryIdsByContentIndex.get(contentIndex);
+        const existing =
+            existingId === undefined
+                ? undefined
+                : this.#entries.find((entry) => entry.id === existingId);
+        if (existing !== undefined) {
+            return existing;
+        }
+
+        const entry = this.#appendEntry({
+            role: "tool",
+            title: PENDING_TOOL_CALL_TITLE,
+            text: PENDING_TOOL_CALL_TITLE,
+        });
+        this.#toolCallEntryIdsByContentIndex.set(contentIndex, entry.id);
+        return entry;
+    }
+
+    #finishToolCall(
+        contentIndex: number,
+        toolCall: {
+            id: string;
+            name: string;
+            arguments: unknown;
+        },
+    ): void {
+        this.#seenToolCallIds.add(toolCall.id);
+        this.#statusText = `Calling ${toolCall.name}`;
+
+        const existingId = this.#toolCallEntryIdsByContentIndex.get(contentIndex);
+        const existing =
+            existingId === undefined
+                ? undefined
+                : this.#entries.find((entry) => entry.id === existingId);
+
+        if (existing !== undefined) {
+            existing.id = toolCall.id;
+            existing.title = toolCall.name;
+            existing.text = this.#formatToolCall(toolCall.name, toolCall.arguments);
+            this.#toolCallEntryIdsByContentIndex.delete(contentIndex);
+            return;
+        }
+
+        this.#toolCallEntryIdsByContentIndex.delete(contentIndex);
+        this.#appendEntry({
+            id: toolCall.id,
+            role: "tool",
+            title: toolCall.name,
+            text: this.#formatToolCall(toolCall.name, toolCall.arguments),
+        });
     }
 
     #finishThinkingMessage(messageId: string, contentIndex: number, text: string): void {
@@ -1259,6 +1400,19 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #renderToolEntry(entry: AppTranscriptEntry, width: number, isError: boolean): string[] {
+        if (
+            !isError &&
+            entry.title === PENDING_TOOL_CALL_TITLE &&
+            entry.text === PENDING_TOOL_CALL_TITLE
+        ) {
+            return [
+                this.#fitLine(
+                    `${DIM}•${RESET} ${renderActivityWave(PENDING_TOOL_CALL_TITLE, this.#activityAnimationFrame)}`,
+                    width,
+                ),
+            ];
+        }
+
         const toolName = entry.title ?? "tool";
         const verb = isError ? "Failed" : this.#toolVerb(toolName);
         const dot = isError ? RED : GREEN;

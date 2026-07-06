@@ -1,4 +1,5 @@
 import { Agent, createNodeAgentContext, type AgentOptions } from "../agent/index.js";
+import type { Message } from "../agent/types.js";
 import { NativeProxessManager } from "../processes/index.js";
 import { createClaudeSdkProvider } from "../providers/claude-sdk.js";
 import { createCodexProvider, type CodexProviderOptions } from "../providers/codex.js";
@@ -9,9 +10,11 @@ import { createDefaultInstructions } from "./createDefaultInstructions.js";
 
 export interface CreateCodingAssistantAgentOptions {
     cwd: string;
+    agentId?: string;
     apiKey?: string;
     effort?: string;
     instructions?: string;
+    messages?: readonly Message[];
     modelId?: string;
     processManager?: NativeProxessManager;
 }
@@ -35,7 +38,9 @@ export function createCodingAssistantAgent(
         provider,
         modelId,
         context,
+        ...(options.agentId !== undefined ? { id: options.agentId } : {}),
         instructions: options.instructions ?? createDefaultInstructions(options.cwd),
+        ...(options.messages !== undefined ? { messages: options.messages } : {}),
         printToConsole: false,
     };
     if (options.effort !== undefined) {

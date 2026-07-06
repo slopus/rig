@@ -1,6 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import { Value } from "@sinclair/typebox/value";
 
+import { assistantMessageToAgentMessage } from "./assistantMessageToAgentMessage.js";
 import type { AgentContext } from "./context/AgentContext.js";
 import { createSystemPrompt } from "./createSystemPrompt.js";
 import type {
@@ -9,7 +10,6 @@ import type {
     AnyDefinedTool,
     ContentBlock,
     Message,
-    ToolCallBlock,
     ToolResultBlock,
     UserMessage,
 } from "./types.js";
@@ -115,7 +115,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
 
         providerMessages.push(assistantMessage);
 
-        const agentMessage = fromProviderAssistantMessage(assistantMessage, idFactory);
+        const agentMessage = assistantMessageToAgentMessage(assistantMessage, idFactory);
         transcript.push(agentMessage);
         await options.onMessage?.(agentMessage);
 
@@ -377,46 +377,6 @@ function toProviderToolResultMessage(
         content: block.rendered.map(toProviderToolResultContent),
         isError: block.isError ?? false,
         timestamp: now(),
-    };
-}
-
-function fromProviderAssistantMessage(
-    message: ProviderAssistantMessage,
-    idFactory: () => string,
-): AgentMessage {
-    return {
-        role: "agent",
-        id: message.responseId ?? idFactory(),
-        blocks: message.content.map(fromProviderAssistantContent),
-    };
-}
-
-function fromProviderAssistantContent(content: ProviderAssistantContent): AgentBlock {
-    if (content.type === "text") {
-        return {
-            type: "text",
-            text: content.text,
-        };
-    }
-
-    if (content.type === "thinking") {
-        return {
-            type: "thinking",
-            thinking: content.thinking,
-            ...(content.encrypted !== undefined ? { encrypted: content.encrypted } : {}),
-            ...(content.redacted !== undefined ? { redacted: content.redacted } : {}),
-        };
-    }
-
-    return fromProviderToolCall(content);
-}
-
-function fromProviderToolCall(toolCall: ProviderToolCall): ToolCallBlock {
-    return {
-        type: "tool_call",
-        id: toolCall.id,
-        name: toolCall.name,
-        arguments: toolCall.arguments,
     };
 }
 

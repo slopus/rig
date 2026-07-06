@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Agent } from "../agent/Agent.js";
 import { createJustBashToolHarness } from "../tools/testing/createJustBashToolHarness.js";
 import { NativeProxessManager } from "../processes/index.js";
+import type { SessionEvent } from "../protocol/index.js";
 import {
     defineModel,
     defineProvider,
@@ -787,6 +788,78 @@ describe("CodingAssistantApp", () => {
         expect(rendered).not.toContain("Use the word cobalt.");
     });
 
+    it("restores transcript entries from session events", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        const initialSessionEvents: SessionEvent[] = [
+            {
+                createdAt: 1_700_000_000_000,
+                data: {
+                    displayText: "resume this",
+                    message: {
+                        blocks: [{ text: "resume this", type: "text" }],
+                        id: "user-message-1",
+                        role: "user",
+                    },
+                    runId: "run-1",
+                },
+                id: "018bcfe5-6800-7001-8000-000000000001",
+                sessionId: "session-1",
+                type: "message_submitted",
+            },
+            {
+                createdAt: 1_700_000_000_001,
+                data: {
+                    message: {
+                        blocks: [{ text: "restored answer", type: "text" }],
+                        id: "message-1",
+                        role: "agent",
+                    },
+                    runId: "run-1",
+                },
+                id: "018bcfe5-6801-7001-8000-000000000002",
+                sessionId: "session-1",
+                type: "agent_message",
+            },
+            {
+                createdAt: 1_700_000_000_002,
+                data: { agentRunId: "agent-run-1", runId: "run-1", stopReason: "stop" },
+                id: "018bcfe5-6802-7001-8000-000000000003",
+                sessionId: "session-1",
+                type: "run_finished",
+            },
+        ];
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            initialSessionEvents,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        const rendered = stripAnsi(app.render(100).join("\n"));
+        expect(rendered).toContain("› resume this");
+        expect(rendered).toContain("• restored answer");
+    });
+
     it("finds new session command by reset and clears agent state", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
@@ -1435,6 +1508,61 @@ describe("CodingAssistantApp", () => {
                 },
             ],
         });
+    });
+
+    it("shows Working while a tool call is still being generated", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        let streamCalls = 0;
+        const gate = createToolCallStartStreamGate();
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                streamCalls += 1;
+                if (streamCalls === 1) {
+                    return gate.stream();
+                }
+
+                return streamText("done");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        submit(app, "status");
+        await gate.startedToolCall;
+
+        const renderedWhileToolCallStreams = stripAnsi(app.render(80).join("\n"));
+        expect(renderedWhileToolCallStreams).toContain("• I will inspect files.");
+        expect(renderedWhileToolCallStreams).toContain("• Working");
+        expect(renderedWhileToolCallStreams).not.toContain("printf ok");
+        expect(renderedWhileToolCallStreams).not.toContain("Ran");
+        expect(renderedWhileToolCallStreams).not.toContain("Used Working");
+
+        gate.release();
+        await app.waitForIdle();
+
+        const renderedAfterToolCall = stripAnsi(app.render(80).join("\n"));
+        expect(renderedAfterToolCall).toContain("• Ran printf ok");
+        expect(renderedAfterToolCall).toContain("└ ok");
+        expect(renderedAfterToolCall).not.toContain("• Working");
+        expect(renderedAfterToolCall.match(/Ran printf ok/gu)).toHaveLength(1);
     });
 
     it("renders a separator when the loop starts a second inference iteration", async () => {
@@ -2122,6 +2250,29 @@ function createBeforeTextStartStreamGate(text: string): {
     };
 }
 
+function createToolCallStartStreamGate(): {
+    release: () => void;
+    startedToolCall: Promise<void>;
+    stream: () => InferenceStream;
+} {
+    let release: () => void = () => {};
+    let startedToolCall: () => void = () => {};
+    const releasePromise = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const startedToolCallPromise = new Promise<void>((resolve) => {
+        startedToolCall = resolve;
+    });
+
+    return {
+        release,
+        startedToolCall: startedToolCallPromise,
+        stream() {
+            return streamTextThenToolCall(startedToolCall, releasePromise);
+        },
+    };
+}
+
 function streamThinking(
     text: string,
     startedThinking: () => void,
@@ -2158,6 +2309,67 @@ function streamThinking(
                 partial: message,
             };
             yield { type: "done" as const, reason: "stop", message };
+        },
+        async result() {
+            return message;
+        },
+    };
+}
+
+function streamTextThenToolCall(
+    startedToolCall: () => void,
+    releasePromise: Promise<void>,
+): InferenceStream {
+    const text = "I will inspect files.";
+    const toolCall = {
+        type: "toolCall" as const,
+        id: "tool-call-1",
+        name: "exec_command",
+        arguments: { cmd: "printf ok" },
+    };
+    const message: AssistantMessage = {
+        role: "assistant",
+        content: [{ type: "text", text }, toolCall],
+        api: "test",
+        provider: "codex",
+        model: "openai/gpt-test",
+        usage: zeroUsage(),
+        stopReason: "toolUse",
+        timestamp: 1,
+    };
+
+    return {
+        async *[Symbol.asyncIterator]() {
+            yield { type: "start" as const, partial: message };
+            yield { type: "text_start" as const, contentIndex: 0, partial: message };
+            yield {
+                type: "text_delta" as const,
+                contentIndex: 0,
+                delta: text,
+                partial: message,
+            };
+            yield {
+                type: "text_end" as const,
+                contentIndex: 0,
+                content: text,
+                partial: message,
+            };
+            yield { type: "toolcall_start" as const, contentIndex: 1, partial: message };
+            yield {
+                type: "toolcall_delta" as const,
+                contentIndex: 1,
+                delta: '{"cmd":"printf ok"}',
+                partial: message,
+            };
+            startedToolCall();
+            await releasePromise;
+            yield {
+                type: "toolcall_end" as const,
+                contentIndex: 1,
+                toolCall,
+                partial: message,
+            };
+            yield { type: "done" as const, reason: "toolUse", message };
         },
         async result() {
             return message;

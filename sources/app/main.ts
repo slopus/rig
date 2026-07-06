@@ -1,9 +1,42 @@
+import { runDaemonCommand, type DaemonCommand } from "./runDaemonCommand.js";
 import { runApp, type RunAppOptions } from "./runApp.js";
+import { runMonit } from "./runMonit.js";
+import { runLocalProtocolServer } from "../server/index.js";
 
-export async function main(): Promise<void> {
+export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+    if (argv.includes("--server")) {
+        await runLocalProtocolServer({
+            ...(process.env.OHMYPI_SERVER_SOCKET_PATH !== undefined
+                ? { socketPath: process.env.OHMYPI_SERVER_SOCKET_PATH }
+                : {}),
+            ...(process.env.OHMYPI_SERVER_TOKEN_PATH !== undefined
+                ? { tokenPath: process.env.OHMYPI_SERVER_TOKEN_PATH }
+                : {}),
+        });
+        return;
+    }
+
     const options: RunAppOptions = {
         cwd: process.cwd(),
     };
+    const [command, sessionId] = argv;
+    if (command === "resume") {
+        if (sessionId === undefined || sessionId.length === 0) {
+            throw new Error("Usage: ohmypi resume <session-id>");
+        }
+        options.resumeSessionId = sessionId;
+    }
+    if (command === "daemon") {
+        if (!isDaemonCommand(sessionId)) {
+            throw new Error("Usage: ohmypi daemon <start|stop|status>");
+        }
+        await runDaemonCommand(sessionId);
+        return;
+    }
+    if (command === "monit") {
+        await runMonit();
+        return;
+    }
 
     if (process.env.OPENAI_API_KEY !== undefined) {
         options.apiKey = process.env.OPENAI_API_KEY;
@@ -16,4 +49,8 @@ export async function main(): Promise<void> {
     }
 
     await runApp(options);
+}
+
+function isDaemonCommand(value: string | undefined): value is DaemonCommand {
+    return value === "start" || value === "stop" || value === "status";
 }
