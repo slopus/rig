@@ -1,4 +1,4 @@
-import type { AgentLoopEvent, AgentSnapshot } from "../agent/index.js";
+import type { AgentLoopEvent, AgentSnapshot, ContentBlock } from "../agent/index.js";
 import type { Message, UserMessage } from "../agent/types.js";
 import type { Model, StopReason } from "../providers/types.js";
 import type { EventId } from "./EventId.js";
@@ -96,6 +96,7 @@ export interface ShutdownServerResponse {
 }
 
 export interface SubmitMessageRequest {
+    content?: readonly ContentBlock[];
     displayText?: string;
     text: string;
 }

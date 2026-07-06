@@ -1,7 +1,12 @@
 import { createId } from "@paralleldrive/cuid2";
 
 import { assistantMessageToAgentMessage } from "../agent/assistantMessageToAgentMessage.js";
-import type { AgentLoopEvent, AgentRunResult, AgentSnapshot } from "../agent/index.js";
+import type {
+    AgentLoopEvent,
+    AgentRunResult,
+    AgentSnapshot,
+    ContentBlock,
+} from "../agent/index.js";
 import type { Message, UserMessage } from "../agent/types.js";
 import type { CodingAssistantRuntime } from "../app/CodingAssistantRuntime.js";
 import {
@@ -375,10 +380,13 @@ export class InMemorySession {
     submit(request: SubmitMessageRequest): SubmitMessageResponse {
         const runId = createId();
         const displayText = request.displayText ?? request.text;
+        const blocks: readonly ContentBlock[] = request.content ?? [
+            { type: "text", text: request.text },
+        ];
         const userMessage: UserMessage = {
             role: "user",
             id: createId(),
-            blocks: [{ type: "text", text: request.text }],
+            blocks,
         };
         const queued: PersistedQueuedRun = {
             displayText,

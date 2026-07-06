@@ -3,6 +3,7 @@ import type {
     AgentRunOptions,
     AgentRunResult,
     AgentSnapshot,
+    ContentBlock,
 } from "../agent/index.js";
 import type { CodingAssistantAgentBackend } from "../app/CodingAssistantAgentBackend.js";
 import type { ProtocolSession, SessionEvent } from "../protocol/index.js";
@@ -74,10 +75,15 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         });
     }
 
-    async send(text: string, options: AgentRunOptions = {}): Promise<AgentRunResult> {
+    async send(
+        content: string | readonly ContentBlock[],
+        options: AgentRunOptions = {},
+    ): Promise<AgentRunResult> {
+        const displayText = options.displayText ?? contentToDisplayText(content);
         const submitted = await this.#client.submitMessage(this.#session.id, {
+            ...(typeof content === "string" ? {} : { content }),
             ...(options.displayText !== undefined ? { displayText: options.displayText } : {}),
-            text,
+            text: displayText,
         });
         const streamController = new AbortController();
         let finished:
@@ -312,4 +318,14 @@ function isRunEvent(event: SessionEvent, runId: string): boolean {
     }
 
     return event.data.runId === runId;
+}
+
+function contentToDisplayText(content: string | readonly ContentBlock[]): string {
+    if (typeof content === "string") {
+        return content;
+    }
+
+    return content
+        .map((block) => (block.type === "text" ? block.text : `[image:${block.mediaType}]`))
+        .join("");
 }

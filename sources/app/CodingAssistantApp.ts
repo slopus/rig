@@ -1,6 +1,6 @@
 import { createId } from "@paralleldrive/cuid2";
 import { homedir } from "node:os";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import {
     CURSOR_MARKER,
     Editor,
@@ -17,6 +17,7 @@ import {
 
 import {
     type AgentLoopEvent,
+    type ContentBlock,
     type Message,
     type Skill,
     type ToolResultBlock,
@@ -34,6 +35,11 @@ import { describeModelChoice } from "./describeModelChoice.js";
 import { describeReasoningLevel } from "./describeReasoningLevel.js";
 import { formatActivityElapsedTime } from "./formatActivityElapsedTime.js";
 import { humanizeReasoningLevel } from "./humanizeReasoningLevel.js";
+import {
+    readClipboardImage,
+    type ClipboardImage,
+    type ReadClipboardImageOptions,
+} from "./readClipboardImage.js";
 import { ACTIVITY_WAVE_FRAME_COUNT, renderActivityWave } from "./renderActivityWave.js";
 import { renderAgentMarkdown } from "./renderAgentMarkdown.js";
 
@@ -65,9 +71,13 @@ const ACTIVITY_ANIMATION_MS = 120;
 const REASONING_DOWN_RAW_KEYS = new Set(["\x1b,", "\x1b[1;2B"]);
 const REASONING_UP_RAW_KEYS = new Set(["\x1b.", "\x1b[1;2A"]);
 const MODEL_MENU_RAW_KEYS = new Set(["\x1bm", "\x1bM"]);
+const IMAGE_PASTE_RAW_KEYS = new Set(["\x16", "\x1bv"]);
 const SLASH_COMMAND_MAX_VISIBLE = 6;
 const BRACKETED_PASTE_START = "\x1b[200~";
 const BRACKETED_PASTE_END = "\x1b[201~";
+const IMAGE_PLACEHOLDER_REGEX = /\[Image #(\d+) [A-Z0-9]+\]/gu;
+const IMAGE_CHIP_BG = "\x1b[48;5;240m";
+const IMAGE_CHIP_FG = "\x1b[38;5;255m";
 
 const EDITOR_THEME: EditorTheme = {
     borderColor: (text) => text,
@@ -95,6 +105,9 @@ export interface CodingAssistantAppOptions {
     onSettingsChange?: (settings: AppSettings) => void | Promise<void>;
     onExit?: () => void | Promise<void>;
     now?: () => number;
+    readClipboardImage?: (
+        options?: ReadClipboardImageOptions,
+    ) => Promise<ClipboardImage | undefined>;
     showReasoning?: boolean;
     version?: string;
 }
@@ -109,8 +122,20 @@ export interface AppSettings {
 }
 
 interface PendingPrompt {
+    content: string | readonly ContentBlock[];
     displayText: string;
-    text: string;
+}
+
+interface PastedImage {
+    data: string;
+    mediaType: string;
+    path: string;
+    placeholder: string;
+}
+
+interface PromptSubmission {
+    content: string | readonly ContentBlock[];
+    displayText: string;
 }
 
 export class CodingAssistantApp implements Component, Focusable {
@@ -125,6 +150,9 @@ export class CodingAssistantApp implements Component, Focusable {
     readonly #onSettingsChange: ((settings: AppSettings) => void | Promise<void>) | undefined;
     readonly #onExit: (() => void | Promise<void>) | undefined;
     readonly #processManager: NativeProxessManager;
+    readonly #readClipboardImage: (
+        options?: ReadClipboardImageOptions,
+    ) => Promise<ClipboardImage | undefined>;
     readonly #tui: TUI;
     readonly #version: string;
     readonly #exitPromise: Promise<void>;
@@ -144,6 +172,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #exitResolve: (() => void) | undefined;
     #focused = false;
     #pendingPrompts: PendingPrompt[] = [];
+    #pastedImagesById = new Map<number, PastedImage>();
     #selectionPanel: Component | undefined;
     #dismissedSlashCommandText: string | undefined;
     #activeSubmission: Promise<void> | undefined;
@@ -157,6 +186,8 @@ export class CodingAssistantApp implements Component, Focusable {
     #skillCommandsLoaded = false;
     #skillCommandsRefresh: Promise<void> | undefined;
     #skillsByName = new Map<string, Skill>();
+    #imagePasteInFlight: Promise<void> | undefined;
+    #nextPastedImageId = 1;
     #runToken = 0;
     #running = false;
     #seenToolCallIds = new Set<string>();
@@ -175,6 +206,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#onSettingsChange = options.onSettingsChange;
         this.#onExit = options.onExit;
         this.#processManager = options.processManager;
+        this.#readClipboardImage = options.readClipboardImage ?? readClipboardImage;
         this.#sessionBacked = options.sessionBacked ?? false;
         this.#showReasoning = options.showReasoning ?? false;
         this.#modelLocked = options.modelLocked ?? !options.agent.canChangeModel;
@@ -233,6 +265,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#stopActivityAnimation();
         this.#stopCursorBlink();
         this.#editor.setText("");
+        this.#pastedImagesById.clear();
         this.#requestRender();
         await this.#waitForShutdownRender();
 
@@ -371,6 +404,10 @@ export class CodingAssistantApp implements Component, Focusable {
             return;
         }
 
+        if (this.#handleImagePasteShortcut(data)) {
+            return;
+        }
+
         if (matchesKey(data, "ctrl+c") || data === "\x03") {
             void this.stop();
             return;
@@ -437,6 +474,72 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         return false;
+    }
+
+    #handleImagePasteShortcut(data: string): boolean {
+        if (
+            !matchesKey(data, "ctrl+v") &&
+            !matchesKey(data, "alt+v") &&
+            !matchesKey(data, "super+v") &&
+            !IMAGE_PASTE_RAW_KEYS.has(data)
+        ) {
+            return false;
+        }
+
+        if (this.#imagePasteInFlight !== undefined) {
+            return true;
+        }
+
+        const paste = this.#pasteClipboardImage().finally(() => {
+            if (this.#imagePasteInFlight === paste) {
+                this.#imagePasteInFlight = undefined;
+            }
+            this.#requestRender();
+        });
+        this.#imagePasteInFlight = paste;
+        return true;
+    }
+
+    async #pasteClipboardImage(): Promise<void> {
+        try {
+            const image = await this.#readClipboardImage({
+                outputDirectory: join(this.#cwd, ".context", "clipboard-images"),
+            });
+            if (image === undefined) {
+                this.#appendEntry({
+                    role: "event",
+                    title: "clipboard",
+                    text: "No image found in the clipboard.",
+                });
+                return;
+            }
+
+            this.#insertPastedImage(image);
+        } catch (error) {
+            this.#appendEntry({
+                role: "error",
+                title: "clipboard",
+                text: `Image paste failed: ${this.#formatError(error)}`,
+            });
+        }
+    }
+
+    #insertPastedImage(image: ClipboardImage): void {
+        const id = this.#nextPastedImageId++;
+        const placeholder = `[Image #${id} ${this.#formatImageType(image.mediaType)}]`;
+        this.#pastedImagesById.set(id, {
+            data: image.data,
+            mediaType: image.mediaType,
+            path: image.path,
+            placeholder,
+        });
+
+        const currentText = this.#editor.getText();
+        const prefix = currentText.length > 0 && !/\s$/u.test(currentText) ? " " : "";
+        this.#markTypingActivity();
+        this.#editor.insertTextAtCursor(`${prefix}${placeholder} `);
+        this.#syncSlashCommandAutocompleteState();
+        this.#requestRender();
     }
 
     #appendBracketedPaste(data: string): boolean {
@@ -521,10 +624,11 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     async #submitAsync(value: string): Promise<void> {
-        const prompt = value.trim();
-        if (prompt.length === 0) {
+        const submission = this.#createPromptSubmission(value);
+        if (submission === undefined) {
             return;
         }
+        const prompt = submission.displayText;
 
         this.#editor.setText("");
 
@@ -551,9 +655,72 @@ export class CodingAssistantApp implements Component, Focusable {
             });
         }
 
-        this.#pendingPrompts.push({ displayText: prompt, text: prompt });
+        this.#pendingPrompts.push(submission);
         this.#startDrainQueue();
         this.#requestRender();
+    }
+
+    #createPromptSubmission(value: string): PromptSubmission | undefined {
+        const prompt = value.trim();
+        if (prompt.length === 0) {
+            return undefined;
+        }
+
+        const content = this.#contentFromPrompt(prompt);
+        this.#clearSubmittedImages(prompt);
+        return {
+            content,
+            displayText: prompt,
+        };
+    }
+
+    #contentFromPrompt(prompt: string): string | readonly ContentBlock[] {
+        const blocks: ContentBlock[] = [];
+        let cursor = 0;
+        let hasImage = false;
+
+        for (const match of prompt.matchAll(IMAGE_PLACEHOLDER_REGEX)) {
+            const rawMatch = match[0];
+            const matchIndex = match.index;
+            const imageId = Number(match[1]);
+            const image = this.#pastedImagesById.get(imageId);
+            if (image === undefined || image.placeholder !== rawMatch) {
+                continue;
+            }
+
+            const text = prompt.slice(cursor, matchIndex);
+            if (text.trim().length > 0) {
+                blocks.push({ type: "text", text });
+            }
+            blocks.push({
+                type: "image",
+                data: image.data,
+                mediaType: image.mediaType,
+            });
+            cursor = matchIndex + rawMatch.length;
+            hasImage = true;
+        }
+
+        if (!hasImage) {
+            return prompt;
+        }
+
+        const trailingText = prompt.slice(cursor);
+        if (trailingText.trim().length > 0) {
+            blocks.push({ type: "text", text: trailingText });
+        }
+
+        return blocks;
+    }
+
+    #clearSubmittedImages(prompt: string): void {
+        for (const match of prompt.matchAll(IMAGE_PLACEHOLDER_REGEX)) {
+            const imageId = Number(match[1]);
+            const image = this.#pastedImagesById.get(imageId);
+            if (image !== undefined && image.placeholder === match[0]) {
+                this.#pastedImagesById.delete(imageId);
+            }
+        }
     }
 
     async #submitSkillCommand(prompt: string): Promise<void> {
@@ -609,7 +776,7 @@ export class CodingAssistantApp implements Component, Focusable {
             });
         }
 
-        this.#pendingPrompts.push({ displayText: prompt, text: expandedPrompt });
+        this.#pendingPrompts.push({ content: expandedPrompt, displayText: prompt });
         this.#startDrainQueue();
     }
 
@@ -666,6 +833,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#abortActiveRun({ silent: true });
         this.#runToken += 1;
         this.#pendingPrompts = [];
+        this.#pastedImagesById.clear();
         this.#entries = [];
         this.#modelLocked = false;
         this.#seenToolCallIds.clear();
@@ -723,7 +891,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 return;
             }
 
-            const result = await this.#agent.send(prompt.text, {
+            const result = await this.#agent.send(prompt.content, {
                 displayText: prompt.displayText,
                 signal: controller.signal,
                 ...(this.#sessionBacked
@@ -1392,7 +1560,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
         return contentLines.map((line, index) => {
             const prefix = index === 0 ? this.#inputPrompt() : INPUT_LINE_INDENT;
-            const rendered = `${prefix}${line}`;
+            const rendered = `${prefix}${this.#styleImagePlaceholders(line)}`;
             return this.#inputSurfaceLine(
                 this.#cursorVisible ? rendered : this.#hideCursor(rendered),
                 width,
@@ -1469,6 +1637,24 @@ export class CodingAssistantApp implements Component, Focusable {
         return String(error);
     }
 
+    #formatImageType(mediaType: string): string {
+        const subtype = mediaType.split("/")[1]?.split(";")[0]?.trim();
+        if (subtype === undefined || subtype.length === 0) {
+            return "IMAGE";
+        }
+
+        const upperSubtype = subtype.toUpperCase();
+        return upperSubtype === "JPEG" ? "JPG" : upperSubtype;
+    }
+
+    #styleImagePlaceholders(text: string): string {
+        return text.replace(
+            IMAGE_PLACEHOLDER_REGEX,
+            (placeholder) =>
+                `${IMAGE_CHIP_BG}${IMAGE_CHIP_FG}${placeholder}${SURFACE_BG}${INPUT_FG}`,
+        );
+    }
+
     #fitLine(line: string, width: number): string {
         return truncateToWidth(line, width, "", true);
     }
@@ -1503,7 +1689,8 @@ export class CodingAssistantApp implements Component, Focusable {
         const prefix = `${BOLD}›${NOT_BOLD_OR_DIM} `;
         const prefixWidth = visibleWidth(prefix);
         const contentWidth = Math.max(1, width - prefixWidth);
-        const wrapped = wrapTextWithAnsi(entry.text.length === 0 ? " " : entry.text, contentWidth);
+        const text = this.#styleImagePlaceholders(entry.text.length === 0 ? " " : entry.text);
+        const wrapped = wrapTextWithAnsi(text, contentWidth);
         const indent = " ".repeat(prefixWidth);
         return [
             this.#surfaceLine("", width),

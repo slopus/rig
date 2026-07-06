@@ -1240,6 +1240,126 @@ describe("CodingAssistantApp", () => {
         expect(stripAnsi(app.render(80).join("\n"))).toContain("› multi chunk paste");
     });
 
+    it("pastes clipboard images as chips and sends image content", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const contexts: Context[] = [];
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream(_model, context) {
+                contexts.push(context);
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            readClipboardImage: async () => ({
+                data: "aW1hZ2U=",
+                mediaType: "image/png",
+                path: "/workspace/.context/clipboard-images/image.png",
+            }),
+            tui: fakeTui(),
+        });
+
+        app.handleInput("\x16");
+        await delay(0);
+
+        const raw = app.render(80).join("\n");
+        expect(stripAnsi(raw)).toContain("› [Image #1 PNG]");
+        expect(raw).toContain("\x1b[48;5;240m\x1b[38;5;255m[Image #1 PNG]");
+
+        app.handleInput("\r");
+        await app.waitForIdle();
+
+        expect(contexts[0]?.messages[0]).toMatchObject({
+            role: "user",
+            content: [{ type: "image", mimeType: "image/png", data: "aW1hZ2U=" }],
+        });
+        expect(stripAnsi(app.render(80).join("\n"))).toContain("› [Image #1 PNG]");
+    });
+
+    it("pastes multiple clipboard images into one prompt", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const contexts: Context[] = [];
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream(_model, context) {
+                contexts.push(context);
+                return streamText("unused");
+            },
+        });
+        const images = [
+            {
+                data: "Zmlyc3Q=",
+                mediaType: "image/png",
+                path: "/workspace/.context/clipboard-images/first.png",
+            },
+            {
+                data: "c2Vjb25k",
+                mediaType: "image/jpeg",
+                path: "/workspace/.context/clipboard-images/second.jpg",
+            },
+        ];
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            readClipboardImage: async () => images.shift(),
+            tui: fakeTui(),
+        });
+
+        app.handleInput("compare ");
+        app.handleInput("\x16");
+        await delay(0);
+        app.handleInput("and ");
+        app.handleInput("\x16");
+        await delay(0);
+
+        expect(stripAnsi(app.render(100).join("\n"))).toContain(
+            "› compare [Image #1 PNG] and [Image #2 JPG]",
+        );
+
+        app.handleInput("\r");
+        await app.waitForIdle();
+
+        expect(contexts[0]?.messages[0]).toMatchObject({
+            role: "user",
+            content: [
+                { type: "text", text: "compare " },
+                { type: "image", mimeType: "image/png", data: "Zmlyc3Q=" },
+                { type: "text", text: " and " },
+                { type: "image", mimeType: "image/jpeg", data: "c2Vjb25k" },
+            ],
+        });
+    });
+
     it("inserts plain multi-character paste without treating it as shortcuts", () => {
         const model = defineModel({
             id: "openai/gpt-test",

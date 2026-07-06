@@ -3,6 +3,7 @@ import type {
     AgentRunOptions,
     AgentRunResult,
     AgentSnapshot,
+    ContentBlock,
 } from "../agent/index.js";
 import type { Model, Provider } from "../providers/types.js";
 
@@ -13,7 +14,10 @@ export interface CodingAssistantAgentBackend {
     readonly provider: Provider;
     readonly model: Model;
     reset(): void;
-    send(text: string, options?: AgentRunOptions): Promise<AgentRunResult>;
+    send(
+        content: string | readonly ContentBlock[],
+        options?: AgentRunOptions,
+    ): Promise<AgentRunResult>;
     setEffort(effort: string | undefined): void;
     setModel(modelId: string, effort: string | undefined): void;
     snapshot(): AgentSnapshot;

@@ -101,6 +101,40 @@ describe("createProtocolHttpServer", () => {
         }
     });
 
+    it("accepts image content blocks on submitted messages", async () => {
+        const { client, close } = await startServer();
+        try {
+            const created = await client.createSession({ cwd: "/tmp/ohmypi-protocol-test" });
+
+            await client.submitMessage(created.session.id, {
+                content: [
+                    { type: "text", text: "inspect this " },
+                    { type: "image", mediaType: "image/png", data: "aW1hZ2U=" },
+                ],
+                displayText: "inspect this [Image #1 PNG]",
+                text: "inspect this [Image #1 PNG]",
+            });
+            const events = await client.getEvents(created.session.id, created.session.lastEventId);
+            const submitted = events.events.find((event) => event.type === "message_submitted");
+
+            expect(submitted).toMatchObject({
+                data: {
+                    displayText: "inspect this [Image #1 PNG]",
+                    message: {
+                        blocks: [
+                            { type: "text", text: "inspect this " },
+                            { type: "image", mediaType: "image/png", data: "aW1hZ2U=" },
+                        ],
+                        role: "user",
+                    },
+                },
+                type: "message_submitted",
+            });
+        } finally {
+            await close();
+        }
+    });
+
     it("accepts shutdown requests", async () => {
         let shutdownRequested = false;
         const { client, close } = await startServer({
