@@ -4,7 +4,7 @@ import type { ModelCatalog } from "../protocol/index.js";
 import { createBedrockProvider } from "../providers/bedrock.js";
 import { createClaudeSdkProvider } from "../providers/claude-sdk.js";
 import { createCodexProvider } from "../providers/codex.js";
-import { modelOpenaiGpt55 } from "../providers/models.js";
+import { modelOpenaiGpt56Sol } from "../providers/models.js";
 import { readBedrockBearerToken } from "../providers/readBedrockBearerToken.js";
 import type { Provider } from "../providers/types.js";
 import { claudeCodeTools } from "../tools/claude/index.js";
@@ -40,7 +40,7 @@ export function createModelCatalog(options: CreateModelCatalogOptions = {}): Mod
     }
 
     return {
-        defaultModelId: modelOpenaiGpt55.id,
+        defaultModelId: modelOpenaiGpt56Sol.id,
         defaultProviderId: "codex",
         models: uniqueModelsById(providers.flatMap((provider) => provider.models)),
         providers: providers.map((provider) => ({

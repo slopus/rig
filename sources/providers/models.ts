@@ -69,6 +69,27 @@ export const modelOpenaiGpt55 = defineModel({
     defaultThinkingLevel: "medium",
 });
 
+export const modelOpenaiGpt56Sol = defineModel({
+    id: "openai/gpt-5.6-sol",
+    name: "GPT-5.6 Sol",
+    thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max", "ultra"],
+    defaultThinkingLevel: "low",
+});
+
+export const modelOpenaiGpt56Terra = defineModel({
+    id: "openai/gpt-5.6-terra",
+    name: "GPT-5.6 Terra",
+    thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max", "ultra"],
+    defaultThinkingLevel: "medium",
+});
+
+export const modelOpenaiGpt56Luna = defineModel({
+    id: "openai/gpt-5.6-luna",
+    name: "GPT-5.6 Luna",
+    thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
+    defaultThinkingLevel: "medium",
+});
+
 export const modelOpenaiGpt54 = defineModel({
     id: "openai/gpt-5.4",
     name: "GPT-5.4",

@@ -5,6 +5,7 @@ import {
     modelAnthropicFable5,
     modelMoonshotKimiK25,
     modelOpenaiGpt55,
+    modelOpenaiGpt56Sol,
 } from "../providers/models.js";
 import { createCodingAssistantAgent } from "./createCodingAssistantAgent.js";
 
@@ -22,7 +23,7 @@ describe("createCodingAssistantAgent", () => {
         expect(runtime.cwd).toBe(cwd);
         expect(runtime.processManager).toBe(processManager);
         expect(runtime.provider.id).toBe("codex");
-        expect(runtime.agent.model.id).toBe(modelOpenaiGpt55.id);
+        expect(runtime.agent.model.id).toBe(modelOpenaiGpt56Sol.id);
         expect(runtime.context.fs.cwd).toBe(cwd);
         expect(runtime.context.bash.cwd).toBe(cwd);
         expect(runtime.agent.snapshot().instructions).toContain(cwd);

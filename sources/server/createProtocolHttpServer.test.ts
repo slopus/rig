@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ProtocolHttpClient } from "../client/ProtocolHttpClient.js";
 import { createEventIdFactory, type SessionEvent } from "../protocol/index.js";
-import { modelOpenaiGpt55 } from "../providers/models.js";
+import { modelOpenaiGpt55, modelOpenaiGpt56Sol } from "../providers/models.js";
 import { InMemorySessionStore } from "./InMemorySessionStore.js";
 import type { PersistedSessionState } from "./InMemorySession.js";
 import { PersistentSessionStore } from "./PersistentSessionStore.js";
@@ -36,8 +36,12 @@ describe("createProtocolHttpServer", () => {
                 ready: true,
                 status: "ready",
             });
-            expect(health.catalog?.models.map((model) => model.id)).toContain(modelOpenaiGpt55.id);
-            expect(models.catalog.models.map((model) => model.id)).toContain(modelOpenaiGpt55.id);
+            expect(health.catalog?.models.map((model) => model.id)).toContain(
+                modelOpenaiGpt56Sol.id,
+            );
+            expect(models.catalog.models.map((model) => model.id)).toContain(
+                modelOpenaiGpt56Sol.id,
+            );
         } finally {
             await close();
         }

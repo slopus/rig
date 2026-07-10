@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { validJpeg32Base64, validPng32Base64 } from "../tools/testing/validImageFixtures.js";
 import { createCodexProvider } from "./codex.js";
-import { modelOpenaiGpt55 } from "./models.js";
+import { modelOpenaiGpt55, modelOpenaiGpt56Sol } from "./models.js";
 import type { Context } from "./types.js";
 
 afterEach(() => {
@@ -59,7 +59,52 @@ describe("codex provider", () => {
             });
         },
     );
+
+    it("passes GPT-5.6 ultra reasoning through to Codex", async () => {
+        let requestBody: unknown;
+        vi.stubGlobal(
+            "fetch",
+            vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+                requestBody = JSON.parse(String(init?.body));
+                return new Response("data: [DONE]\n\n", {
+                    status: 200,
+                    headers: { "content-type": "text/event-stream" },
+                });
+            }),
+        );
+
+        const provider = createCodexProvider({
+            apiKey: "e30.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC10ZXN0In19.x",
+            transport: "sse",
+        });
+        const stream = provider.stream(modelOpenaiGpt56Sol, emptyContext(), {
+            thinking: "ultra",
+        });
+
+        for await (const _event of stream) {
+            // Draining the stream makes the provider build and send its request.
+        }
+
+        expect(requestBody).toMatchObject({
+            model: "gpt-5.6-sol",
+            reasoning: {
+                effort: "ultra",
+            },
+        });
+    });
 });
+
+function emptyContext(): Context {
+    return {
+        messages: [
+            {
+                role: "user",
+                content: "Hello.",
+                timestamp: Date.now(),
+            },
+        ],
+    };
+}
 
 function imageToolResultContext(mediaType: string, base64: string): Context {
     const timestamp = Date.now();

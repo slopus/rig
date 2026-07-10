@@ -6,17 +6,25 @@ import {
     clampThinkingLevel,
     getModels,
     type Model as PiModel,
-    type ModelThinkingLevel,
     type SimpleStreamOptions,
 } from "@mariozechner/pi-ai";
-import { streamSimpleOpenAICodexResponses } from "@mariozechner/pi-ai/openai-codex-responses";
+import {
+    streamOpenAICodexResponses,
+    type OpenAICodexResponsesOptions,
+} from "@mariozechner/pi-ai/openai-codex-responses";
 
 import { applyCodexImageDetailsToPayload } from "./applyCodexImageDetailsToPayload.js";
 import { classifyCodexErrorCode } from "./classifyCodexErrorCode.js";
 import { collectImageDetails } from "./collectImageDetails.js";
-import { modelOpenaiGpt54, modelOpenaiGpt55 } from "./models.js";
+import {
+    modelOpenaiGpt54,
+    modelOpenaiGpt55,
+    modelOpenaiGpt56Luna,
+    modelOpenaiGpt56Sol,
+    modelOpenaiGpt56Terra,
+} from "./models.js";
 import { toPiContext, wrapPiStream } from "./pi-bridge.js";
-import { defineProvider, type Provider, type StreamOptions } from "./types.js";
+import { defineProvider, type Model, type Provider, type StreamOptions } from "./types.js";
 
 const CODEX_PROVIDER_ID = "openai-codex";
 
@@ -32,13 +40,28 @@ export interface CodexProviderOptions {
     transport?: SimpleStreamOptions["transport"];
 }
 
+const codexModels = [
+    modelOpenaiGpt56Sol,
+    modelOpenaiGpt56Terra,
+    modelOpenaiGpt56Luna,
+    modelOpenaiGpt55,
+    modelOpenaiGpt54,
+] as const;
+const codexThinkingLevels = ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
+
 export function createCodexProvider(options: CodexProviderOptions = {}): Provider {
     const piModelById = new Map(getModels(CODEX_PROVIDER_ID).map((model) => [model.id, model]));
+    for (const model of codexModels) {
+        const piModelId = toPiCodexModelId(model.id);
+        if (!piModelById.has(piModelId)) {
+            piModelById.set(piModelId, createPiCodexModel(model));
+        }
+    }
     const resolveApiKey = buildApiKeyResolver(options);
 
     return defineProvider({
         id: "codex",
-        models: [modelOpenaiGpt55, modelOpenaiGpt54],
+        models: codexModels,
         stream(model, context, streamOptions) {
             const piModel = piModelById.get(toPiCodexModelId(model.id));
             if (!piModel) {
@@ -46,7 +69,7 @@ export function createCodexProvider(options: CodexProviderOptions = {}): Provide
             }
 
             return wrapPiStream(
-                streamSimpleOpenAICodexResponses(
+                streamOpenAICodexResponses(
                     piModel,
                     toPiContext(context),
                     toPiStreamOptions(
@@ -96,14 +119,40 @@ function readLocalCodexAccessToken(authPath?: string): string | undefined {
     }
 }
 
+function createPiCodexModel(model: Model): PiModel<"openai-codex-responses"> {
+    return {
+        id: toPiCodexModelId(model.id),
+        name: model.name,
+        api: "openai-codex-responses",
+        provider: CODEX_PROVIDER_ID,
+        baseUrl: "https://chatgpt.com/backend-api",
+        reasoning: true,
+        thinkingLevelMap: Object.fromEntries(
+            codexThinkingLevels.map((level) => [
+                level,
+                model.thinkingLevels.includes(level) ? level : null,
+            ]),
+        ),
+        input: ["text", "image"],
+        cost: {
+            input: 5,
+            output: 30,
+            cacheRead: 0.5,
+            cacheWrite: 0,
+        },
+        contextWindow: 372000,
+        maxTokens: 128000,
+    } as PiModel<"openai-codex-responses">;
+}
+
 function toPiStreamOptions(
     piModel: PiModel<"openai-codex-responses">,
     options: StreamOptions | undefined,
     apiKey: string | undefined,
     transport: SimpleStreamOptions["transport"],
     imageDetails: readonly ("high" | "original")[],
-): SimpleStreamOptions {
-    const piOptions: SimpleStreamOptions = {
+): OpenAICodexResponsesOptions {
+    const piOptions: OpenAICodexResponsesOptions = {
         ...(options?.signal !== undefined ? { signal: options.signal } : {}),
         ...(options?.sessionId !== undefined ? { sessionId: options.sessionId } : {}),
         ...(apiKey !== undefined ? { apiKey } : {}),
@@ -117,13 +166,29 @@ function toPiStreamOptions(
     };
 
     if (options?.thinking !== undefined && options.thinking !== "off") {
-        const level = clampThinkingLevel(piModel, options.thinking as ModelThinkingLevel);
+        const level = isKnownPiThinkingLevel(options.thinking)
+            ? clampThinkingLevel(piModel, options.thinking)
+            : options.thinking;
         if (level !== "off") {
-            piOptions.reasoning = level;
+            piOptions.reasoningEffort = level as NonNullable<
+                OpenAICodexResponsesOptions["reasoningEffort"]
+            >;
         }
     }
 
     return piOptions;
+}
+
+function isKnownPiThinkingLevel(
+    level: string,
+): level is "minimal" | "low" | "medium" | "high" | "xhigh" {
+    return (
+        level === "minimal" ||
+        level === "low" ||
+        level === "medium" ||
+        level === "high" ||
+        level === "xhigh"
+    );
 }
 
 export type CodexProvider = ReturnType<typeof createCodexProvider>;

@@ -13,6 +13,7 @@ export function describeReasoningLevel(
         high: "Spend more time on harder changes.",
         xhigh: "Think deeply through complex work.",
         max: "Use the largest reasoning budget available.",
+        ultra: "Use maximum reasoning with task delegation.",
     };
     const parts = [descriptions[level] ?? `Use ${humanizeReasoningLevel(level)} reasoning.`];
 

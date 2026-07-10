@@ -20,6 +20,9 @@ export function humanizeReasoningLevel(level: string): string {
     if (level === "max") {
         return "Maximum";
     }
+    if (level === "ultra") {
+        return "Ultra";
+    }
 
     return level
         .split(/[-_\s]+/u)

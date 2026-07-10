@@ -11,7 +11,7 @@ import { createBedrockProvider } from "../providers/bedrock.js";
 import { createClaudeSdkProvider } from "../providers/claude-sdk.js";
 import { createCodexProvider, type CodexProviderOptions } from "../providers/codex.js";
 import { getBedrockModelRoute } from "../providers/getBedrockModelRoute.js";
-import { modelOpenaiGpt55 } from "../providers/models.js";
+import { modelOpenaiGpt56Sol } from "../providers/models.js";
 import { claudeCodeTools } from "../tools/claude/index.js";
 import { codexTools } from "../tools/codex/index.js";
 import { piTools } from "../tools/pi/index.js";
@@ -44,7 +44,7 @@ export function createCodingAssistantAgent(
     if (options.subagents !== undefined) {
         context.subagents = options.subagents;
     }
-    const modelId = options.modelId ?? modelOpenaiGpt55.id;
+    const modelId = options.modelId ?? modelOpenaiGpt56Sol.id;
     const providerId =
         options.providerId ??
         (modelId.startsWith("anthropic/")

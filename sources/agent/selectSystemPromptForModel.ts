@@ -32,7 +32,7 @@ export function selectSystemPromptForModel(provider: Provider, model: Model): st
         modelId.includes("openai/") ||
         modelName.includes("gpt")
     ) {
-        if (modelIdentity.includes("gpt-5.5")) {
+        if (modelIdentity.includes("gpt-5.6") || modelIdentity.includes("gpt-5.5")) {
             return GPT_5_5_SYSTEM_PROMPT;
         }
 
