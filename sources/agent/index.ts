@@ -48,10 +48,12 @@ export type { FileSystemContext, FileSystemStat } from "./context/FileSystemCont
 export type { UserInputContext } from "./context/UserInputContext.js";
 export type { TaskContext } from "./context/TaskContext.js";
 export type {
+    ManagedSubagent,
     SpawnSubagentRequest,
     SpawnSubagentResult,
     SubagentContext,
     SubagentRunStatus,
+    WaitForSubagentResult,
 } from "./context/SubagentContext.js";
 export { createJustBashAgentContext } from "./context/createJustBashAgentContext.js";
 export { createJustBashBashContext } from "./context/createJustBashBashContext.js";

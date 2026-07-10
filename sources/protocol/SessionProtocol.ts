@@ -27,6 +27,7 @@ export interface SessionAgentMetadata {
     description?: string;
     parentSessionId?: string;
     parentToolCallId?: string;
+    taskName?: string;
 }
 
 export interface SessionInterruption {
@@ -95,6 +96,7 @@ export interface SubagentSummary {
     parentSessionId: string;
     parentToolCallId?: string;
     status: SessionStatus;
+    taskName?: string;
     updatedAt: number;
 }
 

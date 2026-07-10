@@ -15,8 +15,8 @@ import { createClaudeSdkProvider } from "../providers/claude-sdk.js";
 import { createCodexProvider, type CodexProviderOptions } from "../providers/codex.js";
 import { getBedrockModelRoute } from "../providers/getBedrockModelRoute.js";
 import { modelOpenaiGpt56Sol } from "../providers/models.js";
-import { claudeCodeTools } from "../tools/claude/index.js";
-import { codexTools } from "../tools/codex/index.js";
+import { claudeCodeTools, claudeCollaborationTools } from "../tools/claude/index.js";
+import { codexCollaborationTools, codexTools } from "../tools/codex/index.js";
 import { piTools } from "../tools/pi/index.js";
 import { agentTool } from "../tools/Agent.js";
 import type { CodingAssistantRuntime } from "./CodingAssistantRuntime.js";
@@ -65,13 +65,21 @@ export function createCodingAssistantAgent(
                 ? "bedrock"
                 : "codex");
     const bedrockRoute = providerId === "bedrock" ? getBedrockModelRoute(modelId) : undefined;
-    const baseTools: readonly AnyDefinedTool[] =
-        providerId === "claude-sdk" || bedrockRoute?.provider === "anthropic"
-            ? claudeCodeTools
-            : providerId === "codex" || bedrockRoute?.provider === "openai"
-              ? codexTools
-              : piTools;
-    const tools = options.subagents?.canSpawn === true ? [...baseTools, agentTool] : [...baseTools];
+    const usesClaudeTools = providerId === "claude-sdk" || bedrockRoute?.provider === "anthropic";
+    const usesCodexTools = providerId === "codex" || bedrockRoute?.provider === "openai";
+    const baseTools: readonly AnyDefinedTool[] = usesClaudeTools
+        ? claudeCodeTools
+        : usesCodexTools
+          ? codexTools
+          : piTools;
+    const tools =
+        options.subagents?.canSpawn !== true
+            ? [...baseTools]
+            : usesCodexTools
+              ? [...baseTools, ...codexCollaborationTools]
+              : usesClaudeTools
+                ? [...baseTools, agentTool, ...claudeCollaborationTools]
+                : [...baseTools, agentTool];
     const provider =
         providerId === "bedrock"
             ? createBedrockProvider({ env: options.env ?? process.env })

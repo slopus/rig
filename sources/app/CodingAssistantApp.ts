@@ -31,6 +31,7 @@ import type {
     McpServerSummary,
     SessionEvent,
     SessionTask,
+    SubagentSummary,
 } from "../protocol/index.js";
 import type { UserInputRequest, UserInputResponse } from "../user-input/index.js";
 import type { AppTranscriptEntry } from "./AppTranscriptEntry.js";
@@ -57,6 +58,7 @@ import {
 } from "./readClipboardImage.js";
 import { ACTIVITY_WAVE_FRAME_COUNT, renderActivityWave } from "./renderActivityWave.js";
 import { renderAgentMarkdown } from "./renderAgentMarkdown.js";
+import { upsertSubagentSummary } from "./upsertSubagentSummary.js";
 
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
@@ -113,6 +115,7 @@ export interface CodingAssistantAppOptions {
     cwd: string;
     initialMcpServers?: readonly McpServerSummary[];
     initialSessionEvents?: readonly SessionEvent[];
+    initialSubagents?: readonly SubagentSummary[];
     initialTasks?: readonly SessionTask[];
     initialUserInputs?: readonly UserInputRequest[];
     modelLocked?: boolean;
@@ -238,6 +241,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #statusText = "Idle";
     #stopped = false;
     #streamEntryId: string | undefined;
+    #subagents: readonly SubagentSummary[];
     #tasks: readonly SessionTask[];
     #thinkingEntryIdsByContentIndex = new Map<number, string>();
     #toolCallEntryIdsByContentIndex = new Map<number, string>();
@@ -258,6 +262,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#showReasoning = options.showReasoning ?? false;
         this.#modelLocked = options.modelLocked ?? !options.agent.canChangeModel;
         this.#mcpServers = options.initialMcpServers ?? [];
+        this.#subagents = options.initialSubagents ?? [];
         this.#tasks = options.initialTasks ?? [];
         this.#tui = options.tui;
         this.#version = options.version ?? "0.0.0";
@@ -387,6 +392,12 @@ export class CodingAssistantApp implements Component, Focusable {
 
         if (event.type === "tasks_changed") {
             this.#tasks = event.data.tasks;
+            this.#requestRender();
+            return;
+        }
+
+        if (event.type === "subagent_changed") {
+            this.#subagents = upsertSubagentSummary(this.#subagents, event.data.subagent);
             this.#requestRender();
             return;
         }
@@ -978,6 +989,11 @@ export class CodingAssistantApp implements Component, Focusable {
             return true;
         }
 
+        if (prompt === "/agents") {
+            this.#showSubagents();
+            return true;
+        }
+
         if (prompt === "/new") {
             this.#resetSession();
             return true;
@@ -1051,6 +1067,32 @@ export class CodingAssistantApp implements Component, Focusable {
             title: "Tasks",
             text: this.#tasks
                 .map((task) => `#${task.id} · ${status[task.status]} · ${task.subject}`)
+                .join("\n"),
+        });
+    }
+
+    #showSubagents(): void {
+        if (this.#subagents.length === 0) {
+            this.#appendEntry({
+                role: "event",
+                title: "Subagents",
+                text: "No delegated work has been started in this session.",
+            });
+            return;
+        }
+        const labels = {
+            aborted: "Stopped",
+            completed: "Completed",
+            error: "Failed",
+            idle: "Idle",
+            queued: "Queued",
+            running: "Running",
+        } as const;
+        this.#appendEntry({
+            role: "event",
+            title: "Subagents",
+            text: this.#subagents
+                .map((subagent) => `${labels[subagent.status]} · ${subagent.description}`)
                 .join("\n"),
         });
     }
@@ -2134,6 +2176,23 @@ export class CodingAssistantApp implements Component, Focusable {
             return taskId === undefined ? "Update task" : `Update task ${taskId}`;
         }
         if (normalized === "tasklist") return "Current tasks";
+        if (normalized === "agent") {
+            return stringField("description") ?? "Delegated work";
+        }
+        if (normalized === "spawn_agent") {
+            const taskName = stringField("task_name");
+            return taskName === undefined
+                ? "Start delegated work"
+                : taskName
+                      .replaceAll("_", " ")
+                      .replace(/^./u, (character) => character.toUpperCase());
+        }
+        if (normalized === "followup_task" || normalized === "sendmessage") {
+            return stringField("summary") ?? "Send follow-up work";
+        }
+        if (normalized === "wait_agent") return "Wait for delegated work";
+        if (normalized === "list_agents") return "Show delegated work";
+        if (normalized === "interrupt_agent") return "Stop delegated work";
 
         return this.#toolDisplayName(toolName);
     }

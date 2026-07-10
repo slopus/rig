@@ -62,20 +62,56 @@ describe("createCodingAssistantAgent", () => {
     it("exposes the Agent tool only while another nested level is available", () => {
         const spawn = async () => ({
             output: "done",
+            path: "/root/test",
             sessionId: "subagent-1",
             status: "completed" as const,
+            taskName: "test",
         });
+        const controls = {
+            depth: 0,
+            followUp: () => {
+                throw new Error("not used");
+            },
+            interrupt: () => {
+                throw new Error("not used");
+            },
+            list: () => [],
+            maxDepth: 3,
+            spawn,
+            wait: async () => ({ agents: [], timedOut: false }),
+        };
         const parent = createCodingAssistantAgent({
             cwd: "/tmp/rig-app-test",
-            subagents: { canSpawn: true, depth: 0, maxDepth: 3, spawn },
+            subagents: { ...controls, canSpawn: true },
         });
         const deepest = createCodingAssistantAgent({
             cwd: "/tmp/rig-app-test",
-            subagents: { canSpawn: false, depth: 3, maxDepth: 3, spawn },
+            subagents: { ...controls, canSpawn: false, depth: 3 },
         });
 
-        expect(parent.agent.tools.map((tool) => tool.name)).toContain("Agent");
-        expect(deepest.agent.tools.map((tool) => tool.name)).not.toContain("Agent");
+        expect(parent.agent.tools.map((tool) => tool.name)).toEqual([
+            "exec_command",
+            "write_stdin",
+            "apply_patch",
+            "view_image",
+            "update_plan",
+            "request_user_input",
+            "spawn_agent",
+            "followup_task",
+            "wait_agent",
+            "list_agents",
+            "interrupt_agent",
+        ]);
+        expect(deepest.agent.tools.map((tool) => tool.name)).not.toContain("spawn_agent");
+
+        const claudeParent = createCodingAssistantAgent({
+            cwd: "/tmp/rig-app-test",
+            modelId: modelAnthropicFable5.id,
+            subagents: { ...controls, canSpawn: true },
+        });
+        expect(claudeParent.agent.tools.map((tool) => tool.name)).toContain("Agent");
+        expect(claudeParent.agent.tools.map((tool) => tool.name)).toContain("SendMessage");
+        expect(claudeParent.agent.tools.map((tool) => tool.name)).not.toContain("spawn_agent");
     });
 
     it("creates an Amazon Bedrock agent for Bedrock Anthropic models", () => {

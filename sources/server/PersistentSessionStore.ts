@@ -62,6 +62,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             repository: {
                 createSubagent: (request, metadata) => this.#createSession(request, metadata),
                 get: (sessionId) => this.get(sessionId),
+                listByRoot: (rootSessionId) => this.#listSubagentSessionsByRoot(rootSessionId),
             },
         });
         if (options.databasePath !== ":memory:") {
@@ -241,6 +242,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     status,
                     parent_session_id,
                     parent_tool_call_id,
+                    task_name,
                     depth,
                     description,
                     created_at_ms,
@@ -253,6 +255,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             .all(parentSessionId)
             .map((row) => {
                 const parentToolCallId = readOptionalString(row, "parent_tool_call_id");
+                const taskName = readOptionalString(row, "task_name");
                 return {
                     agentId: readString(row, "agent_id"),
                     createdAt: readNumber(row, "created_at_ms"),
@@ -263,9 +266,25 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     parentSessionId: readString(row, "parent_session_id"),
                     ...(parentToolCallId !== undefined ? { parentToolCallId } : {}),
                     status: readString(row, "status") as SubagentSummary["status"],
+                    ...(taskName !== undefined ? { taskName } : {}),
                     updatedAt: readNumber(row, "updated_at_ms"),
                 };
             });
+    }
+
+    #listSubagentSessionsByRoot(rootSessionId: string): readonly InMemorySession[] {
+        return this.#database
+            .prepare(
+                `
+                SELECT id
+                FROM sessions
+                WHERE root_session_id = ? AND session_kind = 'subagent'
+                ORDER BY created_at_ms ASC
+                `,
+            )
+            .all(rootSessionId)
+            .map((row) => this.get(readString(row, "id")))
+            .filter((session): session is InMemorySession => session !== undefined);
     }
 
     repairInterruptedSessions(reason: SessionInterruption["reason"]): void {
@@ -319,6 +338,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     root_session_id,
                     depth,
                     parent_tool_call_id,
+                    task_name,
                     description,
                     cwd,
                     provider_id,
@@ -342,7 +362,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     created_at_ms,
                     updated_at_ms
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     agent_id = excluded.agent_id,
                     session_kind = excluded.session_kind,
@@ -350,6 +370,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     root_session_id = excluded.root_session_id,
                     depth = excluded.depth,
                     parent_tool_call_id = excluded.parent_tool_call_id,
+                    task_name = excluded.task_name,
                     description = excluded.description,
                     cwd = excluded.cwd,
                     provider_id = excluded.provider_id,
@@ -381,6 +402,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 state.agent.rootSessionId,
                 state.agent.depth,
                 state.agent.parentToolCallId ?? null,
+                state.agent.taskName ?? null,
                 state.agent.description ?? null,
                 state.cwd,
                 state.providerId,
@@ -491,6 +513,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 root_session_id TEXT,
                 depth INTEGER NOT NULL DEFAULT 0,
                 parent_tool_call_id TEXT,
+                task_name TEXT,
                 description TEXT,
                 cwd TEXT NOT NULL,
                 provider_id TEXT NOT NULL,
@@ -562,6 +585,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         this.#ensureSessionColumn("root_session_id", "TEXT");
         this.#ensureSessionColumn("depth", "INTEGER NOT NULL DEFAULT 0");
         this.#ensureSessionColumn("parent_tool_call_id", "TEXT");
+        this.#ensureSessionColumn("task_name", "TEXT");
         this.#ensureSessionColumn("description", "TEXT");
         this.#ensureSessionColumn("context_messages_json", "TEXT");
         this.#ensureSessionColumn("permission_mode", "TEXT NOT NULL DEFAULT 'workspace_write'");
@@ -663,6 +687,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         const permissionMode = parsePermissionMode(readString(row, "permission_mode"));
         const parentSessionId = readOptionalString(row, "parent_session_id");
         const parentToolCallId = readOptionalString(row, "parent_tool_call_id");
+        const taskName = readOptionalString(row, "task_name");
         const description = readOptionalString(row, "description");
         const id = readString(row, "id");
         const agent: SessionAgentMetadata = {
@@ -672,6 +697,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             ...(description !== undefined ? { description } : {}),
             ...(parentSessionId !== undefined ? { parentSessionId } : {}),
             ...(parentToolCallId !== undefined ? { parentToolCallId } : {}),
+            ...(taskName !== undefined ? { taskName } : {}),
         };
         const restore: PersistedSessionState = {
             agent,

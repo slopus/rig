@@ -575,6 +575,7 @@ describe("PersistentSessionStore", () => {
                         parentSessionId: "session-1",
                         parentToolCallId: "tool-1",
                         rootSessionId: "session-1",
+                        taskName: "inspect_persistence",
                         type: "subagent",
                     },
                     agentId: "agent-2",
@@ -596,6 +597,7 @@ describe("PersistentSessionStore", () => {
                         id: "subagent-1",
                         parentToolCallId: "tool-1",
                         status: "completed",
+                        taskName: "inspect_persistence",
                     }),
                 ]);
                 expect(restoredStore.get("subagent-1")?.snapshot().agent).toEqual({
@@ -604,6 +606,7 @@ describe("PersistentSessionStore", () => {
                     parentSessionId: "session-1",
                     parentToolCallId: "tool-1",
                     rootSessionId: "session-1",
+                    taskName: "inspect_persistence",
                     type: "subagent",
                 });
                 expect(() =>

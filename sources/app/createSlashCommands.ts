@@ -43,6 +43,12 @@ export function createSlashCommands(): SlashCommandItem[] {
             aliases: ["todos"],
         },
         {
+            value: "agents",
+            label: "/agents",
+            description: "Show delegated work and its current status.",
+            aliases: [],
+        },
+        {
             value: "new",
             label: "/new",
             description: "Reset this session and start fresh.",

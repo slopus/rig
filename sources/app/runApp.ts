@@ -96,6 +96,13 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     })();
     const processManager = new NativeProxessManager();
     const sessionCwd = session.session.cwd;
+    const subagents = await localServer.client
+        .listSubagents(session.session.id)
+        .catch((error: unknown) => {
+            startup.stop();
+            tui.stop();
+            throw error;
+        });
     const context = createNodeAgentContext({
         cwd: sessionCwd,
         permissionMode: session.session.permissionMode,
@@ -113,6 +120,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         cwd: sessionCwd,
         initialSessionEvents: history.events,
         initialMcpServers: session.session.mcpServers,
+        initialSubagents: subagents.subagents,
         initialUserInputs: session.session.pendingUserInputs,
         initialTasks: session.session.tasks,
         modelLocked: session.session.modelLocked,

@@ -28,7 +28,7 @@ rig stays close to pi and to upstream vendor behavior, but adds a curated defaul
 - Provider-aligned task planning with Codex `update_plan` and Claude's persistent task tools.
 - Structured user questions with provider-aligned tools and terminal or web answer controls.
 - MCP tool servers over stdio or streamable HTTP, with Codex- and Claude-compatible configuration.
-- Background workers for longer-running or asynchronous tasks.
+- Background subagents with completion notifications and follow-up turns.
 - Workflow presets for repeated engineering operations.
 - Auto mode for hands-off execution when a project allows it.
 - Automatic conversation compaction for long sessions, plus `/compact` when you want to free context space immediately.
@@ -143,6 +143,19 @@ Claude sessions use the current `TaskCreate`, `TaskGet`, `TaskUpdate`, and
 `TaskList` tools. Tasks, dependencies, and progress survive daemon restarts and
 are shared with the session's subagents. Use `/tasks` in the terminal or the
 Tasks section in the web inspector to see the current list.
+
+### Background subagents
+
+Claude sessions can set `run_in_background` on the `Agent` tool and use
+`SendMessage` for follow-up work. Codex sessions use `spawn_agent`,
+`followup_task`, `wait_agent`, `list_agents`, and
+`interrupt_agent`. Each child keeps its own persisted conversation, reports a
+completion notification to its parent, and can receive more work without losing
+context. Use `/agents` in the terminal or Delegated work in the web inspector to
+see current status and open a child transcript.
+
+Team/swarm coordination, remote agents, and automatic worktree isolation are
+intentionally outside this core workflow.
 
 ### MCP tool servers
 

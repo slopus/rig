@@ -33,6 +33,12 @@ export class InMemorySessionStore implements SessionStore {
             repository: {
                 createSubagent: (request, metadata) => this.#createSession(request, metadata),
                 get: (sessionId) => this.get(sessionId),
+                listByRoot: (rootSessionId) =>
+                    [...this.#sessions.values()].filter(
+                        (session) =>
+                            session.agentMetadata().rootSessionId === rootSessionId &&
+                            session.isSubagent(),
+                    ),
             },
         });
     }

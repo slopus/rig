@@ -13,7 +13,7 @@ export function createSubagentInstructions(
     return [
         baseInstructions,
         "You are a subagent working on one delegated step. Complete the task independently and return a concise result to the parent agent.",
-        "Your conversation is read-only after this step finishes, so do not expect follow-up messages or a resumed session.",
+        "The parent agent may send follow-up work after this step. Continue from your existing context when it does.",
         depth < maxDepth
             ? `You may delegate focused work to another subagent. The current depth is ${depth} of ${maxDepth}.`
             : "You are at the maximum subagent depth and must complete the task directly.",

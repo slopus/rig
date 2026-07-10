@@ -725,6 +725,74 @@ describe("CodingAssistantApp", () => {
         expect(rendered).toContain("#2 · Pending · Verify the feature");
     });
 
+    it("shows delegated work status from the agents command", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            initialSubagents: [
+                {
+                    agentId: "agent-2",
+                    createdAt: 1,
+                    depth: 1,
+                    description: "Inspect the implementation",
+                    id: "subagent-1",
+                    modelId: model.id,
+                    parentSessionId: "session-1",
+                    status: "running",
+                    taskName: "inspect_implementation",
+                    updatedAt: 1,
+                },
+            ],
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+        app.applySessionEvent({
+            createdAt: 2,
+            data: {
+                subagent: {
+                    agentId: "agent-2",
+                    createdAt: 1,
+                    depth: 1,
+                    description: "Inspect the implementation",
+                    id: "subagent-1",
+                    modelId: model.id,
+                    parentSessionId: "session-1",
+                    status: "completed",
+                    taskName: "inspect_implementation",
+                    updatedAt: 2,
+                },
+            },
+            id: "event-1",
+            sessionId: "session-1",
+            type: "subagent_changed",
+        });
+
+        submit(app, "/agents");
+
+        expect(stripAnsi(app.render(100).join("\n"))).toContain(
+            "Completed · Inspect the implementation",
+        );
+    });
+
     it("compacts conversation history from the compact command", async () => {
         const model = defineModel({
             id: "openai/gpt-test",

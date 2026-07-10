@@ -764,6 +764,9 @@ export class InMemorySession {
                 ? { parentToolCallId: this.#agentMetadata.parentToolCallId }
                 : {}),
             status: this.#status,
+            ...(this.#agentMetadata.taskName !== undefined
+                ? { taskName: this.#agentMetadata.taskName }
+                : {}),
             updatedAt: this.events.lastCreatedAt() ?? this.#now(),
         };
     }
@@ -1010,14 +1013,17 @@ export class InMemorySession {
         if (this.#effort !== undefined) options.effort = this.#effort;
         if (this.#instructions !== undefined) options.instructions = this.#instructions;
         if (this.#request.apiKey !== undefined) options.apiKey = this.#request.apiKey;
-        if (this.#agentManager !== undefined) {
+        const agentManager = this.#agentManager;
+        if (agentManager !== undefined) {
             options.subagents = {
-                canSpawn: this.#agentMetadata.depth < this.#agentManager.maxDepth,
+                canSpawn: this.#agentMetadata.depth < agentManager.maxDepth,
                 depth: this.#agentMetadata.depth,
-                maxDepth: this.#agentManager.maxDepth,
-                spawn: (request, signal) =>
-                    this.#agentManager?.spawn(this.id, request, signal) ??
-                    Promise.reject(new Error("Subagent management is unavailable.")),
+                followUp: (target, message) => agentManager.followUp(this.id, target, message),
+                interrupt: (target) => agentManager.interrupt(this.id, target),
+                list: (pathPrefix) => agentManager.list(this.id, pathPrefix),
+                maxDepth: agentManager.maxDepth,
+                spawn: (request, signal) => agentManager.spawn(this.id, request, signal),
+                wait: (timeoutMs, signal) => agentManager.wait(this.id, timeoutMs, signal),
             };
         }
         const runtime = createCodingAssistantAgent(options);

@@ -12,6 +12,7 @@ export { claudeWebFetchTool } from "./WebFetch.js";
 export { claudeWebSearchTool } from "./WebSearch.js";
 export { claudeWriteTool } from "./Write.js";
 export { claudeAskUserQuestionTool } from "./AskUserQuestion.js";
+export { claudeSendMessageTool } from "./SendMessage.js";
 
 import { claudeBashTool } from "./Bash.js";
 import { claudeEditTool } from "./Edit.js";
@@ -26,6 +27,7 @@ import { claudeWebFetchTool } from "./WebFetch.js";
 import { claudeWebSearchTool } from "./WebSearch.js";
 import { claudeWriteTool } from "./Write.js";
 import { claudeAskUserQuestionTool } from "./AskUserQuestion.js";
+import { claudeSendMessageTool } from "./SendMessage.js";
 
 export const claudeCodeTools = [
     claudeBashTool,
@@ -42,3 +44,5 @@ export const claudeCodeTools = [
     claudeWebSearchTool,
     claudeAskUserQuestionTool,
 ] as const;
+
+export const claudeCollaborationTools = [claudeSendMessageTool] as const;
