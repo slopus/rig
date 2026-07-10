@@ -46,7 +46,7 @@ describe("createProtocolHttpServer", () => {
         const { client, close } = await startServer();
         try {
             const created = await client.createSession({
-                cwd: "/tmp/ohmypi-protocol-test",
+                cwd: "/tmp/rig-protocol-test",
                 modelId: modelOpenaiGpt55.id,
             });
 
@@ -69,7 +69,7 @@ describe("createProtocolHttpServer", () => {
     it("serves catch-up events since a cursor", async () => {
         const { client, close, store } = await startServer();
         try {
-            const created = await client.createSession({ cwd: "/tmp/ohmypi-protocol-test" });
+            const created = await client.createSession({ cwd: "/tmp/rig-protocol-test" });
             const session = store.get(created.session.id);
             expect(session).toBeDefined();
             const createEventId = createEventIdFactory({ now: () => 1_700_000_000_000 });
@@ -89,8 +89,8 @@ describe("createProtocolHttpServer", () => {
     it("serves session summaries", async () => {
         const { client, close } = await startServer();
         try {
-            await client.createSession({ cwd: "/tmp/ohmypi-protocol-test-a" });
-            await client.createSession({ cwd: "/tmp/ohmypi-protocol-test-b" });
+            await client.createSession({ cwd: "/tmp/rig-protocol-test-a" });
+            await client.createSession({ cwd: "/tmp/rig-protocol-test-b" });
 
             const response = await client.listSessions(1);
 
@@ -107,7 +107,7 @@ describe("createProtocolHttpServer", () => {
     it("accepts image content blocks on submitted messages", async () => {
         const { client, close } = await startServer();
         try {
-            const created = await client.createSession({ cwd: "/tmp/ohmypi-protocol-test" });
+            const created = await client.createSession({ cwd: "/tmp/rig-protocol-test" });
 
             await client.submitMessage(created.session.id, {
                 content: [
@@ -185,7 +185,7 @@ async function startServer(
     socketPath: string;
     store: SessionStore;
 }> {
-    const directory = await mkdtemp(join(tmpdir(), "ohmypi-server-test-"));
+    const directory = await mkdtemp(join(tmpdir(), "rig-server-test-"));
     const socketPath = join(directory, "server.sock");
     const store = options.store ?? new InMemorySessionStore();
     const server = createProtocolHttpServer({
@@ -222,7 +222,7 @@ function readOnlySubagentState(): PersistedSessionState {
             type: "subagent",
         },
         agentId: "agent-2",
-        cwd: "/tmp/ohmypi-protocol-test",
+        cwd: "/tmp/rig-protocol-test",
         id: "subagent-1",
         messages: [],
         modelId: modelOpenaiGpt55.id,

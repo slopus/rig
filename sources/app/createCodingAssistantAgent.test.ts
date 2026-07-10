@@ -10,7 +10,7 @@ import { createCodingAssistantAgent } from "./createCodingAssistantAgent.js";
 
 describe("createCodingAssistantAgent", () => {
     it("creates a Codex agent with node filesystem and bash contexts", () => {
-        const cwd = "/tmp/ohmypi-app-test";
+        const cwd = "/tmp/rig-app-test";
         const processManager = new NativeProxessManager();
 
         const runtime = createCodingAssistantAgent({
@@ -30,7 +30,7 @@ describe("createCodingAssistantAgent", () => {
     });
 
     it("creates a Claude SDK agent for Anthropic models", () => {
-        const cwd = "/tmp/ohmypi-app-test";
+        const cwd = "/tmp/rig-app-test";
         const processManager = new NativeProxessManager();
 
         const runtime = createCodingAssistantAgent({
@@ -61,11 +61,11 @@ describe("createCodingAssistantAgent", () => {
             status: "completed" as const,
         });
         const parent = createCodingAssistantAgent({
-            cwd: "/tmp/ohmypi-app-test",
+            cwd: "/tmp/rig-app-test",
             subagents: { canSpawn: true, depth: 0, maxDepth: 3, spawn },
         });
         const deepest = createCodingAssistantAgent({
-            cwd: "/tmp/ohmypi-app-test",
+            cwd: "/tmp/rig-app-test",
             subagents: { canSpawn: false, depth: 3, maxDepth: 3, spawn },
         });
 
@@ -75,7 +75,7 @@ describe("createCodingAssistantAgent", () => {
 
     it("creates an Amazon Bedrock agent for Bedrock Anthropic models", () => {
         const runtime = createCodingAssistantAgent({
-            cwd: "/tmp/ohmypi-app-test",
+            cwd: "/tmp/rig-app-test",
             env: {
                 AWS_BEARER_TOKEN_BEDROCK: "bedrock-token",
                 AWS_REGION: "us-east-1",
@@ -91,7 +91,7 @@ describe("createCodingAssistantAgent", () => {
 
     it("uses Codex-style tools for Bedrock OpenAI models", () => {
         const runtime = createCodingAssistantAgent({
-            cwd: "/tmp/ohmypi-app-test",
+            cwd: "/tmp/rig-app-test",
             env: {
                 AWS_BEARER_TOKEN_BEDROCK: "bedrock-token",
                 AWS_REGION: "us-east-1",
@@ -112,7 +112,7 @@ describe("createCodingAssistantAgent", () => {
 
     it("uses provider-neutral tools for Bedrock Kimi and GLM models", () => {
         const runtime = createCodingAssistantAgent({
-            cwd: "/tmp/ohmypi-app-test",
+            cwd: "/tmp/rig-app-test",
             env: {
                 AWS_BEARER_TOKEN_BEDROCK: "bedrock-token",
                 AWS_REGION: "us-east-1",

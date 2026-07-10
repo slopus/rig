@@ -14,7 +14,7 @@ describe("StartupStatusApp", () => {
         });
 
         const rendered = stripAnsi(app.render(80).join("\n"));
-        expect(rendered).toContain(">_ Oh My Pi 1.2.3");
+        expect(rendered).toContain(">_ Rig 1.2.3");
         expect(rendered).toContain("Agentic coding CLI for local project work.");
         expect(rendered).toContain("Keeps sessions in a private local daemon.");
         expect(rendered).toContain("Directory: workspace");

@@ -83,7 +83,7 @@ describe("Claude SDK provider", () => {
         expect(result.content).toEqual([{ type: "text", text: "ok" }]);
         expect(calls).toHaveLength(1);
         expect(calls[0]?.options?.tools).toEqual([]);
-        expect(calls[0]?.options?.allowedTools).toEqual(["mcp__ohmypi__Read"]);
+        expect(calls[0]?.options?.allowedTools).toEqual(["mcp__rig__Read"]);
         expect(calls[0]?.options?.toolAliases).toBeUndefined();
         expect(calls[0]?.options?.extraArgs).toEqual({ "disable-slash-commands": null });
         expect(calls[0]?.options?.env?.CLAUDE_CODE_DISABLE_BUNDLED_SKILLS).toBe("1");
@@ -95,7 +95,7 @@ describe("Claude SDK provider", () => {
         expect(calls[0]?.options?.persistSession).toBe(false);
         expect(calls[0]?.options?.settingSources).toEqual([]);
         expect(calls[0]?.options?.strictMcpConfig).toBe(true);
-        expect(calls[0]?.options?.mcpServers).toHaveProperty("ohmypi");
+        expect(calls[0]?.options?.mcpServers).toHaveProperty("rig");
     });
 
     it("streams Claude partial assistant text deltas before the final result", async () => {
@@ -252,7 +252,7 @@ describe("Claude SDK provider", () => {
                                     content_block: {
                                         type: "tool_use",
                                         id: "tool-read",
-                                        name: "mcp__ohmypi__Read",
+                                        name: "mcp__rig__Read",
                                         input: {},
                                     },
                                 },

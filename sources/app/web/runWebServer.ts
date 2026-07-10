@@ -8,16 +8,16 @@ import { createWebHttpServer } from "./createWebHttpServer.js";
 
 export async function runWebServer(env: NodeJS.ProcessEnv = process.env): Promise<void> {
     const paths = getLocalServerPaths();
-    const socketPath = env.OHMYPI_SERVER_SOCKET_PATH ?? paths.socketPath;
-    const tokenPath = env.OHMYPI_SERVER_TOKEN_PATH ?? paths.tokenPath;
+    const socketPath = env.RIG_SERVER_SOCKET_PATH ?? paths.socketPath;
+    const tokenPath = env.RIG_SERVER_TOKEN_PATH ?? paths.tokenPath;
     const token = await readLocalServerToken(tokenPath);
-    const assetRoot = await resolveWebAssetRoot(env.OHMYPI_WEB_ASSET_ROOT);
+    const assetRoot = await resolveWebAssetRoot(env.RIG_WEB_ASSET_ROOT);
     const server = createWebHttpServer({ assetRoot, socketPath, token });
     const host = env.HOST ?? "127.0.0.1";
     const port = parsePort(env.PORT);
 
     await listen(server, port, host);
-    console.log(`Oh My Pi web server is listening on ${host}:${port}.`);
+    console.log(`Rig web server is listening on ${host}:${port}.`);
 }
 
 async function resolveWebAssetRoot(configuredPath: string | undefined): Promise<string> {

@@ -118,11 +118,11 @@ function writeClipboardImageFile(
     image: RawClipboardImage,
     outputDirectory: string | undefined,
 ): string {
-    const directory = outputDirectory ?? join(tmpdir(), "ohmypi-clipboard-images");
+    const directory = outputDirectory ?? join(tmpdir(), "rig-clipboard-images");
     mkdirSync(directory, { recursive: true });
     const path = join(
         directory,
-        `ohmypi-clipboard-${randomUUID()}.${extensionForMimeType(image.mediaType)}`,
+        `rig-clipboard-${randomUUID()}.${extensionForMimeType(image.mediaType)}`,
     );
     writeFileSync(path, image.bytes);
     return path;

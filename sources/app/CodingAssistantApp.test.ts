@@ -51,13 +51,13 @@ describe("CodingAssistantApp", () => {
         const raw = app.render(80).join("\n");
         const rendered = stripAnsi(raw);
         const renderedLines = rendered.split("\n");
-        expect(rendered).toContain(">_ Oh My Pi 1.2.3");
+        expect(rendered).toContain(">_ Rig 1.2.3");
         expect(rendered).toContain("Agentic coding CLI for local project work.");
         expect(rendered).toContain("Keeps sessions in a private local daemon.");
         expect(rendered).not.toContain("Model: GPT Test");
         expect(rendered).not.toContain("Provider: Codex");
         expect(rendered).toContain("Directory:");
-        expect(rendered).toContain("Ask Oh My Pi to do anything");
+        expect(rendered).toContain("Ask Rig to do anything");
         expect(renderedLines[0]?.length).toBeLessThan(80);
         expect(renderedLines[0]?.startsWith("╭")).toBe(true);
         expect(renderedLines[0]?.endsWith("╮")).toBe(true);
@@ -68,8 +68,8 @@ describe("CodingAssistantApp", () => {
         expect(raw).toContain("\x1b[38;5;202m\x1b[1m›\x1b[22m\x1b[38;5;255m");
         expect(raw).toContain("\x1b[38;5;252mGPT Test");
         expect(raw).toContain("\x1b[38;5;245m/workspace");
-        expect(rendered).toContain("› Ask Oh My Pi to do anything");
-        expect(rendered).not.toContain("›  Ask Oh My Pi to do anything");
+        expect(rendered).toContain("› Ask Rig to do anything");
+        expect(rendered).not.toContain("›  Ask Rig to do anything");
         expect(rendered).toContain("GPT Test");
         expect(rendered).toContain("GPT Test Off");
         expect(rendered).toContain("/workspace");
@@ -310,7 +310,7 @@ describe("CodingAssistantApp", () => {
         expect(modelMenu).toContain("Default reasoning: Low");
         expect(modelMenu).not.toContain("Available model");
         expect(modelMenu).toContain("Use ↑/↓ to move, Enter to select, Esc to cancel.");
-        expect(modelMenu).not.toContain("Ask Oh My Pi to do anything");
+        expect(modelMenu).not.toContain("Ask Rig to do anything");
 
         app.handleInput("\x1b[B");
         app.handleInput("\r");
@@ -322,7 +322,7 @@ describe("CodingAssistantApp", () => {
         expect(reasoningMenu).toContain("High");
         expect(reasoningMenu).toContain("Use light reasoning for simple coding tasks.");
         expect(reasoningMenu).toContain("Spend more time on harder changes.");
-        expect(reasoningMenu).not.toContain("Ask Oh My Pi to do anything");
+        expect(reasoningMenu).not.toContain("Ask Rig to do anything");
 
         app.handleInput("\x1b[B");
         app.handleInput("\r");
@@ -335,7 +335,7 @@ describe("CodingAssistantApp", () => {
         ]);
         expect(rendered).toContain("GPT Pro High");
         expect(rendered).toContain("Model changed to GPT Pro with High reasoning.");
-        expect(rendered).toContain("Ask Oh My Pi to do anything");
+        expect(rendered).toContain("Ask Rig to do anything");
     });
 
     it("shows Bedrock-only models and sends their provider from the TUI picker", () => {
@@ -562,7 +562,7 @@ describe("CodingAssistantApp", () => {
 
         const rendered = stripAnsi(app.render(80).join("\n"));
         expect(rendered).toContain("Choose Model");
-        expect(rendered).not.toContain("Ask Oh My Pi to do anything");
+        expect(rendered).not.toContain("Ask Rig to do anything");
     });
 
     it("shows slash command autocomplete with command descriptions", async () => {
@@ -613,7 +613,7 @@ describe("CodingAssistantApp", () => {
         expect(rendered).toContain("/new");
         expect(rendered).toContain("Reset this session and start fresh.");
         expect(rendered).toContain("/exit");
-        expect(rendered).toContain("Close Oh My Pi.");
+        expect(rendered).toContain("Close Rig.");
         expect(rendered).toContain("/clear");
         expect(rendered).toContain("Clear the visible conversation.");
         expect(rendered).not.toContain("GPT Test Off •");
@@ -1140,7 +1140,7 @@ describe("CodingAssistantApp", () => {
         app.handleInput("\x1bm");
         app.handleInput("\x1b");
 
-        expect(stripAnsi(app.render(80).join("\n"))).toContain("Ask Oh My Pi to do anything");
+        expect(stripAnsi(app.render(80).join("\n"))).toContain("Ask Rig to do anything");
 
         app.handleInput("\x1bm");
         app.handleInput("\x03");
@@ -1750,15 +1750,15 @@ describe("CodingAssistantApp", () => {
             const visibleCursor = app.render(80).join("\n");
             expect(visibleCursor).toContain("\x1b_pi:c\x07");
             expect(visibleCursor).toContain("\x1b[48;5;244m\x1b[38;5;232mA");
-            expect(stripAnsi(visibleCursor)).toContain("› Ask Oh My Pi to do anything");
-            expect(stripAnsi(visibleCursor)).not.toContain("›  Ask Oh My Pi to do anything");
+            expect(stripAnsi(visibleCursor)).toContain("› Ask Rig to do anything");
+            expect(stripAnsi(visibleCursor)).not.toContain("›  Ask Rig to do anything");
 
             vi.advanceTimersByTime(530);
 
             const hiddenCursor = app.render(80).join("\n");
             expect(hiddenCursor).not.toContain("\x1b[48;5;244m\x1b[38;5;232mA");
-            expect(stripAnsi(hiddenCursor)).toContain("› Ask Oh My Pi to do anything");
-            expect(stripAnsi(hiddenCursor)).not.toContain("›  Ask Oh My Pi to do anything");
+            expect(stripAnsi(hiddenCursor)).toContain("› Ask Rig to do anything");
+            expect(stripAnsi(hiddenCursor)).not.toContain("›  Ask Rig to do anything");
             expect(tui.requestRender).toHaveBeenCalled();
             app.focused = false;
         } finally {

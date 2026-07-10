@@ -33,7 +33,7 @@ export function createSlashCommands(): SlashCommandItem[] {
         {
             value: "exit",
             label: "/exit",
-            description: "Close Oh My Pi.",
+            description: "Close Rig.",
             aliases: [],
         },
         {

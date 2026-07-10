@@ -9,7 +9,7 @@ describe("main entry point", () => {
     });
 
     it("detects direct module execution", () => {
-        const file = "/tmp/ohmypi/dist/main.js";
+        const file = "/tmp/rig/dist/main.js";
         expect(isMainModule(`file://${file}`, ["node", file])).toBe(true);
         expect(isMainModule("file:///tmp/other.js", ["node", file])).toBe(false);
     });

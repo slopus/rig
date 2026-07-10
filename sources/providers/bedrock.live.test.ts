@@ -15,7 +15,7 @@ import { readBedrockBearerToken } from "./readBedrockBearerToken.js";
 import { resolveBedrockRegion } from "./resolveBedrockRegion.js";
 import type { AssistantMessage, Model, TextContent } from "./types.js";
 
-const LIVE = process.env.OHMYPI_LIVE_TEST === "1";
+const LIVE = process.env.RIG_LIVE_TEST === "1";
 const HAS_BEDROCK_TOKEN = readBedrockBearerToken(process.env) !== undefined;
 const describeLive = LIVE && HAS_BEDROCK_TOKEN ? describe : describe.skip;
 const LIVE_REGION = resolveBedrockRegion(process.env);
@@ -107,9 +107,7 @@ describeLive("Amazon Bedrock provider live", () => {
 describe("Amazon Bedrock provider live prerequisites", () => {
     it("documents how to run the live test", () => {
         if (LIVE && !HAS_BEDROCK_TOKEN) {
-            expect.fail(
-                "OHMYPI_LIVE_TEST=1 is set but AWS_BEARER_TOKEN_BEDROCK is missing or blank",
-            );
+            expect.fail("RIG_LIVE_TEST=1 is set but AWS_BEARER_TOKEN_BEDROCK is missing or blank");
         }
 
         expect(true).toBe(true);

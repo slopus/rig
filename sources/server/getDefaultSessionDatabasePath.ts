@@ -6,5 +6,5 @@ export function getDefaultSessionDatabasePath(
     homeDirectory: string = homedir(),
 ): string {
     const stateHome = env.XDG_STATE_HOME ?? join(homeDirectory, ".local", "state");
-    return join(stateHome, "ohmypi", "sessions.sqlite");
+    return join(stateHome, "rig", "sessions.sqlite");
 }

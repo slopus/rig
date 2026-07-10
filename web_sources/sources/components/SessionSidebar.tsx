@@ -58,7 +58,7 @@ export function SessionSidebar(props: SessionSidebarProps) {
     return (
         <aside className="flex w-72 shrink-0 flex-col border-r border-border/60 bg-background">
             <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/60 pr-2 pl-4">
-                <span className="text-[13px] font-semibold tracking-tight">Oh My Pi</span>
+                <span className="text-[13px] font-semibold tracking-tight">Rig</span>
                 <NewSessionDialog
                     catalog={props.health?.catalog}
                     daemonReady={props.health?.ready === true && props.healthError === undefined}

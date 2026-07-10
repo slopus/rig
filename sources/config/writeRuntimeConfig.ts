@@ -2,9 +2,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { stringify } from "smol-toml";
 
-import type { PartialOhMyPiConfig } from "./types.js";
+import type { PartialRigConfig } from "./types.js";
 
-export async function writeRuntimeConfig(path: string, config: PartialOhMyPiConfig): Promise<void> {
+export async function writeRuntimeConfig(path: string, config: PartialRigConfig): Promise<void> {
     const defaults = config.defaults;
     const settings = config.settings;
     const document: {

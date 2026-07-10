@@ -60,7 +60,7 @@ function getEnvironmentLocalServerPaths(): ReturnType<typeof getLocalServerPaths
     const paths = getLocalServerPaths();
     return {
         ...paths,
-        socketPath: process.env.OHMYPI_SERVER_SOCKET_PATH ?? paths.socketPath,
-        tokenPath: process.env.OHMYPI_SERVER_TOKEN_PATH ?? paths.tokenPath,
+        socketPath: process.env.RIG_SERVER_SOCKET_PATH ?? paths.socketPath,
+        tokenPath: process.env.RIG_SERVER_TOKEN_PATH ?? paths.tokenPath,
     };
 }

@@ -30,7 +30,7 @@ describe("InMemorySession", () => {
         const store = new InMemorySessionStore({ modelCatalog: catalog });
 
         const session = store.create({
-            cwd: "/tmp/ohmypi-session-test",
+            cwd: "/tmp/rig-session-test",
             modelId: sharedModel.id,
             providerId: "bedrock",
         });
@@ -62,7 +62,7 @@ describe("InMemorySession", () => {
         });
 
         const inferredSession = store.create({
-            cwd: "/tmp/ohmypi-session-test",
+            cwd: "/tmp/rig-session-test",
             modelId: bedrockOnlyModel.id,
         });
         expect(inferredSession.snapshot()).toMatchObject({
@@ -87,7 +87,7 @@ describe("InMemorySession", () => {
         const store = new InMemorySessionStore({ modelCatalog: catalog });
 
         const session = store.create({
-            cwd: "/tmp/ohmypi-session-test",
+            cwd: "/tmp/rig-session-test",
             effort: "max",
             modelId: "zai/glm-5",
             providerId: "bedrock",
@@ -126,7 +126,7 @@ describe("InMemorySession", () => {
         const store = new InMemorySessionStore({ modelCatalog: catalog });
 
         const session = store.create({
-            cwd: "/tmp/ohmypi-session-test",
+            cwd: "/tmp/rig-session-test",
             modelId: sharedModel.id,
             providerId: "bedrock",
         });

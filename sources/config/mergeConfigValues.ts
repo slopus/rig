@@ -1,9 +1,6 @@
-import type { OhMyPiConfig, PartialOhMyPiConfig } from "./types.js";
+import type { RigConfig, PartialRigConfig } from "./types.js";
 
-export function mergeConfigValues(
-    base: OhMyPiConfig,
-    ...configs: PartialOhMyPiConfig[]
-): OhMyPiConfig {
+export function mergeConfigValues(base: RigConfig, ...configs: PartialRigConfig[]): RigConfig {
     const defaults = { ...base.defaults };
     const settings = { ...base.settings };
 

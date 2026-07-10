@@ -30,6 +30,6 @@ export function resolveClaudeCodeExecutablePath(): string {
     }
 
     throw new Error(
-        `Claude Code is unavailable for ${process.platform}-${process.arch}. Reinstall Oh My Pi with optional dependencies enabled.`,
+        `Claude Code is unavailable for ${process.platform}-${process.arch}. Reinstall Rig with optional dependencies enabled.`,
     );
 }

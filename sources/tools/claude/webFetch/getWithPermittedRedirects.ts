@@ -26,7 +26,7 @@ export async function getWithPermittedRedirects(
         const response = await fetch(url, {
             headers: {
                 Accept: "text/markdown, text/html, */*",
-                "User-Agent": "Claude-User (ohmypi; +https://support.anthropic.com/)",
+                "User-Agent": "Claude-User (rig; +https://support.anthropic.com/)",
             },
             redirect: "manual",
             signal: timedSignal.signal,

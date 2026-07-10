@@ -28,7 +28,7 @@ export async function requestAnthropicMessage(
         headers: {
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
-            "User-Agent": "ohmypi",
+            "User-Agent": "rig",
             "x-app": "cli",
             ...(oauthToken !== undefined ? { "anthropic-beta": "oauth-2025-04-20" } : {}),
             ...(bearerToken !== undefined

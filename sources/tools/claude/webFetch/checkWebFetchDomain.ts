@@ -20,11 +20,11 @@ export async function checkWebFetchDomain(domain: string, signal?: AbortSignal):
 
         const body = (await response.json()) as { can_fetch?: unknown };
         if (body.can_fetch !== true) {
-            throw new Error(`Oh My Pi is unable to fetch from ${domain}`);
+            throw new Error(`Rig is unable to fetch from ${domain}`);
         }
         webFetchDomainCache.set(domain, true);
     } catch (error) {
-        if (error instanceof Error && error.message.startsWith("Oh My Pi is unable")) {
+        if (error instanceof Error && error.message.startsWith("Rig is unable")) {
             throw error;
         }
         throw new Error(

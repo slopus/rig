@@ -121,7 +121,7 @@ describe("NativeProxessManager", () => {
 });
 
 async function makeTempDir(): Promise<string> {
-    const path = await mkdtemp(join(tmpdir(), "ohmypi-processes-"));
+    const path = await mkdtemp(join(tmpdir(), "rig-processes-"));
     tempDirs.push(path);
     return path;
 }

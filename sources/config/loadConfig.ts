@@ -1,4 +1,4 @@
-import { DEFAULT_OHMYPI_CONFIG } from "./defaultConfig.js";
+import { DEFAULT_RIG_CONFIG } from "./defaultConfig.js";
 import { mergeConfigValues } from "./mergeConfigValues.js";
 import { readConfigFile } from "./readConfigFile.js";
 import { resolveConfigPaths } from "./resolveConfigPaths.js";
@@ -17,7 +17,7 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Loade
 
     return {
         config: mergeConfigValues(
-            DEFAULT_OHMYPI_CONFIG,
+            DEFAULT_RIG_CONFIG,
             globalSource.values,
             localSource.values,
             runtimeSource.values,

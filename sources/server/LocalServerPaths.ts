@@ -13,7 +13,7 @@ export interface LocalServerPaths {
 }
 
 export function getLocalServerPaths(uid = process.getuid?.() ?? 0): LocalServerPaths {
-    const directory = join(tmpdir(), `ohmypi-${uid}`);
+    const directory = join(tmpdir(), `rig-${uid}`);
     return {
         databasePath: getDefaultSessionDatabasePath(),
         directory,

@@ -6,5 +6,5 @@ export function getDefaultRuntimeConfigPath(
     homeDirectory: string = homedir(),
 ): string {
     const configHome = env.XDG_CONFIG_HOME ?? join(homeDirectory, ".config");
-    return join(configHome, "ohmypi", "runtime.toml");
+    return join(configHome, "rig", "runtime.toml");
 }

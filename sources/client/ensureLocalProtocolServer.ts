@@ -56,8 +56,8 @@ function getEnvironmentLocalServerPaths(): LocalServerPaths {
     const paths = getLocalServerPaths();
     return {
         ...paths,
-        socketPath: process.env.OHMYPI_SERVER_SOCKET_PATH ?? paths.socketPath,
-        tokenPath: process.env.OHMYPI_SERVER_TOKEN_PATH ?? paths.tokenPath,
+        socketPath: process.env.RIG_SERVER_SOCKET_PATH ?? paths.socketPath,
+        tokenPath: process.env.RIG_SERVER_TOKEN_PATH ?? paths.tokenPath,
     };
 }
 
@@ -100,8 +100,8 @@ async function spawnLocalServer(paths: LocalServerPaths): Promise<void> {
             detached: true,
             env: {
                 ...process.env,
-                OHMYPI_SERVER_SOCKET_PATH: paths.socketPath,
-                OHMYPI_SERVER_TOKEN_PATH: paths.tokenPath,
+                RIG_SERVER_SOCKET_PATH: paths.socketPath,
+                RIG_SERVER_TOKEN_PATH: paths.tokenPath,
             },
             stdio: ["ignore", log.fd, log.fd],
         });
@@ -133,7 +133,7 @@ async function waitForReady(
         await delay(50);
     }
 
-    throw new Error("Timed out while waiting for the local Oh My Pi server.");
+    throw new Error("Timed out while waiting for the local Rig server.");
 }
 
 function delay(ms: number): Promise<void> {

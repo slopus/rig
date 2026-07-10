@@ -8,7 +8,7 @@ const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
 const DIM = "\x1b[2m";
 const NOT_BOLD_OR_DIM = "\x1b[22m";
-const OH_MY_PI_ORANGE = "\x1b[38;5;202m";
+const RIG_ORANGE = "\x1b[38;5;202m";
 const SURFACE_MUTED_FG = "\x1b[38;5;245m";
 const ACTIVITY_ANIMATION_MS = 120;
 
@@ -44,7 +44,7 @@ export class StartupStatusApp implements Component {
         const safeWidth = Math.max(20, width);
         return [
             ...this.#renderStartupBox(safeWidth, [
-                `${OH_MY_PI_ORANGE}>_${RESET} ${BOLD}Oh My Pi${NOT_BOLD_OR_DIM} ${this.#version}`,
+                `${RIG_ORANGE}>_${RESET} ${BOLD}Rig${NOT_BOLD_OR_DIM} ${this.#version}`,
                 "Agentic coding CLI for local project work.",
                 "Keeps sessions in a private local daemon.",
                 `Directory: ${this.#directoryName()}`,
@@ -111,7 +111,7 @@ export class StartupStatusApp implements Component {
         const elapsedSuffix =
             elapsed === undefined ? "" : ` ${DIM}${SURFACE_MUTED_FG}(${elapsed})${RESET}`;
         return this.#fitLine(
-            `${OH_MY_PI_ORANGE}•${RESET} ${renderActivityWave(this.#status, this.#activityAnimationFrame)}${elapsedSuffix}`,
+            `${RIG_ORANGE}•${RESET} ${renderActivityWave(this.#status, this.#activityAnimationFrame)}${elapsedSuffix}`,
             width,
         );
     }

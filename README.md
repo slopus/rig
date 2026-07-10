@@ -1,6 +1,6 @@
-# ohmypi
+# rig
 
-ohmypi is an opinionated fork of pi for people who want a strong default coding-agent experience without rebuilding the same setup on every machine and in every repo.
+rig is an opinionated fork of pi for people who want a strong default coding-agent experience without rebuilding the same setup on every machine and in every repo.
 
 The goal is simple: make the useful parts of modern coding harnesses available out of the box, while still letting each project opt in, opt out, or tune behavior when it needs to.
 
@@ -15,11 +15,11 @@ Using pi directly can mean repeating the same configuration work everywhere:
 - tuning prompts and tools separately for different inference providers
 - remembering which projects should use which setup
 
-That gets in the way when the real goal is to open a repo and have a good agent experience immediately. ohmypi packages that baseline so the default is useful, portable, and consistent.
+That gets in the way when the real goal is to open a repo and have a good agent experience immediately. rig packages that baseline so the default is useful, portable, and consistent.
 
-## What ohmypi provides
+## What rig provides
 
-ohmypi stays close to pi and to upstream vendor behavior, but adds a curated default layer:
+rig stays close to pi and to upstream vendor behavior, but adds a curated default layer:
 
 - Vendor-aligned tool definitions, kept close to the provider contracts instead of inventing unnecessary abstractions.
 - Simplified system prompts that are easier to reason about and reuse.
@@ -29,11 +29,11 @@ ohmypi stays close to pi and to upstream vendor behavior, but adds a curated def
 - Workflow presets for repeated engineering operations.
 - Auto mode for hands-off execution when a project allows it.
 - Sandboxing defaults that make local execution practical while keeping controls visible.
-- Per-project enable/disable behavior, so teams can use ohmypi where it helps and leave other repos untouched.
+- Per-project enable/disable behavior, so teams can use rig where it helps and leave other repos untouched.
 
 ## Design principles
 
-ohmypi is intentionally opinionated, but not locked down:
+rig is intentionally opinionated, but not locked down:
 
 - Good defaults first. A fresh install should already feel usable.
 - Provider flexibility. The harness should work across proprietary and open source models.
@@ -43,9 +43,9 @@ ohmypi is intentionally opinionated, but not locked down:
 
 ## Intended experience
 
-Install ohmypi once, open a project, and get a capable coding harness with prompts, tools, subagents, workflows, workers, automation, and sandboxing already wired together.
+Install rig once, open a project, and get a capable coding harness with prompts, tools, subagents, workflows, workers, automation, and sandboxing already wired together.
 
-When a project needs different behavior, configure it locally. When a machine changes, avoid rebuilding the whole setup from memory. When an inference provider changes, keep the same project workflow and let ohmypi handle the provider-specific differences where possible.
+When a project needs different behavior, configure it locally. When a machine changes, avoid rebuilding the whole setup from memory. When an inference provider changes, keep the same project workflow and let rig handle the provider-specific differences where possible.
 
 ## Development
 
@@ -67,7 +67,7 @@ pnpm run web
 
 The `web` command starts or reuses the local daemon, serves the SPA, proxies `/api/*`
 to the daemon socket, and routes the app through Portless at
-`https://web.ohmypi.localhost`.
+`https://web.rig.localhost`.
 
 ### Amazon Bedrock
 
@@ -80,11 +80,11 @@ in the AWS console before exporting it:
 ```sh
 export AWS_BEARER_TOKEN_BEDROCK="your Bedrock API key"
 export AWS_REGION="us-east-1"
-export OHMYPI_PROVIDER="bedrock"
+export RIG_PROVIDER="bedrock"
 pnpm dev
 ```
 
-`OHMYPI_PROVIDER` chooses the inference provider independently from `OHMYPI_MODEL`,
+`RIG_PROVIDER` chooses the inference provider independently from `RIG_MODEL`,
 so the same canonical GPT or Claude model can be routed through Bedrock, Codex, or
 the Claude SDK without changing its model ID. The web model picker exposes each
 available provider/model combination explicitly.

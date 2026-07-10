@@ -37,14 +37,14 @@ show_reasoning = false
     });
 
     it("merges defaults, global config, local config, and runtime config", async () => {
-        const root = await mkdtemp(join(tmpdir(), "ohmypi-config-"));
+        const root = await mkdtemp(join(tmpdir(), "rig-config-"));
         try {
             const cwd = join(root, "repo");
             const configHome = join(root, "config-home");
-            const globalPath = join(configHome, "ohmypi", "config.toml");
-            const runtimePath = join(configHome, "ohmypi", "runtime.toml");
-            const localPath = join(cwd, "ohmypi.toml");
-            await mkdir(join(configHome, "ohmypi"), { recursive: true });
+            const globalPath = join(configHome, "rig", "config.toml");
+            const runtimePath = join(configHome, "rig", "runtime.toml");
+            const localPath = join(cwd, "rig.toml");
+            await mkdir(join(configHome, "rig"), { recursive: true });
             await mkdir(cwd, { recursive: true });
             await writeFile(
                 globalPath,
@@ -108,10 +108,10 @@ effort = "minimal"
     });
 
     it("creates and updates config files", async () => {
-        const root = await mkdtemp(join(tmpdir(), "ohmypi-config-"));
+        const root = await mkdtemp(join(tmpdir(), "rig-config-"));
         try {
-            const configPath = join(root, "repo", "ohmypi.toml");
-            const runtimePath = join(root, "config-home", "ohmypi", "runtime.toml");
+            const configPath = join(root, "repo", "rig.toml");
+            const runtimePath = join(root, "config-home", "rig", "runtime.toml");
 
             await createConfigFile(configPath, {
                 defaults: {

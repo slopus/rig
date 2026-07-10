@@ -21,7 +21,7 @@ afterEach(async () => {
 
 describe("createWebHttpServer", () => {
     it("serves the built SPA with navigation fallback", async () => {
-        const assetRoot = await createAssetRoot("<!doctype html><main>Oh My Pi Web</main>");
+        const assetRoot = await createAssetRoot("<!doctype html><main>Rig Web</main>");
         const socketPath = await createDaemonSocket(() => {
             throw new Error("The daemon should not receive static asset requests.");
         });
@@ -34,11 +34,11 @@ describe("createWebHttpServer", () => {
 
         expect(response.status).toBe(200);
         expect(response.headers.get("content-type")).toContain("text/html");
-        expect(text).toContain("Oh My Pi Web");
+        expect(text).toContain("Rig Web");
     });
 
     it("proxies API requests to the daemon socket with the local token", async () => {
-        const assetRoot = await createAssetRoot("<!doctype html><main>Oh My Pi Web</main>");
+        const assetRoot = await createAssetRoot("<!doctype html><main>Rig Web</main>");
         let authorization: string | undefined;
         let requestUrl: string | undefined;
         const socketPath = await createDaemonSocket((request, response) => {
@@ -62,14 +62,14 @@ describe("createWebHttpServer", () => {
 });
 
 async function createAssetRoot(indexHtml: string): Promise<string> {
-    const directory = await mkdtemp(join(tmpdir(), "ohmypi-web-assets-"));
+    const directory = await mkdtemp(join(tmpdir(), "rig-web-assets-"));
     tempDirectories.push(directory);
     await writeFile(join(directory, "index.html"), indexHtml);
     return directory;
 }
 
 async function createDaemonSocket(listener: RequestListener): Promise<string> {
-    const directory = await mkdtemp(join(tmpdir(), "ohmypi-web-daemon-"));
+    const directory = await mkdtemp(join(tmpdir(), "rig-web-daemon-"));
     tempDirectories.push(directory);
     const socketPath = join(directory, "server.sock");
     const server = createServer(listener);

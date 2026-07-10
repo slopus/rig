@@ -21,7 +21,7 @@ export async function persistWebFetchBinary(
     const mediaType = (contentType.split(";")[0] ?? "").trim().toLowerCase();
     const extension = EXTENSIONS.get(mediaType) ?? "bin";
     const stateHome = process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state");
-    const directory = join(stateHome, "ohmypi", "tool-results");
+    const directory = join(stateHome, "rig", "tool-results");
     const path = join(
         directory,
         `webfetch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`,

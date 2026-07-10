@@ -13,11 +13,11 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 
     if (argv.includes("--server")) {
         await runLocalProtocolServer({
-            ...(process.env.OHMYPI_SERVER_SOCKET_PATH !== undefined
-                ? { socketPath: process.env.OHMYPI_SERVER_SOCKET_PATH }
+            ...(process.env.RIG_SERVER_SOCKET_PATH !== undefined
+                ? { socketPath: process.env.RIG_SERVER_SOCKET_PATH }
                 : {}),
-            ...(process.env.OHMYPI_SERVER_TOKEN_PATH !== undefined
-                ? { tokenPath: process.env.OHMYPI_SERVER_TOKEN_PATH }
+            ...(process.env.RIG_SERVER_TOKEN_PATH !== undefined
+                ? { tokenPath: process.env.RIG_SERVER_TOKEN_PATH }
                 : {}),
         });
         return;
@@ -29,13 +29,13 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     const [command, sessionId] = argv;
     if (command === "resume") {
         if (sessionId === undefined || sessionId.length === 0) {
-            throw new Error("Usage: ohmypi resume <session-id>");
+            throw new Error("Usage: rig resume <session-id>");
         }
         options.resumeSessionId = sessionId;
     }
     if (command === "daemon") {
         if (!isDaemonCommand(sessionId)) {
-            throw new Error("Usage: ohmypi daemon <start|stop|status>");
+            throw new Error("Usage: rig daemon <start|stop|status>");
         }
         await runDaemonCommand(sessionId);
         return;
@@ -52,14 +52,14 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     if (process.env.OPENAI_API_KEY !== undefined) {
         options.apiKey = process.env.OPENAI_API_KEY;
     }
-    if (process.env.OHMYPI_EFFORT !== undefined) {
-        options.effort = process.env.OHMYPI_EFFORT;
+    if (process.env.RIG_EFFORT !== undefined) {
+        options.effort = process.env.RIG_EFFORT;
     }
-    if (process.env.OHMYPI_MODEL !== undefined) {
-        options.modelId = process.env.OHMYPI_MODEL;
+    if (process.env.RIG_MODEL !== undefined) {
+        options.modelId = process.env.RIG_MODEL;
     }
-    if (process.env.OHMYPI_PROVIDER !== undefined) {
-        options.providerId = process.env.OHMYPI_PROVIDER;
+    if (process.env.RIG_PROVIDER !== undefined) {
+        options.providerId = process.env.RIG_PROVIDER;
     }
 
     await runApp(options);

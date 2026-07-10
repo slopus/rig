@@ -10,7 +10,7 @@ import { ProtocolHttpClient } from "./ProtocolHttpClient.js";
 
 describe("ProtocolHttpClient", () => {
     it("reconnects SSE streams from the last received event id", async () => {
-        const directory = await mkdtemp(join(tmpdir(), "ohmypi-client-test-"));
+        const directory = await mkdtemp(join(tmpdir(), "rig-client-test-"));
         const socketPath = join(directory, "server.sock");
         const first = sessionResetEvent("018bcfe5-6800-7001-8000-000000000001");
         const second = sessionResetEvent("018bcfe5-6800-7002-8000-000000000002");

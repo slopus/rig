@@ -42,7 +42,7 @@ describe("AgentSessionManager", () => {
             }),
             recordSubagentChanged,
             requestForSubagent: () => ({
-                cwd: "/tmp/ohmypi-manager-test",
+                cwd: "/tmp/rig-manager-test",
                 modelId: "openai/gpt-5.5",
             }),
         } as unknown as InMemorySession;

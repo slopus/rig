@@ -354,7 +354,7 @@ function contextFor(cwd: string, home = join(cwd, ".home")): AgentContext {
 }
 
 async function makeTempDir(): Promise<string> {
-    const path = await mkdtemp(join(tmpdir(), "ohmypi-system-prompt-"));
+    const path = await mkdtemp(join(tmpdir(), "rig-system-prompt-"));
     tempDirs.push(path);
     return path;
 }

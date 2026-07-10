@@ -80,7 +80,7 @@ function imageToolResultContext(mediaType: string, base64: string): Context {
                         arguments: { path: "/workspace/generated.png" },
                     },
                 ],
-                api: "ohmypi",
+                api: "rig",
                 provider: "codex",
                 model: modelOpenaiGpt55.id,
                 usage: zeroUsage(),

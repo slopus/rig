@@ -361,7 +361,7 @@ function toProviderMessagesFromAgentMessage(
                   {
                       role: "assistant" as const,
                       content: assistantContent,
-                      api: "ohmypi",
+                      api: "rig",
                       provider: options.providerId,
                       model: options.model.id,
                       usage: zeroUsage(),

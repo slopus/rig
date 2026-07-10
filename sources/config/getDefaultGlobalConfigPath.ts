@@ -6,5 +6,5 @@ export function getDefaultGlobalConfigPath(
     homeDirectory: string = homedir(),
 ): string {
     const configHome = env.XDG_CONFIG_HOME ?? join(homeDirectory, ".config");
-    return join(configHome, "ohmypi", "config.toml");
+    return join(configHome, "rig", "config.toml");
 }

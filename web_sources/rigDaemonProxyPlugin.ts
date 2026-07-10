@@ -10,9 +10,9 @@ import { join } from "node:path";
 
 import type { Plugin } from "vite";
 
-export function ohmypiDaemonProxyPlugin(): Plugin {
+export function rigDaemonProxyPlugin(): Plugin {
     return {
-        name: "ohmypi-daemon-proxy",
+        name: "rig-daemon-proxy",
         configureServer(server) {
             server.middlewares.use("/api", (request, response) => {
                 proxyDaemonRequest(request, response);
@@ -63,7 +63,7 @@ function proxyDaemonRequest(request: IncomingMessage, response: ServerResponse):
 }
 
 function normalizeDaemonPath(url: string): string {
-    const parsed = new URL(url, "http://web.ohmypi.localhost");
+    const parsed = new URL(url, "http://web.rig.localhost");
     if (parsed.pathname === "/api" || parsed.pathname.startsWith("/api/")) {
         return `${parsed.pathname.slice("/api".length) || "/"}${parsed.search}`;
     }
@@ -71,10 +71,10 @@ function normalizeDaemonPath(url: string): string {
 }
 
 function getLocalServerPaths(): { socketPath: string; tokenPath: string } {
-    const directory = join(tmpdir(), `ohmypi-${process.getuid?.() ?? 0}`);
+    const directory = join(tmpdir(), `rig-${process.getuid?.() ?? 0}`);
     return {
-        socketPath: process.env.OHMYPI_SERVER_SOCKET_PATH ?? join(directory, "server.sock"),
-        tokenPath: process.env.OHMYPI_SERVER_TOKEN_PATH ?? join(directory, "token"),
+        socketPath: process.env.RIG_SERVER_SOCKET_PATH ?? join(directory, "server.sock"),
+        tokenPath: process.env.RIG_SERVER_TOKEN_PATH ?? join(directory, "token"),
     };
 }
 

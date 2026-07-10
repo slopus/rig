@@ -1,8 +1,8 @@
 import { parse, TomlDate, type TomlTable, type TomlValue } from "smol-toml";
 
-import type { PartialConfigDefaults, PartialConfigSettings, PartialOhMyPiConfig } from "./types.js";
+import type { PartialConfigDefaults, PartialConfigSettings, PartialRigConfig } from "./types.js";
 
-export function parseConfigToml(source: string): PartialOhMyPiConfig {
+export function parseConfigToml(source: string): PartialRigConfig {
     const defaults: PartialConfigDefaults = {};
     const settings: PartialConfigSettings = {};
     const table = parse(source);

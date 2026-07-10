@@ -41,7 +41,7 @@ describe("createNodeAgentContext", () => {
 });
 
 async function makeTempDir(): Promise<string> {
-    const path = await mkdtemp(join(tmpdir(), "ohmypi-context-"));
+    const path = await mkdtemp(join(tmpdir(), "rig-context-"));
     tempDirs.push(path);
     return path;
 }

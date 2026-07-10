@@ -76,7 +76,7 @@ describe("PersistentSessionStore", () => {
                 },
             });
             const sessionId = store.create({
-                cwd: "/tmp/ohmypi-persistent-session-test",
+                cwd: "/tmp/rig-persistent-session-test",
                 effort: "max",
                 modelId: removedModel.id,
                 providerId: "bedrock",
@@ -500,7 +500,7 @@ async function createDatabasePath(): Promise<{
     cleanup: () => Promise<void>;
     databasePath: string;
 }> {
-    const directory = await mkdtemp(join(tmpdir(), "ohmypi-sessions-test-"));
+    const directory = await mkdtemp(join(tmpdir(), "rig-sessions-test-"));
     return {
         cleanup: () => rm(directory, { force: true, recursive: true }),
         databasePath: join(directory, "sessions.sqlite"),
@@ -539,7 +539,7 @@ function sessionState(overrides: Partial<PersistedSessionState> = {}): Persisted
             type: "primary",
         },
         agentId: "agent-1",
-        cwd: "/tmp/ohmypi-persistent-session-test",
+        cwd: "/tmp/rig-persistent-session-test",
         id: "session-1",
         messages: [],
         modelId: "openai/gpt-5.5",

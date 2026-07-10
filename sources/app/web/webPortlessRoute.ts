@@ -1,2 +1,2 @@
-export const webPortlessAppName = "web.ohmypi";
-export const webPortlessUrl = "https://web.ohmypi.localhost";
+export const webPortlessAppName = "web.rig";
+export const webPortlessUrl = "https://web.rig.localhost";

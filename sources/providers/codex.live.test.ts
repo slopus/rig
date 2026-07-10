@@ -9,7 +9,7 @@ import { createCodexProvider } from "./codex.js";
 import { modelOpenaiGpt55 } from "./models.js";
 import type { AssistantMessage, Context, TextContent } from "./types.js";
 
-const LIVE = process.env.OHMYPI_LIVE_TEST === "1";
+const LIVE = process.env.RIG_LIVE_TEST === "1";
 const CODEX_AUTH_PATH = path.join(homedir(), ".codex", "auth.json");
 
 function hasLocalCodexAuth(authPath: string = CODEX_AUTH_PATH): boolean {
@@ -119,7 +119,7 @@ function imageToolResultContext(mediaType: string, base64: string): Context {
                         arguments: { path: "/workspace/generated-image" },
                     },
                 ],
-                api: "ohmypi",
+                api: "rig",
                 provider: "codex",
                 model: modelOpenaiGpt55.id,
                 usage: {
@@ -162,7 +162,7 @@ describe("codex provider live prerequisites", () => {
     it("documents how to run the live test", () => {
         if (LIVE && !hasLocalCodexAuth()) {
             expect.fail(
-                "OHMYPI_LIVE_TEST=1 is set but ~/.codex/auth.json is missing a usable access_token",
+                "RIG_LIVE_TEST=1 is set but ~/.codex/auth.json is missing a usable access_token",
             );
         }
 

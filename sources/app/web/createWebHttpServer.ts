@@ -28,7 +28,7 @@ async function handleWebRequest(
     response: ServerResponse,
     options: WebHttpServerOptions,
 ): Promise<void> {
-    const url = new URL(request.url ?? "/", "http://web.ohmypi.localhost");
+    const url = new URL(request.url ?? "/", "http://web.rig.localhost");
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
         proxyDaemonRequest(request, response, options, url);
         return;

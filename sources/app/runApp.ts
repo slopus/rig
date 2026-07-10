@@ -99,7 +99,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         modelCatalog,
         session: session.session,
     });
-    const resumeCommand = `ohmypi resume ${session.session.id}`;
+    const resumeCommand = `rig resume ${session.session.id}`;
     const app = new CodingAssistantApp({
         agent,
         cwd: sessionCwd,

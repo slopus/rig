@@ -1,5 +1,5 @@
 /**
- * Curated model catalog for ohmypi defaults.
+ * Curated model catalog for rig defaults.
  *
  * Order matches the Conductor model picker.
  */

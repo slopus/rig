@@ -34,7 +34,7 @@ describe("formatSessionSummaries", () => {
 function sessionSummary(overrides: Partial<SessionSummary> = {}): SessionSummary {
     return {
         createdAt: 1_700_000_000_000,
-        cwd: "/tmp/ohmypi-monit-test",
+        cwd: "/tmp/rig-monit-test",
         id: "session-1",
         lastMessageAt: 1_700_000_000_000,
         modelId: "openai/gpt-5.5",

@@ -46,8 +46,8 @@ function runPortlessWebProcess(options: RunPortlessWebProcessOptions): Promise<v
         {
             env: {
                 ...process.env,
-                OHMYPI_SERVER_SOCKET_PATH: options.socketPath,
-                OHMYPI_SERVER_TOKEN_PATH: options.tokenPath,
+                RIG_SERVER_SOCKET_PATH: options.socketPath,
+                RIG_SERVER_TOKEN_PATH: options.tokenPath,
                 PORTLESS_HTTPS: "1",
                 PORTLESS_TLD: "localhost",
             },

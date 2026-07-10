@@ -20,12 +20,12 @@ export interface PartialConfigSettings {
     showReasoning?: boolean;
 }
 
-export interface OhMyPiConfig {
+export interface RigConfig {
     defaults: ConfigDefaults;
     settings: ConfigSettings;
 }
 
-export interface PartialOhMyPiConfig {
+export interface PartialRigConfig {
     defaults?: PartialConfigDefaults;
     settings?: PartialConfigSettings;
 }
@@ -39,11 +39,11 @@ export interface ConfigPaths {
 export interface ConfigSource {
     exists: boolean;
     path: string;
-    values: PartialOhMyPiConfig;
+    values: PartialRigConfig;
 }
 
 export interface LoadedConfig {
-    config: OhMyPiConfig;
+    config: RigConfig;
     paths: ConfigPaths;
     sources: {
         global: ConfigSource;

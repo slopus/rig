@@ -171,7 +171,7 @@ const GLOBAL_HAIKU_45_PROFILES: BedrockRuntimeInferenceProfiles = {
 };
 
 /**
- * Manual AWS endpoint map for the curated models exposed by ohmypi.
+ * Manual AWS endpoint map for the curated models exposed by rig.
  *
  * AWS publishes endpoint availability separately from model discovery. Keep
  * this list explicit so a model is never sent to an API surface that does not

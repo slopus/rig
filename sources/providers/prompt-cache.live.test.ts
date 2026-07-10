@@ -19,7 +19,7 @@ import { modelAnthropicSonnet46, modelOpenaiGpt54 } from "./models.js";
 import { readClaudeCodeOAuthToken } from "./readClaudeCodeOAuthToken.js";
 import type { Model, Provider } from "./types.js";
 
-const LIVE = process.env.OHMYPI_LIVE_TEST === "1";
+const LIVE = process.env.RIG_LIVE_TEST === "1";
 const CODEX_AUTH_PATH = path.join(homedir(), ".codex", "auth.json");
 const CACHEABLE_SYSTEM_PROMPT = [
     "This is a stable reference document used only to verify provider prompt caching.",

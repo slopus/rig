@@ -55,7 +55,7 @@ const GREEN = "\x1b[32m";
 const CYAN = "\x1b[36m";
 const YELLOW = "\x1b[33m";
 const RED = "\x1b[31m";
-const OH_MY_PI_ORANGE = "\x1b[38;5;202m";
+const RIG_ORANGE = "\x1b[38;5;202m";
 const CURSOR_BG = "\x1b[48;5;244m";
 const CURSOR_FG = "\x1b[38;5;232m";
 const SURFACE_BG = "\x1b[48;5;236m";
@@ -65,7 +65,7 @@ const SURFACE_MUTED_FG = "\x1b[38;5;245m";
 const FOOTER_MODEL_FG = "\x1b[38;5;252m";
 const FOOTER_CWD_FG = "\x1b[38;5;245m";
 const FOOTER_QUEUED_FG = "\x1b[38;5;246m";
-const INPUT_PLACEHOLDER = "Ask Oh My Pi to do anything";
+const INPUT_PLACEHOLDER = "Ask Rig to do anything";
 const INPUT_PROMPT = "› ";
 const INPUT_LINE_INDENT = "  ";
 const PENDING_TOOL_CALL_TITLE = "Working";
@@ -87,7 +87,7 @@ const EDITOR_THEME: EditorTheme = {
     borderColor: (text) => text,
     selectList: {
         selectedPrefix: (text) => text,
-        selectedText: (text) => `${OH_MY_PI_ORANGE}${text}${RESET}${INPUT_FG}`,
+        selectedText: (text) => `${RIG_ORANGE}${text}${RESET}${INPUT_FG}`,
         description: (text) => `${DIM}${SURFACE_MUTED_FG}${text}${RESET}${INPUT_FG}`,
         scrollInfo: (text) => `${DIM}${SURFACE_MUTED_FG}${text}${RESET}${INPUT_FG}`,
         noMatch: (text) => `${SURFACE_MUTED_FG}${text}${RESET}${INPUT_FG}`,
@@ -1267,7 +1267,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #renderHeader(width: number): string[] {
         return [
             ...this.#renderStartupBox(width, [
-                `${OH_MY_PI_ORANGE}>_${RESET} ${BOLD}Oh My Pi${NOT_BOLD_OR_DIM} ${this.#version}`,
+                `${RIG_ORANGE}>_${RESET} ${BOLD}Rig${NOT_BOLD_OR_DIM} ${this.#version}`,
                 "Agentic coding CLI for local project work.",
                 "Keeps sessions in a private local daemon.",
                 `Directory: ${this.#directoryName()}`,
@@ -1388,7 +1388,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 false,
             );
             const line = isSelected
-                ? `${OH_MY_PI_ORANGE}${marker}${label}${description}${RESET}`
+                ? `${RIG_ORANGE}${marker}${label}${description}${RESET}`
                 : `${marker}${label}${DIM}${SURFACE_MUTED_FG}${description}${RESET}`;
             return this.#fitLine(line, rowWidth);
         });
@@ -1776,7 +1776,7 @@ export class CodingAssistantApp implements Component, Focusable {
             callText.length > 0 && callText !== toolName
                 ? ` ${CYAN}${callText}${RESET}`
                 : ` ${CYAN}${toolName}${RESET}`;
-        const title = `${dot}•${RESET} ${OH_MY_PI_ORANGE}${BOLD}${verb}${NOT_BOLD_OR_DIM}${titleSuffix}`;
+        const title = `${dot}•${RESET} ${RIG_ORANGE}${BOLD}${verb}${NOT_BOLD_OR_DIM}${titleSuffix}`;
         const lines = [this.#fitLine(title, width)];
         if (entry.detail !== undefined) {
             const detailText = entry.detail.length > 0 ? entry.detail : "(empty result)";
@@ -1881,7 +1881,7 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #renderActivityLine(label: string, width: number): string[] {
-        const prefix = `${OH_MY_PI_ORANGE}•${RESET} `;
+        const prefix = `${RIG_ORANGE}•${RESET} `;
         const frame = this.#activityAnimationFrame;
         const elapsed = this.#activityElapsedText();
         const elapsedSuffix =
@@ -1911,7 +1911,7 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #inputPrompt(): string {
-        return `${OH_MY_PI_ORANGE}${BOLD}›${NOT_BOLD_OR_DIM}${INPUT_FG} `;
+        return `${RIG_ORANGE}${BOLD}›${NOT_BOLD_OR_DIM}${INPUT_FG} `;
     }
 
     #handleReasoningShortcut(data: string): boolean {

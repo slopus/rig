@@ -2,12 +2,12 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { stringify } from "smol-toml";
 
-import { DEFAULT_OHMYPI_CONFIG } from "./defaultConfig.js";
-import type { OhMyPiConfig } from "./types.js";
+import { DEFAULT_RIG_CONFIG } from "./defaultConfig.js";
+import type { RigConfig } from "./types.js";
 
 export async function createConfigFile(
     path: string,
-    config: OhMyPiConfig = DEFAULT_OHMYPI_CONFIG,
+    config: RigConfig = DEFAULT_RIG_CONFIG,
 ): Promise<void> {
     await mkdir(dirname(path), { recursive: true });
     await writeFile(

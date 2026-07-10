@@ -1,5 +1,5 @@
 export { createConfigFile } from "./createConfigFile.js";
-export { DEFAULT_OHMYPI_CONFIG } from "./defaultConfig.js";
+export { DEFAULT_RIG_CONFIG } from "./defaultConfig.js";
 export { getDefaultGlobalConfigPath } from "./getDefaultGlobalConfigPath.js";
 export { getDefaultLocalConfigPath } from "./getDefaultLocalConfigPath.js";
 export { getDefaultRuntimeConfigPath } from "./getDefaultRuntimeConfigPath.js";
@@ -16,8 +16,8 @@ export type {
     ConfigSource,
     LoadedConfig,
     LoadConfigOptions,
-    OhMyPiConfig,
+    RigConfig,
     PartialConfigDefaults,
     PartialConfigSettings,
-    PartialOhMyPiConfig,
+    PartialRigConfig,
 } from "./types.js";

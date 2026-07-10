@@ -42,7 +42,7 @@ import {
 } from "./types.js";
 
 const CLAUDE_SDK_PROVIDER_ID = "claude-sdk";
-const OHMYPI_MCP_SERVER_NAME = "ohmypi";
+const RIG_MCP_SERVER_NAME = "rig";
 const CLAUDE_SDK_API_NAME = "claude-agent-sdk";
 
 export type ClaudeSdkQuery = typeof defaultClaudeSdkQuery;
@@ -238,7 +238,7 @@ function toClaudeSdkOptions(options: {
     const abortController = toAbortController(options.streamOptions?.signal);
     const mcpTools = options.tools.map(toClaudeSdkTool);
     const mcpToolNames = options.tools.map(
-        (sourceTool) => `mcp__${OHMYPI_MCP_SERVER_NAME}__${sourceTool.name}`,
+        (sourceTool) => `mcp__${RIG_MCP_SERVER_NAME}__${sourceTool.name}`,
     );
     const sdkOptions: ClaudeSdkOptions = {
         // Claude Code permission matching still uses the MCP identity even when
@@ -246,10 +246,10 @@ function toClaudeSdkOptions(options: {
         allowedTools: mcpToolNames,
         cwd: options.agentContext.fs.cwd,
         mcpServers: {
-            [OHMYPI_MCP_SERVER_NAME]: createSdkMcpServer({
-                name: OHMYPI_MCP_SERVER_NAME,
+            [RIG_MCP_SERVER_NAME]: createSdkMcpServer({
+                name: RIG_MCP_SERVER_NAME,
                 instructions:
-                    "Use these ohmypi project tools for filesystem, shell, search, and editing work. Claude Code built-in tools are disabled for this session.",
+                    "Use these rig project tools for filesystem, shell, search, and editing work. Claude Code built-in tools are disabled for this session.",
                 tools: mcpTools,
                 alwaysLoad: true,
             }),
@@ -292,7 +292,7 @@ function toClaudeSdkTool(sourceTool: AnyDefinedTool) {
         sourceTool.description,
         toZodRawShape(sourceTool.arguments),
         async (): Promise<CallToolResult> =>
-            textToolResult("Tool execution is handled by Oh My Pi.", true),
+            textToolResult("Tool execution is handled by Rig.", true),
         { alwaysLoad: true },
     );
 }
@@ -842,7 +842,7 @@ function hasClaudeToolCalls(state: ClaudeStreamState): boolean {
 }
 
 function normalizeClaudeToolName(name: string): string {
-    const mcpPrefix = `mcp__${OHMYPI_MCP_SERVER_NAME}__`;
+    const mcpPrefix = `mcp__${RIG_MCP_SERVER_NAME}__`;
     return name.startsWith(mcpPrefix) ? name.slice(mcpPrefix.length) : name;
 }
 
