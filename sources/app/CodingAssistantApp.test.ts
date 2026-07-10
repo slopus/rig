@@ -625,6 +625,80 @@ describe("CodingAssistantApp", () => {
         expect(modelPicker).not.toContain("/model");
     });
 
+    it("renders file mentions in the slash-command footer and completes them", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        const searchFiles = vi.fn(async () => [
+            {
+                fileName: "ChatComposer.tsx",
+                path: "web_sources/sources/components/chat/ChatComposer.tsx",
+            },
+            {
+                fileName: "ChatPanel.tsx",
+                path: "web_sources/sources/components/ChatPanel.tsx",
+            },
+        ]);
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            searchFiles,
+            tui: fakeTui(),
+        });
+
+        app.focused = true;
+        for (const character of "Review @chat") {
+            app.handleInput(character);
+        }
+        await delay(160);
+
+        expect(searchFiles).toHaveBeenLastCalledWith("chat");
+        const rawLines = app.render(100);
+        const mentionLine = rawLines.find((line) => stripAnsi(line).includes("ChatComposer.tsx"));
+        expect(mentionLine).toBeDefined();
+        expect(mentionLine).toContain("\x1b[38;5;202m");
+        expect(mentionLine).not.toContain("\x1b[48;5;236m");
+        expect(stripAnsi(mentionLine ?? "")).not.toContain("@ChatComposer.tsx");
+        expect(stripAnsi(mentionLine ?? "")).toContain(
+            "web_sources/sources/components/chat/ChatComposer.tsx",
+        );
+
+        app.handleInput("x");
+        const renderedWhileSearching = stripAnsi(app.render(100).join("\n"));
+        expect(renderedWhileSearching).toContain("Review @chatx");
+        expect(renderedWhileSearching).toContain("ChatComposer.tsx");
+
+        await delay(160);
+        app.handleInput("\x1b");
+        app.handleInput("y");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("Review @chatxy");
+
+        await delay(160);
+        app.handleInput("\x1b[B");
+        app.handleInput("\t");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain(
+            "Review @web_sources/sources/components/ChatPanel.tsx ",
+        );
+    });
+
     it("shows loaded skills as slash command autocomplete items", async () => {
         const model = defineModel({
             id: "openai/gpt-test",

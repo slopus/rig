@@ -228,6 +228,7 @@ export function ChatPanel({
                         onAbort={() => void activeSession.abort()}
                         onSubmit={activeSession.submit}
                         readOnly={isSubagent}
+                        sessionId={sessionId}
                     />
                 </div>
             </div>

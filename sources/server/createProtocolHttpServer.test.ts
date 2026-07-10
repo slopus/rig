@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ProtocolHttpClient } from "../client/ProtocolHttpClient.js";
 import { createEventIdFactory, type SessionEvent } from "../protocol/index.js";
@@ -12,6 +12,7 @@ import type { PersistedSessionState } from "./InMemorySession.js";
 import { PersistentSessionStore } from "./PersistentSessionStore.js";
 import type { SessionStore } from "./SessionStore.js";
 import { createProtocolHttpServer } from "./createProtocolHttpServer.js";
+import type { FileSearchServiceContract } from "./FileSearchService.js";
 
 describe("createProtocolHttpServer", () => {
     it("requires bearer auth", async () => {
@@ -104,6 +105,32 @@ describe("createProtocolHttpServer", () => {
         }
     });
 
+    it("searches files in the session workspace through the daemon", async () => {
+        const search = vi.fn(async () => [
+            { fileName: "CodingAssistantApp.ts", path: "sources/app/CodingAssistantApp.ts" },
+        ]);
+        const fileSearchService: FileSearchServiceContract = {
+            close: vi.fn(),
+            search,
+        };
+        const { client, close } = await startServer({ fileSearchService });
+        try {
+            const created = await client.createSession({ cwd: "/tmp/rig-protocol-test" });
+
+            const response = await client.searchFiles(created.session.id, "coding app", 7);
+
+            expect(search).toHaveBeenCalledWith("/tmp/rig-protocol-test", "coding app", 7);
+            expect(response.files).toEqual([
+                {
+                    fileName: "CodingAssistantApp.ts",
+                    path: "sources/app/CodingAssistantApp.ts",
+                },
+            ]);
+        } finally {
+            await close();
+        }
+    });
+
     it("accepts image content blocks on submitted messages", async () => {
         const { client, close } = await startServer();
         try {
@@ -178,7 +205,11 @@ describe("createProtocolHttpServer", () => {
 });
 
 async function startServer(
-    options: { onShutdown?: () => void; store?: SessionStore } = {},
+    options: {
+        fileSearchService?: FileSearchServiceContract;
+        onShutdown?: () => void;
+        store?: SessionStore;
+    } = {},
 ): Promise<{
     client: ProtocolHttpClient;
     close: () => Promise<void>;
@@ -189,6 +220,9 @@ async function startServer(
     const socketPath = join(directory, "server.sock");
     const store = options.store ?? new InMemorySessionStore();
     const server = createProtocolHttpServer({
+        ...(options.fileSearchService !== undefined
+            ? { fileSearchService: options.fileSearchService }
+            : {}),
         ...(options.onShutdown !== undefined ? { onShutdown: options.onShutdown } : {}),
         store,
         token: "secret",

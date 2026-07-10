@@ -128,6 +128,10 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
             });
         },
         processManager,
+        searchFiles: (query) =>
+            localServer.client
+                .searchFiles(session.session.id, query)
+                .then((response) => response.files),
         sessionBacked: true,
         showReasoning,
         tui,

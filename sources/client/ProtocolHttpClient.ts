@@ -12,6 +12,7 @@ import type {
     ListSessionsResponse,
     ListSubagentsResponse,
     ProtocolSession,
+    SearchFilesResponse,
     SessionEvent,
     ShutdownServerResponse,
     SubmitMessageRequest,
@@ -85,6 +86,17 @@ export class ProtocolHttpClient {
 
     listSubagents(sessionId: string): Promise<ListSubagentsResponse> {
         return this.#requestJson("GET", `/sessions/${encodeURIComponent(sessionId)}/subagents`);
+    }
+
+    searchFiles(sessionId: string, query: string, limit = 20): Promise<SearchFilesResponse> {
+        const parameters = new URLSearchParams({
+            limit: String(limit),
+            query,
+        });
+        return this.#requestJson(
+            "GET",
+            `/sessions/${encodeURIComponent(sessionId)}/files?${parameters.toString()}`,
+        );
     }
 
     getSession(sessionId: string): Promise<{ session: ProtocolSession }> {

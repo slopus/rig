@@ -26,7 +26,7 @@ import {
 } from "../agent/index.js";
 import { parseSkillFrontmatter } from "../agent/skills/parseSkillFrontmatter.js";
 import type { NativeProxessManager } from "../processes/index.js";
-import type { SessionEvent } from "../protocol/index.js";
+import type { FileSearchResult, SessionEvent } from "../protocol/index.js";
 import type { AppTranscriptEntry } from "./AppTranscriptEntry.js";
 import type {
     CodingAssistantAgentBackend,
@@ -38,6 +38,9 @@ import { describeModelChoice } from "./describeModelChoice.js";
 import { describeReasoningLevel } from "./describeReasoningLevel.js";
 import { encodeModelChoice } from "./encodeModelChoice.js";
 import { formatActivityElapsedTime } from "./formatActivityElapsedTime.js";
+import { FileMentionAutocomplete } from "./FileMentionAutocomplete.js";
+import type { FileMentionContext } from "./findFileMentionContext.js";
+import { formatFileMention } from "./formatFileMention.js";
 import { humanizeReasoningLevel } from "./humanizeReasoningLevel.js";
 import {
     readClipboardImage,
@@ -76,12 +79,13 @@ const REASONING_DOWN_RAW_KEYS = new Set(["\x1b,", "\x1b[1;2B"]);
 const REASONING_UP_RAW_KEYS = new Set(["\x1b.", "\x1b[1;2A"]);
 const MODEL_MENU_RAW_KEYS = new Set(["\x1bm", "\x1bM"]);
 const IMAGE_PASTE_RAW_KEYS = new Set(["\x16", "\x1bv"]);
-const SLASH_COMMAND_MAX_VISIBLE = 6;
+const AUTOCOMPLETE_MAX_VISIBLE = 6;
 const BRACKETED_PASTE_START = "\x1b[200~";
 const BRACKETED_PASTE_END = "\x1b[201~";
 const IMAGE_PLACEHOLDER_REGEX = /\[Image #(\d+) [A-Z0-9]+\]/gu;
 const IMAGE_CHIP_BG = "\x1b[48;5;240m";
 const IMAGE_CHIP_FG = "\x1b[38;5;255m";
+const FILE_MENTION_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 const EDITOR_THEME: EditorTheme = {
     borderColor: (text) => text,
@@ -112,6 +116,7 @@ export interface CodingAssistantAppOptions {
     readClipboardImage?: (
         options?: ReadClipboardImageOptions,
     ) => Promise<ClipboardImage | undefined>;
+    searchFiles?: (query: string) => Promise<readonly FileSearchResult[]>;
     showReasoning?: boolean;
     version?: string;
 }
@@ -149,6 +154,7 @@ export class CodingAssistantApp implements Component, Focusable {
     readonly #idFactory: () => string;
     readonly #now: () => number;
     readonly #editor: Editor;
+    readonly #fileMentionAutocomplete: FileMentionAutocomplete | undefined;
     readonly #onDefaultModelChange:
         | ((preference: DefaultModelPreference) => void | Promise<void>)
         | undefined;
@@ -218,6 +224,10 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#tui = options.tui;
         this.#version = options.version ?? "0.0.0";
         this.#editor = new Editor(this.#tui, EDITOR_THEME, { paddingX: 0 });
+        this.#fileMentionAutocomplete =
+            options.searchFiles === undefined
+                ? undefined
+                : new FileMentionAutocomplete(options.searchFiles, () => this.#requestRender());
         this.#exitPromise = new Promise((resolve) => {
             this.#exitResolve = resolve;
         });
@@ -269,6 +279,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#abortController?.abort();
         this.#stopActivityAnimation();
         this.#stopCursorBlink();
+        this.#fileMentionAutocomplete?.clear();
         this.#editor.setText("");
         this.#pastedImagesById.clear();
         this.#requestRender();
@@ -424,10 +435,26 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         const previousSlashCommandSuggestionCount = this.#slashCommandSuggestions().length;
+        const previousFileMentionSuggestionCount = this.#fileMentionSnapshot()?.items.length ?? 0;
         if (this.#handleSlashCommandAutocompleteInput(data)) {
             const nextSlashCommandSuggestionCount = this.#slashCommandSuggestions().length;
             this.#requestRender(
                 nextSlashCommandSuggestionCount < previousSlashCommandSuggestionCount,
+            );
+            return;
+        }
+
+        if (
+            this.#fileMentionAutocomplete?.handleInput(
+                data,
+                this.#editor.getLines(),
+                this.#editor.getCursor(),
+                (path, context) => this.#completeFileMention(path, context),
+            ) === true
+        ) {
+            const nextFileMentionSuggestionCount = this.#fileMentionSnapshot()?.items.length ?? 0;
+            this.#requestRender(
+                nextFileMentionSuggestionCount < previousFileMentionSuggestionCount,
             );
             return;
         }
@@ -451,9 +478,13 @@ export class CodingAssistantApp implements Component, Focusable {
 
         this.#markTypingActivity();
         this.#editor.handleInput(data);
-        this.#syncSlashCommandAutocompleteState();
+        this.#syncAutocompleteState();
         const nextSlashCommandSuggestionCount = this.#slashCommandSuggestions().length;
-        this.#requestRender(nextSlashCommandSuggestionCount < previousSlashCommandSuggestionCount);
+        const nextFileMentionSuggestionCount = this.#fileMentionSnapshot()?.items.length ?? 0;
+        this.#requestRender(
+            nextSlashCommandSuggestionCount < previousSlashCommandSuggestionCount ||
+                nextFileMentionSuggestionCount < previousFileMentionSuggestionCount,
+        );
     }
 
     #handlePastedInput(data: string): boolean {
@@ -543,7 +574,7 @@ export class CodingAssistantApp implements Component, Focusable {
         const prefix = currentText.length > 0 && !/\s$/u.test(currentText) ? " " : "";
         this.#markTypingActivity();
         this.#editor.insertTextAtCursor(`${prefix}${placeholder} `);
-        this.#syncSlashCommandAutocompleteState();
+        this.#syncAutocompleteState();
         this.#requestRender();
     }
 
@@ -571,14 +602,14 @@ export class CodingAssistantApp implements Component, Focusable {
 
     #insertPaste(text: string): void {
         if (text.length === 0) {
-            this.#syncSlashCommandAutocompleteState();
+            this.#syncAutocompleteState();
             this.#requestRender();
             return;
         }
 
         this.#markTypingActivity();
         this.#editor.handleInput(`${BRACKETED_PASTE_START}${text}${BRACKETED_PASTE_END}`);
-        this.#syncSlashCommandAutocompleteState();
+        this.#syncAutocompleteState();
         this.#requestRender();
     }
 
@@ -594,7 +625,17 @@ export class CodingAssistantApp implements Component, Focusable {
         const safeWidth = Math.max(20, width);
         const header = this.#renderHeader(safeWidth);
         const slashCommandSuggestions = this.#slashCommandSuggestions();
-        const footer = this.#renderFooter(safeWidth, slashCommandSuggestions);
+        const fileMentionSnapshot =
+            slashCommandSuggestions.length === 0 ? this.#fileMentionSnapshot() : undefined;
+        const footer = this.#renderFooter(
+            safeWidth,
+            slashCommandSuggestions.length > 0
+                ? slashCommandSuggestions
+                : (fileMentionSnapshot?.items ?? []),
+            slashCommandSuggestions.length > 0
+                ? this.#slashCommandSelectionIndex
+                : (fileMentionSnapshot?.selectedIndex ?? 0),
+        );
         const input = this.#renderInput(safeWidth);
 
         if (this.#exiting) {
@@ -635,6 +676,7 @@ export class CodingAssistantApp implements Component, Focusable {
         }
         const prompt = submission.displayText;
 
+        this.#fileMentionAutocomplete?.clear();
         this.#editor.setText("");
 
         if (prompt.startsWith("/skill:")) {
@@ -1334,10 +1376,11 @@ export class CodingAssistantApp implements Component, Focusable {
 
     #renderFooter(
         width: number,
-        slashCommandSuggestions: readonly AutocompleteItem[] = this.#slashCommandSuggestions(),
+        suggestions: readonly AutocompleteItem[],
+        selectedIndex: number,
     ): string[] {
-        if (slashCommandSuggestions.length > 0) {
-            return this.#renderSlashCommandAutocomplete(width, slashCommandSuggestions);
+        if (suggestions.length > 0) {
+            return this.#renderAutocomplete(width, suggestions, selectedIndex);
         }
 
         const parts = [`${FOOTER_MODEL_FG}${this.#modelWithReasoningDisplayName()}${RESET}`];
@@ -1350,18 +1393,19 @@ export class CodingAssistantApp implements Component, Focusable {
         return [this.#fitLine(line, width)];
     }
 
-    #renderSlashCommandAutocomplete(
+    #renderAutocomplete(
         width: number,
         suggestions: readonly AutocompleteItem[],
-        maxVisible = SLASH_COMMAND_MAX_VISIBLE,
+        selectedIndex: number,
+        maxVisible = AUTOCOMPLETE_MAX_VISIBLE,
     ): string[] {
         const rowWidth = Math.max(1, width - 1);
-        const visibleCount = Math.max(1, Math.min(maxVisible, SLASH_COMMAND_MAX_VISIBLE));
-        const selectedIndex = Math.min(this.#slashCommandSelectionIndex, suggestions.length - 1);
+        const visibleCount = Math.max(1, Math.min(maxVisible, AUTOCOMPLETE_MAX_VISIBLE));
+        const safeSelectedIndex = Math.min(selectedIndex, suggestions.length - 1);
         const startIndex = Math.max(
             0,
             Math.min(
-                selectedIndex - Math.floor(visibleCount / 2),
+                safeSelectedIndex - Math.floor(visibleCount / 2),
                 suggestions.length - visibleCount,
             ),
         );
@@ -1374,7 +1418,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
         return visibleSuggestions.map((item, index) => {
             const absoluteIndex = startIndex + index;
-            const isSelected = absoluteIndex === selectedIndex;
+            const isSelected = absoluteIndex === safeSelectedIndex;
             const marker = isSelected ? "→ " : "  ";
             const label = this.#fitAndPadLine(this.#singleLine(item.label), labelColumnWidth);
             const remainingWidth = Math.max(
@@ -2110,7 +2154,26 @@ export class CodingAssistantApp implements Component, Focusable {
         return suggestions;
     }
 
-    #syncSlashCommandAutocompleteState(): void {
+    #completeFileMention(path: string, context: FileMentionContext): void {
+        for (const _segment of FILE_MENTION_SEGMENTER.segment(context.prefix)) {
+            this.#editor.handleInput("\x7f");
+        }
+
+        const suffix =
+            context.afterCursor.length === 0 || !/^\s/u.test(context.afterCursor) ? " " : "";
+        this.#editor.insertTextAtCursor(`${formatFileMention(path)}${suffix}`);
+        this.#fileMentionAutocomplete?.clear();
+        this.#syncAutocompleteState();
+    }
+
+    #fileMentionSnapshot() {
+        return this.#fileMentionAutocomplete?.snapshot(
+            this.#editor.getLines(),
+            this.#editor.getCursor(),
+        );
+    }
+
+    #syncAutocompleteState(): void {
         const text = this.#editor.getText();
         if (
             this.#dismissedSlashCommandText !== undefined &&
@@ -2119,6 +2182,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#dismissedSlashCommandText = undefined;
         }
         this.#slashCommandSuggestions();
+        this.#fileMentionAutocomplete?.sync(this.#editor.getLines(), this.#editor.getCursor());
     }
 
     #reasoningShortcutDirection(data: string): "down" | "up" | undefined {

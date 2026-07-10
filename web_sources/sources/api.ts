@@ -20,6 +20,7 @@ import type {
     ListSessionsResponse,
     ListSubagentsResponse,
     ResetSessionResponse,
+    SearchFilesResponse,
     SessionEvent,
     SubmitMessageRequest,
     SubmitMessageResponse,
@@ -97,6 +98,22 @@ export function fetchSessions(limit?: number): Promise<ListSessionsResponse> {
 export function fetchSubagents(sessionId: string): Promise<ListSubagentsResponse> {
     return requestJson<ListSubagentsResponse>(
         `/sessions/${encodeURIComponent(sessionId)}/subagents`,
+    );
+}
+
+export function searchFiles(
+    sessionId: string,
+    query: string,
+    limit = 20,
+    signal?: AbortSignal,
+): Promise<SearchFilesResponse> {
+    const parameters = new URLSearchParams({
+        limit: String(limit),
+        query,
+    });
+    return requestJson<SearchFilesResponse>(
+        `/sessions/${encodeURIComponent(sessionId)}/files?${parameters.toString()}`,
+        signal === undefined ? undefined : { signal },
     );
 }
 

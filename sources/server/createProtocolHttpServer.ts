@@ -12,6 +12,7 @@ import type {
     ListSessionsResponse,
     ListSubagentsResponse,
     ModelCatalog,
+    SearchFilesResponse,
     SessionEvent,
     ShutdownServerResponse,
     SubmitMessageRequest,
@@ -19,12 +20,14 @@ import type {
 } from "../protocol/index.js";
 import { InMemorySessionStore } from "./InMemorySessionStore.js";
 import { createModelCatalog } from "./createModelCatalog.js";
+import { FileSearchService, type FileSearchServiceContract } from "./FileSearchService.js";
 import type { SessionEventLog } from "./SessionEventLog.js";
 import type { SessionStore } from "./SessionStore.js";
 
 export interface ProtocolHttpServerOptions {
     initialization?: Promise<ModelCatalog>;
     modelCatalog?: ModelCatalog;
+    fileSearchService?: FileSearchServiceContract;
     onShutdown?: () => void;
     store?: SessionStore;
     token: string;
@@ -38,13 +41,15 @@ export function createProtocolHttpServer(options: ProtocolHttpServerOptions): Se
             modelCatalog,
         });
     const state = createInitializationState({ ...options, modelCatalog });
+    const fileSearchService = options.fileSearchService ?? new FileSearchService();
 
-    return createServer((request, response) => {
+    const server = createServer((request, response) => {
         void handleRequest(
             request,
             response,
             store,
             state,
+            fileSearchService,
             options.token,
             options.onShutdown,
         ).catch((error: unknown) => {
@@ -53,6 +58,8 @@ export function createProtocolHttpServer(options: ProtocolHttpServerOptions): Se
             });
         });
     });
+    server.once("close", () => fileSearchService.close());
+    return server;
 }
 
 interface InitializationState {
@@ -66,6 +73,7 @@ async function handleRequest(
     response: ServerResponse,
     store: SessionStore,
     initialization: InitializationState,
+    fileSearchService: FileSearchServiceContract,
     token: string,
     onShutdown: (() => void) | undefined,
 ): Promise<void> {
@@ -138,6 +146,17 @@ async function handleRequest(
         sendJson<ListSubagentsResponse>(response, 200, {
             subagents: store.listSubagents(sessionId),
         });
+        return;
+    }
+
+    if (request.method === "GET" && route.name === "files") {
+        const query = (url.searchParams.get("query") ?? "").slice(0, 512);
+        const files = await fileSearchService.search(
+            session.snapshot().cwd,
+            query,
+            parseFileSearchLimit(url.searchParams.get("limit")),
+        );
+        sendJson<SearchFilesResponse>(response, 200, { files });
         return;
     }
 
@@ -253,6 +272,18 @@ function parseLimit(value: string | null): number | undefined {
     return Math.min(limit, 500);
 }
 
+function parseFileSearchLimit(value: string | null): number {
+    if (value === null) {
+        return 20;
+    }
+
+    const limit = Number.parseInt(value, 10);
+    if (!Number.isFinite(limit) || limit <= 0) {
+        return 20;
+    }
+    return Math.min(limit, 50);
+}
+
 function isAuthorized(request: IncomingMessage, token: string): boolean {
     const authorization = request.headers.authorization;
     if (authorization === undefined || !authorization.startsWith("Bearer ")) {
@@ -271,6 +302,7 @@ function matchRoute(pathname: string):
               | "abort"
               | "effort"
               | "events"
+              | "files"
               | "messages"
               | "model"
               | "reset"
@@ -297,6 +329,7 @@ function matchRoute(pathname: string):
     if (parts[2] === "abort") return { name: "abort", sessionId };
     if (parts[2] === "effort") return { name: "effort", sessionId };
     if (parts[2] === "events") return { name: "events", sessionId };
+    if (parts[2] === "files") return { name: "files", sessionId };
     if (parts[2] === "messages") return { name: "messages", sessionId };
     if (parts[2] === "model") return { name: "model", sessionId };
     if (parts[2] === "reset") return { name: "reset", sessionId };

@@ -336,6 +336,15 @@ export interface ListSubagentsResponse {
     subagents: readonly SubagentSummary[];
 }
 
+export interface FileSearchResult {
+    fileName: string;
+    path: string;
+}
+
+export interface SearchFilesResponse {
+    files: readonly FileSearchResult[];
+}
+
 export interface GetSessionResponse {
     session: ProtocolSession;
 }

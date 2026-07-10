@@ -9,12 +9,12 @@ import {
     PromptInputBody,
     type PromptInputMessage,
     PromptInputSubmit,
-    PromptInputTextarea,
     PromptInputToolbar,
     PromptInputTools,
     usePromptInputAttachments,
 } from "@/components/ai/prompt-input";
 import { fileUiPartToImageBlock } from "@/components/chat/fileUiPartToImageBlock";
+import { FileMentionTextarea } from "@/components/chat/FileMentionTextarea";
 import { Button } from "@/components/ui/button";
 import type { ImageBlock } from "@/protocol";
 
@@ -34,6 +34,8 @@ export interface ChatComposerProps {
     onSubmit: (text: string, images: readonly ImageBlock[]) => Promise<boolean>;
     /** Locks the composer while a subagent history is being viewed. */
     readOnly: boolean;
+    /** Session whose workspace is searched for file mentions. */
+    sessionId: string;
 }
 
 interface ComposerActionsProps {
@@ -114,6 +116,7 @@ export function ChatComposer({
     onAbort,
     onSubmit,
     readOnly,
+    sessionId,
 }: ChatComposerProps) {
     const [hasText, setHasText] = useState(false);
     const [attachmentError, setAttachmentError] = useState<string | undefined>(undefined);
@@ -167,9 +170,9 @@ export function ChatComposer({
                     <PromptInputAttachments>
                         {(attachment) => <PromptInputAttachment data={attachment} />}
                     </PromptInputAttachments>
-                    <PromptInputTextarea
+                    <FileMentionTextarea
                         disabled={!daemonReady || readOnly}
-                        onChange={(event) => setHasText(event.currentTarget.value.trim() !== "")}
+                        onTextChange={setHasText}
                         placeholder={
                             readOnly
                                 ? "Subagent history is read-only."
@@ -177,6 +180,7 @@ export function ChatComposer({
                                   ? "Message the agent…"
                                   : "Waiting for the daemon to become ready…"
                         }
+                        sessionId={sessionId}
                     />
                 </PromptInputBody>
                 <PromptInputToolbar>
@@ -197,7 +201,7 @@ export function ChatComposer({
                 <p className="text-muted-foreground/70 text-xs">
                     {readOnly
                         ? "Subagent histories cannot receive follow-up messages."
-                        : "Enter to send · Shift+Enter for a new line · paste or attach images"}
+                        : "Enter to send · Shift+Enter for a new line · type @ to mention files"}
                 </p>
                 {attachmentError !== undefined && (
                     <p className="text-destructive text-xs">{attachmentError}</p>
