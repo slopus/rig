@@ -8,6 +8,10 @@
         "pi"
     ],
     "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/slopus/rig.git"
+    },
     "bin": {
         "rig": "./dist/main.js"
     },
