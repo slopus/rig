@@ -29,6 +29,12 @@ export class AgentSessionManager {
         this.maxDepth = options.maxDepth ?? DEFAULT_MAX_SUBAGENT_DEPTH;
     }
 
+    taskSession(sessionId: string): InMemorySession | undefined {
+        const session = this.#repository.get(sessionId);
+        if (session === undefined) return undefined;
+        return this.#repository.get(session.agentMetadata().rootSessionId) ?? session;
+    }
+
     async spawn(
         parentSessionId: string,
         request: SpawnSubagentRequest,

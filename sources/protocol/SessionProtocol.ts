@@ -9,6 +9,7 @@ import type { Model, StopReason } from "../providers/types.js";
 import type { PermissionMode } from "../permissions/index.js";
 import type { UserInputRequest, UserInputResponse } from "../user-input/index.js";
 import type { McpServerSummary } from "../mcp/index.js";
+import type { SessionTask } from "../tasks/index.js";
 import type { EventId } from "./EventId.js";
 
 export type SessionStatus = "idle" | "queued" | "running" | "completed" | "aborted" | "error";
@@ -81,6 +82,7 @@ export interface ProtocolSession {
     snapshot: AgentSnapshot;
     pendingUserInputs: readonly UserInputRequest[];
     mcpServers: readonly McpServerSummary[];
+    tasks: readonly SessionTask[];
 }
 
 export interface SubagentSummary {
@@ -203,6 +205,7 @@ export type SessionEvent =
     | UserInputRequestedEvent
     | UserInputResolvedEvent
     | McpServersChangedEvent
+    | TasksChangedEvent
     | SubagentChangedEvent;
 
 export interface BaseSessionEvent<TType extends string, TData> {
@@ -314,6 +317,11 @@ export type UserInputResolvedEvent = BaseSessionEvent<
 export type McpServersChangedEvent = BaseSessionEvent<
     "mcp_servers_changed",
     { servers: readonly McpServerSummary[] }
+>;
+
+export type TasksChangedEvent = BaseSessionEvent<
+    "tasks_changed",
+    { tasks: readonly SessionTask[] }
 >;
 
 export type SubagentChangedEvent = BaseSessionEvent<

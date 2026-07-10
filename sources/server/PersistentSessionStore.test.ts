@@ -130,6 +130,37 @@ describe("PersistentSessionStore", () => {
         }
     });
 
+    it("persists task state and does not reuse deleted task identifiers", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        try {
+            const store = new PersistentSessionStore({ databasePath });
+            const session = store.create({ cwd: "/tmp/rig-persistent-session-test" });
+            session.createTask({ subject: "First", description: "Do the first task." });
+            session.createTask({ subject: "Second", description: "Do the second task." });
+            session.updateTask("2", { status: "deleted" });
+            const sessionId = session.id;
+            store.close();
+
+            const restoredStore = new PersistentSessionStore({ databasePath });
+            try {
+                const restored = restoredStore.get(sessionId);
+                expect(restored?.listTasks()).toEqual([
+                    expect.objectContaining({ id: "1", subject: "First" }),
+                ]);
+                expect(
+                    restored?.createTask({
+                        subject: "Third",
+                        description: "Do the third task.",
+                    }).id,
+                ).toBe("3");
+            } finally {
+                restoredStore.close();
+            }
+        } finally {
+            await cleanup();
+        }
+    });
+
     it("persists a fallback when a restored model is no longer available", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         const availableModel = defineModel({
@@ -641,7 +672,9 @@ function sessionState(overrides: Partial<PersistedSessionState> = {}): Persisted
         providerId: "codex",
         permissionMode: "workspace_write",
         queuedRuns: [],
+        nextTaskId: 1,
         status: "idle",
+        tasks: [],
         titleStatus: "idle",
         tools: [],
         ...overrides,

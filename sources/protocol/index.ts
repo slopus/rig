@@ -1,5 +1,6 @@
 export type { EventId } from "./EventId.js";
 export type { McpServerSummary } from "../mcp/index.js";
+export type { SessionTask, TaskStatus } from "../tasks/index.js";
 export { createEventIdFactory, type EventIdFactoryOptions } from "./createEventIdFactory.js";
 export type {
     AbortRequestedEvent,
@@ -48,6 +49,7 @@ export type {
     ShutdownServerResponse,
     SubmitMessageRequest,
     SubmitMessageResponse,
+    TasksChangedEvent,
     UserInputRequestedEvent,
     UserInputResolvedEvent,
 } from "./SessionProtocol.js";

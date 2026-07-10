@@ -133,6 +133,40 @@ export function DetailsTab(props: DetailsTabProps) {
                 </DetailField>
             )}
 
+            {session.tasks.length > 0 && (
+                <DetailField label="Tasks">
+                    <div className="space-y-2">
+                        {session.tasks.map((task) => (
+                            <div
+                                className="rounded-md border border-border/60 px-2.5 py-2"
+                                key={task.id}
+                            >
+                                <div className="flex items-start gap-2">
+                                    <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                                        #{task.id}
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-xs leading-relaxed text-foreground/90">
+                                            {task.subject}
+                                        </p>
+                                        <p className="text-[11px] text-muted-foreground">
+                                            {task.status === "completed"
+                                                ? "Completed"
+                                                : task.status === "in_progress"
+                                                  ? "In progress"
+                                                  : "Pending"}
+                                            {task.blockedBy.length > 0
+                                                ? ` · Blocked by ${task.blockedBy.map((id) => `#${id}`).join(", ")}`
+                                                : ""}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </DetailField>
+            )}
+
             <Separator className="bg-border/60" />
 
             <div className="grid grid-cols-2 gap-4">

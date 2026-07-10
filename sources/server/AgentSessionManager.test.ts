@@ -95,4 +95,30 @@ describe("AgentSessionManager", () => {
         ).rejects.toThrow("limited to 3 nested levels");
         expect(createSubagent).not.toHaveBeenCalled();
     });
+
+    it("routes subagent task operations to the root session", () => {
+        const root = {
+            agentMetadata: () => ({ depth: 0, rootSessionId: "session-1", type: "primary" }),
+        } as unknown as InMemorySession;
+        const child = {
+            agentMetadata: () => ({
+                depth: 1,
+                rootSessionId: "session-1",
+                type: "subagent",
+            }),
+        } as unknown as InMemorySession;
+        const sessions = new Map([
+            ["session-1", root],
+            ["subagent-1", child],
+        ]);
+        const manager = new AgentSessionManager({
+            repository: {
+                createSubagent: () => child,
+                get: (sessionId) => sessions.get(sessionId),
+            },
+        });
+
+        expect(manager.taskSession("subagent-1")).toBe(root);
+        expect(manager.taskSession("session-1")).toBe(root);
+    });
 });

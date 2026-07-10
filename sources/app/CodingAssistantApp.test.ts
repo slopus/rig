@@ -386,6 +386,7 @@ describe("CodingAssistantApp", () => {
             permissionMode: "workspace_write",
             mcpServers: [],
             pendingUserInputs: [],
+            tasks: [],
             snapshot,
             status: "idle",
             titleStatus: "idle",
@@ -618,8 +619,8 @@ describe("CodingAssistantApp", () => {
         expect(rendered).toContain("Choose filesystem, shell, and network access.");
         expect(rendered).toContain("/mcp");
         expect(rendered).toContain("Show configured MCP server connections.");
-        expect(rendered).toContain("/new");
-        expect(rendered).toContain("Reset this session and start fresh.");
+        expect(rendered).toContain("/tasks");
+        expect(rendered).toContain("Show the current session task list.");
         expect(rendered).not.toContain("GPT Test Off •");
         expect(rendered).not.toContain("/quit");
 
@@ -670,6 +671,58 @@ describe("CodingAssistantApp", () => {
         const rendered = stripAnsi(app.render(100).join("\n"));
         expect(rendered).toContain("docs: connected with 2 tools");
         expect(rendered).toContain("issues: could not connect — The server process exited.");
+    });
+
+    it("shows persisted task progress from the tasks command", () => {
+        const model = defineModel({
+            id: "anthropic/test",
+            name: "Claude Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "claude-sdk",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            initialTasks: [
+                {
+                    blockedBy: [],
+                    blocks: [],
+                    description: "Implement it.",
+                    id: "1",
+                    status: "in_progress",
+                    subject: "Build the feature",
+                },
+                {
+                    blockedBy: ["1"],
+                    blocks: [],
+                    description: "Test it.",
+                    id: "2",
+                    status: "pending",
+                    subject: "Verify the feature",
+                },
+            ],
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        submit(app, "/tasks");
+
+        const rendered = stripAnsi(app.render(100).join("\n"));
+        expect(rendered).toContain("#1 · In progress · Build the feature");
+        expect(rendered).toContain("#2 · Pending · Verify the feature");
     });
 
     it("compacts conversation history from the compact command", async () => {

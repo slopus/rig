@@ -3,6 +3,7 @@ import type { AgentContext } from "./AgentContext.js";
 import { createNodeBashContext } from "./createNodeBashContext.js";
 import { createNodeFileSystemContext } from "./createNodeFileSystemContext.js";
 import type { UserInputContext } from "./UserInputContext.js";
+import type { TaskContext } from "./TaskContext.js";
 import {
     createPermissionContext,
     DEFAULT_PERMISSION_MODE,
@@ -13,6 +14,7 @@ export interface CreateNodeAgentContextOptions {
     cwd: string;
     processManager: NativeProxessManager;
     permissionMode?: PermissionMode;
+    tasks?: TaskContext;
     userInput?: UserInputContext;
 }
 
@@ -30,5 +32,6 @@ export function createNodeAgentContext(options: CreateNodeAgentContextOptions): 
         permissions,
     };
     if (options.userInput !== undefined) context.userInput = options.userInput;
+    if (options.tasks !== undefined) context.tasks = options.tasks;
     return context;
 }

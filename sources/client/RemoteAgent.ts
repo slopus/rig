@@ -370,6 +370,11 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
             this.#session = { ...this.#session, mcpServers: event.data.servers };
             return;
         }
+
+        if (event.type === "tasks_changed") {
+            this.#session = { ...this.#session, tasks: event.data.tasks };
+            return;
+        }
     }
 
     #replaceSession(session: ProtocolSession): void {

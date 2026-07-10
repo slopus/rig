@@ -25,7 +25,7 @@ rig stays close to pi and to upstream vendor behavior, but adds a curated defaul
 - Simplified system prompts that are easier to reason about and reuse.
 - Per-model and per-vendor prompt/tool optimizations, so different inference providers can work well without forcing users into one stack.
 - Bundled subagents for common coding workflows.
-- Provider-aligned task planning with Codex `update_plan` and Claude `TodoWrite`.
+- Provider-aligned task planning with Codex `update_plan` and Claude's persistent task tools.
 - Structured user questions with provider-aligned tools and terminal or web answer controls.
 - MCP tool servers over stdio or streamable HTTP, with Codex- and Claude-compatible configuration.
 - Background workers for longer-running or asynchronous tasks.
@@ -136,6 +136,13 @@ permission_mode = "workspace_write"
 `RIG_PERMISSION_MODE` overrides the configured default for a newly created
 terminal session. Accepted values are `workspace_write`, `read_only`, and
 `full_access`.
+
+### Task tracking
+
+Claude sessions use the current `TaskCreate`, `TaskGet`, `TaskUpdate`, and
+`TaskList` tools. Tasks, dependencies, and progress survive daemon restarts and
+are shared with the session's subagents. Use `/tasks` in the terminal or the
+Tasks section in the web inspector to see the current list.
 
 ### MCP tool servers
 

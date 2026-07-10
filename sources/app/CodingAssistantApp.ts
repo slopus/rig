@@ -26,7 +26,12 @@ import {
 } from "../agent/index.js";
 import { parseSkillFrontmatter } from "../agent/skills/parseSkillFrontmatter.js";
 import type { NativeProxessManager } from "../processes/index.js";
-import type { FileSearchResult, McpServerSummary, SessionEvent } from "../protocol/index.js";
+import type {
+    FileSearchResult,
+    McpServerSummary,
+    SessionEvent,
+    SessionTask,
+} from "../protocol/index.js";
 import type { UserInputRequest, UserInputResponse } from "../user-input/index.js";
 import type { AppTranscriptEntry } from "./AppTranscriptEntry.js";
 import type {
@@ -108,6 +113,7 @@ export interface CodingAssistantAppOptions {
     cwd: string;
     initialMcpServers?: readonly McpServerSummary[];
     initialSessionEvents?: readonly SessionEvent[];
+    initialTasks?: readonly SessionTask[];
     initialUserInputs?: readonly UserInputRequest[];
     modelLocked?: boolean;
     processManager: NativeProxessManager;
@@ -232,6 +238,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #statusText = "Idle";
     #stopped = false;
     #streamEntryId: string | undefined;
+    #tasks: readonly SessionTask[];
     #thinkingEntryIdsByContentIndex = new Map<number, string>();
     #toolCallEntryIdsByContentIndex = new Map<number, string>();
     #userInputRequests: UserInputRequest[] = [];
@@ -251,6 +258,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#showReasoning = options.showReasoning ?? false;
         this.#modelLocked = options.modelLocked ?? !options.agent.canChangeModel;
         this.#mcpServers = options.initialMcpServers ?? [];
+        this.#tasks = options.initialTasks ?? [];
         this.#tui = options.tui;
         this.#version = options.version ?? "0.0.0";
         this.#editor = new Editor(this.#tui, EDITOR_THEME, { paddingX: 0 });
@@ -373,6 +381,12 @@ export class CodingAssistantApp implements Component, Focusable {
 
         if (event.type === "mcp_servers_changed") {
             this.#mcpServers = event.data.servers;
+            this.#requestRender();
+            return;
+        }
+
+        if (event.type === "tasks_changed") {
+            this.#tasks = event.data.tasks;
             this.#requestRender();
             return;
         }
@@ -959,6 +973,11 @@ export class CodingAssistantApp implements Component, Focusable {
             return true;
         }
 
+        if (prompt === "/tasks" || prompt === "/todos") {
+            this.#showTasks();
+            return true;
+        }
+
         if (prompt === "/new") {
             this.#resetSession();
             return true;
@@ -1011,6 +1030,29 @@ export class CodingAssistantApp implements Component, Focusable {
             })
             .join("\n");
         this.#appendEntry({ role: "event", title: "MCP servers", text });
+    }
+
+    #showTasks(): void {
+        if (this.#tasks.length === 0) {
+            this.#appendEntry({
+                role: "event",
+                title: "Tasks",
+                text: "No tasks are being tracked in this session.",
+            });
+            return;
+        }
+        const status = {
+            completed: "Completed",
+            in_progress: "In progress",
+            pending: "Pending",
+        } as const;
+        this.#appendEntry({
+            role: "event",
+            title: "Tasks",
+            text: this.#tasks
+                .map((task) => `#${task.id} · ${status[task.status]} · ${task.subject}`)
+                .join("\n"),
+        });
     }
 
     async #compactSession(): Promise<void> {
@@ -2079,6 +2121,19 @@ export class CodingAssistantApp implements Component, Focusable {
                 ? `${todos.length} todo${todos.length === 1 ? "" : "s"}`
                 : "todos";
         }
+
+        if (normalized === "taskcreate") {
+            return stringField("subject") ?? "Create task";
+        }
+        if (normalized === "taskget") {
+            const taskId = stringField("taskId");
+            return taskId === undefined ? "Read task" : `Read task ${taskId}`;
+        }
+        if (normalized === "taskupdate") {
+            const taskId = stringField("taskId");
+            return taskId === undefined ? "Update task" : `Update task ${taskId}`;
+        }
+        if (normalized === "tasklist") return "Current tasks";
 
         return this.#toolDisplayName(toolName);
     }

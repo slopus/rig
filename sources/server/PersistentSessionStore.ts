@@ -331,6 +331,8 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     context_messages_json,
                     models_json,
                     tools_json,
+                    tasks_json,
+                    next_task_id,
                     title,
                     title_status,
                     title_error,
@@ -340,7 +342,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     created_at_ms,
                     updated_at_ms
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     agent_id = excluded.agent_id,
                     session_kind = excluded.session_kind,
@@ -360,6 +362,8 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     context_messages_json = excluded.context_messages_json,
                     models_json = excluded.models_json,
                     tools_json = excluded.tools_json,
+                    tasks_json = excluded.tasks_json,
+                    next_task_id = excluded.next_task_id,
                     title = excluded.title,
                     title_status = excluded.title_status,
                     title_error = excluded.title_error,
@@ -389,6 +393,8 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 state.contextMessages === undefined ? null : JSON.stringify(state.contextMessages),
                 JSON.stringify(state.models),
                 JSON.stringify(state.tools),
+                JSON.stringify(state.tasks),
+                state.nextTaskId,
                 state.title ?? null,
                 state.titleStatus,
                 state.titleError ?? null,
@@ -498,6 +504,8 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 context_messages_json TEXT,
                 models_json TEXT NOT NULL,
                 tools_json TEXT NOT NULL,
+                tasks_json TEXT NOT NULL DEFAULT '[]',
+                next_task_id INTEGER NOT NULL DEFAULT 1,
                 title TEXT,
                 title_status TEXT NOT NULL DEFAULT 'idle',
                 title_error TEXT,
@@ -557,6 +565,8 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         this.#ensureSessionColumn("description", "TEXT");
         this.#ensureSessionColumn("context_messages_json", "TEXT");
         this.#ensureSessionColumn("permission_mode", "TEXT NOT NULL DEFAULT 'workspace_write'");
+        this.#ensureSessionColumn("tasks_json", "TEXT NOT NULL DEFAULT '[]'");
+        this.#ensureSessionColumn("next_task_id", "INTEGER NOT NULL DEFAULT 1");
         this.#database.exec(`
             CREATE INDEX IF NOT EXISTS sessions_parent_created
                 ON sessions(parent_session_id, created_at_ms)
@@ -684,6 +694,8 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             permissionMode,
             queuedRuns: this.#loadQueuedRuns(sessionId),
             status: readString(row, "status") as PersistedSessionState["status"],
+            tasks: JSON.parse(readString(row, "tasks_json")) as PersistedSessionState["tasks"],
+            nextTaskId: readNumber(row, "next_task_id"),
             ...(title !== undefined ? { title } : {}),
             ...(titleError !== undefined ? { titleError } : {}),
             titleStatus: readString(row, "title_status") as SessionTitleStatus,

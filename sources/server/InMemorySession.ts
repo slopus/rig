@@ -35,6 +35,12 @@ import type {
 import type { Model, StopReason } from "../providers/types.js";
 import type { UserInputRequest, UserInputResponse } from "../user-input/index.js";
 import { mergeMcpTools, type McpServerSummary, type McpToolProvider } from "../mcp/index.js";
+import type {
+    CreateTaskRequest,
+    SessionTask,
+    UpdateTaskRequest,
+    UpdateTaskResult,
+} from "../tasks/index.js";
 import {
     DEFAULT_PERMISSION_MODE,
     parsePermissionMode,
@@ -77,7 +83,9 @@ export interface PersistedSessionState {
     providerId: string;
     permissionMode: PermissionMode;
     queuedRuns: readonly PersistedQueuedRun[];
+    nextTaskId: number;
     status: SessionStatus;
+    tasks: readonly SessionTask[];
     title?: string;
     titleError?: string;
     titleStatus: SessionTitleStatus;
@@ -153,6 +161,7 @@ export class InMemorySession {
     #modelCatalog: ModelCatalog;
     #modelId: string;
     #models: readonly Model[];
+    #nextTaskId = 1;
     #now: () => number;
     #partialPositions = new Set<number>();
     #pendingUserInputs = new Map<string, PendingUserInput>();
@@ -164,6 +173,7 @@ export class InMemorySession {
     #restoredActiveRunId: string | undefined;
     #runtime: CodingAssistantRuntime | undefined;
     #status: SessionStatus = "idle";
+    #tasks: SessionTask[] = [];
     #title: string | undefined;
     #titleError: string | undefined;
     #titleStatus: SessionTitleStatus = "idle";
@@ -225,6 +235,9 @@ export class InMemorySession {
         this.#titleStatus =
             options.restore?.titleStatus ??
             (this.#agentMetadata.description !== undefined ? "ready" : "idle");
+        this.#tasks =
+            options.restore?.tasks === undefined ? [] : options.restore.tasks.map(cloneTask);
+        this.#nextTaskId = options.restore?.nextTaskId ?? nextTaskId(this.#tasks);
         this.#tools = options.restore?.tools ?? [];
         this.#interruption = options.restore?.interruption;
         this.#queue = [...(options.restore?.queuedRuns ?? [])];
@@ -430,6 +443,91 @@ export class InMemorySession {
         return this.snapshot();
     }
 
+    createTask(request: CreateTaskRequest): SessionTask {
+        const task: SessionTask = {
+            blockedBy: [],
+            blocks: [],
+            description: request.description,
+            id: String(this.#nextTaskId),
+            status: "pending",
+            subject: request.subject,
+            ...(request.activeForm !== undefined ? { activeForm: request.activeForm } : {}),
+            ...(request.metadata !== undefined ? { metadata: { ...request.metadata } } : {}),
+        };
+        this.#nextTaskId += 1;
+        this.#tasks.push(task);
+        this.#recordTasksChanged();
+        return cloneTask(task);
+    }
+
+    getTask(taskId: string): SessionTask | undefined {
+        const task = this.#tasks.find((candidate) => candidate.id === taskId);
+        return task === undefined ? undefined : cloneTask(task);
+    }
+
+    listTasks(): readonly SessionTask[] {
+        return this.#tasks.map(cloneTask);
+    }
+
+    updateTask(taskId: string, request: UpdateTaskRequest): UpdateTaskResult {
+        const index = this.#tasks.findIndex((candidate) => candidate.id === taskId);
+        const existing = this.#tasks[index];
+        if (existing === undefined) {
+            return { error: "Task not found", success: false, taskId, updatedFields: [] };
+        }
+        if (request.status === "deleted") {
+            this.#tasks.splice(index, 1);
+            this.#tasks = this.#tasks.map((task) => ({
+                ...task,
+                blockedBy: task.blockedBy.filter((dependency) => dependency !== taskId),
+                blocks: task.blocks.filter((dependency) => dependency !== taskId),
+            }));
+            this.#recordTasksChanged();
+            return {
+                statusChange: { from: existing.status, to: "deleted" },
+                success: true,
+                taskId,
+                updatedFields: ["deleted"],
+            };
+        }
+
+        const dependencyError = this.#validateTaskDependencies(taskId, request);
+        if (dependencyError !== undefined) {
+            return { error: dependencyError, success: false, taskId, updatedFields: [] };
+        }
+
+        const task = cloneTask(existing);
+        const updatedFields: string[] = [];
+        updateTaskString(task, "subject", request.subject, updatedFields);
+        updateTaskString(task, "description", request.description, updatedFields);
+        updateTaskString(task, "activeForm", request.activeForm, updatedFields);
+        updateTaskString(task, "owner", request.owner, updatedFields);
+        if (request.metadata !== undefined) {
+            const metadata = { ...task.metadata };
+            for (const [key, value] of Object.entries(request.metadata)) {
+                if (value === null) delete metadata[key];
+                else metadata[key] = value;
+            }
+            task.metadata = metadata;
+            updatedFields.push("metadata");
+        }
+        let statusChange: UpdateTaskResult["statusChange"];
+        if (request.status !== undefined && request.status !== task.status) {
+            statusChange = { from: task.status, to: request.status };
+            task.status = request.status;
+            updatedFields.push("status");
+        }
+        this.#tasks[index] = task;
+        this.#addTaskDependencies(taskId, request, updatedFields);
+        if (updatedFields.length > 0) this.#recordTasksChanged();
+        return {
+            success: true,
+            taskId,
+            updatedFields,
+            ...(statusChange !== undefined ? { statusChange } : {}),
+        };
+    }
+
     emitCreatedEvent(): void {
         this.#append("session_created", { session: this.snapshot() });
     }
@@ -474,7 +572,11 @@ export class InMemorySession {
         this.#contextMessages = undefined;
         this.#partialPositions.clear();
         this.#activePartial = undefined;
+        const hadTasks = this.#tasks.length > 0;
+        this.#tasks = [];
+        this.#nextTaskId = 1;
         this.#persistence?.clearMessages(this.id);
+        if (hadTasks) this.#recordTasksChanged();
         this.#append("session_reset", { snapshot: this.#agentSnapshot() });
         return this.snapshot();
     }
@@ -536,6 +638,7 @@ export class InMemorySession {
                 (pending) => pending.request,
             ),
             mcpServers: this.#mcpServers,
+            tasks: this.listTasks(),
             ...(snapshot.effort !== undefined ? { effort: snapshot.effort } : {}),
             ...(this.#title !== undefined ? { title: this.#title } : {}),
             ...(this.#titleError !== undefined ? { titleError: this.#titleError } : {}),
@@ -589,7 +692,9 @@ export class InMemorySession {
             providerId: this.#providerId,
             permissionMode: this.#permissionMode,
             queuedRuns: [...this.#queue],
+            nextTaskId: this.#nextTaskId,
             status: this.#status,
+            tasks: this.listTasks(),
             ...(this.#title !== undefined ? { title: this.#title } : {}),
             ...(this.#titleError !== undefined ? { titleError: this.#titleError } : {}),
             titleStatus: this.#titleStatus,
@@ -724,6 +829,51 @@ export class InMemorySession {
         return "idle";
     }
 
+    #validateTaskDependencies(taskId: string, request: UpdateTaskRequest): string | undefined {
+        for (const dependency of [...(request.addBlocks ?? []), ...(request.addBlockedBy ?? [])]) {
+            if (dependency === taskId) return "A task cannot depend on itself.";
+            if (!this.#tasks.some((task) => task.id === dependency)) {
+                return `Task ${dependency} was not found.`;
+            }
+        }
+        return undefined;
+    }
+
+    #addTaskDependencies(
+        taskId: string,
+        request: UpdateTaskRequest,
+        updatedFields: string[],
+    ): void {
+        const task = this.#tasks.find((candidate) => candidate.id === taskId);
+        if (task === undefined) return;
+        for (const blockedTaskId of request.addBlocks ?? []) {
+            const blockedTask = this.#tasks.find((candidate) => candidate.id === blockedTaskId);
+            if (blockedTask === undefined) continue;
+            if (!task.blocks.includes(blockedTaskId)) {
+                task.blocks = [...task.blocks, blockedTaskId];
+                pushUnique(updatedFields, "blocks");
+            }
+            if (!blockedTask.blockedBy.includes(taskId)) {
+                blockedTask.blockedBy = [...blockedTask.blockedBy, taskId];
+            }
+        }
+        for (const blockingTaskId of request.addBlockedBy ?? []) {
+            const blockingTask = this.#tasks.find((candidate) => candidate.id === blockingTaskId);
+            if (blockingTask === undefined) continue;
+            if (!task.blockedBy.includes(blockingTaskId)) {
+                task.blockedBy = [...task.blockedBy, blockingTaskId];
+                pushUnique(updatedFields, "blockedBy");
+            }
+            if (!blockingTask.blocks.includes(taskId)) {
+                blockingTask.blocks = [...blockingTask.blocks, taskId];
+            }
+        }
+    }
+
+    #recordTasksChanged(): void {
+        this.#append("tasks_changed", { tasks: this.listTasks() });
+    }
+
     async #ensureMcpTools(runtime: CodingAssistantRuntime): Promise<void> {
         if (this.#mcpLoaded) return;
         if (this.#mcpToolProvider === undefined) {
@@ -847,6 +997,12 @@ export class InMemorySession {
                 request: (request, requestOptions) =>
                     this.requestUserInput(request, requestOptions),
             },
+            tasks: {
+                create: (request) => this.#taskSession().createTask(request),
+                get: (taskId) => this.#taskSession().getTask(taskId),
+                list: () => this.#taskSession().listTasks(),
+                update: (taskId, request) => this.#taskSession().updateTask(taskId, request),
+            },
         };
         if (this.#contextMessages !== undefined) {
             options.contextMessages = this.#contextMessages;
@@ -876,6 +1032,10 @@ export class InMemorySession {
         this.#tools = snapshot.tools;
         this.#saveSession();
         return runtime;
+    }
+
+    #taskSession(): InMemorySession {
+        return this.#agentManager?.taskSession(this.id) ?? this;
     }
 
     async #drainQueue(): Promise<void> {
@@ -1081,4 +1241,37 @@ export class InMemorySession {
 
 function isSignalAborted(signal: AbortSignal | undefined): boolean {
     return signal?.aborted === true;
+}
+
+function cloneTask(task: SessionTask): SessionTask {
+    return {
+        ...task,
+        blockedBy: [...task.blockedBy],
+        blocks: [...task.blocks],
+        ...(task.metadata !== undefined ? { metadata: { ...task.metadata } } : {}),
+    };
+}
+
+function nextTaskId(tasks: readonly SessionTask[]): number {
+    return (
+        tasks.reduce((highest, task) => {
+            const value = Number.parseInt(task.id, 10);
+            return Number.isSafeInteger(value) ? Math.max(highest, value) : highest;
+        }, 0) + 1
+    );
+}
+
+function updateTaskString<TKey extends "activeForm" | "description" | "owner" | "subject">(
+    task: SessionTask,
+    key: TKey,
+    value: string | undefined,
+    updatedFields: string[],
+): void {
+    if (value === undefined || task[key] === value) return;
+    task[key] = value;
+    updatedFields.push(key);
+}
+
+function pushUnique(values: string[], value: string): void {
+    if (!values.includes(value)) values.push(value);
 }

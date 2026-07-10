@@ -4,6 +4,10 @@ export { claudeGlobTool } from "./Glob.js";
 export { claudeGrepTool } from "./Grep.js";
 export { claudeReadTool } from "./Read.js";
 export { claudeTodoWriteTool } from "./TodoWrite.js";
+export { claudeTaskCreateTool } from "./TaskCreate.js";
+export { claudeTaskGetTool } from "./TaskGet.js";
+export { claudeTaskListTool } from "./TaskList.js";
+export { claudeTaskUpdateTool } from "./TaskUpdate.js";
 export { claudeWebFetchTool } from "./WebFetch.js";
 export { claudeWebSearchTool } from "./WebSearch.js";
 export { claudeWriteTool } from "./Write.js";
@@ -14,7 +18,10 @@ import { claudeEditTool } from "./Edit.js";
 import { claudeGlobTool } from "./Glob.js";
 import { claudeGrepTool } from "./Grep.js";
 import { claudeReadTool } from "./Read.js";
-import { claudeTodoWriteTool } from "./TodoWrite.js";
+import { claudeTaskCreateTool } from "./TaskCreate.js";
+import { claudeTaskGetTool } from "./TaskGet.js";
+import { claudeTaskListTool } from "./TaskList.js";
+import { claudeTaskUpdateTool } from "./TaskUpdate.js";
 import { claudeWebFetchTool } from "./WebFetch.js";
 import { claudeWebSearchTool } from "./WebSearch.js";
 import { claudeWriteTool } from "./Write.js";
@@ -27,7 +34,10 @@ export const claudeCodeTools = [
     claudeWriteTool,
     claudeGlobTool,
     claudeGrepTool,
-    claudeTodoWriteTool,
+    claudeTaskCreateTool,
+    claudeTaskGetTool,
+    claudeTaskUpdateTool,
+    claudeTaskListTool,
     claudeWebFetchTool,
     claudeWebSearchTool,
     claudeAskUserQuestionTool,

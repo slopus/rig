@@ -37,6 +37,12 @@ export function createSlashCommands(): SlashCommandItem[] {
             aliases: [],
         },
         {
+            value: "tasks",
+            label: "/tasks",
+            description: "Show the current session task list.",
+            aliases: ["todos"],
+        },
+        {
             value: "new",
             label: "/new",
             description: "Reset this session and start fresh.",

@@ -340,6 +340,13 @@ function reduceServerEvent(state: ReducerState, event: SessionEvent): ReducerSta
                 session: { ...state.session, mcpServers: event.data.servers },
             };
         }
+        case "tasks_changed": {
+            if (state.session === undefined) return state;
+            return {
+                ...state,
+                session: { ...state.session, tasks: event.data.tasks },
+            };
+        }
         case "subagent_changed": {
             return {
                 ...state,

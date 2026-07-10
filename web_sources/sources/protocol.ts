@@ -250,6 +250,20 @@ export interface McpServerSummary {
     toolCount: number;
 }
 
+export type TaskStatus = "pending" | "in_progress" | "completed";
+
+export interface SessionTask {
+    activeForm?: string;
+    blockedBy: readonly string[];
+    blocks: readonly string[];
+    description: string;
+    id: string;
+    metadata?: Readonly<Record<string, unknown>>;
+    owner?: string;
+    status: TaskStatus;
+    subject: string;
+}
+
 export type SessionTitleStatus = "idle" | "generating" | "ready" | "error";
 
 export type SessionInterruptionReason = "crash" | "shutdown";
@@ -318,6 +332,7 @@ export interface ProtocolSession {
     snapshot: AgentSnapshot;
     pendingUserInputs: readonly UserInputRequest[];
     mcpServers: readonly McpServerSummary[];
+    tasks: readonly SessionTask[];
 }
 
 export interface SubagentSummary {
@@ -557,6 +572,11 @@ export type McpServersChangedEvent = BaseSessionEvent<
     { servers: readonly McpServerSummary[] }
 >;
 
+export type TasksChangedEvent = BaseSessionEvent<
+    "tasks_changed",
+    { tasks: readonly SessionTask[] }
+>;
+
 export type SubagentChangedEvent = BaseSessionEvent<
     "subagent_changed",
     {
@@ -581,4 +601,5 @@ export type SessionEvent =
     | UserInputRequestedEvent
     | UserInputResolvedEvent
     | McpServersChangedEvent
+    | TasksChangedEvent
     | SubagentChangedEvent;

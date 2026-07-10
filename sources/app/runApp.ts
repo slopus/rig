@@ -114,6 +114,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         initialSessionEvents: history.events,
         initialMcpServers: session.session.mcpServers,
         initialUserInputs: session.session.pendingUserInputs,
+        initialTasks: session.session.tasks,
         modelLocked: session.session.modelLocked,
         onDefaultModelChange: (preference) =>
             writeRuntimeConfig(loadedConfig.paths.runtime, {

@@ -30,6 +30,7 @@ function subagentSession(): ProtocolSession {
         permissionMode: "workspace_write",
         mcpServers: [],
         pendingUserInputs: [],
+        tasks: [],
         snapshot: {
             id: "agent-2",
             messages: [],

@@ -5,6 +5,7 @@ import {
     type AnyDefinedTool,
     type PermissionMode,
     type SubagentContext,
+    type TaskContext,
     type UserInputContext,
 } from "../agent/index.js";
 import type { Message } from "../agent/types.js";
@@ -35,6 +36,7 @@ export interface CreateCodingAssistantAgentOptions {
     processManager?: NativeProxessManager;
     permissionMode?: PermissionMode;
     subagents?: SubagentContext;
+    tasks?: TaskContext;
     userInput?: UserInputContext;
 }
 
@@ -46,6 +48,7 @@ export function createCodingAssistantAgent(
         cwd: options.cwd,
         processManager,
         ...(options.permissionMode !== undefined ? { permissionMode: options.permissionMode } : {}),
+        ...(options.tasks !== undefined ? { tasks: options.tasks } : {}),
         ...(options.userInput !== undefined ? { userInput: options.userInput } : {}),
     });
     if (options.subagents !== undefined) {

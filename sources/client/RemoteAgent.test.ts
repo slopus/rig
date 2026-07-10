@@ -51,6 +51,7 @@ function protocolSession(model: ReturnType<typeof defineModel>): ProtocolSession
         permissionMode: "workspace_write",
         mcpServers: [],
         pendingUserInputs: [],
+        tasks: [],
         providerId: "codex",
         snapshot: {
             id: "agent-1",
