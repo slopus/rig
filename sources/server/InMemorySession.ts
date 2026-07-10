@@ -33,6 +33,7 @@ import type {
     SubmitMessageResponse,
 } from "../protocol/index.js";
 import type { Model, StopReason } from "../providers/types.js";
+import type { UserInputRequest, UserInputResponse } from "../user-input/index.js";
 import {
     DEFAULT_PERMISSION_MODE,
     parsePermissionMode,
@@ -109,6 +110,13 @@ interface ActiveRun {
     runId: string;
 }
 
+interface PendingUserInput {
+    onAbort?: () => void;
+    request: UserInputRequest;
+    resolve: (response: UserInputResponse) => void;
+    signal?: AbortSignal;
+}
+
 interface PartialMessageState {
     fallbackId: string;
     position: number | undefined;
@@ -142,6 +150,7 @@ export class InMemorySession {
     #models: readonly Model[];
     #now: () => number;
     #partialPositions = new Set<number>();
+    #pendingUserInputs = new Map<string, PendingUserInput>();
     #persistence: InMemorySessionPersistence | undefined;
     #providerId: string;
     #permissionMode: PermissionMode;
@@ -335,6 +344,86 @@ export class InMemorySession {
         return this.snapshot();
     }
 
+    requestUserInput(
+        request: UserInputRequest,
+        options: { signal?: AbortSignal } = {},
+    ): Promise<UserInputResponse> {
+        if (this.isSubagent()) {
+            throw new Error("Only the primary session can ask the user a question.");
+        }
+        if (this.#pendingUserInputs.has(request.requestId)) {
+            throw new Error("A user input request with this identifier is already pending.");
+        }
+        if (isSignalAborted(options.signal)) {
+            return Promise.reject(new Error("The user input request was cancelled."));
+        }
+
+        const response = new Promise<UserInputResponse>((resolve, reject) => {
+            const pending: PendingUserInput = { request, resolve };
+            if (options.signal !== undefined) pending.signal = options.signal;
+            const onAbort = () => {
+                if (this.#pendingUserInputs.get(request.requestId) !== pending) return;
+                this.#pendingUserInputs.delete(request.requestId);
+                this.#append("user_input_resolved", {
+                    requestId: request.requestId,
+                    status: "cancelled",
+                });
+                reject(new Error("The user input request was cancelled."));
+            };
+            pending.onAbort = onAbort;
+            options.signal?.addEventListener("abort", onAbort, { once: true });
+            this.#pendingUserInputs.set(request.requestId, pending);
+        });
+        this.#append("user_input_requested", request);
+        if (isSignalAborted(options.signal)) {
+            this.#pendingUserInputs.get(request.requestId)?.onAbort?.();
+        }
+        return response;
+    }
+
+    answerUserInput(requestId: string, response: UserInputResponse): ProtocolSession | undefined {
+        const pending = this.#pendingUserInputs.get(requestId);
+        if (pending === undefined) return undefined;
+
+        const responseAnswers = (response as { answers?: unknown } | null)?.answers;
+        if (
+            responseAnswers === null ||
+            typeof responseAnswers !== "object" ||
+            Array.isArray(responseAnswers)
+        ) {
+            throw new Error("Choose an answer for every question before continuing.");
+        }
+
+        const answers: Record<string, readonly string[]> = {};
+        for (const question of pending.request.questions) {
+            const selected = (responseAnswers as Record<string, unknown>)[question.id];
+            if (
+                !Array.isArray(selected) ||
+                selected.length === 0 ||
+                selected.some((answer) => typeof answer !== "string" || answer.trim() === "")
+            ) {
+                throw new Error(`Answer the ${question.header} question before continuing.`);
+            }
+            if (!question.multiSelect && selected.length > 1) {
+                throw new Error(`Choose one answer for the ${question.header} question.`);
+            }
+            answers[question.id] = [...selected];
+        }
+
+        this.#pendingUserInputs.delete(requestId);
+        if (pending.onAbort !== undefined) {
+            pending.signal?.removeEventListener("abort", pending.onAbort);
+        }
+        const normalizedResponse = { answers };
+        this.#append("user_input_resolved", {
+            answers,
+            requestId,
+            status: "answered",
+        });
+        pending.resolve(normalizedResponse);
+        return this.snapshot();
+    }
+
     emitCreatedEvent(): void {
         this.#append("session_created", { session: this.snapshot() });
     }
@@ -437,6 +526,9 @@ export class InMemorySession {
             snapshot,
             titleStatus: this.#titleStatus,
             agent: this.agentMetadata(),
+            pendingUserInputs: [...this.#pendingUserInputs.values()].map(
+                (pending) => pending.request,
+            ),
             ...(snapshot.effort !== undefined ? { effort: snapshot.effort } : {}),
             ...(this.#title !== undefined ? { title: this.#title } : {}),
             ...(this.#titleError !== undefined ? { titleError: this.#titleError } : {}),
@@ -726,6 +818,10 @@ export class InMemorySession {
             modelId: this.#modelId,
             permissionMode: this.#permissionMode,
             providerId: this.#providerId,
+            userInput: {
+                request: (request, requestOptions) =>
+                    this.requestUserInput(request, requestOptions),
+            },
         };
         if (this.#contextMessages !== undefined) {
             options.contextMessages = this.#contextMessages;
@@ -955,4 +1051,8 @@ export class InMemorySession {
         const message = assistantMessageToAgentMessage(partial, () => activePartial.fallbackId);
         this.#storeMessage(position, message, true, runId);
     }
+}
+
+function isSignalAborted(signal: AbortSignal | undefined): boolean {
+    return signal?.aborted === true;
 }

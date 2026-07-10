@@ -19,6 +19,7 @@ import { ChatComposer } from "@/components/chat/ChatComposer";
 import { StreamingMessageView } from "@/components/chat/StreamingMessageView";
 import { SubagentHistoryHeader } from "@/components/chat/SubagentHistoryHeader";
 import { UserMessageBubble } from "@/components/chat/UserMessageBubble";
+import { UserInputPanel } from "@/components/chat/UserInputPanel";
 import type { ActiveSessionState } from "@/hooks/useActiveSession";
 import type { SessionInterruption } from "@/protocol";
 
@@ -129,17 +130,20 @@ export function ChatPanel({
 
     const partial = activeSession.streamingPartial;
     const hasPartialContent = partial !== undefined && partial.content.length > 0;
-    const showLoader = activeSession.isRunning && !hasPartialContent;
     const interruption = activeSession.session?.interruption;
     const session = activeSession.session;
     const isSubagent = historyDepth > 0 || session?.agent.type === "subagent";
+    const pendingUserInput = activeSession.pendingUserInputs[0];
+    const showLoader =
+        activeSession.isRunning && !hasPartialContent && pendingUserInput === undefined;
     const isEmpty =
         visibleMessages.length === 0 &&
         !hasPartialContent &&
         !showLoader &&
         activeSession.runError === undefined &&
         activeSession.streamError === undefined &&
-        interruption === undefined;
+        interruption === undefined &&
+        pendingUserInput === undefined;
 
     return (
         <section className="flex min-w-0 flex-1 flex-col">
@@ -221,15 +225,25 @@ export function ChatPanel({
             )}
             <div className="border-border/60 border-t">
                 <div className="mx-auto w-full max-w-3xl px-6 pt-4 pb-5">
-                    <ChatComposer
-                        daemonReady={daemonReady}
-                        isAborting={activeSession.isAborting}
-                        isRunning={activeSession.isRunning}
-                        onAbort={() => void activeSession.abort()}
-                        onSubmit={activeSession.submit}
-                        readOnly={isSubagent}
-                        sessionId={sessionId}
-                    />
+                    {pendingUserInput !== undefined && !isSubagent ? (
+                        <UserInputPanel
+                            isAborting={activeSession.isAborting}
+                            key={pendingUserInput.requestId}
+                            onAbort={() => void activeSession.abort()}
+                            onAnswer={activeSession.answerUserInput}
+                            request={pendingUserInput}
+                        />
+                    ) : (
+                        <ChatComposer
+                            daemonReady={daemonReady}
+                            isAborting={activeSession.isAborting}
+                            isRunning={activeSession.isRunning}
+                            onAbort={() => void activeSession.abort()}
+                            onSubmit={activeSession.submit}
+                            readOnly={isSubagent}
+                            sessionId={sessionId}
+                        />
+                    )}
                 </div>
             </div>
         </section>

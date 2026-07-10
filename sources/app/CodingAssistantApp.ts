@@ -27,6 +27,7 @@ import {
 import { parseSkillFrontmatter } from "../agent/skills/parseSkillFrontmatter.js";
 import type { NativeProxessManager } from "../processes/index.js";
 import type { FileSearchResult, SessionEvent } from "../protocol/index.js";
+import type { UserInputRequest, UserInputResponse } from "../user-input/index.js";
 import type { AppTranscriptEntry } from "./AppTranscriptEntry.js";
 import type {
     CodingAssistantAgentBackend,
@@ -105,6 +106,7 @@ export interface CodingAssistantAppOptions {
     agent: CodingAssistantAgentBackend;
     cwd: string;
     initialSessionEvents?: readonly SessionEvent[];
+    initialUserInputs?: readonly UserInputRequest[];
     modelLocked?: boolean;
     processManager: NativeProxessManager;
     sessionBacked?: boolean;
@@ -113,6 +115,7 @@ export interface CodingAssistantAppOptions {
     onDefaultModelChange?: (preference: DefaultModelPreference) => void | Promise<void>;
     onSettingsChange?: (settings: AppSettings) => void | Promise<void>;
     onExit?: () => void | Promise<void>;
+    respondUserInput?: (requestId: string, response: UserInputResponse) => void | Promise<void>;
     now?: () => number;
     readClipboardImage?: (
         options?: ReadClipboardImageOptions,
@@ -149,6 +152,19 @@ interface PromptSubmission {
     displayText: string;
 }
 
+interface ActiveUserInput {
+    answers: Record<string, readonly string[]>;
+    questionIndex: number;
+    request: UserInputRequest;
+    selected: Set<string>;
+}
+
+interface FreeformUserInput {
+    existingAnswers: readonly string[];
+    questionId: string;
+    requestId: string;
+}
+
 export class CodingAssistantApp implements Component, Focusable {
     readonly #agent: CodingAssistantAgentBackend;
     readonly #cwd: string;
@@ -161,6 +177,9 @@ export class CodingAssistantApp implements Component, Focusable {
         | undefined;
     readonly #onSettingsChange: ((settings: AppSettings) => void | Promise<void>) | undefined;
     readonly #onExit: (() => void | Promise<void>) | undefined;
+    readonly #respondUserInput:
+        | ((requestId: string, response: UserInputResponse) => void | Promise<void>)
+        | undefined;
     readonly #processManager: NativeProxessManager;
     readonly #readClipboardImage: (
         options?: ReadClipboardImageOptions,
@@ -172,6 +191,8 @@ export class CodingAssistantApp implements Component, Focusable {
     #abortController: AbortController | undefined;
     #abortNotified = false;
     #activeRun: Promise<void> | undefined;
+    #activeUserInput: ActiveUserInput | undefined;
+    #answeringUserInputRequestId: string | undefined;
     #activityAnimationFrame = 0;
     #activityStartedAtMs: number | undefined;
     #activityAnimationTimer: ReturnType<typeof setInterval> | undefined;
@@ -183,6 +204,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #exiting = false;
     #exitResolve: (() => void) | undefined;
     #focused = false;
+    #freeformUserInput: FreeformUserInput | undefined;
     #pendingPrompts: PendingPrompt[] = [];
     #compacting = false;
     #pastedImagesById = new Map<number, PastedImage>();
@@ -209,6 +231,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #streamEntryId: string | undefined;
     #thinkingEntryIdsByContentIndex = new Map<number, string>();
     #toolCallEntryIdsByContentIndex = new Map<number, string>();
+    #userInputRequests: UserInputRequest[] = [];
 
     constructor(options: CodingAssistantAppOptions) {
         this.#agent = options.agent;
@@ -218,6 +241,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#onDefaultModelChange = options.onDefaultModelChange;
         this.#onSettingsChange = options.onSettingsChange;
         this.#onExit = options.onExit;
+        this.#respondUserInput = options.respondUserInput;
         this.#processManager = options.processManager;
         this.#readClipboardImage = options.readClipboardImage ?? readClipboardImage;
         this.#sessionBacked = options.sessionBacked ?? false;
@@ -237,6 +261,10 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#editor.onSubmit = (value) => {
             this.#submit(value);
         };
+
+        for (const request of options.initialUserInputs ?? []) {
+            this.#enqueueUserInputRequest(request);
+        }
 
         for (const event of options.initialSessionEvents ?? []) {
             this.applySessionEvent(event);
@@ -329,6 +357,16 @@ export class CodingAssistantApp implements Component, Focusable {
             return;
         }
 
+        if (event.type === "user_input_requested") {
+            this.#enqueueUserInputRequest(event.data);
+            return;
+        }
+
+        if (event.type === "user_input_resolved") {
+            this.#removeUserInputRequest(event.data.requestId);
+            return;
+        }
+
         if (event.type === "run_finished") {
             this.#running = false;
             this.#statusText =
@@ -337,6 +375,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#streamEntryId = undefined;
             this.#thinkingEntryIdsByContentIndex.clear();
             this.#toolCallEntryIdsByContentIndex.clear();
+            this.#clearUserInputRequests();
             this.#requestRender();
             return;
         }
@@ -345,6 +384,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#running = false;
             this.#statusText = "Error";
             this.#stopActivityAnimation();
+            this.#clearUserInputRequests();
             this.#appendEntry({ role: "error", text: event.data.errorMessage });
             return;
         }
@@ -356,6 +396,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#streamEntryId = undefined;
             this.#thinkingEntryIdsByContentIndex.clear();
             this.#toolCallEntryIdsByContentIndex.clear();
+            this.#clearUserInputRequests();
             this.#appendEntry({
                 role: "system",
                 text: "Session reset. Started a new session.",
@@ -424,6 +465,27 @@ export class CodingAssistantApp implements Component, Focusable {
                 return;
             }
             this.#selectionPanel.handleInput?.(data);
+            this.#requestRender();
+            return;
+        }
+
+        if (this.#freeformUserInput !== undefined) {
+            if (this.#handlePastedInput(data)) return;
+            if (matchesKey(data, "ctrl+c") || data === "\x03") {
+                void this.stop();
+                return;
+            }
+            if (matchesKey(data, "ctrl+d") && this.#editor.getText().length === 0) {
+                void this.stop();
+                return;
+            }
+            if (matchesKey(data, "escape")) {
+                this.#handleEscape();
+                this.#requestRender();
+                return;
+            }
+            this.#markTypingActivity();
+            this.#editor.handleInput(data);
             this.#requestRender();
             return;
         }
@@ -669,6 +731,10 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #submit(value: string): void {
+        if (this.#freeformUserInput !== undefined) {
+            this.#submitFreeformUserInput(value);
+            return;
+        }
         const submission = this.#submitAsync(value).catch((error: unknown) => {
             this.#appendEntry({ role: "error", text: this.#formatError(error) });
         });
@@ -1198,7 +1264,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 this.#appendEntry({
                     id: block.id,
                     role: "tool",
-                    title: block.name,
+                    title: this.#toolDisplayName(block.name),
                     text: this.#formatToolCall(block.name, block.arguments),
                 });
             } else if (block.type === "tool_result") {
@@ -1295,7 +1361,7 @@ export class CodingAssistantApp implements Component, Focusable {
         },
     ): void {
         this.#seenToolCallIds.add(toolCall.id);
-        this.#statusText = `Calling ${toolCall.name}`;
+        this.#statusText = `Calling ${this.#toolDisplayName(toolCall.name)}`;
 
         const existingId = this.#toolCallEntryIdsByContentIndex.get(contentIndex);
         const existing =
@@ -1305,7 +1371,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
         if (existing !== undefined) {
             existing.id = toolCall.id;
-            existing.title = toolCall.name;
+            existing.title = this.#toolDisplayName(toolCall.name);
             existing.text = this.#formatToolCall(toolCall.name, toolCall.arguments);
             this.#toolCallEntryIdsByContentIndex.delete(contentIndex);
             return;
@@ -1315,7 +1381,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#appendEntry({
             id: toolCall.id,
             role: "tool",
-            title: toolCall.name,
+            title: this.#toolDisplayName(toolCall.name),
             text: this.#formatToolCall(toolCall.name, toolCall.arguments),
         });
     }
@@ -1698,6 +1764,187 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#showSelectionPanel(panel);
     }
 
+    #enqueueUserInputRequest(request: UserInputRequest): void {
+        if (
+            this.#userInputRequests.some((candidate) => candidate.requestId === request.requestId)
+        ) {
+            return;
+        }
+        this.#userInputRequests.push(request);
+        this.#openNextUserInputRequest();
+    }
+
+    #openNextUserInputRequest(): void {
+        if (
+            this.#activeUserInput !== undefined ||
+            this.#answeringUserInputRequestId !== undefined ||
+            this.#freeformUserInput !== undefined
+        ) {
+            return;
+        }
+        const request = this.#userInputRequests[0];
+        if (request === undefined) return;
+        this.#activeUserInput = {
+            answers: {},
+            questionIndex: 0,
+            request,
+            selected: new Set(),
+        };
+        this.#openUserInputQuestion();
+    }
+
+    #openUserInputQuestion(): void {
+        const active = this.#activeUserInput;
+        const question = active?.request.questions[active.questionIndex];
+        if (active === undefined || question === undefined) return;
+
+        const items = question.options.map((option, index) => ({
+            value: `option:${index}`,
+            label: active.selected.has(option.label) ? `✓ ${option.label}` : option.label,
+            description: option.description,
+        }));
+        if (question.multiSelect && active.selected.size > 0) {
+            items.push({
+                value: "done",
+                label: "Done",
+                description: `Submit ${active.selected.size} selected answer${active.selected.size === 1 ? "" : "s"}.`,
+            });
+        }
+        items.push({
+            value: "other",
+            label: "Type another answer",
+            description: "Enter a response that is not listed.",
+        });
+
+        this.#showSelectionPanel(
+            createSelectionPanel({
+                title: question.header,
+                subtitle: `${question.question} · ${active.questionIndex + 1} of ${active.request.questions.length}`,
+                items,
+                onSelect: (item) => {
+                    if (item.value === "other") {
+                        this.#freeformUserInput = {
+                            existingAnswers: [...active.selected],
+                            questionId: question.id,
+                            requestId: active.request.requestId,
+                        };
+                        this.#closeSelectionPanel();
+                        this.#editor.setText("");
+                        this.#requestRender();
+                        return;
+                    }
+                    if (item.value === "done") {
+                        this.#commitUserInputAnswer([...active.selected]);
+                        return;
+                    }
+
+                    const optionIndex = Number.parseInt(item.value.slice("option:".length), 10);
+                    const option = question.options[optionIndex];
+                    if (option === undefined) return;
+                    if (!question.multiSelect) {
+                        this.#commitUserInputAnswer([option.label]);
+                        return;
+                    }
+                    if (active.selected.has(option.label)) active.selected.delete(option.label);
+                    else active.selected.add(option.label);
+                    this.#openUserInputQuestion();
+                    this.#requestRender();
+                },
+                onCancel: () => {
+                    this.#closeSelectionPanel();
+                    this.#handleEscape();
+                },
+            }),
+        );
+        this.#requestRender();
+    }
+
+    #commitUserInputAnswer(answers: readonly string[]): void {
+        const active = this.#activeUserInput;
+        const question = active?.request.questions[active.questionIndex];
+        if (active === undefined || question === undefined || answers.length === 0) return;
+
+        active.answers[question.id] = [...answers];
+        active.questionIndex += 1;
+        active.selected = new Set();
+        if (active.questionIndex < active.request.questions.length) {
+            this.#openUserInputQuestion();
+            return;
+        }
+        this.#sendUserInputResponse(active.request, { answers: active.answers });
+    }
+
+    #submitFreeformUserInput(value: string): void {
+        const answer = value.trim();
+        const freeform = this.#freeformUserInput;
+        const active = this.#activeUserInput;
+        if (answer.length === 0 || freeform === undefined || active === undefined) return;
+        if (active.request.requestId !== freeform.requestId) return;
+        if (active.request.questions[active.questionIndex]?.id !== freeform.questionId) return;
+
+        this.#freeformUserInput = undefined;
+        this.#editor.setText("");
+        this.#commitUserInputAnswer([...freeform.existingAnswers, answer]);
+        this.#requestRender();
+    }
+
+    #sendUserInputResponse(request: UserInputRequest, response: UserInputResponse): void {
+        this.#activeUserInput = undefined;
+        this.#closeSelectionPanel();
+        if (this.#respondUserInput === undefined) {
+            this.#appendEntry({
+                role: "error",
+                text: "This client cannot send interactive answers.",
+            });
+            this.#removeUserInputRequest(request.requestId);
+            this.#handleEscape();
+            return;
+        }
+
+        this.#answeringUserInputRequestId = request.requestId;
+        void Promise.resolve(this.#respondUserInput(request.requestId, response))
+            .then(() => this.#removeUserInputRequest(request.requestId))
+            .catch((error: unknown) => {
+                this.#answeringUserInputRequestId = undefined;
+                this.#appendEntry({
+                    role: "error",
+                    text: `The answer could not be sent: ${this.#formatError(error)}`,
+                });
+                this.#openNextUserInputRequest();
+                this.#requestRender();
+            });
+    }
+
+    #removeUserInputRequest(requestId: string): void {
+        const wasActive = this.#activeUserInput?.request.requestId === requestId;
+        const wasFreeform = this.#freeformUserInput?.requestId === requestId;
+        this.#userInputRequests = this.#userInputRequests.filter(
+            (request) => request.requestId !== requestId,
+        );
+        if (wasActive) this.#activeUserInput = undefined;
+        if (wasFreeform) {
+            this.#freeformUserInput = undefined;
+            this.#editor.setText("");
+        }
+        if (this.#answeringUserInputRequestId === requestId) {
+            this.#answeringUserInputRequestId = undefined;
+        }
+        if (wasActive || wasFreeform) this.#closeSelectionPanel();
+        this.#openNextUserInputRequest();
+        this.#requestRender();
+    }
+
+    #clearUserInputRequests(): void {
+        const hadVisibleRequest =
+            this.#activeUserInput !== undefined || this.#freeformUserInput !== undefined;
+        this.#userInputRequests = [];
+        this.#activeUserInput = undefined;
+        this.#answeringUserInputRequestId = undefined;
+        if (this.#freeformUserInput !== undefined) this.#editor.setText("");
+        this.#freeformUserInput = undefined;
+        if (hadVisibleRequest) this.#closeSelectionPanel();
+    }
+
     #showSelectionPanel(component: Component): void {
         this.#selectionPanel = component;
     }
@@ -1740,7 +1987,7 @@ export class CodingAssistantApp implements Component, Focusable {
         const detail = this.#formatToolResult(block);
         if (existing !== undefined) {
             existing.role = block.isError ? "error" : "tool";
-            existing.title = block.toolName;
+            existing.title = this.#toolDisplayName(block.toolName);
             existing.detail = detail;
             return;
         }
@@ -1748,8 +1995,8 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#appendEntry({
             id: block.toolCallId,
             role: block.isError ? "error" : "tool",
-            title: block.toolName,
-            text: block.toolName,
+            title: this.#toolDisplayName(block.toolName),
+            text: this.#toolDisplayName(block.toolName),
             detail,
         });
     }
@@ -1762,6 +2009,14 @@ export class CodingAssistantApp implements Component, Focusable {
         };
 
         const normalized = toolName.toLowerCase();
+        if (normalized === "request_user_input" || normalized === "askuserquestion") {
+            const questions = record.questions;
+            const firstQuestion = Array.isArray(questions) ? questions[0] : undefined;
+            if (this.#isRecord(firstQuestion) && typeof firstQuestion.question === "string") {
+                return this.#singleLine(firstQuestion.question);
+            }
+            return "Waiting for your answer";
+        }
         const command = stringField("cmd") ?? stringField("command");
         if (command !== undefined) {
             return this.#singleLine(command);
@@ -1789,7 +2044,14 @@ export class CodingAssistantApp implements Component, Focusable {
                 : "todos";
         }
 
-        return toolName;
+        return this.#toolDisplayName(toolName);
+    }
+
+    #toolDisplayName(toolName: string): string {
+        const normalized = toolName.toLowerCase();
+        return normalized === "request_user_input" || normalized === "askuserquestion"
+            ? "Question"
+            : toolName;
     }
 
     #formatToolResult(block: ToolResultBlock): string {
@@ -1943,13 +2205,15 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #emptyInputLine(): string {
+        const placeholder =
+            this.#freeformUserInput === undefined ? INPUT_PLACEHOLDER : "Type another answer";
         const marker = this.#focused ? CURSOR_MARKER : "";
         if (!this.#focused || !this.#cursorVisible) {
-            return `${this.#inputPrompt()}${marker}${SURFACE_MUTED_FG}${INPUT_PLACEHOLDER}${INPUT_FG}`;
+            return `${this.#inputPrompt()}${marker}${SURFACE_MUTED_FG}${placeholder}${INPUT_FG}`;
         }
 
-        const firstCharacter = INPUT_PLACEHOLDER[0] ?? " ";
-        const rest = INPUT_PLACEHOLDER.slice(firstCharacter.length);
+        const firstCharacter = placeholder[0] ?? " ";
+        const rest = placeholder.slice(firstCharacter.length);
         return `${this.#inputPrompt()}${marker}${CURSOR_BG}${CURSOR_FG}${firstCharacter}${RESET}${SURFACE_MUTED_FG}${rest}${INPUT_FG}`;
     }
 

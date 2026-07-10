@@ -2,6 +2,7 @@ import { request as httpRequest } from "node:http";
 
 import type {
     AbortRunResponse,
+    AnswerUserInputRequest,
     ChangeEffortRequest,
     ChangeModelRequest,
     ChangePermissionModeRequest,
@@ -44,6 +45,18 @@ export class ProtocolHttpClient {
 
     abort(sessionId: string): Promise<AbortRunResponse> {
         return this.#requestJson("POST", `/sessions/${encodeURIComponent(sessionId)}/abort`);
+    }
+
+    answerUserInput(
+        sessionId: string,
+        requestId: string,
+        request: AnswerUserInputRequest,
+    ): Promise<{ session: ProtocolSession }> {
+        return this.#requestJson(
+            "POST",
+            `/sessions/${encodeURIComponent(sessionId)}/user-input/${encodeURIComponent(requestId)}`,
+            request,
+        );
     }
 
     changeModel(

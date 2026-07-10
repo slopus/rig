@@ -2,6 +2,7 @@ export type { EventId } from "./EventId.js";
 export { createEventIdFactory, type EventIdFactoryOptions } from "./createEventIdFactory.js";
 export type {
     AbortRequestedEvent,
+    AnswerUserInputRequest,
     AbortRunResponse,
     AgentMessageEvent,
     AgentStreamEvent,
@@ -45,4 +46,6 @@ export type {
     ShutdownServerResponse,
     SubmitMessageRequest,
     SubmitMessageResponse,
+    UserInputRequestedEvent,
+    UserInputResolvedEvent,
 } from "./SessionProtocol.js";

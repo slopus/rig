@@ -3,6 +3,7 @@ import { ArrowRightIcon } from "lucide-react";
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput } from "@/components/ai/tool";
 import type { ToolState } from "@/components/ai/types";
 import { Button } from "@/components/ui/button";
+import { humanizeToolName } from "@/humanizeToolName";
 import type { ImageBlock, SubagentSummary, TextBlock, ToolResultBlock } from "@/protocol";
 
 export interface ToolCallViewProps {
@@ -69,7 +70,7 @@ export function ToolCallView({
 
     return (
         <Tool className="mb-0 w-full">
-            <ToolHeader state={state} title={name === "Agent" ? "Subagent" : name} />
+            <ToolHeader state={state} title={humanizeToolName(name)} />
             {result !== undefined && result.display !== "" && (
                 <div className="border-t px-3 py-2 font-mono text-muted-foreground text-xs">
                     {result.display}

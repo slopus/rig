@@ -221,6 +221,28 @@ export type SessionStatus = "idle" | "queued" | "running" | "completed" | "abort
 
 export type PermissionMode = "workspace_write" | "read_only" | "full_access";
 
+export interface UserInputOption {
+    description: string;
+    label: string;
+}
+
+export interface UserInputQuestion {
+    header: string;
+    id: string;
+    multiSelect: boolean;
+    options: readonly UserInputOption[];
+    question: string;
+}
+
+export interface UserInputRequest {
+    questions: readonly UserInputQuestion[];
+    requestId: string;
+}
+
+export interface UserInputResponse {
+    answers: Readonly<Record<string, readonly string[]>>;
+}
+
 export type SessionTitleStatus = "idle" | "generating" | "ready" | "error";
 
 export type SessionInterruptionReason = "crash" | "shutdown";
@@ -287,6 +309,7 @@ export interface ProtocolSession {
     lastEventId?: EventId;
     agent: SessionAgentMetadata;
     snapshot: AgentSnapshot;
+    pendingUserInputs: readonly UserInputRequest[];
 }
 
 export interface SubagentSummary {
@@ -370,6 +393,10 @@ export interface ChangePermissionModeResponse {
     session: ProtocolSession;
 }
 
+export interface AnswerUserInputResponse {
+    session: ProtocolSession;
+}
+
 export interface ShutdownServerResponse {
     shuttingDown: boolean;
 }
@@ -399,6 +426,8 @@ export interface ChangeEffortRequest {
 export interface ChangePermissionModeRequest {
     permissionMode: PermissionMode;
 }
+
+export type AnswerUserInputRequest = UserInputResponse;
 
 export interface AbortRunResponse {
     aborted: boolean;
@@ -504,6 +533,17 @@ export type PermissionModeChangedEvent = BaseSessionEvent<
     { permissionMode: PermissionMode }
 >;
 
+export type UserInputRequestedEvent = BaseSessionEvent<"user_input_requested", UserInputRequest>;
+
+export type UserInputResolvedEvent = BaseSessionEvent<
+    "user_input_resolved",
+    {
+        answers?: UserInputResponse["answers"];
+        requestId: string;
+        status: "answered" | "cancelled";
+    }
+>;
+
 export type SubagentChangedEvent = BaseSessionEvent<
     "subagent_changed",
     {
@@ -525,4 +565,6 @@ export type SessionEvent =
     | ModelChangedEvent
     | EffortChangedEvent
     | PermissionModeChangedEvent
+    | UserInputRequestedEvent
+    | UserInputResolvedEvent
     | SubagentChangedEvent;

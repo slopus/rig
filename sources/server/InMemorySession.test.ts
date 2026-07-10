@@ -157,4 +157,78 @@ describe("InMemorySession", () => {
             type: "permission_mode_changed",
         });
     });
+
+    it("holds a structured question until the user answers it", async () => {
+        const store = new InMemorySessionStore();
+        const session = store.create({ cwd: "/tmp/rig-session-test" });
+        const request = {
+            requestId: "question-1",
+            questions: [
+                {
+                    header: "Database",
+                    id: "database",
+                    multiSelect: false,
+                    options: [
+                        { label: "PostgreSQL", description: "Use a server database." },
+                        { label: "SQLite", description: "Use a local database." },
+                    ],
+                    question: "Which database should be used?",
+                },
+            ],
+        };
+
+        const pending = session.requestUserInput(request);
+
+        expect(session.snapshot().pendingUserInputs).toEqual([request]);
+        expect(session.events.since(undefined)?.at(-1)).toMatchObject({
+            data: request,
+            type: "user_input_requested",
+        });
+
+        session.answerUserInput("question-1", { answers: { database: ["PostgreSQL"] } });
+
+        await expect(pending).resolves.toEqual({ answers: { database: ["PostgreSQL"] } });
+        expect(session.snapshot().pendingUserInputs).toEqual([]);
+        expect(session.events.since(undefined)?.at(-1)).toMatchObject({
+            data: {
+                answers: { database: ["PostgreSQL"] },
+                requestId: "question-1",
+                status: "answered",
+            },
+            type: "user_input_resolved",
+        });
+    });
+
+    it("cancels a pending question when its run is aborted", async () => {
+        const store = new InMemorySessionStore();
+        const session = store.create({ cwd: "/tmp/rig-session-test" });
+        const controller = new AbortController();
+        const pending = session.requestUserInput(
+            {
+                requestId: "question-1",
+                questions: [
+                    {
+                        header: "Choice",
+                        id: "choice",
+                        multiSelect: false,
+                        options: [
+                            { label: "One", description: "Choose one." },
+                            { label: "Two", description: "Choose two." },
+                        ],
+                        question: "Which choice should be used?",
+                    },
+                ],
+            },
+            { signal: controller.signal },
+        );
+
+        controller.abort();
+
+        await expect(pending).rejects.toThrow("cancelled");
+        expect(session.snapshot().pendingUserInputs).toEqual([]);
+        expect(session.events.since(undefined)?.at(-1)).toMatchObject({
+            data: { requestId: "question-1", status: "cancelled" },
+            type: "user_input_resolved",
+        });
+    });
 });

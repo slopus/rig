@@ -91,6 +91,50 @@ describe("createProtocolHttpServer", () => {
         }
     });
 
+    it("answers a pending structured question through the protocol", async () => {
+        const { client, close, store } = await startServer();
+        try {
+            const created = await client.createSession({ cwd: "/tmp/rig-protocol-test" });
+            const session = store.get(created.session.id);
+            expect(session).toBeDefined();
+            const pending = session?.requestUserInput({
+                requestId: "question/1",
+                questions: [
+                    {
+                        header: "Database",
+                        id: "database",
+                        multiSelect: false,
+                        options: [
+                            { label: "PostgreSQL", description: "Use a server database." },
+                            { label: "SQLite", description: "Use a local database." },
+                        ],
+                        question: "Which database should be used?",
+                    },
+                ],
+            });
+
+            await expect(
+                client.answerUserInput(created.session.id, "question/1", {
+                    answers: {},
+                }),
+            ).rejects.toThrow("Answer the Database question");
+
+            const answered = await client.answerUserInput(created.session.id, "question/1", {
+                answers: { database: ["SQLite"] },
+            });
+
+            await expect(pending).resolves.toEqual({ answers: { database: ["SQLite"] } });
+            expect(answered.session.pendingUserInputs).toEqual([]);
+            await expect(
+                client.answerUserInput(created.session.id, "question/1", {
+                    answers: { database: ["PostgreSQL"] },
+                }),
+            ).rejects.toThrow("no longer waiting");
+        } finally {
+            await close();
+        }
+    });
+
     it("rejects unknown permission modes", async () => {
         const { client, close } = await startServer();
         try {

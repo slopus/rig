@@ -7,6 +7,7 @@ export { claudeTodoWriteTool } from "./TodoWrite.js";
 export { claudeWebFetchTool } from "./WebFetch.js";
 export { claudeWebSearchTool } from "./WebSearch.js";
 export { claudeWriteTool } from "./Write.js";
+export { claudeAskUserQuestionTool } from "./AskUserQuestion.js";
 
 import { claudeBashTool } from "./Bash.js";
 import { claudeEditTool } from "./Edit.js";
@@ -17,6 +18,7 @@ import { claudeTodoWriteTool } from "./TodoWrite.js";
 import { claudeWebFetchTool } from "./WebFetch.js";
 import { claudeWebSearchTool } from "./WebSearch.js";
 import { claudeWriteTool } from "./Write.js";
+import { claudeAskUserQuestionTool } from "./AskUserQuestion.js";
 
 export const claudeCodeTools = [
     claudeBashTool,
@@ -28,4 +30,5 @@ export const claudeCodeTools = [
     claudeTodoWriteTool,
     claudeWebFetchTool,
     claudeWebSearchTool,
+    claudeAskUserQuestionTool,
 ] as const;

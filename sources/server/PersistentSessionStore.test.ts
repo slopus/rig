@@ -88,6 +88,48 @@ describe("PersistentSessionStore", () => {
         }
     });
 
+    it("persists completed structured question events without reviving the prompt", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        try {
+            const store = new PersistentSessionStore({ databasePath });
+            const session = store.create({ cwd: "/tmp/rig-persistent-session-test" });
+            const pending = session.requestUserInput({
+                requestId: "question-1",
+                questions: [
+                    {
+                        header: "Database",
+                        id: "database",
+                        multiSelect: false,
+                        options: [
+                            { label: "PostgreSQL", description: "Use a server database." },
+                            { label: "SQLite", description: "Use a local database." },
+                        ],
+                        question: "Which database should be used?",
+                    },
+                ],
+            });
+            session.answerUserInput("question-1", { answers: { database: ["SQLite"] } });
+            await pending;
+            const sessionId = session.id;
+            store.close();
+
+            const restoredStore = new PersistentSessionStore({ databasePath });
+            try {
+                const restored = restoredStore.get(sessionId);
+                expect(restored?.snapshot().pendingUserInputs).toEqual([]);
+                expect(restored?.events.since(undefined)?.map((event) => event.type)).toEqual([
+                    "session_created",
+                    "user_input_requested",
+                    "user_input_resolved",
+                ]);
+            } finally {
+                restoredStore.close();
+            }
+        } finally {
+            await cleanup();
+        }
+    });
+
     it("persists a fallback when a restored model is no longer available", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         const availableModel = defineModel({
@@ -533,6 +575,12 @@ describe("PersistentSessionStore", () => {
                     rootSessionId: "session-1",
                     type: "subagent",
                 });
+                expect(() =>
+                    restoredStore.get("subagent-1")?.requestUserInput({
+                        requestId: "question-1",
+                        questions: [],
+                    }),
+                ).toThrow("Only the primary session");
             } finally {
                 restoredStore.close();
             }

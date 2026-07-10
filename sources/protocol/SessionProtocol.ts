@@ -7,6 +7,7 @@ import type {
 import type { Message, UserMessage } from "../agent/types.js";
 import type { Model, StopReason } from "../providers/types.js";
 import type { PermissionMode } from "../permissions/index.js";
+import type { UserInputRequest, UserInputResponse } from "../user-input/index.js";
 import type { EventId } from "./EventId.js";
 
 export type SessionStatus = "idle" | "queued" | "running" | "completed" | "aborted" | "error";
@@ -77,6 +78,7 @@ export interface ProtocolSession {
     lastEventId?: EventId;
     agent: SessionAgentMetadata;
     snapshot: AgentSnapshot;
+    pendingUserInputs: readonly UserInputRequest[];
 }
 
 export interface SubagentSummary {
@@ -122,6 +124,8 @@ export interface CreateSessionRequest {
 export interface ChangePermissionModeRequest {
     permissionMode: PermissionMode;
 }
+
+export type AnswerUserInputRequest = UserInputResponse;
 
 export interface CreateSessionResponse {
     session: ProtocolSession;
@@ -194,6 +198,8 @@ export type SessionEvent =
     | ModelChangedEvent
     | EffortChangedEvent
     | PermissionModeChangedEvent
+    | UserInputRequestedEvent
+    | UserInputResolvedEvent
     | SubagentChangedEvent;
 
 export interface BaseSessionEvent<TType extends string, TData> {
@@ -289,6 +295,17 @@ export type EffortChangedEvent = BaseSessionEvent<
 export type PermissionModeChangedEvent = BaseSessionEvent<
     "permission_mode_changed",
     { permissionMode: PermissionMode }
+>;
+
+export type UserInputRequestedEvent = BaseSessionEvent<"user_input_requested", UserInputRequest>;
+
+export type UserInputResolvedEvent = BaseSessionEvent<
+    "user_input_resolved",
+    {
+        answers?: UserInputResponse["answers"];
+        requestId: string;
+        status: "answered" | "cancelled";
+    }
 >;
 
 export type SubagentChangedEvent = BaseSessionEvent<

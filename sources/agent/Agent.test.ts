@@ -128,6 +128,7 @@ describe("Agent", () => {
             "apply_patch",
             "view_image",
             "update_plan",
+            "request_user_input",
         ]);
 
         const noopTool = defineTool({

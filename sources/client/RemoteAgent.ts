@@ -342,6 +342,29 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
             this.context.permissions?.setMode(event.data.permissionMode);
             return;
         }
+
+        if (event.type === "user_input_requested") {
+            this.#session = {
+                ...this.#session,
+                pendingUserInputs: [
+                    ...this.#session.pendingUserInputs.filter(
+                        (request) => request.requestId !== event.data.requestId,
+                    ),
+                    event.data,
+                ],
+            };
+            return;
+        }
+
+        if (event.type === "user_input_resolved") {
+            this.#session = {
+                ...this.#session,
+                pendingUserInputs: this.#session.pendingUserInputs.filter(
+                    (request) => request.requestId !== event.data.requestId,
+                ),
+            };
+            return;
+        }
     }
 
     #replaceSession(session: ProtocolSession): void {

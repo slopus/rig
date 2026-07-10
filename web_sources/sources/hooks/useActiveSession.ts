@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer } from "react";
 
 import {
     abortRun,
+    answerUserInput,
     changeSessionEffort,
     changeSessionModel,
     changeSessionPermissionMode,
@@ -21,6 +22,8 @@ import type {
     SessionEvent,
     SubagentSummary,
     UserMessage,
+    UserInputRequest,
+    UserInputResponse,
 } from "../protocol";
 import { upsertSubagentSummary } from "../upsertSubagentSummary";
 
@@ -32,6 +35,8 @@ import { upsertSubagentSummary } from "../upsertSubagentSummary";
 export interface ActiveSessionState {
     /** Requests an abort of the active run. */
     abort: () => Promise<void>;
+    /** Answers a pending structured question from the model. */
+    answerUserInput: (requestId: string, response: UserInputResponse) => Promise<void>;
     /** PATCHes the session effort. */
     changeEffort: (effort: string | undefined) => Promise<void>;
     /** PATCHes the session model (and optionally effort). */
@@ -52,6 +57,8 @@ export interface ActiveSessionState {
      * prefixed with "optimistic-").
      */
     messages: readonly Message[];
+    /** Structured questions currently waiting for this user. */
+    pendingUserInputs: readonly UserInputRequest[];
     /** Resets the conversation (`POST /api/sessions/:id/reset`). */
     reset: () => Promise<void>;
     /** Human-readable error from the last failed run or submit, if any. */
@@ -301,6 +308,31 @@ function reduceServerEvent(state: ReducerState, event: SessionEvent): ReducerSta
                 session: { ...state.session, permissionMode: event.data.permissionMode },
             };
         }
+        case "user_input_requested": {
+            if (state.session === undefined) return state;
+            const withoutDuplicate = state.session.pendingUserInputs.filter(
+                (request) => request.requestId !== event.data.requestId,
+            );
+            return {
+                ...state,
+                session: {
+                    ...state.session,
+                    pendingUserInputs: [...withoutDuplicate, event.data],
+                },
+            };
+        }
+        case "user_input_resolved": {
+            if (state.session === undefined) return state;
+            return {
+                ...state,
+                session: {
+                    ...state.session,
+                    pendingUserInputs: state.session.pendingUserInputs.filter(
+                        (request) => request.requestId !== event.data.requestId,
+                    ),
+                },
+            };
+        }
         case "subagent_changed": {
             return {
                 ...state,
@@ -532,6 +564,15 @@ export function useActiveSession(sessionId: string | undefined): ActiveSessionSt
         await abortRun(sessionId);
     }, [sessionId]);
 
+    const respondToUserInput = useCallback(
+        async (requestId: string, response: UserInputResponse) => {
+            if (sessionId === undefined) return;
+            const result = await answerUserInput(sessionId, requestId, response);
+            dispatch({ type: "session_updated", session: result.session });
+        },
+        [sessionId],
+    );
+
     const reset = useCallback(async () => {
         if (sessionId === undefined) {
             return;
@@ -590,6 +631,7 @@ export function useActiveSession(sessionId: string | undefined): ActiveSessionSt
 
     return {
         abort,
+        answerUserInput: respondToUserInput,
         changeEffort,
         changeModel,
         changePermissionMode,
@@ -598,6 +640,7 @@ export function useActiveSession(sessionId: string | undefined): ActiveSessionSt
         isRunning,
         loadError: state.loadError,
         messages,
+        pendingUserInputs: state.session?.pendingUserInputs ?? [],
         reset,
         runError: state.runError,
         session: state.session,

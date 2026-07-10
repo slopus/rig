@@ -7,6 +7,8 @@
 
 import type {
     AbortRunResponse,
+    AnswerUserInputRequest,
+    AnswerUserInputResponse,
     ChangeEffortRequest,
     ChangeEffortResponse,
     ChangeModelRequest,
@@ -139,6 +141,17 @@ export function submitMessage(
 
 export function abortRun(sessionId: string): Promise<AbortRunResponse> {
     return postJson<AbortRunResponse>(`/sessions/${encodeURIComponent(sessionId)}/abort`);
+}
+
+export function answerUserInput(
+    sessionId: string,
+    requestId: string,
+    request: AnswerUserInputRequest,
+): Promise<AnswerUserInputResponse> {
+    return postJson<AnswerUserInputResponse>(
+        `/sessions/${encodeURIComponent(sessionId)}/user-input/${encodeURIComponent(requestId)}`,
+        request,
+    );
 }
 
 export function resetSession(sessionId: string): Promise<ResetSessionResponse> {

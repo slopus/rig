@@ -2,6 +2,7 @@ import type { NativeProxessManager } from "../../processes/index.js";
 import type { AgentContext } from "./AgentContext.js";
 import { createNodeBashContext } from "./createNodeBashContext.js";
 import { createNodeFileSystemContext } from "./createNodeFileSystemContext.js";
+import type { UserInputContext } from "./UserInputContext.js";
 import {
     createPermissionContext,
     DEFAULT_PERMISSION_MODE,
@@ -12,11 +13,12 @@ export interface CreateNodeAgentContextOptions {
     cwd: string;
     processManager: NativeProxessManager;
     permissionMode?: PermissionMode;
+    userInput?: UserInputContext;
 }
 
 export function createNodeAgentContext(options: CreateNodeAgentContextOptions): AgentContext {
     const permissions = createPermissionContext(options.permissionMode ?? DEFAULT_PERMISSION_MODE);
-    return {
+    const context: AgentContext = {
         fs: createNodeFileSystemContext(options.cwd, {
             permissionMode: () => permissions.mode,
         }),
@@ -27,4 +29,6 @@ export function createNodeAgentContext(options: CreateNodeAgentContextOptions): 
         }),
         permissions,
     };
+    if (options.userInput !== undefined) context.userInput = options.userInput;
+    return context;
 }

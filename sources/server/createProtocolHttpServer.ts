@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 
 import type {
     AbortRunResponse,
+    AnswerUserInputRequest,
     ChangeEffortRequest,
     ChangeModelRequest,
     ChangePermissionModeRequest,
@@ -225,6 +226,25 @@ async function handleRequest(
         return;
     }
 
+    if (request.method === "POST" && route.name === "user-input") {
+        const body = await readJson<AnswerUserInputRequest>(request);
+        try {
+            const snapshot = session.answerUserInput(route.requestId, body);
+            if (snapshot === undefined) {
+                sendJson(response, 409, {
+                    error: "This question is no longer waiting for an answer.",
+                });
+                return;
+            }
+            sendJson(response, 200, { session: snapshot });
+        } catch (error) {
+            sendJson(response, 400, {
+                error: error instanceof Error ? error.message : "The answer is invalid.",
+            });
+        }
+        return;
+    }
+
     if (request.method === "GET" && route.name === "events") {
         const events = session.events.since(url.searchParams.get("after") ?? undefined);
         if (events === undefined) {
@@ -343,6 +363,7 @@ function matchRoute(pathname: string):
               | "subagents";
           sessionId: string;
       }
+    | { name: "user-input"; requestId: string; sessionId: string }
     | undefined {
     if (pathname === "/health") return { name: "health" };
     if (pathname === "/models") return { name: "models" };
@@ -356,6 +377,13 @@ function matchRoute(pathname: string):
 
     const sessionId = decodeURIComponent(parts[1]);
     if (parts.length === 2) return { name: "session", sessionId };
+    if (parts.length === 4 && parts[2] === "user-input" && parts[3] !== undefined) {
+        return {
+            name: "user-input",
+            requestId: decodeURIComponent(parts[3]),
+            sessionId,
+        };
+    }
     if (parts.length !== 3) return undefined;
 
     if (parts[2] === "abort") return { name: "abort", sessionId };
@@ -375,6 +403,7 @@ function matchRoute(pathname: string):
 function isSessionMutation(routeName: string, method: string | undefined): boolean {
     return (
         (method === "POST" && ["abort", "compact", "messages", "reset"].includes(routeName)) ||
+        (method === "POST" && routeName === "user-input") ||
         (method === "PATCH" && ["effort", "model", "permissions"].includes(routeName))
     );
 }

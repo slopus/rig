@@ -52,6 +52,7 @@ describe("createCodingAssistantAgent", () => {
             "TodoWrite",
             "WebFetch",
             "WebSearch",
+            "AskUserQuestion",
         ]);
     });
 
@@ -109,6 +110,7 @@ describe("createCodingAssistantAgent", () => {
             "apply_patch",
             "view_image",
             "update_plan",
+            "request_user_input",
         ]);
     });
 

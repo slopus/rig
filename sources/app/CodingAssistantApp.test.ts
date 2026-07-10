@@ -384,6 +384,7 @@ describe("CodingAssistantApp", () => {
             models: [gpt],
             providerId: "codex",
             permissionMode: "workspace_write",
+            pendingUserInputs: [],
             snapshot,
             status: "idle",
             titleStatus: "idle",
@@ -2594,6 +2595,160 @@ describe("CodingAssistantApp", () => {
         expect(agent.permissionMode).toBe("read_only");
         expect(stripAnsi(app.render(100).join("\n"))).toContain(
             "Permissions changed to Read only.",
+        );
+    });
+
+    it("collects structured questions and sends a free-form answer", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        const respondUserInput = vi.fn(async () => undefined);
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            respondUserInput,
+            tui: fakeTui(),
+        });
+        const request = {
+            requestId: "call-1",
+            questions: [
+                {
+                    header: "Database",
+                    id: "database",
+                    multiSelect: false,
+                    options: [
+                        { label: "PostgreSQL", description: "Use the relational stack." },
+                        { label: "SQLite", description: "Keep local setup small." },
+                    ],
+                    question: "Which database should be used?",
+                },
+                {
+                    header: "Region",
+                    id: "region",
+                    multiSelect: false,
+                    options: [
+                        { label: "US West", description: "Deploy near the current team." },
+                        { label: "US East", description: "Deploy near most customers." },
+                    ],
+                    question: "Which region should host it?",
+                },
+            ],
+        };
+
+        app.applySessionEvent({
+            createdAt: 1,
+            data: request,
+            id: "event-1",
+            sessionId: "session-1",
+            type: "user_input_requested",
+        });
+
+        expect(stripAnsi(app.render(100).join("\n"))).toContain(
+            "Which database should be used? · 1 of 2",
+        );
+        app.handleInput("\r");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain(
+            "Which region should host it? · 2 of 2",
+        );
+
+        app.handleInput("\x1b[B");
+        app.handleInput("\x1b[B");
+        app.handleInput("\r");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("Type another answer");
+        app.handleInput("Europe West");
+        app.handleInput("\r");
+
+        await vi.waitFor(() =>
+            expect(respondUserInput).toHaveBeenCalledWith("call-1", {
+                answers: {
+                    database: ["PostgreSQL"],
+                    region: ["Europe West"],
+                },
+            }),
+        );
+    });
+
+    it("collects multiple selections for one structured question", async () => {
+        const model = defineModel({
+            id: "anthropic/test",
+            name: "Claude Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "claude-sdk",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const respondUserInput = vi.fn(async () => undefined);
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            respondUserInput,
+            tui: fakeTui(),
+        });
+
+        app.applySessionEvent({
+            createdAt: 1,
+            data: {
+                requestId: "call-2",
+                questions: [
+                    {
+                        header: "Alerts",
+                        id: "question_1",
+                        multiSelect: true,
+                        options: [
+                            { label: "Email", description: "Send email alerts." },
+                            { label: "Push", description: "Send device alerts." },
+                        ],
+                        question: "Which alert channels should be enabled?",
+                    },
+                ],
+            },
+            id: "event-2",
+            sessionId: "session-1",
+            type: "user_input_requested",
+        });
+
+        app.handleInput("\r");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("✓ Email");
+        app.handleInput("\x1b[B");
+        app.handleInput("\r");
+        app.handleInput("\x1b[B");
+        app.handleInput("\x1b[B");
+        app.handleInput("\r");
+
+        await vi.waitFor(() =>
+            expect(respondUserInput).toHaveBeenCalledWith("call-2", {
+                answers: { question_1: ["Email", "Push"] },
+            }),
         );
     });
 

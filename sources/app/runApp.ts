@@ -112,6 +112,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         agent,
         cwd: sessionCwd,
         initialSessionEvents: history.events,
+        initialUserInputs: session.session.pendingUserInputs,
         modelLocked: session.session.modelLocked,
         onDefaultModelChange: (preference) =>
             writeRuntimeConfig(loadedConfig.paths.runtime, {
@@ -138,6 +139,10 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
             });
         },
         processManager,
+        respondUserInput: (requestId, response) =>
+            localServer.client
+                .answerUserInput(session.session.id, requestId, response)
+                .then(() => undefined),
         searchFiles: (query) =>
             localServer.client
                 .searchFiles(session.session.id, query)

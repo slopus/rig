@@ -49,6 +49,7 @@ function protocolSession(model: ReturnType<typeof defineModel>): ProtocolSession
         modelLocked: false,
         models: [model],
         permissionMode: "workspace_write",
+        pendingUserInputs: [],
         providerId: "codex",
         snapshot: {
             id: "agent-1",
