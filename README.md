@@ -28,6 +28,7 @@ rig stays close to pi and to upstream vendor behavior, but adds a curated defaul
 - Background workers for longer-running or asynchronous tasks.
 - Workflow presets for repeated engineering operations.
 - Auto mode for hands-off execution when a project allows it.
+- Automatic conversation compaction for long sessions, plus `/compact` when you want to free context space immediately.
 - Sandboxing defaults that make local execution practical while keeping controls visible.
 - Per-project enable/disable behavior, so teams can use rig where it helps and leave other repos untouched.
 

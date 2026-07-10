@@ -5,6 +5,7 @@ import type {
     AbortRunResponse,
     ChangeEffortRequest,
     ChangeModelRequest,
+    CompactSessionResponse,
     CreateSessionRequest,
     CreateSessionResponse,
     HealthResponse,
@@ -183,6 +184,15 @@ async function handleRequest(
         return;
     }
 
+    if (request.method === "POST" && route.name === "compact") {
+        const result = await session.compact();
+        sendJson<CompactSessionResponse>(response, 200, {
+            result,
+            session: session.snapshot(),
+        });
+        return;
+    }
+
     if (request.method === "PATCH" && route.name === "effort") {
         const body = await readJson<ChangeEffortRequest>(request);
         sendJson(response, 200, { session: session.changeEffort(body) });
@@ -300,6 +310,7 @@ function matchRoute(pathname: string):
     | {
           name:
               | "abort"
+              | "compact"
               | "effort"
               | "events"
               | "files"
@@ -327,6 +338,7 @@ function matchRoute(pathname: string):
     if (parts.length !== 3) return undefined;
 
     if (parts[2] === "abort") return { name: "abort", sessionId };
+    if (parts[2] === "compact") return { name: "compact", sessionId };
     if (parts[2] === "effort") return { name: "effort", sessionId };
     if (parts[2] === "events") return { name: "events", sessionId };
     if (parts[2] === "files") return { name: "files", sessionId };
@@ -340,7 +352,7 @@ function matchRoute(pathname: string):
 
 function isSessionMutation(routeName: string, method: string | undefined): boolean {
     return (
-        (method === "POST" && ["abort", "messages", "reset"].includes(routeName)) ||
+        (method === "POST" && ["abort", "compact", "messages", "reset"].includes(routeName)) ||
         (method === "PATCH" && ["effort", "model"].includes(routeName))
     );
 }

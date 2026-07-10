@@ -8,6 +8,7 @@ export type {
     BaseSessionEvent,
     ChangeEffortRequest,
     ChangeModelRequest,
+    CompactSessionResponse,
     CreateSessionRequest,
     CreateSessionResponse,
     EffortChangedEvent,

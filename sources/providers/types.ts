@@ -110,6 +110,8 @@ export interface Model<TThinkingLevel extends string = string> {
     name: string;
     thinkingLevels: readonly TThinkingLevel[];
     defaultThinkingLevel: TThinkingLevel;
+    /** Maximum input context used for automatic conversation compaction. */
+    contextWindow?: number;
 }
 
 export interface StreamOptions<TThinkingLevel extends string = string> {
@@ -177,6 +179,7 @@ export function defineModel<const TThinkingLevel extends string>(model: {
     name: string;
     thinkingLevels: readonly TThinkingLevel[];
     defaultThinkingLevel: TThinkingLevel;
+    contextWindow?: number;
 }): Model<TThinkingLevel> {
     return model;
 }

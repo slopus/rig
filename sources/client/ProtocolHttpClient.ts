@@ -4,6 +4,7 @@ import type {
     AbortRunResponse,
     ChangeEffortRequest,
     ChangeModelRequest,
+    CompactSessionResponse,
     CreateSessionRequest,
     CreateSessionResponse,
     EventId,
@@ -64,6 +65,10 @@ export class ProtocolHttpClient {
             `/sessions/${encodeURIComponent(sessionId)}/effort`,
             request,
         );
+    }
+
+    compact(sessionId: string): Promise<CompactSessionResponse> {
+        return this.#requestJson("POST", `/sessions/${encodeURIComponent(sessionId)}/compact`);
     }
 
     createSession(request: CreateSessionRequest): Promise<CreateSessionResponse> {

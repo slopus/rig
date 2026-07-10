@@ -3,6 +3,7 @@ import { contentBlockToText } from "./contentBlockToText.js";
 import type { Message } from "./types.js";
 
 export interface AgentConsole {
+    error?(...data: unknown[]): void;
     log(...data: unknown[]): void;
 }
 

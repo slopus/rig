@@ -41,6 +41,8 @@ export interface RunAgentLoopOptions {
     tools: readonly AnyDefinedTool[];
     instructions?: string;
     messages: readonly Message[];
+    /** Model-facing history, when the visible transcript has been compacted. */
+    contextMessages?: readonly Message[];
     signal?: AbortSignal;
     sessionId?: string;
     idFactory?: () => string;
@@ -59,6 +61,7 @@ export type AgentLoopEvent =
 
 export interface AgentLoopResult {
     messages: readonly Message[];
+    contextMessages: readonly Message[];
     stopReason: StopReason;
 }
 
@@ -67,7 +70,8 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
     const idFactory = options.idFactory ?? createId;
     const now = options.now ?? Date.now;
     const transcript: Message[] = [...options.messages];
-    const providerMessages = toProviderMessages(options.messages, {
+    const contextTranscript: Message[] = [...(options.contextMessages ?? options.messages)];
+    const providerMessages = toProviderMessages(contextTranscript, {
         model,
         now,
         providerId: options.provider.id,
@@ -76,7 +80,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         provider: options.provider,
         model,
         ...(options.instructions !== undefined ? { instructions: options.instructions } : {}),
-        messages: options.messages,
+        messages: contextTranscript,
         context: options.context,
     });
     const providerTools = options.tools.map(toProviderTool);
@@ -86,7 +90,11 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
     let iteration = 0;
     for (;;) {
         if (options.signal?.aborted) {
-            return { messages: transcript, stopReason: "aborted" };
+            return {
+                messages: transcript,
+                contextMessages: contextTranscript,
+                stopReason: "aborted",
+            };
         }
 
         iteration += 1;
@@ -128,16 +136,21 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
             assistantMessage = await stream.result();
         } catch (error) {
             if (options.signal?.aborted) {
-                return { messages: transcript, stopReason: "aborted" };
+                return {
+                    messages: transcript,
+                    contextMessages: contextTranscript,
+                    stopReason: "aborted",
+                };
             }
 
             if (isInvalidImageRequestError(error)) {
                 const replacements = replaceLastTurnToolResultImages(transcript, "Invalid image");
                 if (replacements.length > 0) {
+                    replaceLastTurnToolResultImages(contextTranscript, "Invalid image");
                     providerMessages.splice(
                         0,
                         providerMessages.length,
-                        ...toProviderMessages(transcript, {
+                        ...toProviderMessages(contextTranscript, {
                             model,
                             now,
                             providerId: options.provider.id,
@@ -156,10 +169,11 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         if (isInvalidImageRequestError(assistantMessage)) {
             const replacements = replaceLastTurnToolResultImages(transcript, "Invalid image");
             if (replacements.length > 0) {
+                replaceLastTurnToolResultImages(contextTranscript, "Invalid image");
                 providerMessages.splice(
                     0,
                     providerMessages.length,
-                    ...toProviderMessages(transcript, {
+                    ...toProviderMessages(contextTranscript, {
                         model,
                         now,
                         providerId: options.provider.id,
@@ -183,6 +197,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
 
         const agentMessage = assistantMessageToAgentMessage(assistantMessage, idFactory);
         transcript.push(agentMessage);
+        contextTranscript.push(agentMessage);
         await options.onMessage?.(agentMessage);
 
         if (
@@ -192,19 +207,25 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         ) {
             return {
                 messages: transcript,
+                contextMessages: contextTranscript,
                 stopReason: assistantMessage.stopReason,
             };
         }
 
         const toolCalls = assistantMessage.content.filter(isProviderToolCall);
         if (toolCalls.length === 0) {
-            return { messages: transcript, stopReason: assistantMessage.stopReason };
+            return {
+                messages: transcript,
+                contextMessages: contextTranscript,
+                stopReason: assistantMessage.stopReason,
+            };
         }
 
         if (options.signal?.aborted) {
             return appendInterruptedToolResults({
                 toolCalls,
                 transcript,
+                contextTranscript,
                 providerMessages,
                 idFactory,
                 now,
@@ -222,6 +243,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
             return appendInterruptedToolResults({
                 toolCalls,
                 transcript,
+                contextTranscript,
                 providerMessages,
                 idFactory,
                 now,
@@ -239,6 +261,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
             blocks: toolResultBlocks,
         };
         transcript.push(toolResultMessage);
+        contextTranscript.push(toolResultMessage);
         await options.onMessage?.(toolResultMessage);
     }
 }
@@ -246,6 +269,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
 async function appendInterruptedToolResults(options: {
     toolCalls: readonly ProviderToolCall[];
     transcript: Message[];
+    contextTranscript: Message[];
     providerMessages: ProviderMessage[];
     idFactory: () => string;
     now: () => number;
@@ -262,10 +286,12 @@ async function appendInterruptedToolResults(options: {
         blocks: toolResultBlocks,
     };
     options.transcript.push(toolResultMessage);
+    options.contextTranscript.push(toolResultMessage);
     await options.onMessage?.(toolResultMessage);
 
     return {
         messages: options.transcript,
+        contextMessages: options.contextTranscript,
         stopReason: "aborted",
     };
 }

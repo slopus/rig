@@ -1,4 +1,9 @@
-import type { AgentLoopEvent, AgentSnapshot, ContentBlock } from "../agent/index.js";
+import type {
+    AgentCompactionResult,
+    AgentLoopEvent,
+    AgentSnapshot,
+    ContentBlock,
+} from "../agent/index.js";
 import type { Message, UserMessage } from "../agent/types.js";
 import type { Model, StopReason } from "../providers/types.js";
 import type { EventId } from "./EventId.js";
@@ -111,6 +116,11 @@ export interface CreateSessionRequest {
 }
 
 export interface CreateSessionResponse {
+    session: ProtocolSession;
+}
+
+export interface CompactSessionResponse {
+    result: AgentCompactionResult;
     session: ProtocolSession;
 }
 

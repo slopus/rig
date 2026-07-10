@@ -625,6 +625,130 @@ describe("CodingAssistantApp", () => {
         expect(modelPicker).not.toContain("/model");
     });
 
+    it("compacts conversation history from the compact command", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("A concise continuation brief.");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            messages: [
+                {
+                    role: "user",
+                    id: "user-1",
+                    blocks: [{ type: "text", text: "Do the work." }],
+                },
+                {
+                    role: "agent",
+                    id: "agent-1",
+                    blocks: [{ type: "text", text: "The work is done." }],
+                },
+            ],
+            printToConsole: false,
+        });
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+        const compact = vi.spyOn(agent, "compact");
+
+        for (const character of "/compact") app.handleInput(character);
+        app.handleInput("\r");
+        const compaction = compact.mock.results[0];
+        expect(compaction?.type).toBe("return");
+        if (compaction?.type !== "return") throw new Error("Compaction did not start.");
+        await compaction.value;
+
+        const rendered = stripAnsi(app.render(80).join("\n"));
+        expect(rendered).toContain("Compacted 2 older messages.");
+        expect(rendered).toContain("The full transcript remains visible.");
+        expect(agent.snapshot().messages).toHaveLength(2);
+        expect(agent.snapshot().contextMessages).toHaveLength(1);
+    });
+
+    it("rejects overlapping submissions while conversation compaction is running", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const started = deferred<void>();
+        const release = deferred<void>();
+        let requests = 0;
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                requests += 1;
+                return streamTextStart(
+                    "A concise continuation brief.",
+                    started.resolve,
+                    release.promise,
+                );
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            messages: [
+                {
+                    role: "user",
+                    id: "user-1",
+                    blocks: [{ type: "text", text: "Do the work." }],
+                },
+                {
+                    role: "agent",
+                    id: "agent-1",
+                    blocks: [{ type: "text", text: "The work is done." }],
+                },
+            ],
+            printToConsole: false,
+        });
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+        const compact = vi.spyOn(agent, "compact");
+
+        for (const character of "/compact") app.handleInput(character);
+        app.handleInput("\r");
+        const compaction = compact.mock.results[0];
+        expect(compaction?.type).toBe("return");
+        if (compaction?.type !== "return") throw new Error("Compaction did not start.");
+        await started.promise;
+        for (const character of "new prompt") app.handleInput(character);
+        app.handleInput("\r");
+
+        expect(stripAnsi(app.render(80).join("\n"))).toContain(
+            "Wait for conversation compaction to finish before submitting.",
+        );
+        expect(requests).toBe(1);
+        expect(agent.queue).toEqual([]);
+
+        release.resolve();
+        await compaction.value;
+        expect(agent.snapshot().contextMessages).toHaveLength(1);
+    });
+
     it("renders file mentions in the slash-command footer and completes them", async () => {
         const model = defineModel({
             id: "openai/gpt-test",

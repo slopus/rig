@@ -3,6 +3,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { assistantMessageToAgentMessage } from "../agent/assistantMessageToAgentMessage.js";
 import type {
     AgentLoopEvent,
+    AgentCompactionResult,
     AgentRunResult,
     AgentSnapshot,
     ContentBlock,
@@ -56,6 +57,7 @@ export interface PersistedSessionState {
     agent: SessionAgentMetadata;
     agentId: string;
     cwd: string;
+    contextMessages?: readonly Message[];
     effort?: string;
     id: string;
     instructions?: string;
@@ -121,6 +123,7 @@ export class InMemorySession {
     #agentMetadata: SessionAgentMetadata;
     #agentId: string;
     #createEventId: () => EventId;
+    #contextMessages: Message[] | undefined;
     #draining: Promise<void> | undefined;
     #effort: string | undefined;
     #instructions: string | undefined;
@@ -181,6 +184,10 @@ export class InMemorySession {
                 ? requestedEffort
                 : selection.model.defaultThinkingLevel;
         this.#instructions = options.restore?.instructions ?? options.request.instructions;
+        this.#contextMessages =
+            options.restore?.contextMessages === undefined
+                ? undefined
+                : [...options.restore.contextMessages];
         this.#models = this.#modelsForProvider(this.#providerId);
         this.#status = options.restore?.status ?? "idle";
         this.#lastMessageAt = options.restore?.lastMessageAt;
@@ -348,11 +355,30 @@ export class InMemorySession {
         this.#interruption = undefined;
         this.#restoredActiveRunId = undefined;
         this.#messages = [];
+        this.#contextMessages = undefined;
         this.#partialPositions.clear();
         this.#activePartial = undefined;
         this.#persistence?.clearMessages(this.id);
         this.#append("session_reset", { snapshot: this.#agentSnapshot() });
         return this.snapshot();
+    }
+
+    async compact(signal?: AbortSignal): Promise<AgentCompactionResult> {
+        if (this.#activeRun !== undefined || this.#queue.length > 0) {
+            throw new Error("Wait for the active response to finish before compacting.");
+        }
+
+        const previousStatus = this.#status;
+        this.#status = "running";
+        this.#saveSession();
+        try {
+            const result = await this.#ensureRuntime().agent.compact(signal);
+            this.#syncContextMessages();
+            return result;
+        } finally {
+            this.#status = previousStatus;
+            this.#saveSession();
+        }
     }
 
     isSubagent(): boolean {
@@ -416,10 +442,19 @@ export class InMemorySession {
 
     state(): PersistedSessionState {
         const activeRunId = this.#activeRun?.runId ?? this.#restoredActiveRunId;
+        const runtimeSnapshot = this.#runtime?.agent.snapshot();
+        const contextMessages =
+            runtimeSnapshot?.contextMessages === undefined
+                ? this.#contextMessages
+                : [
+                      ...runtimeSnapshot.contextMessages,
+                      ...runtimeSnapshot.queue.map((queued) => queued.message),
+                  ];
         const state: PersistedSessionState = {
             agent: this.agentMetadata(),
             agentId: this.#agentId,
             cwd: this.#request.cwd,
+            ...(contextMessages !== undefined ? { contextMessages: [...contextMessages] } : {}),
             ...(this.#effort !== undefined ? { effort: this.#effort } : {}),
             id: this.id,
             ...(this.#instructions !== undefined ? { instructions: this.#instructions } : {}),
@@ -541,6 +576,13 @@ export class InMemorySession {
             queue: runtimeSnapshot?.queue ?? [],
             tools: this.#tools,
             ...(this.#effort !== undefined ? { effort: this.#effort } : {}),
+            ...((runtimeSnapshot?.contextMessages ?? this.#contextMessages) !== undefined
+                ? {
+                      contextMessages: [
+                          ...(runtimeSnapshot?.contextMessages ?? this.#contextMessages ?? []),
+                      ],
+                  }
+                : {}),
             ...(this.#instructions !== undefined ? { instructions: this.#instructions } : {}),
             ...(runtimeSnapshot?.lastRunId !== undefined
                 ? { lastRunId: runtimeSnapshot.lastRunId }
@@ -659,6 +701,9 @@ export class InMemorySession {
             modelId: this.#modelId,
             providerId: this.#providerId,
         };
+        if (this.#contextMessages !== undefined) {
+            options.contextMessages = this.#contextMessages;
+        }
         if (this.#effort !== undefined) options.effort = this.#effort;
         if (this.#instructions !== undefined) options.instructions = this.#instructions;
         if (this.#request.apiKey !== undefined) options.apiKey = this.#request.apiKey;
@@ -793,6 +838,10 @@ export class InMemorySession {
         try {
             const runtime = this.#ensureRuntime();
             runtime.agent.enqueueMessage(queued.userMessage);
+            if (this.#contextMessages !== undefined) {
+                this.#contextMessages = [...this.#contextMessages, queued.userMessage];
+                this.#saveSession();
+            }
             const result = await runtime.agent.run({
                 signal: controller.signal,
                 onEvent: (event) => this.#appendAgentEvent(queued.runId, event),
@@ -819,7 +868,15 @@ export class InMemorySession {
             if (this.#activeRun?.runId === queued.runId) {
                 this.#activeRun = undefined;
             }
+            this.#syncContextMessages();
             this.#saveSession();
+        }
+    }
+
+    #syncContextMessages(): void {
+        const contextMessages = this.#runtime?.agent.snapshot().contextMessages;
+        if (contextMessages !== undefined) {
+            this.#contextMessages = [...contextMessages];
         }
     }
 

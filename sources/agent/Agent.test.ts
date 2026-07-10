@@ -195,6 +195,142 @@ describe("Agent", () => {
         expect(agent.snapshot().effort).toBe("high");
     });
 
+    it("automatically compacts model context while preserving the visible transcript", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+            contextWindow: 100,
+        });
+        const contexts: Context[] = [];
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream(_model, context) {
+                contexts.push(context);
+                const isCompaction = context.systemPrompt?.startsWith(
+                    "Create a detailed continuation brief",
+                );
+                return streamFor({
+                    role: "assistant",
+                    content: [
+                        {
+                            type: "text",
+                            text: isCompaction ? "Earlier work was summarized." : "continued",
+                        },
+                    ],
+                    api: "test",
+                    provider: "codex",
+                    model: model.id,
+                    usage: zeroUsage(),
+                    stopReason: "stop",
+                    timestamp: 1,
+                });
+            },
+        });
+        const messages: Message[] = [
+            {
+                role: "user",
+                id: "user-old",
+                blocks: [{ type: "text", text: "A".repeat(180) }],
+            },
+            {
+                role: "agent",
+                id: "agent-old",
+                blocks: [{ type: "text", text: "B".repeat(180) }],
+            },
+        ];
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            messages,
+            idFactory: createDeterministicIds(),
+            printToConsole: false,
+        });
+
+        await agent.send("Continue from there.");
+
+        expect(contexts).toHaveLength(2);
+        expect(contexts[0]?.tools).toEqual([]);
+        expect(contexts[1]?.messages).toMatchObject([
+            {
+                role: "user",
+                content: [
+                    {
+                        type: "text",
+                        text: expect.stringContaining("Earlier work was summarized."),
+                    },
+                ],
+            },
+            {
+                role: "user",
+                content: [{ type: "text", text: "Continue from there." }],
+            },
+        ]);
+        expect(agent.snapshot().messages).toMatchObject([
+            { id: "user-old" },
+            { id: "agent-old" },
+            { role: "user" },
+            { role: "agent", blocks: [{ type: "text", text: "continued" }] },
+        ]);
+        expect(agent.snapshot().contextMessages).toHaveLength(3);
+    });
+
+    it("manually compacts completed history without removing transcript messages", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream(_model, context) {
+                const isCompaction = context.systemPrompt?.startsWith(
+                    "Create a detailed continuation brief",
+                );
+                return streamFor({
+                    role: "assistant",
+                    content: [{ type: "text", text: isCompaction ? "Brief." : "done" }],
+                    api: "test",
+                    provider: "codex",
+                    model: model.id,
+                    usage: zeroUsage(),
+                    stopReason: "stop",
+                    timestamp: 1,
+                });
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        await agent.send("Do the work.");
+        const visibleMessages = agent.snapshot().messages;
+
+        const result = await agent.compact();
+
+        expect(result).toMatchObject({
+            compacted: true,
+            compactedMessageCount: 2,
+            retainedMessageCount: 0,
+        });
+        expect(agent.snapshot().messages).toEqual(visibleMessages);
+        expect(agent.snapshot().contextMessages).toMatchObject([
+            {
+                role: "user",
+                blocks: [{ type: "text", text: expect.stringContaining("Brief.") }],
+            },
+        ]);
+    });
+
     it("resets transcript and queued messages", async () => {
         const model = defineModel({
             id: "openai/gpt-test",

@@ -71,6 +71,21 @@ describe("createProtocolHttpServer", () => {
         }
     });
 
+    it("compacts sessions through a dedicated endpoint", async () => {
+        const { client, close } = await startServer();
+        try {
+            const created = await client.createSession({ cwd: "/tmp/rig-protocol-test" });
+
+            const compacted = await client.compact(created.session.id);
+
+            expect(compacted.result.compacted).toBe(false);
+            expect(compacted.session.id).toBe(created.session.id);
+            expect(compacted.session.snapshot.messages).toEqual([]);
+        } finally {
+            await close();
+        }
+    });
+
     it("serves catch-up events since a cursor", async () => {
         const { client, close, store } = await startServer();
         try {
@@ -201,6 +216,7 @@ describe("createProtocolHttpServer", () => {
                 client.submitMessage("subagent-1", { text: "Continue working." }),
             ).rejects.toThrow("read-only");
             await expect(client.reset("subagent-1")).rejects.toThrow("read-only");
+            await expect(client.compact("subagent-1")).rejects.toThrow("read-only");
         } finally {
             await close();
             store.close();

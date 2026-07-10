@@ -1,6 +1,7 @@
 export { Agent } from "./Agent.js";
 export type {
     AgentOptions,
+    AgentCompactionResult,
     AgentRunOptions,
     AgentRunResult,
     AgentSnapshot,

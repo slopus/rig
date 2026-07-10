@@ -42,6 +42,32 @@ describe("PersistentSessionStore", () => {
         }
     });
 
+    it("restores compacted model context separately from the visible transcript", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        const summaryMessage = textUserMessage(
+            "summary-1",
+            "<conversation_summary>Earlier work.</conversation_summary>",
+        );
+        try {
+            const store = new PersistentSessionStore({ databasePath });
+            const state = sessionState({ contextMessages: [summaryMessage] });
+            store.saveSession(state);
+            store.close();
+
+            const restoredStore = new PersistentSessionStore({ databasePath });
+            try {
+                const restored = restoredStore.get(state.id);
+
+                expect(restored?.snapshot().snapshot.messages).toEqual([]);
+                expect(restored?.snapshot().snapshot.contextMessages).toEqual([summaryMessage]);
+            } finally {
+                restoredStore.close();
+            }
+        } finally {
+            await cleanup();
+        }
+    });
+
     it("persists a fallback when a restored model is no longer available", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         const availableModel = defineModel({

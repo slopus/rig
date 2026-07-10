@@ -11,6 +11,7 @@ export const modelAnthropicFable5 = defineModel({
     name: "Fable 5",
     thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
     defaultThinkingLevel: "medium",
+    contextWindow: 1_000_000,
 });
 
 export const modelAnthropicOpus48 = defineModel({
@@ -18,6 +19,7 @@ export const modelAnthropicOpus48 = defineModel({
     name: "Opus 4.8 1M",
     thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
     defaultThinkingLevel: "medium",
+    contextWindow: 1_000_000,
 });
 
 export const modelAnthropicOpus47 = defineModel({
@@ -25,6 +27,7 @@ export const modelAnthropicOpus47 = defineModel({
     name: "Opus 4.7 1M",
     thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
     defaultThinkingLevel: "medium",
+    contextWindow: 1_000_000,
 });
 
 export const modelAnthropicOpus46 = defineModel({
@@ -32,6 +35,7 @@ export const modelAnthropicOpus46 = defineModel({
     name: "Opus 4.6 1M",
     thinkingLevels: ["off", "low", "medium", "high", "max"],
     defaultThinkingLevel: "medium",
+    contextWindow: 1_000_000,
 });
 
 export const modelAnthropicSonnet5 = defineModel({
@@ -39,6 +43,7 @@ export const modelAnthropicSonnet5 = defineModel({
     name: "Sonnet 5",
     thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
     defaultThinkingLevel: "medium",
+    contextWindow: 1_000_000,
 });
 
 export const modelAnthropicSonnet461m = defineModel({
@@ -46,6 +51,7 @@ export const modelAnthropicSonnet461m = defineModel({
     name: "Sonnet 4.6 1M",
     thinkingLevels: ["off", "low", "medium", "high", "max"],
     defaultThinkingLevel: "medium",
+    contextWindow: 1_000_000,
 });
 
 export const modelAnthropicSonnet46 = defineModel({
@@ -53,6 +59,7 @@ export const modelAnthropicSonnet46 = defineModel({
     name: "Sonnet 4.6",
     thinkingLevels: ["off", "low", "medium", "high", "max"],
     defaultThinkingLevel: "medium",
+    contextWindow: 200_000,
 });
 
 export const modelAnthropicHaiku45 = defineModel({
@@ -60,6 +67,7 @@ export const modelAnthropicHaiku45 = defineModel({
     name: "Haiku 4.5",
     thinkingLevels: ["off"],
     defaultThinkingLevel: "off",
+    contextWindow: 200_000,
 });
 
 export const modelOpenaiGpt55 = defineModel({
@@ -67,6 +75,7 @@ export const modelOpenaiGpt55 = defineModel({
     name: "GPT-5.5",
     thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh"],
     defaultThinkingLevel: "medium",
+    contextWindow: 272_000,
 });
 
 export const modelOpenaiGpt56Sol = defineModel({
@@ -74,6 +83,7 @@ export const modelOpenaiGpt56Sol = defineModel({
     name: "GPT-5.6 Sol",
     thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max", "ultra"],
     defaultThinkingLevel: "low",
+    contextWindow: 372_000,
 });
 
 export const modelOpenaiGpt56Terra = defineModel({
@@ -81,6 +91,7 @@ export const modelOpenaiGpt56Terra = defineModel({
     name: "GPT-5.6 Terra",
     thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max", "ultra"],
     defaultThinkingLevel: "medium",
+    contextWindow: 372_000,
 });
 
 export const modelOpenaiGpt56Luna = defineModel({
@@ -88,6 +99,7 @@ export const modelOpenaiGpt56Luna = defineModel({
     name: "GPT-5.6 Luna",
     thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
     defaultThinkingLevel: "medium",
+    contextWindow: 372_000,
 });
 
 export const modelOpenaiGpt54 = defineModel({
@@ -95,6 +107,7 @@ export const modelOpenaiGpt54 = defineModel({
     name: "GPT-5.4",
     thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh"],
     defaultThinkingLevel: "medium",
+    contextWindow: 272_000,
 });
 
 export const modelMoonshotKimiK25 = defineModel({
@@ -102,6 +115,7 @@ export const modelMoonshotKimiK25 = defineModel({
     name: "Kimi K2.5",
     thinkingLevels: ["off", "on"],
     defaultThinkingLevel: "on",
+    contextWindow: 256_000,
 });
 
 export const modelMoonshotKimiK2Thinking = defineModel({
@@ -109,6 +123,7 @@ export const modelMoonshotKimiK2Thinking = defineModel({
     name: "Kimi K2 Thinking",
     thinkingLevels: ["on"],
     defaultThinkingLevel: "on",
+    contextWindow: 256_000,
 });
 
 export const modelZaiGlm5 = defineModel({
@@ -116,6 +131,7 @@ export const modelZaiGlm5 = defineModel({
     name: "GLM 5",
     thinkingLevels: ["off", "high", "max"],
     defaultThinkingLevel: "max",
+    contextWindow: 200_000,
 });
 
 export const modelZaiGlm47 = defineModel({
@@ -123,6 +139,7 @@ export const modelZaiGlm47 = defineModel({
     name: "GLM 4.7",
     thinkingLevels: ["off", "on"],
     defaultThinkingLevel: "on",
+    contextWindow: 203_000,
 });
 
 export const modelZaiGlm47Flash = defineModel({
@@ -130,4 +147,5 @@ export const modelZaiGlm47Flash = defineModel({
     name: "GLM 4.7 Flash",
     thinkingLevels: ["off", "on"],
     defaultThinkingLevel: "on",
+    contextWindow: 203_000,
 });

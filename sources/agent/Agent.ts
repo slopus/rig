@@ -1,5 +1,6 @@
 import { createId } from "@paralleldrive/cuid2";
 
+import { compactConversation } from "./compaction/compactConversation.js";
 import type { AgentContext } from "./context/AgentContext.js";
 import { runAgentLoop, type AgentLoopEvent, type AgentLoopResult } from "./loop.js";
 import { printAgentMessageToConsole, type AgentConsole } from "./printAgentMessageToConsole.js";
@@ -22,6 +23,8 @@ export interface AgentSnapshot {
     status: AgentStatus;
     instructions?: string;
     messages: readonly Message[];
+    /** Compacted model-facing history. Omitted while it matches the visible transcript. */
+    contextMessages?: readonly Message[];
     queue: readonly QueuedAgentMessage[];
     tools: readonly string[];
     lastRunId?: string;
@@ -34,6 +37,7 @@ export interface AgentOptions {
     id?: string;
     effort?: string;
     messages?: readonly Message[];
+    contextMessages?: readonly Message[];
     instructions?: string;
     tools?: readonly AnyDefinedTool[];
     idFactory?: () => string;
@@ -55,6 +59,14 @@ export interface AgentRunResult extends AgentLoopResult {
     runId: string;
 }
 
+export interface AgentCompactionResult {
+    compacted: boolean;
+    compactedMessageCount: number;
+    estimatedTokensAfter: number;
+    estimatedTokensBefore: number;
+    retainedMessageCount: number;
+}
+
 export class Agent {
     readonly id: string;
     readonly provider: Provider;
@@ -72,6 +84,7 @@ export class Agent {
     #onEvent: ((event: AgentLoopEvent) => void | Promise<void>) | undefined;
     #onMessage: ((message: Message) => void | Promise<void>) | undefined;
     #messages: Message[] = [];
+    #contextMessages: Message[] | undefined;
     #queue: QueuedAgentMessage[] = [];
     #status: AgentStatus = "idle";
     #lastRunId: string | undefined;
@@ -99,6 +112,8 @@ export class Agent {
         this.#onEvent = options.onEvent;
         this.#onMessage = options.onMessage;
         this.#messages = [...(options.messages ?? [])];
+        this.#contextMessages =
+            options.contextMessages === undefined ? undefined : [...options.contextMessages];
     }
 
     get status(): AgentStatus {
@@ -155,6 +170,7 @@ export class Agent {
 
     reset(): void {
         this.#messages = [];
+        this.#contextMessages = undefined;
         this.#queue = [];
         this.#lastRunId = undefined;
         this.#resetVersion += 1;
@@ -208,6 +224,28 @@ export class Agent {
         return this.run(options);
     }
 
+    async compact(signal?: AbortSignal): Promise<AgentCompactionResult> {
+        if (this.#activeRunId !== undefined) {
+            throw new Error("Wait for the active response to finish before compacting.");
+        }
+
+        const runId = this.#idFactory();
+        this.#activeRunId = runId;
+        this.#status = "running";
+        try {
+            const result = await this.#compactContext({
+                force: true,
+                preserveLatestUserMessage: false,
+                ...(signal !== undefined ? { signal } : {}),
+            });
+            this.#status = "idle";
+            return result;
+        } finally {
+            if (this.#activeRunId === runId) this.#activeRunId = undefined;
+            if (this.#status === "running") this.#status = signal?.aborted ? "aborted" : "idle";
+        }
+    }
+
     async run(options: AgentRunOptions = {}): Promise<AgentRunResult> {
         if (this.#activeRunId !== undefined) {
             throw new Error(`Agent '${this.id}' is already running`);
@@ -221,6 +259,20 @@ export class Agent {
         this.#drainQueueToTranscript();
 
         try {
+            try {
+                await this.#compactContext({
+                    force: false,
+                    preserveLatestUserMessage: true,
+                    ...(options.signal !== undefined ? { signal: options.signal } : {}),
+                });
+            } catch (error) {
+                // The main loop still gets a chance to report an abort or the provider's
+                // context-limit error when automatic compaction is unavailable.
+                if (!options.signal?.aborted) {
+                    this.#console.error?.(`[agent:${this.id}] automatic compaction failed`, error);
+                }
+            }
+
             const loopOptions: Parameters<typeof runAgentLoop>[0] = {
                 provider: this.provider,
                 modelId: this.#model.id,
@@ -233,6 +285,9 @@ export class Agent {
                 onEvent: async (event) => this.#handleEvent(event, options),
                 onMessage: async (message) => this.#handleMessage(message, options),
             };
+            if (this.#contextMessages !== undefined) {
+                loopOptions.contextMessages = this.#contextMessages;
+            }
             if (this.#effort !== undefined) loopOptions.effort = this.#effort;
             if (this.#instructions !== undefined) loopOptions.instructions = this.#instructions;
             if (options.signal !== undefined) loopOptions.signal = options.signal;
@@ -244,6 +299,9 @@ export class Agent {
             }
             if (this.#resetVersion === resetVersion) {
                 this.#messages = [...result.messages];
+                if (this.#contextMessages !== undefined) {
+                    this.#contextMessages = [...result.contextMessages];
+                }
                 this.#status = result.stopReason === "aborted" ? "aborted" : "idle";
             } else if (this.#status === "running") {
                 this.#status = "idle";
@@ -275,6 +333,9 @@ export class Agent {
             queue: [...this.#queue],
             tools: this.#tools.map((tool) => tool.name),
             ...(this.#effort !== undefined ? { effort: this.#effort } : {}),
+            ...(this.#contextMessages !== undefined
+                ? { contextMessages: [...this.#contextMessages] }
+                : {}),
             ...(this.#instructions !== undefined ? { instructions: this.#instructions } : {}),
             ...(this.#lastRunId !== undefined ? { lastRunId: this.#lastRunId } : {}),
         };
@@ -297,8 +358,37 @@ export class Agent {
         this.#queue = [];
         for (const entry of queued) {
             this.#messages.push(entry.message);
+            this.#contextMessages?.push(entry.message);
             this.#printMessage(entry.message);
         }
+    }
+
+    async #compactContext(options: {
+        force: boolean;
+        preserveLatestUserMessage: boolean;
+        signal?: AbortSignal;
+    }): Promise<AgentCompactionResult> {
+        const result = await compactConversation({
+            provider: this.provider,
+            model: this.#model,
+            messages: this.#contextMessages ?? this.#messages,
+            idFactory: this.#idFactory,
+            now: this.#now,
+            force: options.force,
+            preserveLatestUserMessage: options.preserveLatestUserMessage,
+            ...(this.#effort !== undefined ? { effort: this.#effort } : {}),
+            ...(options.signal !== undefined ? { signal: options.signal } : {}),
+        });
+        if (result.compacted) {
+            this.#contextMessages = [...result.contextMessages];
+        }
+        return {
+            compacted: result.compacted,
+            compactedMessageCount: result.compactedMessageCount,
+            estimatedTokensAfter: result.estimatedTokensAfter,
+            estimatedTokensBefore: result.estimatedTokensBefore,
+            retainedMessageCount: result.retainedMessageCount,
+        };
     }
 
     #printMessage(message: Message): void {

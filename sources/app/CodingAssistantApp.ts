@@ -183,6 +183,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #exitResolve: (() => void) | undefined;
     #focused = false;
     #pendingPrompts: PendingPrompt[] = [];
+    #compacting = false;
     #pastedImagesById = new Map<number, PastedImage>();
     #selectionPanel: Component | undefined;
     #dismissedSlashCommandText: string | undefined;
@@ -670,6 +671,15 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     async #submitAsync(value: string): Promise<void> {
+        if (this.#compacting) {
+            this.#appendEntry({
+                role: "event",
+                title: "compact",
+                text: "Wait for conversation compaction to finish before submitting.",
+            });
+            return;
+        }
+
         const submission = this.#createPromptSubmission(value);
         if (submission === undefined) {
             return;
@@ -681,6 +691,12 @@ export class CodingAssistantApp implements Component, Focusable {
 
         if (prompt.startsWith("/skill:")) {
             await this.#submitSkillCommand(prompt);
+            this.#requestRender();
+            return;
+        }
+
+        if (prompt === "/compact") {
+            await this.#compactSession();
             this.#requestRender();
             return;
         }
@@ -879,6 +895,34 @@ export class CodingAssistantApp implements Component, Focusable {
         return false;
     }
 
+    async #compactSession(): Promise<void> {
+        if (this.#compacting || this.#running || this.#pendingPrompts.length > 0) {
+            this.#appendEntry({
+                role: "event",
+                title: "compact",
+                text: "Wait for the active response to finish before compacting.",
+            });
+            return;
+        }
+
+        this.#compacting = true;
+        this.#statusText = "Compacting conversation";
+        this.#requestRender();
+        try {
+            const result = await this.#agent.compact();
+            this.#appendEntry({
+                role: "event",
+                title: "compact",
+                text: result.compacted
+                    ? `Compacted ${result.compactedMessageCount} older messages. The full transcript remains visible.`
+                    : "There is not enough conversation history to compact yet.",
+            });
+        } finally {
+            this.#compacting = false;
+            this.#statusText = "Idle";
+        }
+    }
+
     #resetSession(): void {
         this.#abortActiveRun({ silent: true });
         this.#runToken += 1;
@@ -900,7 +944,7 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #startDrainQueue(): void {
-        if (this.#activeRun !== undefined) {
+        if (this.#activeRun !== undefined || this.#compacting) {
             return;
         }
 

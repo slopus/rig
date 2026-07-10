@@ -317,6 +317,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     instructions,
                     status,
                     active_run_id,
+                    context_messages_json,
                     models_json,
                     tools_json,
                     title,
@@ -328,7 +329,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     created_at_ms,
                     updated_at_ms
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     agent_id = excluded.agent_id,
                     session_kind = excluded.session_kind,
@@ -344,6 +345,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     instructions = excluded.instructions,
                     status = excluded.status,
                     active_run_id = excluded.active_run_id,
+                    context_messages_json = excluded.context_messages_json,
                     models_json = excluded.models_json,
                     tools_json = excluded.tools_json,
                     title = excluded.title,
@@ -371,6 +373,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 state.instructions ?? null,
                 state.status,
                 state.activeRunId ?? null,
+                state.contextMessages === undefined ? null : JSON.stringify(state.contextMessages),
                 JSON.stringify(state.models),
                 JSON.stringify(state.tools),
                 state.title ?? null,
@@ -478,6 +481,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 status TEXT NOT NULL,
                 active_run_id TEXT,
                 last_event_id TEXT,
+                context_messages_json TEXT,
                 models_json TEXT NOT NULL,
                 tools_json TEXT NOT NULL,
                 title TEXT,
@@ -537,6 +541,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         this.#ensureSessionColumn("depth", "INTEGER NOT NULL DEFAULT 0");
         this.#ensureSessionColumn("parent_tool_call_id", "TEXT");
         this.#ensureSessionColumn("description", "TEXT");
+        this.#ensureSessionColumn("context_messages_json", "TEXT");
         this.#database.exec(`
             CREATE INDEX IF NOT EXISTS sessions_parent_created
                 ON sessions(parent_session_id, created_at_ms)
@@ -629,6 +634,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         const title = readOptionalString(row, "title");
         const titleError = readOptionalString(row, "title_error");
         const activeRunId = readOptionalString(row, "active_run_id");
+        const contextMessagesJson = readOptionalString(row, "context_messages_json");
         const parentSessionId = readOptionalString(row, "parent_session_id");
         const parentToolCallId = readOptionalString(row, "parent_tool_call_id");
         const description = readOptionalString(row, "description");
@@ -645,6 +651,9 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             agent,
             agentId: readString(row, "agent_id"),
             cwd: readString(row, "cwd"),
+            ...(contextMessagesJson !== undefined
+                ? { contextMessages: JSON.parse(contextMessagesJson) as Message[] }
+                : {}),
             ...(effort !== undefined ? { effort } : {}),
             id,
             ...(instructions !== undefined ? { instructions } : {}),

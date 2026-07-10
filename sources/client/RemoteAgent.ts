@@ -1,5 +1,6 @@
 import type {
     AgentContext,
+    AgentCompactionResult,
     AgentRunOptions,
     AgentRunResult,
     AgentSnapshot,
@@ -70,6 +71,12 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
                 provider.models.map((model) => ({ model, providerId: provider.providerId })),
             ) ?? this.#models.map((model) => ({ model, providerId: this.#providerId }))
         );
+    }
+
+    async compact(): Promise<AgentCompactionResult> {
+        const response = await this.#client.compact(this.#session.id);
+        this.#replaceSession(response.session);
+        return response.result;
     }
 
     reset(): void {
@@ -154,6 +161,8 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         if (finished === undefined) {
             return {
                 messages: this.#session.snapshot.messages,
+                contextMessages:
+                    this.#session.snapshot.contextMessages ?? this.#session.snapshot.messages,
                 runId: submitted.runId,
                 stopReason: aborted ? "aborted" : "error",
             };
@@ -161,6 +170,8 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
 
         return {
             messages: finished.messages,
+            contextMessages:
+                this.#session.snapshot.contextMessages ?? this.#session.snapshot.messages,
             runId: finished.agentRunId ?? submitted.runId,
             stopReason: finished.stopReason,
         };

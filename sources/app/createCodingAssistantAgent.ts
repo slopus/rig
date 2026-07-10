@@ -27,6 +27,7 @@ export interface CreateCodingAssistantAgentOptions {
     env?: NodeJS.ProcessEnv;
     instructions?: string;
     messages?: readonly Message[];
+    contextMessages?: readonly Message[];
     modelId?: string;
     providerId?: string;
     processManager?: NativeProxessManager;
@@ -82,6 +83,9 @@ export function createCodingAssistantAgent(
         ...(options.agentId !== undefined ? { id: options.agentId } : {}),
         instructions: options.instructions ?? createDefaultInstructions(options.cwd),
         ...(options.messages !== undefined ? { messages: options.messages } : {}),
+        ...(options.contextMessages !== undefined
+            ? { contextMessages: options.contextMessages }
+            : {}),
         tools,
         printToConsole: false,
     };

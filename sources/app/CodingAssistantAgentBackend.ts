@@ -1,5 +1,6 @@
 import type {
     AgentContext,
+    AgentCompactionResult,
     AgentRunOptions,
     AgentRunResult,
     AgentSnapshot,
@@ -19,6 +20,7 @@ export interface CodingAssistantAgentBackend {
     readonly provider: Provider;
     readonly model: Model;
     readonly modelChoices?: readonly CodingAssistantModelChoice[];
+    compact(signal?: AbortSignal): Promise<AgentCompactionResult>;
     reset(): void;
     send(
         content: string | readonly ContentBlock[],

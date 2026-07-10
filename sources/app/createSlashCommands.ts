@@ -43,6 +43,12 @@ export function createSlashCommands(): SlashCommandItem[] {
             aliases: [],
         },
         {
+            value: "compact",
+            label: "/compact",
+            description: "Summarize older messages to free context space.",
+            aliases: [],
+        },
+        {
             value: "abort",
             label: "/abort",
             description: "Stop the current response.",
