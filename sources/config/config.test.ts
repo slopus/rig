@@ -16,6 +16,7 @@ describe("config", () => {
 # User preference.
 [defaults]
 model = "openai/gpt-5.4" # keep this comment
+provider = "bedrock"
 effort = 'high'
 instructions = "Be direct."
 
@@ -25,6 +26,7 @@ show_reasoning = false
         ).toEqual({
             defaults: {
                 modelId: "openai/gpt-5.4",
+                providerId: "bedrock",
                 effort: "high",
                 instructions: "Be direct.",
             },
@@ -114,6 +116,7 @@ effort = "minimal"
             await createConfigFile(configPath, {
                 defaults: {
                     modelId: "openai/gpt-5.4",
+                    providerId: "bedrock",
                     effort: "low",
                 },
                 settings: {
@@ -127,6 +130,7 @@ effort = "minimal"
             await writeRuntimeConfig(runtimePath, {
                 defaults: {
                     modelId: "openai/gpt-5.5",
+                    providerId: "bedrock",
                     effort: "high",
                 },
                 settings: {
@@ -138,6 +142,7 @@ effort = "minimal"
                 [
                     "[defaults]",
                     'model = "openai/gpt-5.4"',
+                    'provider = "bedrock"',
                     'effort = "low"',
                     "",
                     "[settings]",
@@ -149,6 +154,7 @@ effort = "minimal"
                 [
                     "[defaults]",
                     'model = "openai/gpt-5.5"',
+                    'provider = "bedrock"',
                     'effort = "high"',
                     "",
                     "[settings]",

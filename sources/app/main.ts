@@ -58,6 +58,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     if (process.env.OHMYPI_MODEL !== undefined) {
         options.modelId = process.env.OHMYPI_MODEL;
     }
+    if (process.env.OHMYPI_PROVIDER !== undefined) {
+        options.providerId = process.env.OHMYPI_PROVIDER;
+    }
 
     await runApp(options);
 }

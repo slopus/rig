@@ -12,7 +12,7 @@ import { SubagentList } from "./SubagentList";
 export interface DetailsTabProps {
     catalog: ModelCatalog | undefined;
     changeEffort: (effort: string | undefined) => Promise<void>;
-    changeModel: (modelId: string) => Promise<void>;
+    changeModel: (providerId: string, modelId: string) => Promise<void>;
     isRunning: boolean;
     messageCount: number;
     onOpenSubagent: (sessionId: string) => void;
@@ -66,6 +66,7 @@ export function DetailsTab(props: DetailsTabProps) {
                     disabled={session.modelLocked || isSubagent}
                     modelId={session.modelId}
                     onChangeModel={props.changeModel}
+                    providerId={session.providerId}
                 />
                 {(session.modelLocked || isSubagent) && (
                     <p className="text-xs text-muted-foreground">

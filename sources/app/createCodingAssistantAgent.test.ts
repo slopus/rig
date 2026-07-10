@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { NativeProxessManager } from "../processes/index.js";
-import { modelAnthropicFable5, modelOpenaiGpt55 } from "../providers/models.js";
+import {
+    modelAnthropicFable5,
+    modelMoonshotKimiK25,
+    modelOpenaiGpt55,
+} from "../providers/models.js";
 import { createCodingAssistantAgent } from "./createCodingAssistantAgent.js";
 
 describe("createCodingAssistantAgent", () => {
@@ -67,5 +71,66 @@ describe("createCodingAssistantAgent", () => {
 
         expect(parent.agent.tools.map((tool) => tool.name)).toContain("Agent");
         expect(deepest.agent.tools.map((tool) => tool.name)).not.toContain("Agent");
+    });
+
+    it("creates an Amazon Bedrock agent for Bedrock Anthropic models", () => {
+        const runtime = createCodingAssistantAgent({
+            cwd: "/tmp/ohmypi-app-test",
+            env: {
+                AWS_BEARER_TOKEN_BEDROCK: "bedrock-token",
+                AWS_REGION: "us-east-1",
+            },
+            modelId: modelAnthropicFable5.id,
+            providerId: "bedrock",
+        });
+
+        expect(runtime.provider.id).toBe("bedrock");
+        expect(runtime.agent.model.id).toBe(modelAnthropicFable5.id);
+        expect(runtime.agent.tools.map((tool) => tool.name)).toContain("Bash");
+    });
+
+    it("uses Codex-style tools for Bedrock OpenAI models", () => {
+        const runtime = createCodingAssistantAgent({
+            cwd: "/tmp/ohmypi-app-test",
+            env: {
+                AWS_BEARER_TOKEN_BEDROCK: "bedrock-token",
+                AWS_REGION: "us-east-1",
+            },
+            modelId: modelOpenaiGpt55.id,
+            providerId: "bedrock",
+        });
+
+        expect(runtime.provider.id).toBe("bedrock");
+        expect(runtime.agent.model.id).toBe(modelOpenaiGpt55.id);
+        expect(runtime.agent.tools.map((tool) => tool.name)).toEqual([
+            "exec_command",
+            "write_stdin",
+            "apply_patch",
+            "view_image",
+        ]);
+    });
+
+    it("uses provider-neutral tools for Bedrock Kimi and GLM models", () => {
+        const runtime = createCodingAssistantAgent({
+            cwd: "/tmp/ohmypi-app-test",
+            env: {
+                AWS_BEARER_TOKEN_BEDROCK: "bedrock-token",
+                AWS_REGION: "us-east-1",
+            },
+            modelId: modelMoonshotKimiK25.id,
+            providerId: "bedrock",
+        });
+
+        expect(runtime.provider.id).toBe("bedrock");
+        expect(runtime.agent.model.id).toBe(modelMoonshotKimiK25.id);
+        expect(runtime.agent.tools.map((tool) => tool.name)).toEqual([
+            "read",
+            "bash",
+            "edit",
+            "write",
+            "grep",
+            "find",
+            "ls",
+        ]);
     });
 });

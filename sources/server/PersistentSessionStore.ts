@@ -672,6 +672,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             ...(restore.effort !== undefined ? { effort: restore.effort } : {}),
             ...(restore.instructions !== undefined ? { instructions: restore.instructions } : {}),
             modelId,
+            providerId: restore.providerId,
         };
         return new InMemorySession({
             agentManager: this.#agentManager,

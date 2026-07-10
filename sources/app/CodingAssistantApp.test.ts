@@ -2,9 +2,11 @@ import { visibleWidth, type TUI } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 
 import { Agent } from "../agent/Agent.js";
+import type { ProtocolHttpClient } from "../client/ProtocolHttpClient.js";
+import { RemoteAgent } from "../client/RemoteAgent.js";
 import { createJustBashToolHarness } from "../tools/testing/createJustBashToolHarness.js";
 import { NativeProxessManager } from "../processes/index.js";
-import type { SessionEvent } from "../protocol/index.js";
+import type { ModelCatalog, ProtocolSession, SessionEvent } from "../protocol/index.js";
 import {
     defineModel,
     defineProvider,
@@ -268,7 +270,11 @@ describe("CodingAssistantApp", () => {
             context: harness.context,
             printToConsole: false,
         });
-        const defaultModelChanges: Array<{ effort: string; modelId: string }> = [];
+        const defaultModelChanges: Array<{
+            effort: string;
+            modelId: string;
+            providerId: string;
+        }> = [];
         const app = new CodingAssistantApp({
             agent,
             cwd: harness.context.fs.cwd,
@@ -323,10 +329,107 @@ describe("CodingAssistantApp", () => {
         const rendered = stripAnsi(app.render(80).join("\n"));
         expect(agent.model.id).toBe(proModel.id);
         expect(agent.snapshot().effort).toBe("high");
-        expect(defaultModelChanges).toEqual([{ modelId: proModel.id, effort: "high" }]);
+        expect(defaultModelChanges).toEqual([
+            { modelId: proModel.id, providerId: "codex", effort: "high" },
+        ]);
         expect(rendered).toContain("GPT Pro High");
         expect(rendered).toContain("Model changed to GPT Pro with High reasoning.");
         expect(rendered).toContain("Ask Oh My Pi to do anything");
+    });
+
+    it("shows Bedrock-only models and sends their provider from the TUI picker", () => {
+        const gpt = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const kimi = defineModel({
+            id: "moonshot/kimi-test",
+            name: "Kimi Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const catalog: ModelCatalog = {
+            defaultModelId: gpt.id,
+            defaultProviderId: "codex",
+            models: [gpt, kimi],
+            providers: [
+                { providerId: "codex", models: [gpt] },
+                { providerId: "bedrock", models: [gpt, kimi] },
+            ],
+        };
+        const snapshot = {
+            id: "agent-1",
+            messages: [],
+            modelId: gpt.id,
+            providerId: "codex",
+            queue: [],
+            status: "idle" as const,
+            tools: [],
+        };
+        const session: ProtocolSession = {
+            agent: {
+                depth: 0,
+                rootSessionId: "session-1",
+                type: "primary",
+            },
+            id: "session-1",
+            agentId: snapshot.id,
+            cwd: "/workspace",
+            modelId: gpt.id,
+            modelLocked: false,
+            models: [gpt],
+            providerId: "codex",
+            snapshot,
+            status: "idle",
+            titleStatus: "idle",
+        };
+        const bedrockSession: ProtocolSession = {
+            ...session,
+            modelId: kimi.id,
+            models: [gpt, kimi],
+            providerId: "bedrock",
+            snapshot: {
+                ...snapshot,
+                modelId: kimi.id,
+                providerId: "bedrock",
+            },
+        };
+        const changeModel = vi.fn(async () => ({ session: bedrockSession }));
+        const client = { changeModel } as unknown as ProtocolHttpClient;
+        const harness = createJustBashToolHarness();
+        const agent = new RemoteAgent({
+            client,
+            context: harness.context,
+            modelCatalog: catalog,
+            session,
+        });
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        submit(app, "/model");
+
+        const modelMenu = stripAnsi(app.render(100).join("\n"));
+        expect(modelMenu).toContain("Kimi Test");
+        expect(modelMenu).toContain("Amazon Bedrock model");
+
+        app.handleInput("\x1b[B");
+        app.handleInput("\x1b[B");
+        app.handleInput("\r");
+        app.handleInput("\r");
+
+        expect(changeModel).toHaveBeenCalledWith("session-1", {
+            effort: "off",
+            modelId: kimi.id,
+            providerId: "bedrock",
+        });
+        expect(agent.provider.id).toBe("bedrock");
+        expect(agent.model.id).toBe(kimi.id);
     });
 
     it("keeps model choices visible but locked after a session starts", () => {

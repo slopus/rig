@@ -11,6 +11,9 @@ export function mergeConfigValues(
         if (config.defaults?.modelId !== undefined) {
             defaults.modelId = config.defaults.modelId;
         }
+        if (config.defaults?.providerId !== undefined) {
+            defaults.providerId = config.defaults.providerId;
+        }
         if (config.defaults?.effort !== undefined) {
             defaults.effort = config.defaults.effort;
         }

@@ -33,7 +33,7 @@ export interface ActiveSessionState {
     /** PATCHes the session effort. */
     changeEffort: (effort: string | undefined) => Promise<void>;
     /** PATCHes the session model (and optionally effort). */
-    changeModel: (modelId: string, effort?: string) => Promise<void>;
+    changeModel: (providerId: string, modelId: string, effort?: string) => Promise<void>;
     /** True after abort was requested and until the run settles. */
     isAborting: boolean;
     /** True while the initial `GET /api/sessions/:id` is in flight. */
@@ -530,13 +530,13 @@ export function useActiveSession(sessionId: string | undefined): ActiveSessionSt
     }, [sessionId]);
 
     const changeModel = useCallback(
-        async (modelId: string, effort?: string) => {
+        async (providerId: string, modelId: string, effort?: string) => {
             if (sessionId === undefined) {
                 return;
             }
             const response = await changeSessionModel(
                 sessionId,
-                effort !== undefined ? { modelId, effort } : { modelId },
+                effort !== undefined ? { modelId, providerId, effort } : { modelId, providerId },
             );
             dispatch({ type: "session_updated", session: response.session });
         },

@@ -14,6 +14,11 @@ export function parseConfigToml(source: string): PartialOhMyPiConfig {
             defaults.modelId = modelId;
         }
 
+        const providerId = readString(defaultsTable, "provider");
+        if (providerId !== undefined) {
+            defaults.providerId = providerId;
+        }
+
         const effort = readString(defaultsTable, "effort");
         if (effort !== undefined) {
             defaults.effort = effort;

@@ -18,6 +18,7 @@ export interface RunAppOptions {
     effort?: string;
     instructions?: string;
     modelId?: string;
+    providerId?: string;
     resumeSessionId?: string;
     showReasoning?: boolean;
 }
@@ -29,6 +30,9 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         cwd,
         modelId: loadedConfig.config.defaults.modelId,
     };
+    if (loadedConfig.config.defaults.providerId !== undefined) {
+        agentOptions.providerId = loadedConfig.config.defaults.providerId;
+    }
     if (loadedConfig.config.defaults.effort !== undefined) {
         agentOptions.effort = loadedConfig.config.defaults.effort;
     }
@@ -39,6 +43,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     if (options.effort !== undefined) agentOptions.effort = options.effort;
     if (options.instructions !== undefined) agentOptions.instructions = options.instructions;
     if (options.modelId !== undefined) agentOptions.modelId = options.modelId;
+    if (options.providerId !== undefined) agentOptions.providerId = options.providerId;
     let showReasoning = options.showReasoning ?? loadedConfig.config.settings.showReasoning;
 
     // Keep the terminal in TUI mode while the daemon starts so startup work is visible.
@@ -50,7 +55,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     });
     startup.start();
 
-    const { history, localServer, session } = await (async () => {
+    const { history, localServer, modelCatalog, session } = await (async () => {
         try {
             const connection = await ensureLocalProtocolServer({
                 onStatus: (message) => {
@@ -58,10 +63,12 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
                 },
             });
             startup.setStatus("Opening session.");
-            const openedSession =
+            const [openedSession, modelsResponse] = await Promise.all([
                 options.resumeSessionId === undefined
-                    ? await connection.client.createSession(agentOptions)
-                    : await connection.client.getSession(options.resumeSessionId);
+                    ? connection.client.createSession(agentOptions)
+                    : connection.client.getSession(options.resumeSessionId),
+                connection.client.models(),
+            ]);
             if (options.resumeSessionId !== undefined) {
                 ensureSessionCanResume(openedSession.session);
             }
@@ -71,7 +78,12 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
                     ? { events: [] as SessionEvent[] }
                     : await connection.client.getEvents(openedSession.session.id);
 
-            return { history: loadedHistory, localServer: connection, session: openedSession };
+            return {
+                history: loadedHistory,
+                localServer: connection,
+                modelCatalog: modelsResponse.catalog,
+                session: openedSession,
+            };
         } catch (error) {
             startup.stop();
             tui.stop();
@@ -84,6 +96,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     const agent = new RemoteAgent({
         client: localServer.client,
         context,
+        modelCatalog,
         session: session.session,
     });
     const resumeCommand = `ohmypi resume ${session.session.id}`;
@@ -96,6 +109,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
             writeRuntimeConfig(loadedConfig.paths.runtime, {
                 defaults: {
                     modelId: preference.modelId,
+                    providerId: preference.providerId,
                     effort: preference.effort,
                 },
                 settings: {
@@ -107,6 +121,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
             return writeRuntimeConfig(loadedConfig.paths.runtime, {
                 defaults: {
                     modelId: agent.model.id,
+                    providerId: agent.provider.id,
                     effort: agent.snapshot().effort ?? agent.model.defaultThinkingLevel,
                 },
                 settings,

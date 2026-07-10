@@ -33,6 +33,7 @@ import type {
 import type { Model, StopReason } from "../providers/types.js";
 import { generateSessionTitle } from "./generateSessionTitle.js";
 import { getProviderIdForModel } from "./getProviderIdForModel.js";
+import { resolveInitialModelSelection } from "./resolveInitialModelSelection.js";
 import { SessionEventLog } from "./SessionEventLog.js";
 import type { AgentSessionManager } from "./AgentSessionManager.js";
 
@@ -158,20 +159,29 @@ export class InMemorySession {
                 type: "primary",
             };
         this.#agentId = options.restore?.agentId ?? createId();
-        this.#modelId =
+        const requestedModelId =
             options.restore?.modelId ??
             options.request.modelId ??
             this.#modelCatalog.defaultModelId;
-        this.#providerId =
-            getProviderIdForModel(this.#modelCatalog, this.#modelId) ??
+        const requestedProviderId =
             options.restore?.providerId ??
-            "codex";
-        this.#effort = options.restore?.effort ?? options.request.effort;
+            options.request.providerId ??
+            this.#modelCatalog.defaultProviderId;
+        const selection = resolveInitialModelSelection(
+            this.#modelCatalog,
+            requestedModelId,
+            requestedProviderId,
+        );
+        this.#modelId = selection.model.id;
+        this.#providerId = selection.providerId;
+        const requestedEffort = options.restore?.effort ?? options.request.effort;
+        this.#effort =
+            requestedEffort !== undefined &&
+            selection.model.thinkingLevels.includes(requestedEffort)
+                ? requestedEffort
+                : selection.model.defaultThinkingLevel;
         this.#instructions = options.restore?.instructions ?? options.request.instructions;
-        this.#models =
-            this.#modelCatalog.models.length > 0
-                ? this.#modelCatalog.models
-                : (options.restore?.models ?? []);
+        this.#models = this.#modelsForProvider(this.#providerId);
         this.#status = options.restore?.status ?? "idle";
         this.#lastMessageAt = options.restore?.lastMessageAt;
         this.#restoredActiveRunId = options.restore?.activeRunId;
@@ -196,12 +206,9 @@ export class InMemorySession {
         if (options.onAppendEvent !== undefined) eventLogOptions.onAppend = options.onAppendEvent;
         this.events = new SessionEventLog(eventLogOptions);
 
+        this.#ensureKnownModel(this.#modelId, this.#providerId);
+        this.#saveSession();
         if (options.restore === undefined) {
-            this.#ensureKnownModel(this.#modelId);
-            if (this.#effort === undefined) {
-                this.#effort = this.#selectedModel().defaultThinkingLevel;
-            }
-            this.#saveSession();
             if (options.emitCreatedEvent !== false) {
                 this.emitCreatedEvent();
             }
@@ -237,17 +244,29 @@ export class InMemorySession {
     }
 
     changeModel(request: ChangeModelRequest): ProtocolSession {
-        if (this.#modelLocked() && request.modelId !== this.#modelId) {
+        const providerId =
+            (request.providerId !== undefined
+                ? getProviderIdForModel(this.#modelCatalog, request.modelId, request.providerId)
+                : getProviderIdForModel(this.#modelCatalog, request.modelId, this.#providerId)) ??
+            (request.providerId === undefined
+                ? getProviderIdForModel(this.#modelCatalog, request.modelId)
+                : undefined);
+        if (providerId === undefined) {
+            const providerDescription =
+                request.providerId !== undefined ? ` for provider '${request.providerId}'` : "";
+            throw new Error(`Unknown model '${request.modelId}'${providerDescription}.`);
+        }
+
+        if (
+            this.#modelLocked() &&
+            (request.modelId !== this.#modelId || providerId !== this.#providerId)
+        ) {
             throw new Error("Model cannot be changed after the first message in a session.");
         }
 
-        const model = this.#ensureKnownModel(request.modelId);
-        const providerId = getProviderIdForModel(this.#modelCatalog, model.id);
-        if (providerId === undefined) {
-            throw new Error(`Unknown provider for model '${model.id}'.`);
-        }
+        const model = this.#ensureKnownModel(request.modelId, providerId);
 
-        if (request.modelId === this.#modelId) {
+        if (request.modelId === this.#modelId && providerId === this.#providerId) {
             return this.changeEffort(
                 request.effort !== undefined ? { effort: request.effort } : {},
             );
@@ -260,7 +279,7 @@ export class InMemorySession {
         this.#modelId = model.id;
         this.#providerId = providerId;
         this.#effort = request.effort ?? model.defaultThinkingLevel;
-        this.#models = this.#modelCatalog.models;
+        this.#models = this.#modelsForProvider(providerId);
         this.#interruption = undefined;
         this.#append("model_changed", {
             ...(this.#effort !== undefined ? { effort: this.#effort } : {}),
@@ -610,10 +629,12 @@ export class InMemorySession {
             .map((message) => message.message);
     }
 
-    #ensureKnownModel(modelId: string): Model {
-        const model = this.#modelCatalog.models.find((candidate) => candidate.id === modelId);
+    #ensureKnownModel(modelId: string, providerId: string): Model {
+        const model = this.#modelsForProvider(providerId).find(
+            (candidate) => candidate.id === modelId,
+        );
         if (model === undefined) {
-            throw new Error(`Unknown model '${modelId}'.`);
+            throw new Error(`Unknown model '${modelId}' for provider '${providerId}'.`);
         }
         return model;
     }
@@ -628,6 +649,7 @@ export class InMemorySession {
             cwd: this.#request.cwd,
             messages: this.#committedMessages(),
             modelId: this.#modelId,
+            providerId: this.#providerId,
         };
         if (this.#effort !== undefined) options.effort = this.#effort;
         if (this.#instructions !== undefined) options.instructions = this.#instructions;
@@ -650,7 +672,7 @@ export class InMemorySession {
         this.#modelId = snapshot.modelId;
         this.#effort = snapshot.effort;
         this.#instructions = snapshot.instructions;
-        this.#models = this.#modelCatalog.models;
+        this.#models = this.#modelsForProvider(this.#providerId);
         this.#tools = snapshot.tools;
         this.#saveSession();
         return runtime;
@@ -702,7 +724,18 @@ export class InMemorySession {
     }
 
     #selectedModel(): Model {
-        return this.#ensureKnownModel(this.#modelId);
+        const model = this.#models.find((candidate) => candidate.id === this.#modelId);
+        if (model === undefined) {
+            throw new Error(`Unknown model '${this.#modelId}' for provider '${this.#providerId}'.`);
+        }
+        return model;
+    }
+
+    #modelsForProvider(providerId: string): readonly Model[] {
+        return (
+            this.#modelCatalog.providers.find((provider) => provider.providerId === providerId)
+                ?.models ?? []
+        );
     }
 
     #startTitleGeneration(firstMessage: string): void {

@@ -2,12 +2,14 @@ export interface ConfigDefaults {
     effort?: string;
     instructions?: string;
     modelId: string;
+    providerId?: string;
 }
 
 export interface PartialConfigDefaults {
     effort?: string;
     instructions?: string;
     modelId?: string;
+    providerId?: string;
 }
 
 export interface ConfigSettings {

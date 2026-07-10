@@ -5,14 +5,18 @@ import type {
     AgentSnapshot,
     ContentBlock,
 } from "../agent/index.js";
-import type { CodingAssistantAgentBackend } from "../app/CodingAssistantAgentBackend.js";
-import type { ProtocolSession, SessionEvent } from "../protocol/index.js";
+import type {
+    CodingAssistantAgentBackend,
+    CodingAssistantModelChoice,
+} from "../app/CodingAssistantAgentBackend.js";
+import type { ModelCatalog, ProtocolSession, SessionEvent } from "../protocol/index.js";
 import { defineProvider, type Model, type Provider, type StopReason } from "../providers/types.js";
 import { ProtocolHttpClient } from "./ProtocolHttpClient.js";
 
 export interface RemoteAgentOptions {
     client: ProtocolHttpClient;
     context: AgentContext;
+    modelCatalog?: ModelCatalog;
     session: ProtocolSession;
 }
 
@@ -22,6 +26,7 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
 
     #client: ProtocolHttpClient;
     #modelId: string;
+    #modelCatalog: ModelCatalog | undefined;
     #models: readonly Model[];
     #providerId: string;
     #session: ProtocolSession;
@@ -29,6 +34,7 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
     constructor(options: RemoteAgentOptions) {
         this.#client = options.client;
         this.#session = options.session;
+        this.#modelCatalog = options.modelCatalog;
         this.context = options.context;
         this.id = options.session.agentId;
         this.#modelId = options.session.modelId;
@@ -56,6 +62,14 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
             throw new Error(`Unknown remote model '${this.#modelId}'.`);
         }
         return model;
+    }
+
+    get modelChoices(): readonly CodingAssistantModelChoice[] {
+        return (
+            this.#modelCatalog?.providers.flatMap((provider) =>
+                provider.models.map((model) => ({ model, providerId: provider.providerId })),
+            ) ?? this.#models.map((model) => ({ model, providerId: this.#providerId }))
+        );
     }
 
     reset(): void {
@@ -167,27 +181,44 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         });
     }
 
-    setModel(modelId: string, effort: string | undefined): void {
-        if (!this.canChangeModel && modelId !== this.#modelId) {
+    setModel(modelId: string, effort: string | undefined, providerId?: string): void {
+        const nextProviderId = providerId ?? this.#providerId;
+        if (
+            !this.canChangeModel &&
+            (modelId !== this.#modelId || nextProviderId !== this.#providerId)
+        ) {
             this.setEffort(effort);
             return;
         }
 
+        const nextModels =
+            this.#modelCatalog?.providers.find((provider) => provider.providerId === nextProviderId)
+                ?.models ?? this.#models;
+        if (!nextModels.some((model) => model.id === modelId)) {
+            throw new Error(`Unknown remote model '${modelId}' for provider '${nextProviderId}'.`);
+        }
+
         this.#modelId = modelId;
+        this.#models = nextModels;
+        this.#providerId = nextProviderId;
         this.#session = {
             ...this.#session,
             ...(effort !== undefined ? { effort } : {}),
             modelId,
+            models: nextModels,
+            providerId: nextProviderId,
             snapshot: {
                 ...this.#session.snapshot,
                 ...(effort !== undefined ? { effort } : {}),
                 modelId,
+                providerId: nextProviderId,
             },
         };
         void this.#client
             .changeModel(this.#session.id, {
                 ...(effort !== undefined ? { effort } : {}),
                 modelId,
+                providerId: nextProviderId,
             })
             .then((response) => {
                 this.#replaceSession(response.session);
@@ -268,11 +299,12 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
 
         if (event.type === "model_changed" || event.type === "effort_changed") {
             this.#modelId = event.data.modelId;
-            this.#providerId = providerIdFromModelId(event.data.modelId, this.#providerId);
+            this.#providerId = event.data.snapshot.providerId;
             this.#session = {
                 ...this.#session,
                 ...(event.data.effort !== undefined ? { effort: event.data.effort } : {}),
                 modelId: event.data.modelId,
+                providerId: event.data.snapshot.providerId,
                 snapshot: event.data.snapshot,
             };
         }
@@ -284,16 +316,6 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         this.#models = session.models;
         this.#providerId = session.providerId;
     }
-}
-
-function providerIdFromModelId(modelId: string, fallback: string): string {
-    if (modelId.startsWith("anthropic/")) {
-        return "claude-sdk";
-    }
-    if (modelId.startsWith("openai/")) {
-        return "codex";
-    }
-    return fallback;
 }
 
 function appendUniqueMessage(

@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { decodeProviderModelSelection } from "@/decodeProviderModelSelection";
+import { encodeProviderModelSelection } from "@/encodeProviderModelSelection";
 import type { ModelCatalog, ProtocolSession } from "@/protocol";
 
 export interface NewSessionDialogProps {
@@ -36,7 +38,7 @@ export function NewSessionDialog(props: NewSessionDialogProps) {
 
     const [open, setOpen] = useState(false);
     const [cwd, setCwd] = useState("");
-    const [modelId, setModelId] = useState("");
+    const [modelSelection, setModelSelection] = useState("");
     const [isCreating, setIsCreating] = useState(false);
     const [error, setError] = useState<string | undefined>(undefined);
 
@@ -45,7 +47,14 @@ export function NewSessionDialog(props: NewSessionDialogProps) {
             setOpen(nextOpen);
             if (nextOpen) {
                 setCwd(defaultCwd ?? "");
-                setModelId(catalog?.defaultModelId ?? "");
+                setModelSelection(
+                    catalog === undefined
+                        ? ""
+                        : encodeProviderModelSelection(
+                              catalog.defaultProviderId,
+                              catalog.defaultModelId,
+                          ),
+                );
                 setError(undefined);
                 setIsCreating(false);
             }
@@ -61,9 +70,12 @@ export function NewSessionDialog(props: NewSessionDialogProps) {
         setIsCreating(true);
         setError(undefined);
         try {
+            const selection = decodeProviderModelSelection(modelSelection);
             const response = await createSession({
                 cwd: trimmedCwd,
-                ...(modelId !== "" ? { modelId } : {}),
+                ...(selection !== undefined
+                    ? { modelId: selection.modelId, providerId: selection.providerId }
+                    : {}),
             });
             setOpen(false);
             refreshSessions();
@@ -76,7 +88,7 @@ export function NewSessionDialog(props: NewSessionDialogProps) {
             );
             setIsCreating(false);
         }
-    }, [cwd, isCreating, modelId, onSessionCreated, refreshSessions]);
+    }, [cwd, isCreating, modelSelection, onSessionCreated, refreshSessions]);
 
     const canCreate = cwd.trim().length > 0 && !isCreating;
 
@@ -135,8 +147,8 @@ export function NewSessionDialog(props: NewSessionDialogProps) {
                                 Model
                             </label>
                             <Select
-                                {...(modelId !== "" ? { value: modelId } : {})}
-                                onValueChange={setModelId}
+                                {...(modelSelection !== "" ? { value: modelSelection } : {})}
+                                onValueChange={setModelSelection}
                             >
                                 <SelectTrigger id="new-session-model" className="w-full">
                                     <SelectValue placeholder="Choose a model" />

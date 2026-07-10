@@ -34,6 +34,7 @@ export interface ProviderModelCatalog {
 
 export interface ModelCatalog {
     defaultModelId: string;
+    defaultProviderId: string;
     models: readonly Model[];
     providers: readonly ProviderModelCatalog[];
 }
@@ -106,6 +107,7 @@ export interface CreateSessionRequest {
     effort?: string;
     instructions?: string;
     modelId?: string;
+    providerId?: string;
 }
 
 export interface CreateSessionResponse {
@@ -139,6 +141,7 @@ export interface SubmitMessageResponse {
 export interface ChangeModelRequest {
     effort?: string;
     modelId: string;
+    providerId?: string;
 }
 
 export interface ChangeEffortRequest {

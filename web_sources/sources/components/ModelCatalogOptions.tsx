@@ -1,6 +1,7 @@
 import { SelectGroup, SelectItem, SelectLabel } from "@/components/ui/select";
 import { humanizeModelId } from "@/humanizeModelId";
 import type { ModelCatalog } from "@/protocol";
+import { encodeProviderModelSelection } from "@/encodeProviderModelSelection";
 
 /**
  * Model catalog rendered as Select options — the single grouping rule shared
@@ -15,7 +16,10 @@ export function ModelCatalogOptions(props: { catalog: ModelCatalog }) {
                     <SelectGroup key={provider.providerId}>
                         <SelectLabel>{humanizeModelId(provider.providerId)}</SelectLabel>
                         {provider.models.map((model) => (
-                            <SelectItem key={model.id} value={model.id}>
+                            <SelectItem
+                                key={`${provider.providerId}:${model.id}`}
+                                value={encodeProviderModelSelection(provider.providerId, model.id)}
+                            >
                                 {model.name}
                             </SelectItem>
                         ))}
@@ -24,10 +28,16 @@ export function ModelCatalogOptions(props: { catalog: ModelCatalog }) {
             </>
         );
     }
+    const provider = props.catalog.providers[0];
+    const providerId = provider?.providerId ?? props.catalog.defaultProviderId;
+    const models = provider?.models ?? props.catalog.models;
     return (
         <>
-            {props.catalog.models.map((model) => (
-                <SelectItem key={model.id} value={model.id}>
+            {models.map((model) => (
+                <SelectItem
+                    key={`${providerId}:${model.id}`}
+                    value={encodeProviderModelSelection(providerId, model.id)}
+                >
                     {model.name}
                 </SelectItem>
             ))}

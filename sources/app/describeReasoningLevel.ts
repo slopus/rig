@@ -6,6 +6,7 @@ export function describeReasoningLevel(
 ): string {
     const descriptions: Record<string, string> = {
         off: "Skip reasoning for fast, direct replies.",
+        on: "Enable the model's native thinking mode.",
         minimal: "Use a tiny reasoning budget for quick edits.",
         low: "Use light reasoning for simple coding tasks.",
         medium: "Balance speed and depth for everyday coding.",

@@ -75,3 +75,38 @@ export const modelOpenaiGpt54 = defineModel({
     thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh"],
     defaultThinkingLevel: "medium",
 });
+
+export const modelMoonshotKimiK25 = defineModel({
+    id: "moonshot/kimi-k2.5",
+    name: "Kimi K2.5",
+    thinkingLevels: ["off", "on"],
+    defaultThinkingLevel: "on",
+});
+
+export const modelMoonshotKimiK2Thinking = defineModel({
+    id: "moonshot/kimi-k2-thinking",
+    name: "Kimi K2 Thinking",
+    thinkingLevels: ["on"],
+    defaultThinkingLevel: "on",
+});
+
+export const modelZaiGlm5 = defineModel({
+    id: "zai/glm-5",
+    name: "GLM 5",
+    thinkingLevels: ["off", "high", "max"],
+    defaultThinkingLevel: "max",
+});
+
+export const modelZaiGlm47 = defineModel({
+    id: "zai/glm-4.7",
+    name: "GLM 4.7",
+    thinkingLevels: ["off", "on"],
+    defaultThinkingLevel: "on",
+});
+
+export const modelZaiGlm47Flash = defineModel({
+    id: "zai/glm-4.7-flash",
+    name: "GLM 4.7 Flash",
+    thinkingLevels: ["off", "on"],
+    defaultThinkingLevel: "on",
+});

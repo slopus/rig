@@ -42,6 +42,72 @@ describe("PersistentSessionStore", () => {
         }
     });
 
+    it("persists a fallback when a restored model is no longer available", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        const availableModel = defineModel({
+            id: "openai/available",
+            name: "Available model",
+            thinkingLevels: ["off", "medium"],
+            defaultThinkingLevel: "medium",
+        });
+        const removedModel = defineModel({
+            id: "zai/glm-5",
+            name: "Removed model",
+            thinkingLevels: ["off", "high", "max"],
+            defaultThinkingLevel: "max",
+        });
+        const availableCatalog: ModelCatalog = {
+            defaultModelId: availableModel.id,
+            defaultProviderId: "codex",
+            models: [availableModel],
+            providers: [{ providerId: "codex", models: [availableModel] }],
+        };
+        try {
+            const store = new PersistentSessionStore({
+                databasePath,
+                modelCatalog: {
+                    defaultModelId: availableModel.id,
+                    defaultProviderId: "codex",
+                    models: [availableModel, removedModel],
+                    providers: [
+                        { providerId: "codex", models: [availableModel] },
+                        { providerId: "bedrock", models: [removedModel] },
+                    ],
+                },
+            });
+            const sessionId = store.create({
+                cwd: "/tmp/ohmypi-persistent-session-test",
+                effort: "max",
+                modelId: removedModel.id,
+                providerId: "bedrock",
+            }).id;
+            store.close();
+
+            const restoredStore = new PersistentSessionStore({
+                databasePath,
+                modelCatalog: availableCatalog,
+            });
+            try {
+                expect(restoredStore.get(sessionId)?.snapshot()).toMatchObject({
+                    effort: "medium",
+                    modelId: availableModel.id,
+                    providerId: "codex",
+                });
+                expect(
+                    restoredStore.list().find((session) => session.id === sessionId),
+                ).toMatchObject({
+                    effort: "medium",
+                    modelId: availableModel.id,
+                    providerId: "codex",
+                });
+            } finally {
+                restoredStore.close();
+            }
+        } finally {
+            await cleanup();
+        }
+    });
+
     it("marks running sessions as interrupted after a restart", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         try {
@@ -456,6 +522,7 @@ function testModelCatalog(): ModelCatalog {
     });
     return {
         defaultModelId: openai.id,
+        defaultProviderId: "codex",
         models: [openai, anthropic],
         providers: [
             { providerId: "codex", models: [openai] },

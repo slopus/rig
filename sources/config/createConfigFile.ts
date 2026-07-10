@@ -15,6 +15,9 @@ export async function createConfigFile(
         stringify({
             defaults: {
                 model: config.defaults.modelId,
+                ...(config.defaults.providerId !== undefined
+                    ? { provider: config.defaults.providerId }
+                    : {}),
                 ...(config.defaults.effort !== undefined ? { effort: config.defaults.effort } : {}),
                 ...(config.defaults.instructions !== undefined
                     ? { instructions: config.defaults.instructions }

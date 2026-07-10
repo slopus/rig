@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/select";
 import { humanizeModelId } from "@/humanizeModelId";
 import type { ModelCatalog } from "@/protocol";
+import { decodeProviderModelSelection } from "@/decodeProviderModelSelection";
+import { encodeProviderModelSelection } from "@/encodeProviderModelSelection";
 
 export interface ModelSelectProps {
     /** Model catalog from health; when missing the select is disabled. */
@@ -18,8 +20,10 @@ export interface ModelSelectProps {
     disabled: boolean;
     /** Currently selected model id. */
     modelId: string;
-    /** Called with the new model id; rejection is surfaced inline. */
-    onChangeModel: (modelId: string) => Promise<void>;
+    /** Called with the selected provider and model; rejection is surfaced inline. */
+    onChangeModel: (providerId: string, modelId: string) => Promise<void>;
+    /** Currently selected inference provider id. */
+    providerId: string;
 }
 
 /** Model picker for the Details tab, wired to the PATCH model endpoint. */
@@ -28,18 +32,27 @@ export function ModelSelect(props: ModelSelectProps) {
     const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
 
     const providers = props.catalog?.providers ?? [];
-    const knownIds = new Set(
-        providers.flatMap((provider) => provider.models.map((model) => model.id)),
+    const knownSelections = new Set(
+        providers.flatMap((provider) =>
+            provider.models.map((model) =>
+                encodeProviderModelSelection(provider.providerId, model.id),
+            ),
+        ),
     );
+    const selectedValue = encodeProviderModelSelection(props.providerId, props.modelId);
 
-    const handleChange = (modelId: string) => {
-        if (modelId === props.modelId) {
+    const handleChange = (value: string) => {
+        const selection = decodeProviderModelSelection(value);
+        if (
+            selection === undefined ||
+            (selection.modelId === props.modelId && selection.providerId === props.providerId)
+        ) {
             return;
         }
         setIsPending(true);
         setErrorMessage(undefined);
         props
-            .onChangeModel(modelId)
+            .onChangeModel(selection.providerId, selection.modelId)
             .catch((error: unknown) => {
                 setErrorMessage(
                     error instanceof Error ? error.message : "The model could not be changed.",
@@ -55,15 +68,15 @@ export function ModelSelect(props: ModelSelectProps) {
             <Select
                 disabled={props.disabled || isPending || props.catalog === undefined}
                 onValueChange={handleChange}
-                value={props.modelId}
+                value={selectedValue}
             >
                 <SelectTrigger className="h-8 w-full font-mono text-xs" size="sm">
                     <SelectValue placeholder={humanizeModelId(props.modelId)} />
                 </SelectTrigger>
                 <SelectContent position="popper">
                     {props.catalog !== undefined && <ModelCatalogOptions catalog={props.catalog} />}
-                    {!knownIds.has(props.modelId) && (
-                        <SelectItem value={props.modelId}>
+                    {!knownSelections.has(selectedValue) && (
+                        <SelectItem value={selectedValue}>
                             {humanizeModelId(props.modelId)}
                         </SelectItem>
                     )}

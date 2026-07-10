@@ -9,6 +9,7 @@ import { createSystemPrompt } from "./createSystemPrompt.js";
 import { CLAUDE_CODE_SYSTEM_PROMPT } from "./prompts/claudeCodeSystemPrompt.js";
 import { GPT_5_4_SYSTEM_PROMPT } from "./prompts/gpt54SystemPrompt.js";
 import { GPT_5_5_SYSTEM_PROMPT } from "./prompts/gpt55SystemPrompt.js";
+import { KIMI_SYSTEM_PROMPT } from "./prompts/kimiSystemPrompt.js";
 import type { Message } from "./types.js";
 import { defineModel, defineProvider, type Model, type Provider } from "../providers/types.js";
 
@@ -127,6 +128,25 @@ describe("createSystemPrompt", () => {
                 context: contextFor(cwd),
             }),
         ).resolves.toBe(CLAUDE_CODE_SYSTEM_PROMPT);
+    });
+
+    it("uses Moonshot's official Kimi identity prompt", async () => {
+        const cwd = await makeTempDir();
+        const model = defineModel({
+            id: "moonshot/kimi-k2.5",
+            name: "Kimi K2.5",
+            thinkingLevels: ["off", "on"],
+            defaultThinkingLevel: "on",
+        });
+
+        await expect(
+            createSystemPrompt({
+                provider: providerFor("bedrock", model),
+                model,
+                messages: [],
+                context: contextFor(cwd),
+            }),
+        ).resolves.toBe(KIMI_SYSTEM_PROMPT);
     });
 
     it("preserves legacy prompt assembly for unsupported test models", async () => {

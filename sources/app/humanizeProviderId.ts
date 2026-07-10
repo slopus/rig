@@ -1,4 +1,7 @@
 export function humanizeProviderId(providerId: string): string {
+    if (providerId === "bedrock") {
+        return "Amazon Bedrock";
+    }
     if (providerId === "codex") {
         return "Codex";
     }

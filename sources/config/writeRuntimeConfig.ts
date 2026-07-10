@@ -12,6 +12,7 @@ export async function writeRuntimeConfig(path: string, config: PartialOhMyPiConf
             effort?: string;
             instructions?: string;
             model?: string;
+            provider?: string;
         };
         settings?: {
             show_reasoning?: boolean;
@@ -22,6 +23,9 @@ export async function writeRuntimeConfig(path: string, config: PartialOhMyPiConf
         document.defaults = {};
         if (defaults.modelId !== undefined) {
             document.defaults.model = defaults.modelId;
+        }
+        if (defaults.providerId !== undefined) {
+            document.defaults.provider = defaults.providerId;
         }
         if (defaults.effort !== undefined) {
             document.defaults.effort = defaults.effort;

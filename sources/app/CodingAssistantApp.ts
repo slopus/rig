@@ -28,11 +28,15 @@ import { parseSkillFrontmatter } from "../agent/skills/parseSkillFrontmatter.js"
 import type { NativeProxessManager } from "../processes/index.js";
 import type { SessionEvent } from "../protocol/index.js";
 import type { AppTranscriptEntry } from "./AppTranscriptEntry.js";
-import type { CodingAssistantAgentBackend } from "./CodingAssistantAgentBackend.js";
+import type {
+    CodingAssistantAgentBackend,
+    CodingAssistantModelChoice,
+} from "./CodingAssistantAgentBackend.js";
 import { createSelectionPanel } from "./createSelectionPanel.js";
 import { createSlashCommands, type SlashCommandItem } from "./createSlashCommands.js";
 import { describeModelChoice } from "./describeModelChoice.js";
 import { describeReasoningLevel } from "./describeReasoningLevel.js";
+import { encodeModelChoice } from "./encodeModelChoice.js";
 import { formatActivityElapsedTime } from "./formatActivityElapsedTime.js";
 import { humanizeReasoningLevel } from "./humanizeReasoningLevel.js";
 import {
@@ -115,6 +119,7 @@ export interface CodingAssistantAppOptions {
 export interface DefaultModelPreference {
     effort: string;
     modelId: string;
+    providerId: string;
 }
 
 export interface AppSettings {
@@ -787,7 +792,10 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         if (prompt === "/effort" || prompt === "/ford") {
-            this.#openReasoningMenu(this.#agent.model.id);
+            this.#openReasoningMenu({
+                model: this.#agent.model,
+                providerId: this.#agent.provider.id,
+            });
             return true;
         }
 
@@ -1392,24 +1400,40 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         const selectedModelId = this.#agent.model.id;
+        const selectedProviderId = this.#agent.provider.id;
+        const selectedValue = encodeModelChoice(selectedProviderId, selectedModelId);
+        const choices = this.#modelChoices();
         const panel = createSelectionPanel({
             title: "Choose Model",
             subtitle: this.#modelLocked
                 ? "Model is locked for this session"
                 : "Enter selects, Esc cancels",
-            selectedValue: selectedModelId,
-            items: this.#agent.provider.models.map((model) => ({
-                value: model.id,
-                label: model.name,
+            selectedValue,
+            items: choices.map((choice) => ({
+                value: encodeModelChoice(choice.providerId, choice.model.id),
+                label: choice.model.name,
                 description: describeModelChoice(
-                    model,
-                    this.#providerIdForModel(model.id),
-                    model.id === selectedModelId,
-                    { locked: this.#modelLocked && model.id !== selectedModelId },
+                    choice.model,
+                    choice.providerId,
+                    choice.model.id === selectedModelId && choice.providerId === selectedProviderId,
+                    {
+                        locked:
+                            this.#modelLocked &&
+                            (choice.model.id !== selectedModelId ||
+                                choice.providerId !== selectedProviderId),
+                    },
                 ),
             })),
             onSelect: (item) => {
-                if (this.#modelLocked && item.value !== selectedModelId) {
+                const choice = choices.find(
+                    (candidate) =>
+                        encodeModelChoice(candidate.providerId, candidate.model.id) === item.value,
+                );
+                if (choice === undefined) {
+                    this.#closeSelectionPanel();
+                    return;
+                }
+                if (this.#modelLocked && item.value !== selectedValue) {
                     this.#appendEntry({
                         role: "event",
                         title: "model",
@@ -1421,7 +1445,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 }
 
                 this.#closeSelectionPanel();
-                this.#openReasoningMenu(item.value);
+                this.#openReasoningMenu(choice);
             },
             onCancel: () => {
                 this.#closeSelectionPanel();
@@ -1430,16 +1454,15 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#showSelectionPanel(panel);
     }
 
-    #openReasoningMenu(modelId: string): void {
-        const model = this.#agent.provider.models.find((candidate) => candidate.id === modelId);
-        if (model === undefined) {
-            return;
-        }
+    #openReasoningMenu(choice: CodingAssistantModelChoice): void {
+        const { model, providerId } = choice;
 
         const currentEffort = this.#agent.snapshot().effort;
         const defaultEffort = model.defaultThinkingLevel;
+        const isCurrent =
+            model.id === this.#agent.model.id && providerId === this.#agent.provider.id;
         const selectedEffort =
-            currentEffort !== undefined && model.thinkingLevels.includes(currentEffort)
+            isCurrent && currentEffort !== undefined && model.thinkingLevels.includes(currentEffort)
                 ? currentEffort
                 : defaultEffort;
         const panel = createSelectionPanel({
@@ -1450,12 +1473,12 @@ export class CodingAssistantApp implements Component, Focusable {
                 value: level,
                 label: humanizeReasoningLevel(level),
                 description: describeReasoningLevel(level, {
-                    isCurrent: model.id === this.#agent.model.id && level === currentEffort,
+                    isCurrent: isCurrent && level === currentEffort,
                     isDefault: level === defaultEffort,
                 }),
             })),
             onSelect: (item) => {
-                if (this.#modelLocked || model.id === this.#agent.model.id) {
+                if (this.#modelLocked || isCurrent) {
                     this.#agent.setEffort(item.value);
                     if (!this.#sessionBacked) {
                         this.#appendEntry({
@@ -1465,8 +1488,8 @@ export class CodingAssistantApp implements Component, Focusable {
                         });
                     }
                 } else {
-                    this.#agent.setModel(model.id, item.value);
-                    this.#persistDefaultModel(model.id, item.value);
+                    this.#agent.setModel(model.id, item.value, providerId);
+                    this.#persistDefaultModel(model.id, item.value, providerId);
                     if (!this.#sessionBacked) {
                         this.#appendEntry({
                             role: "event",
@@ -1908,7 +1931,11 @@ export class CodingAssistantApp implements Component, Focusable {
         return true;
     }
 
-    #persistDefaultModel(modelId: string, effort: string): void {
+    #persistDefaultModel(
+        modelId: string,
+        effort: string,
+        providerId: string = this.#agent.provider.id,
+    ): void {
         if (this.#onDefaultModelChange === undefined) {
             return;
         }
@@ -1916,6 +1943,7 @@ export class CodingAssistantApp implements Component, Focusable {
         void Promise.resolve(
             this.#onDefaultModelChange({
                 modelId,
+                providerId,
                 effort,
             }),
         ).catch(() => {
@@ -1962,14 +1990,14 @@ export class CodingAssistantApp implements Component, Focusable {
         });
     }
 
-    #providerIdForModel(modelId: string): string {
-        if (modelId.startsWith("anthropic/")) {
-            return "claude-sdk";
-        }
-        if (modelId.startsWith("openai/")) {
-            return "codex";
-        }
-        return this.#agent.provider.id;
+    #modelChoices(): readonly CodingAssistantModelChoice[] {
+        return (
+            this.#agent.modelChoices ??
+            this.#agent.provider.models.map((model) => ({
+                model,
+                providerId: this.#agent.provider.id,
+            }))
+        );
     }
 
     #handleModelMenuShortcut(data: string): boolean {

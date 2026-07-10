@@ -69,6 +69,35 @@ The `web` command starts or reuses the local daemon, serves the SPA, proxies `/a
 to the daemon socket, and routes the app through Portless at
 `https://web.ohmypi.localhost`.
 
+### Amazon Bedrock
+
+Amazon Bedrock is enabled automatically when the daemon starts with a non-empty
+`AWS_BEARER_TOKEN_BEDROCK` environment variable. The provider uses `AWS_REGION`,
+then `AWS_DEFAULT_REGION`, and defaults to `us-east-1` when neither is set.
+[Generate an Amazon Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-generate.html)
+in the AWS console before exporting it:
+
+```sh
+export AWS_BEARER_TOKEN_BEDROCK="your Bedrock API key"
+export AWS_REGION="us-east-1"
+export OHMYPI_PROVIDER="bedrock"
+pnpm dev
+```
+
+`OHMYPI_PROVIDER` chooses the inference provider independently from `OHMYPI_MODEL`,
+so the same canonical GPT or Claude model can be routed through Bedrock, Codex, or
+the Claude SDK without changing its model ID. The web model picker exposes each
+available provider/model combination explicitly.
+
+The curated Claude, Kimi, and GLM models use the native Bedrock Runtime endpoint.
+GPT-5.4 and GPT-5.5 use Bedrock Mantle's OpenAI Responses endpoint through the
+official OpenAI Node SDK's `BedrockOpenAI` client because AWS does not serve those
+models through Bedrock Runtime. The Kimi catalog includes Kimi K2.5 and Kimi K2
+Thinking; the GLM catalog includes GLM 5, GLM 4.7, and GLM 4.7 Flash. Model
+visibility is limited by AWS's regional availability; for example, Kimi K2.5 is
+currently offered only in `us-east-1`, `us-east-2`, and `us-west-2`. Restart an
+already-running daemon after changing these environment variables.
+
 For web UI development with Vite hot reload, run the daemon and frontend separately:
 
 ```sh
