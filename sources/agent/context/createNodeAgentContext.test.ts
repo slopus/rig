@@ -40,6 +40,57 @@ describe("createNodeAgentContext", () => {
         expect(processManager.activeCount()).toBe(0);
     });
 
+    it("keeps yielded shell sessions alive for polling and stdin", async () => {
+        const cwd = await makeTempDir();
+        const processManager = new NativeProxessManager();
+        const context = createNodeAgentContext({ cwd, processManager });
+        const script = [
+            'process.stdin.setEncoding("utf8")',
+            'process.stdin.once("data", data => { process.stdout.write("received:" + data.trim()); process.exit(0) })',
+        ].join(";");
+        const sessionId = await context.bash.startSession({
+            command: `${JSON.stringify(process.execPath)} -e '${script}'`,
+            maxOutputBytes: 4_096,
+        });
+
+        await expect(context.bash.readSession(sessionId, { waitMs: 50 })).resolves.toMatchObject({
+            sessionId,
+            status: "running",
+        });
+        await expect(context.bash.writeSession(sessionId, "hello\n")).resolves.toBe(true);
+        const completed = await context.bash.readSession(sessionId, { waitMs: 2_000 });
+
+        expect(completed).toMatchObject({
+            exitCode: 0,
+            status: "completed",
+            stdout: "received:hello",
+            stdoutDelta: "received:hello",
+        });
+        await expect(context.bash.readSession(sessionId)).resolves.toMatchObject({
+            stdout: "received:hello",
+            stdoutDelta: "",
+        });
+        expect(processManager.activeCount()).toBe(0);
+    });
+
+    it("enforces hard timeouts for background shell sessions", async () => {
+        const cwd = await makeTempDir();
+        const processManager = new NativeProxessManager();
+        const context = createNodeAgentContext({ cwd, processManager });
+        const sessionId = await context.bash.startSession({
+            command: `${JSON.stringify(process.execPath)} -e 'setInterval(() => undefined, 1000)'`,
+            timeoutMs: 50,
+        });
+
+        await expect(context.bash.readSession(sessionId, { waitMs: 2_000 })).resolves.toMatchObject(
+            {
+                status: "killed",
+                timedOut: true,
+            },
+        );
+        expect(processManager.activeCount()).toBe(0);
+    });
+
     it("enforces filesystem permissions across traversal and symlink escapes", async () => {
         const root = await makeWorkspaceRoot();
         const cwd = join(root, "workspace");

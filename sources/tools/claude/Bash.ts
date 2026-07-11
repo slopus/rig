@@ -24,12 +24,25 @@ export const claudeBashTool = defineTool({
         run_in_background: Type.Optional(
             Type.Boolean({
                 description:
-                    "Set to true to run this command in the background. Use Read to read the output later.",
+                    "Set to true to run this command in the background. Use TaskOutput to read the output later.",
             }),
         ),
     }),
     returnType: shellToolOutputSchema,
-    execute: async ({ command, timeout }, context, execution) => {
+    execute: async ({ command, run_in_background, timeout }, context, execution) => {
+        if (run_in_background === true) {
+            const sessionId = await context.bash.startSession({
+                command,
+                timeoutMs: timeout ?? 120_000,
+            });
+            return {
+                backgroundTaskId: String(sessionId),
+                exitCode: null,
+                stderr: "",
+                stdout: "",
+                timedOut: false,
+            };
+        }
         const options: Parameters<typeof runShellCommand>[1] = {};
         if (timeout !== undefined) options.timeoutMs = timeout;
         if (execution.signal !== undefined) options.signal = execution.signal;

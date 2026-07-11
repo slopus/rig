@@ -4,6 +4,7 @@ import type { AgentContext } from "../../agent/context/AgentContext.js";
 import type { ContentBlock } from "../../agent/types.js";
 
 export const shellToolOutputSchema = Type.Object({
+    backgroundTaskId: Type.Optional(Type.String()),
     stdout: Type.String(),
     stderr: Type.String(),
     exitCode: Type.Union([Type.Number(), Type.Null()]),
@@ -66,6 +67,14 @@ function shellQuote(value: string): string {
 export function shellOutputToText(
     result: Static<typeof shellToolOutputSchema>,
 ): readonly ContentBlock[] {
+    if (result.backgroundTaskId !== undefined) {
+        return [
+            {
+                type: "text",
+                text: `Command running in background with task ID ${result.backgroundTaskId}. Use TaskOutput to read its output or TaskStop to stop it.`,
+            },
+        ];
+    }
     const chunks = [
         result.stdout ? `stdout:\n${result.stdout}` : "",
         result.stderr ? `stderr:\n${result.stderr}` : "",

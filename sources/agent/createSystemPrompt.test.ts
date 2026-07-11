@@ -365,6 +365,12 @@ function contextFor(cwd: string, home = join(cwd, ".home")): AgentContext {
         fs: createNodeFileSystemContext(cwd, { home }),
         bash: {
             cwd,
+            async killSession() {
+                return undefined;
+            },
+            async readSession() {
+                return undefined;
+            },
             async run() {
                 return {
                     stdout: "",
@@ -372,6 +378,13 @@ function contextFor(cwd: string, home = join(cwd, ".home")): AgentContext {
                     exitCode: 0,
                     timedOut: false,
                 };
+            },
+            async startSession() {
+                return 1;
+            },
+            supportsSessionInput: false,
+            async writeSession() {
+                return false;
             },
         },
     };

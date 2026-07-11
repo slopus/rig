@@ -43,7 +43,14 @@ export type {
 } from "./types.js";
 export type { AgentContext } from "./context/AgentContext.js";
 export type { PermissionMode } from "../permissions/index.js";
-export type { BashContext, BashRunOptions, BashRunResult } from "./context/BashContext.js";
+export type {
+    BashContext,
+    BashRunOptions,
+    BashRunResult,
+    BashSessionReadOptions,
+    BashSessionSnapshot,
+    BashSessionStatus,
+} from "./context/BashContext.js";
 export type { FileSystemContext, FileSystemStat } from "./context/FileSystemContext.js";
 export type { UserInputContext } from "./context/UserInputContext.js";
 export type { TaskContext } from "./context/TaskContext.js";

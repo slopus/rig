@@ -5,6 +5,8 @@ export function humanizeToolName(name: string): string {
         return "Question";
     }
     if (normalized === "tasklist") return "Task list";
+    if (normalized === "taskoutput") return "Background output";
+    if (normalized === "taskstop") return "Stop background command";
     if (normalized === "taskcreate" || normalized === "taskget" || normalized === "taskupdate") {
         return "Task";
     }

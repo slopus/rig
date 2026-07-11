@@ -43,6 +43,7 @@ describe("createCodingAssistantAgent", () => {
         expect(runtime.provider.id).toBe("claude-sdk");
         expect(runtime.agent.model.id).toBe(modelAnthropicFable5.id);
         expect(runtime.agent.tools.map((tool) => tool.name)).toEqual([
+            "TaskOutput",
             "Bash",
             "Read",
             "Edit",
@@ -55,6 +56,7 @@ describe("createCodingAssistantAgent", () => {
             "TaskList",
             "WebFetch",
             "WebSearch",
+            "TaskStop",
             "AskUserQuestion",
         ]);
     });

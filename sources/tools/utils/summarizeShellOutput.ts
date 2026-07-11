@@ -5,6 +5,7 @@ import { singleLineText } from "./singleLineText.js";
 import { summarizeTextOutput } from "./summarizeTextOutput.js";
 
 export function summarizeShellOutput(result: Static<typeof shellToolOutputSchema>): string {
+    if (result.backgroundTaskId !== undefined) return "Command started in the background.";
     const suffix = result.timedOut
         ? " (timed out)"
         : result.exitCode !== null && result.exitCode !== 0

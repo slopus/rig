@@ -11,7 +11,9 @@ describe("codex exec_command tool", () => {
             cmd: "echo codex",
         });
 
-        expect(result.stdout).toBe("codex\n");
-        expect(result.exitCode).toBe(0);
+        expect(result.output).toBe("codex\n");
+        expect(result.exit_code).toBe(0);
+        expect(result.session_id).toBeUndefined();
+        expect(result.wall_time_seconds).toBeGreaterThanOrEqual(0);
     });
 });

@@ -29,6 +29,7 @@ rig stays close to pi and to upstream vendor behavior, but adds a curated defaul
 - Structured user questions with provider-aligned tools and terminal or web answer controls.
 - MCP tool servers over stdio or streamable HTTP, with Codex- and Claude-compatible configuration.
 - Background subagents with completion notifications and follow-up turns.
+- Managed shell sessions for long-running commands and interactive input.
 - Workflow presets for repeated engineering operations.
 - Auto mode for hands-off execution when a project allows it.
 - Automatic conversation compaction for long sessions, plus `/compact` when you want to free context space immediately.
@@ -156,6 +157,14 @@ see current status and open a child transcript.
 
 Team/swarm coordination, remote agents, and automatic worktree isolation are
 intentionally outside this core workflow.
+
+### Long-running commands
+
+Codex `exec_command` now yields a live session when a command outlasts its wait
+window; `write_stdin` can poll it, send input, or interrupt it. Claude `Bash`
+honors `run_in_background`, with `TaskOutput` for later results and `TaskStop`
+for cancellation. These commands retain the session's permission and sandbox
+mode instead of escaping into an unmanaged process.
 
 ### MCP tool servers
 

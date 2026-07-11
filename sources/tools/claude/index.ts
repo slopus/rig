@@ -8,6 +8,8 @@ export { claudeTaskCreateTool } from "./TaskCreate.js";
 export { claudeTaskGetTool } from "./TaskGet.js";
 export { claudeTaskListTool } from "./TaskList.js";
 export { claudeTaskUpdateTool } from "./TaskUpdate.js";
+export { claudeTaskOutputTool } from "./TaskOutput.js";
+export { claudeTaskStopTool } from "./TaskStop.js";
 export { claudeWebFetchTool } from "./WebFetch.js";
 export { claudeWebSearchTool } from "./WebSearch.js";
 export { claudeWriteTool } from "./Write.js";
@@ -23,6 +25,8 @@ import { claudeTaskCreateTool } from "./TaskCreate.js";
 import { claudeTaskGetTool } from "./TaskGet.js";
 import { claudeTaskListTool } from "./TaskList.js";
 import { claudeTaskUpdateTool } from "./TaskUpdate.js";
+import { claudeTaskOutputTool } from "./TaskOutput.js";
+import { claudeTaskStopTool } from "./TaskStop.js";
 import { claudeWebFetchTool } from "./WebFetch.js";
 import { claudeWebSearchTool } from "./WebSearch.js";
 import { claudeWriteTool } from "./Write.js";
@@ -30,6 +34,7 @@ import { claudeAskUserQuestionTool } from "./AskUserQuestion.js";
 import { claudeSendMessageTool } from "./SendMessage.js";
 
 export const claudeCodeTools = [
+    claudeTaskOutputTool,
     claudeBashTool,
     claudeReadTool,
     claudeEditTool,
@@ -42,6 +47,7 @@ export const claudeCodeTools = [
     claudeTaskListTool,
     claudeWebFetchTool,
     claudeWebSearchTool,
+    claudeTaskStopTool,
     claudeAskUserQuestionTool,
 ] as const;
 
