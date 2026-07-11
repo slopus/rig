@@ -11,7 +11,7 @@ export function describeModelChoice(
     const providerName = humanizeProviderId(providerId);
     return [
         options.locked === true
-            ? "Locked for this session"
+            ? "Unavailable while running"
             : isCurrent
               ? "Current model"
               : `${providerName} model`,

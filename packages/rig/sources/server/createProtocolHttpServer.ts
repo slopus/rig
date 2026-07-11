@@ -11,6 +11,7 @@ import type {
     CompactSessionResponse,
     CreateSessionRequest,
     CreateSessionResponse,
+    ForkSessionResponse,
     HealthResponse,
     GoalSessionResponse,
     ListModelsResponse,
@@ -172,6 +173,26 @@ async function handleRequest(
             parseFileSearchLimit(url.searchParams.get("limit")),
         );
         sendJson<SearchFilesResponse>(response, 200, { files });
+        return;
+    }
+
+    if (request.method === "POST" && route.name === "fork") {
+        if (session.isSubagent()) {
+            sendJson(response, 409, { error: "Subagent histories cannot be forked." });
+            return;
+        }
+        try {
+            const forked = store.fork(sessionId);
+            if (forked === undefined) {
+                sendJson(response, 404, { error: "Session not found" });
+                return;
+            }
+            sendJson<ForkSessionResponse>(response, 201, { session: forked.snapshot() });
+        } catch (error) {
+            sendJson(response, 409, {
+                error: error instanceof Error ? error.message : "The session could not be forked.",
+            });
+        }
         return;
     }
 
@@ -413,6 +434,7 @@ function matchRoute(pathname: string):
               | "effort"
               | "events"
               | "files"
+              | "fork"
               | "goal"
               | "messages"
               | "model"
@@ -452,6 +474,7 @@ function matchRoute(pathname: string):
     if (parts[2] === "effort") return { name: "effort", sessionId };
     if (parts[2] === "events") return { name: "events", sessionId };
     if (parts[2] === "files") return { name: "files", sessionId };
+    if (parts[2] === "fork") return { name: "fork", sessionId };
     if (parts[2] === "goal") return { name: "goal", sessionId };
     if (parts[2] === "messages") return { name: "messages", sessionId };
     if (parts[2] === "model") return { name: "model", sessionId };
@@ -466,7 +489,7 @@ function matchRoute(pathname: string):
 function isSessionMutation(routeName: string, method: string | undefined): boolean {
     return (
         (method === "POST" &&
-            ["abort", "compact", "messages", "reset", "steer"].includes(routeName)) ||
+            ["abort", "compact", "fork", "messages", "reset", "steer"].includes(routeName)) ||
         (["DELETE", "PATCH", "POST"].includes(method ?? "") && routeName === "goal") ||
         (method === "POST" && routeName === "user-input") ||
         (method === "PATCH" && ["effort", "model", "permissions"].includes(routeName))

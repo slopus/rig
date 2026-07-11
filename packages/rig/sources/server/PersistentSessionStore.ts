@@ -105,6 +105,33 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         return this.#createSession(request);
     }
 
+    fork(sessionId: string): InMemorySession | undefined {
+        const source = this.get(sessionId);
+        if (source === undefined) return undefined;
+        const state = source.createForkState();
+        const session = new InMemorySession({
+            agentManager: this.#agentManager,
+            createEventId: this.#createEventId,
+            emitCreatedEvent: false,
+            modelCatalog: this.#modelCatalog,
+            ...(this.#mcpToolProvider !== undefined
+                ? { mcpToolProvider: this.#mcpToolProvider }
+                : {}),
+            onAppendEvent: (event) => this.#appendEvent(event),
+            persistence: this,
+            request: source.requestForSubagent(),
+            restore: state,
+        });
+        this.#sessions.set(session.id, session);
+        this.#transaction(() => {
+            for (const message of state.messages) {
+                this.upsertMessage(session.id, message);
+            }
+        });
+        session.emitCreatedEvent();
+        return session;
+    }
+
     #createSession(
         request: CreateSessionRequest,
         metadata?: SessionAgentMetadata,

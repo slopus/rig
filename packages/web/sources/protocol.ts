@@ -526,6 +526,7 @@ export type RunFinishedEvent = BaseSessionEvent<
     "run_finished",
     {
         agentRunId?: string;
+        modelLocked: boolean;
         runId: string;
         stopReason: StopReason;
     }
@@ -535,6 +536,7 @@ export type RunErrorEvent = BaseSessionEvent<
     "run_error",
     {
         errorMessage: string;
+        modelLocked: boolean;
         runId: string;
     }
 >;

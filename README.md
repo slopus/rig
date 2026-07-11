@@ -33,6 +33,8 @@ rig stays close to pi and to upstream vendor behavior, but adds a curated defaul
 - Auto mode for hands-off execution when a project allows it.
 - Persistent goals that continue across agent turns until they are completed, paused, or blocked.
 - Findings-first local code review with `/review` for current workspace changes.
+- Headless execution with plain text, JSON, or streaming JSON output for scripts and CI.
+- Saved-session pickers, latest-session shortcuts, and conversation forks.
 - Automatic conversation compaction for long sessions, plus `/compact` when you want to free context space immediately.
 - Sandboxing defaults that make local execution practical while keeping controls visible.
 - Global and project-local configuration overrides.
@@ -58,6 +60,7 @@ feature exposed by Codex and Claude Code. It intentionally does not implement:
 - Vim or other modal terminal editing modes. The terminal input experience stays simple and conventional.
 - Jupyter notebook parsing or editing. Export notebooks to a plain-text format before asking Rig to read them.
 - Persistent command allow/deny history. Auto mode reviews each sensitive action against the current user request instead of maintaining a legacy command execution policy.
+- A separate Rig login flow. Rig uses credentials managed by the system Codex and Claude Code installations.
 - Claude Code's extended skill runtime. Rig follows Codex skill discovery and instruction semantics without hooks, model overrides, or executable skill metadata.
 - Niche parity features whose main value is matching a rarely used upstream flag, command, protocol, or edge case. New parity work should solve a common user need and fit rig's simpler product model.
 
@@ -101,6 +104,58 @@ pnpm run web
 The `web` command starts or reuses the local daemon, serves the SPA, proxies `/api/*`
 to the daemon socket, and routes the app through Portless at
 `https://web.rig.localhost`.
+
+### Authentication
+
+Rig does not have its own login command. For Codex and Claude models, it uses the
+credentials already managed by the system Codex and Claude Code installations.
+Sign in with Codex or Claude Code before using the corresponding provider in Rig.
+
+### Headless execution
+
+Use `rig exec` to run an agent without opening the terminal interface. Pass the
+prompt as arguments or pipe it through standard input:
+
+```sh
+rig exec "Review the current changes"
+printf 'Run the tests and fix failures' | rig exec
+```
+
+Use `--json` for one machine-readable result or `--stream-json` for newline-delimited
+session events followed by the final result:
+
+```sh
+rig exec --json "Summarize this repository"
+rig exec --stream-json "Run the test suite"
+```
+
+Headless runs create normal persisted sessions. Continue the most recent session in
+the current directory with `--last`, resume a specific session with `--resume`, or
+branch from either one with `--fork`:
+
+```sh
+rig exec --last "Continue with the next issue"
+rig exec --resume SESSION_ID "Try the alternative approach"
+rig exec --last --fork "Explore a separate solution"
+```
+
+### Saved sessions
+
+Run `rig resume` without an identifier to choose from saved sessions in the current
+directory. Use `--last` to skip the picker and `--all` to include sessions from
+other directories. `rig fork` accepts the same selectors and opens a new session
+with a copy of the selected conversation:
+
+```sh
+rig resume
+rig resume --last
+rig resume --all
+rig fork --last
+rig fork SESSION_ID
+```
+
+The model and provider can be changed between responses from the terminal or web
+model picker. They remain temporarily unavailable while a response is running.
 
 ### Amazon Bedrock
 

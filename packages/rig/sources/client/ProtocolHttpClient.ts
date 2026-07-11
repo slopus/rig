@@ -11,6 +11,7 @@ import type {
     CreateSessionRequest,
     CreateSessionResponse,
     EventId,
+    ForkSessionResponse,
     HealthResponse,
     GoalSessionResponse,
     ListModelsResponse,
@@ -134,6 +135,10 @@ export class ProtocolHttpClient {
 
     createSession(request: CreateSessionRequest): Promise<CreateSessionResponse> {
         return this.#requestJson("POST", "/sessions", request);
+    }
+
+    forkSession(sessionId: string): Promise<ForkSessionResponse> {
+        return this.#requestJson("POST", `/sessions/${encodeURIComponent(sessionId)}/fork`);
     }
 
     health(): Promise<HealthResponse> {

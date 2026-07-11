@@ -124,7 +124,7 @@ describe("RemoteAgent", () => {
         const watchSessionEvents = vi.fn(async (options) => {
             await options.onEvent({
                 createdAt: 1,
-                data: { runId: "run-1", stopReason: "stop" },
+                data: { modelLocked: false, runId: "run-1", stopReason: "stop" },
                 id: "event-finished",
                 sessionId: session.id,
                 type: "run_finished",
@@ -143,6 +143,66 @@ describe("RemoteAgent", () => {
             displayText: "/review",
             text: "/review",
         });
+    });
+
+    it("keeps models locked across effort changes and queued run boundaries", () => {
+        const model = defineModel({
+            id: "openai/test",
+            name: "Test model",
+            thinkingLevels: ["off", "high"],
+            defaultThinkingLevel: "off",
+        });
+        const session = protocolSession(model);
+        const agent = new RemoteAgent({
+            client: {} as ProtocolHttpClient,
+            context: createJustBashToolHarness().context,
+            session,
+        });
+        agent.applySessionEvent({
+            createdAt: 1,
+            data: {
+                displayText: "Queued work",
+                message: {
+                    blocks: [{ text: "Queued work", type: "text" }],
+                    id: "m1",
+                    role: "user",
+                },
+                runId: "run-1",
+            },
+            id: "event-submitted",
+            sessionId: session.id,
+            type: "message_submitted",
+        });
+        agent.applySessionEvent({
+            createdAt: 2,
+            data: {
+                effort: "high",
+                modelId: model.id,
+                snapshot: { ...session.snapshot, effort: "high" },
+            },
+            id: "event-effort",
+            sessionId: session.id,
+            type: "effort_changed",
+        });
+        expect(agent.canChangeModel).toBe(false);
+
+        agent.applySessionEvent({
+            createdAt: 3,
+            data: { modelLocked: true, runId: "run-1", stopReason: "stop" },
+            id: "event-finished-queued",
+            sessionId: session.id,
+            type: "run_finished",
+        });
+        expect(agent.canChangeModel).toBe(false);
+
+        agent.applySessionEvent({
+            createdAt: 4,
+            data: { modelLocked: false, runId: "run-2", stopReason: "stop" },
+            id: "event-finished-idle",
+            sessionId: session.id,
+            type: "run_finished",
+        });
+        expect(agent.canChangeModel).toBe(true);
     });
 });
 

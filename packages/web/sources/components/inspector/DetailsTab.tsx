@@ -85,7 +85,7 @@ export function DetailsTab(props: DetailsTabProps) {
                     <p className="text-xs text-muted-foreground">
                         {isSubagent
                             ? "The model cannot be changed for a completed subagent step."
-                            : "The model is locked for this session."}
+                            : "Wait for the active response to finish before changing models."}
                     </p>
                 )}
             </DetailField>

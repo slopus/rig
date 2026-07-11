@@ -460,6 +460,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
         if (event.type === "run_finished") {
             this.#running = false;
+            this.#modelLocked = this.#pendingPrompts.length > 0;
             this.#statusText =
                 event.data.stopReason === "stop" ? "Idle" : `Stopped: ${event.data.stopReason}`;
             this.#stopActivityAnimation();
@@ -474,6 +475,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
         if (event.type === "run_error") {
             this.#running = false;
+            this.#modelLocked = this.#pendingPrompts.length > 0;
             this.#statusText = "Error";
             this.#stopActivityAnimation();
             this.#runningToolCallIds.clear();
@@ -2022,7 +2024,7 @@ export class CodingAssistantApp implements Component, Focusable {
         const panel = createSelectionPanel({
             title: "Choose Model",
             subtitle: this.#modelLocked
-                ? "Model is locked for this session"
+                ? "Wait for the active response to finish"
                 : "Enter selects, Esc cancels",
             selectedValue,
             items: choices.map((choice) => ({
@@ -2053,7 +2055,7 @@ export class CodingAssistantApp implements Component, Focusable {
                     this.#appendEntry({
                         role: "event",
                         title: "model",
-                        text: "Model cannot be changed after the first message. Use /effort to change reasoning.",
+                        text: "Wait for the active response to finish before changing models.",
                     });
                     this.#closeSelectionPanel();
                     this.#requestRender();

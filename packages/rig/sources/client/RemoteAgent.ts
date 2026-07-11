@@ -332,18 +332,23 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         }
 
         if (event.type === "run_started") {
-            this.#session = { ...this.#session, status: "running" };
+            this.#session = { ...this.#session, modelLocked: true, status: "running" };
             return;
         }
 
         if (event.type === "run_error") {
-            this.#session = { ...this.#session, status: "error" };
+            this.#session = {
+                ...this.#session,
+                modelLocked: event.data.modelLocked,
+                status: "error",
+            };
             return;
         }
 
         if (event.type === "run_finished") {
             this.#session = {
                 ...this.#session,
+                modelLocked: event.data.modelLocked,
                 status: event.data.stopReason === "aborted" ? "aborted" : "completed",
             };
             return;
@@ -362,10 +367,16 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         if (event.type === "model_changed" || event.type === "effort_changed") {
             this.#modelId = event.data.modelId;
             this.#providerId = event.data.snapshot.providerId;
+            this.#models =
+                this.#modelCatalog?.providers.find(
+                    (provider) => provider.providerId === this.#providerId,
+                )?.models ?? this.#models;
             this.#session = {
                 ...this.#session,
                 ...(event.data.effort !== undefined ? { effort: event.data.effort } : {}),
+                modelLocked: event.type === "model_changed" ? false : this.#session.modelLocked,
                 modelId: event.data.modelId,
+                models: this.#models,
                 providerId: event.data.snapshot.providerId,
                 snapshot: event.data.snapshot,
             };

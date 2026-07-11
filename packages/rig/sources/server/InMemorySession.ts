@@ -304,6 +304,7 @@ export class InMemorySession {
         for (const queuedRunId of queuedRunIds) {
             this.#append("run_error", {
                 errorMessage: "The queued run was stopped.",
+                modelLocked: this.#modelLocked(),
                 runId: queuedRunId,
             });
         }
@@ -328,11 +329,8 @@ export class InMemorySession {
             throw new Error(`Unknown model '${request.modelId}'${providerDescription}.`);
         }
 
-        if (
-            this.#modelLocked() &&
-            (request.modelId !== this.#modelId || providerId !== this.#providerId)
-        ) {
-            throw new Error("Model cannot be changed after the first message in a session.");
+        if (this.#activeRun !== undefined || this.#queue.length > 0) {
+            throw new Error("Wait for the active response to finish before changing models.");
         }
 
         const model = this.#ensureKnownModel(request.modelId, providerId);
@@ -343,10 +341,11 @@ export class InMemorySession {
             );
         }
 
-        if (this.#runtime !== undefined) {
-            throw new Error("Model cannot be changed after the session runtime has started.");
-        }
-
+        this.#syncContextMessages();
+        void this.#runtime?.processManager.killAll({ forceAfterMs: 500 });
+        this.#runtime = undefined;
+        this.#mcpLoaded = false;
+        this.#tools = [];
         this.#modelId = model.id;
         this.#providerId = providerId;
         this.#effort = request.effort ?? model.defaultThinkingLevel;
@@ -358,6 +357,43 @@ export class InMemorySession {
             snapshot: this.#agentSnapshot(),
         });
         return this.snapshot();
+    }
+
+    createForkState(): PersistedSessionState {
+        if (this.isSubagent()) {
+            throw new Error("Subagent histories cannot be forked.");
+        }
+        if (this.#activeRun !== undefined || this.#queue.length > 0) {
+            throw new Error("Wait for the active response to finish before forking this session.");
+        }
+
+        this.#syncContextMessages();
+        const state = this.state();
+        const id = createId();
+        const {
+            activeRunId: _activeRunId,
+            goal: _goal,
+            interruption: _interruption,
+            title: _title,
+            titleError: _titleError,
+            ...rest
+        } = state;
+        const title = state.title === undefined ? undefined : `${state.title} (fork)`;
+        return {
+            ...rest,
+            agent: { depth: 0, rootSessionId: id, type: "primary" },
+            agentId: createId(),
+            id,
+            lastMessageAt: this.#now(),
+            messages: state.messages.map((message) => ({ ...message })),
+            nextTaskId: 1,
+            queuedRuns: [],
+            status: "idle",
+            tasks: [],
+            titleStatus: title === undefined ? "idle" : "ready",
+            tools: [],
+            ...(title !== undefined ? { title } : {}),
+        };
     }
 
     changeEffort(request: ChangeEffortRequest): ProtocolSession {
@@ -655,6 +691,7 @@ export class InMemorySession {
             for (const runId of new Set(interruptedRunIds)) {
                 this.#append("run_error", {
                     errorMessage: interruption.message,
+                    modelLocked: this.#modelLocked(),
                     runId,
                 });
             }
@@ -1152,6 +1189,7 @@ export class InMemorySession {
         }
         this.#append("run_finished", {
             agentRunId: result.runId,
+            modelLocked: this.#modelLocked(),
             runId,
             stopReason,
         });
@@ -1301,7 +1339,7 @@ export class InMemorySession {
     }
 
     #modelLocked(): boolean {
-        return this.#messages.some((message) => !message.isPartial);
+        return this.#activeRun !== undefined || this.#queue.length > 0;
     }
 
     #selectedModel(): Model {
@@ -1396,6 +1434,7 @@ export class InMemorySession {
             }
             this.#append("run_error", {
                 errorMessage: error instanceof Error ? error.message : String(error),
+                modelLocked: this.#modelLocked(),
                 runId: queued.runId,
             });
         } finally {

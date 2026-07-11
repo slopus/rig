@@ -439,7 +439,7 @@ describe("CodingAssistantApp", () => {
         expect(agent.model.id).toBe(kimi.id);
     });
 
-    it("keeps model choices visible but locked after a session starts", () => {
+    it("keeps model choices visible but locked during an active response", () => {
         const smallModel = defineModel({
             id: "openai/gpt-small",
             name: "GPT Small",
@@ -478,17 +478,19 @@ describe("CodingAssistantApp", () => {
 
         const modelMenu = stripAnsi(app.render(100).join("\n"));
         expect(modelMenu).toContain("Choose Model");
-        expect(modelMenu).toContain("Model is locked for this session");
+        expect(modelMenu).toContain("Wait for the active response to finish");
         expect(modelMenu).toContain("GPT Small");
         expect(modelMenu).toContain("GPT Pro");
-        expect(modelMenu).toContain("Locked for this session");
+        expect(modelMenu).toContain("Unavailable while running");
 
         app.handleInput("\x1b[B");
         app.handleInput("\r");
 
         const rendered = stripAnsi(app.render(100).join("\n"));
         expect(agent.model.id).toBe(smallModel.id);
-        expect(rendered).toContain("Model cannot be changed after the first message.");
+        expect(rendered).toContain(
+            "Wait for the active response to finish before changing models.",
+        );
     });
 
     it("changes only reasoning from the effort command", () => {
@@ -1476,7 +1478,12 @@ describe("CodingAssistantApp", () => {
             },
             {
                 createdAt: 1_700_000_000_002,
-                data: { agentRunId: "agent-run-1", runId: "run-1", stopReason: "stop" },
+                data: {
+                    agentRunId: "agent-run-1",
+                    modelLocked: false,
+                    runId: "run-1",
+                    stopReason: "stop",
+                },
                 id: "018bcfe5-6802-7001-8000-000000000003",
                 sessionId: "session-1",
                 type: "run_finished",

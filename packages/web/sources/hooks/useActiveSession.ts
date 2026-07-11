@@ -193,6 +193,14 @@ function reduceServerEvent(state: ReducerState, event: SessionEvent): ReducerSta
                     event.data.message,
                 ),
                 submittedRunIds: [...state.submittedRunIds, event.data.runId],
+                session:
+                    state.session === undefined
+                        ? undefined
+                        : {
+                              ...state.session,
+                              modelLocked: true,
+                              status: state.session.status === "running" ? "running" : "queued",
+                          },
             };
         }
         case "run_started": {
@@ -202,7 +210,7 @@ function reduceServerEvent(state: ReducerState, event: SessionEvent): ReducerSta
                 runError: undefined,
                 session:
                     state.session !== undefined
-                        ? { ...state.session, status: "running" }
+                        ? { ...state.session, modelLocked: true, status: "running" }
                         : undefined,
             };
         }
@@ -232,6 +240,7 @@ function reduceServerEvent(state: ReducerState, event: SessionEvent): ReducerSta
                     state.session !== undefined
                         ? {
                               ...state.session,
+                              modelLocked: event.data.modelLocked,
                               status: event.data.stopReason === "aborted" ? "aborted" : "completed",
                           }
                         : undefined,
@@ -246,7 +255,11 @@ function reduceServerEvent(state: ReducerState, event: SessionEvent): ReducerSta
                     streamingPartial: undefined,
                     session:
                         state.session !== undefined
-                            ? { ...state.session, status: "aborted" }
+                            ? {
+                                  ...state.session,
+                                  modelLocked: event.data.modelLocked,
+                                  status: "aborted",
+                              }
                             : undefined,
                 };
             }
@@ -256,7 +269,13 @@ function reduceServerEvent(state: ReducerState, event: SessionEvent): ReducerSta
                 runError: event.data.errorMessage,
                 streamingPartial: undefined,
                 session:
-                    state.session !== undefined ? { ...state.session, status: "error" } : undefined,
+                    state.session !== undefined
+                        ? {
+                              ...state.session,
+                              modelLocked: event.data.modelLocked,
+                              status: "error",
+                          }
+                        : undefined,
             };
         }
         case "abort_requested": {
@@ -299,6 +318,8 @@ function reduceServerEvent(state: ReducerState, event: SessionEvent): ReducerSta
             const session: ProtocolSession = {
                 ...state.session,
                 modelId: event.data.modelId,
+                modelLocked: event.type === "model_changed" ? false : state.session.modelLocked,
+                providerId: event.data.snapshot.providerId,
                 snapshot: event.data.snapshot,
             };
             if (event.data.effort !== undefined) {

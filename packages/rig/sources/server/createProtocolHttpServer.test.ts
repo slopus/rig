@@ -237,6 +237,25 @@ describe("createProtocolHttpServer", () => {
         }
     });
 
+    it("forks a completed session into a new resumable session", async () => {
+        const { client, close } = await startServer();
+        try {
+            const created = await client.createSession({ cwd: "/tmp/rig-protocol-test" });
+            const forked = await client.forkSession(created.session.id);
+
+            expect(forked.session.id).not.toBe(created.session.id);
+            expect(forked.session.agent).toMatchObject({
+                depth: 0,
+                rootSessionId: forked.session.id,
+                type: "primary",
+            });
+            expect(forked.session.cwd).toBe(created.session.cwd);
+            expect(forked.session.modelLocked).toBe(false);
+        } finally {
+            await close();
+        }
+    });
+
     it("searches files in the session workspace through the daemon", async () => {
         const search = vi.fn(async () => [
             { fileName: "CodingAssistantApp.ts", path: "sources/app/CodingAssistantApp.ts" },

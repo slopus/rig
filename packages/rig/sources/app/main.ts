@@ -1,10 +1,14 @@
 import { runDaemonCommand, type DaemonCommand } from "./runDaemonCommand.js";
 import { runApp, type RunAppOptions } from "./runApp.js";
 import { runMonit } from "./runMonit.js";
+import { runExec } from "./runExec.js";
 import { runWebCommand } from "./runWebCommand.js";
 import { runWebServer } from "./web/runWebServer.js";
 import { parsePermissionMode } from "../permissions/index.js";
 import { runLocalProtocolServer } from "../server/index.js";
+import { parseExecCommand } from "./parseExecCommand.js";
+import { parseSessionCommand } from "./parseSessionCommand.js";
+import { resolveSessionCommand } from "./resolveSessionCommand.js";
 
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
     if (argv.includes("--web-server")) {
@@ -27,18 +31,24 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     const options: RunAppOptions = {
         cwd: process.cwd(),
     };
-    const [command, sessionId] = argv;
-    if (command === "resume") {
-        if (sessionId === undefined || sessionId.length === 0) {
-            throw new Error("Usage: rig resume <session-id>");
-        }
-        options.resumeSessionId = sessionId;
+    const [command, ...commandArgs] = argv;
+    if (command === "exec") {
+        await runExec(parseExecCommand(commandArgs));
+        return;
+    }
+    if (command === "resume" || command === "fork") {
+        options.resumeSessionId = await resolveSessionCommand({
+            command,
+            cwd: options.cwd ?? process.cwd(),
+            selection: parseSessionCommand(commandArgs),
+        });
     }
     if (command === "daemon") {
-        if (!isDaemonCommand(sessionId)) {
+        const daemonCommand = commandArgs[0];
+        if (!isDaemonCommand(daemonCommand)) {
             throw new Error("Usage: rig daemon <start|stop|status>");
         }
-        await runDaemonCommand(sessionId);
+        await runDaemonCommand(daemonCommand);
         return;
     }
     if (command === "monit") {

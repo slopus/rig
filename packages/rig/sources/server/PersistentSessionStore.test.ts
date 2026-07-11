@@ -500,7 +500,7 @@ describe("PersistentSessionStore", () => {
         }
     });
 
-    it("locks restored sessions to their original model but allows effort changes", async () => {
+    it("changes models after restoring an existing conversation", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         const catalog = testModelCatalog();
         try {
@@ -534,27 +534,60 @@ describe("PersistentSessionStore", () => {
             try {
                 const restored = restoredStore.get(state.id);
 
-                expect(restored?.snapshot().modelLocked).toBe(true);
-                expect(() =>
-                    restored?.changeModel({ effort: "high", modelId: "anthropic/test" }),
-                ).toThrow("Model cannot be changed");
-
-                restored?.changeEffort({ effort: "high" });
+                expect(restored?.snapshot().modelLocked).toBe(false);
+                restored?.changeModel({ effort: "high", modelId: "anthropic/test" });
 
                 const snapshot = restored?.snapshot();
                 const events = restored?.events.since(undefined) ?? [];
                 expect(snapshot).toMatchObject({
                     effort: "high",
-                    modelId: "openai/test",
-                    modelLocked: true,
+                    modelId: "anthropic/test",
+                    modelLocked: false,
+                    providerId: "claude-sdk",
                 });
                 expect(events.at(-1)).toMatchObject({
                     data: {
                         effort: "high",
-                        modelId: "openai/test",
+                        modelId: "anthropic/test",
                     },
-                    type: "effort_changed",
+                    type: "model_changed",
                 });
+            } finally {
+                restoredStore.close();
+            }
+        } finally {
+            await cleanup();
+        }
+    });
+
+    it("persists a forked conversation under a new session", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        try {
+            const store = new PersistentSessionStore({ databasePath });
+            const source = store.create({ cwd: "/tmp/rig-persistent-session-test" });
+            const state = source.state();
+            const message = textUserMessage("message-1", "Preserve this conversation.");
+            store.upsertMessage(source.id, {
+                isPartial: false,
+                message,
+                position: 0,
+                runId: "run-1",
+            });
+            store.close();
+
+            const forkStore = new PersistentSessionStore({ databasePath });
+            const forked = forkStore.fork(state.id);
+            expect(forked?.id).not.toBe(state.id);
+            expect(forked?.snapshot().snapshot.messages).toEqual([message]);
+            const forkedId = forked?.id;
+            forkStore.close();
+
+            const restoredStore = new PersistentSessionStore({ databasePath });
+            try {
+                expect(forkedId).toBeDefined();
+                expect(restoredStore.get(forkedId ?? "")?.snapshot().snapshot.messages).toEqual([
+                    message,
+                ]);
             } finally {
                 restoredStore.close();
             }

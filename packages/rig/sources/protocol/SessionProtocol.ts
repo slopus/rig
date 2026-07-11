@@ -147,6 +147,10 @@ export interface CreateSessionResponse {
     session: ProtocolSession;
 }
 
+export interface ForkSessionResponse {
+    session: ProtocolSession;
+}
+
 export interface CompactSessionResponse {
     result: AgentCompactionResult;
     session: ProtocolSession;
@@ -265,6 +269,7 @@ export type RunFinishedEvent = BaseSessionEvent<
     "run_finished",
     {
         agentRunId?: string;
+        modelLocked: boolean;
         runId: string;
         stopReason: StopReason;
     }
@@ -274,6 +279,7 @@ export type RunErrorEvent = BaseSessionEvent<
     "run_error",
     {
         errorMessage: string;
+        modelLocked: boolean;
         runId: string;
     }
 >;
