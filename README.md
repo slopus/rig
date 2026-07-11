@@ -48,6 +48,15 @@ rig is intentionally opinionated, but not locked down:
 - Close to upstream. Tool definitions and model expectations should track vendor semantics closely.
 - Less ceremony. Common agent features should not require a custom setup ritual on every machine.
 
+## Deliberate non-goals
+
+rig aims for the best mainstream coding-agent experience, not a union of every
+feature exposed by Codex and Claude Code. It intentionally does not implement:
+
+- A dedicated Plan mode. Planning remains part of the normal agent workflow instead of a separate permission mode or interaction state.
+- Vim or other modal terminal editing modes. The terminal input experience stays simple and conventional.
+- Niche parity features whose main value is matching a rarely used upstream flag, command, protocol, or edge case. New parity work should solve a common user need and fit rig's simpler product model.
+
 ## Intended experience
 
 Install rig once, open a project, and get a capable coding harness with prompts, tools, subagents, workflows, workers, automation, and sandboxing already wired together.

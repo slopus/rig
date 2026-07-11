@@ -4,6 +4,10 @@
 
 Build the best combined coding-agent experience from Codex and Claude Code, with a strong focus on simplicity, thoughtful defaults, and a polished user experience. Prioritize important, widely useful workflows over obscure features or exhaustive parity.
 
+## Deliberate non-goals
+
+Do not implement a dedicated Plan mode, Vim or other modal editing modes, or niche compatibility features whose primary value is exhaustive upstream parity. Planning should remain part of the normal agent workflow. Only reconsider these boundaries when the user explicitly changes the product direction.
+
 ## Reference sources
 
 Coding-agent source trees are located at `~/Developer/coding-assistant-sources`. Use the Codex and Claude Code sources there as the implementation reference whenever adding, comparing, or updating provider-aligned behavior. Adapt their strongest ideas to rig's simpler product model instead of copying complexity that does not improve the experience.
