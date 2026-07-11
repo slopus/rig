@@ -14,6 +14,7 @@ import { NativeProxessManager } from "../processes/index.js";
 import { createBedrockProvider } from "../providers/bedrock.js";
 import { createClaudeSdkProvider } from "../providers/claude-sdk.js";
 import { createCodexProvider, type CodexProviderOptions } from "../providers/codex.js";
+import { createGymProvider } from "../providers/createGymProvider.js";
 import { getBedrockModelRoute } from "../providers/getBedrockModelRoute.js";
 import { modelOpenaiGpt56Sol } from "../providers/models.js";
 import { claudeCodeTools, claudeCollaborationTools } from "../tools/claude/index.js";
@@ -70,7 +71,8 @@ export function createCodingAssistantAgent(
                 : "codex");
     const bedrockRoute = providerId === "bedrock" ? getBedrockModelRoute(modelId) : undefined;
     const usesClaudeTools = providerId === "claude-sdk" || bedrockRoute?.provider === "anthropic";
-    const usesCodexTools = providerId === "codex" || bedrockRoute?.provider === "openai";
+    const usesCodexTools =
+        providerId === "codex" || providerId === "gym" || bedrockRoute?.provider === "openai";
     const baseTools: readonly AnyDefinedTool[] = usesClaudeTools
         ? claudeCodeTools
         : usesCodexTools
@@ -96,9 +98,11 @@ export function createCodingAssistantAgent(
                 })
               : providerId === "codex"
                 ? createCodexProvider(toCodexProviderOptions(options))
-                : (() => {
-                      throw new Error(`Unknown inference provider '${providerId}'.`);
-                  })();
+                : providerId === "gym"
+                  ? createGymProviderFromEnvironment(options.env ?? process.env)
+                  : (() => {
+                        throw new Error(`Unknown inference provider '${providerId}'.`);
+                    })();
     const agentOptions: AgentOptions = {
         provider,
         modelId,
@@ -123,6 +127,17 @@ export function createCodingAssistantAgent(
         processManager,
         provider,
     };
+}
+
+function createGymProviderFromEnvironment(env: NodeJS.ProcessEnv) {
+    const endpoint = env.RIG_GYM_INFERENCE_URL;
+    if (endpoint === undefined || endpoint.trim().length === 0) {
+        throw new Error("RIG_GYM_INFERENCE_URL is required for the gym provider.");
+    }
+    return createGymProvider({
+        endpoint,
+        ...(env.RIG_GYM_TOKEN === undefined ? {} : { token: env.RIG_GYM_TOKEN }),
+    });
 }
 
 function toCodexProviderOptions(options: CreateCodingAssistantAgentOptions): CodexProviderOptions {

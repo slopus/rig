@@ -4,6 +4,7 @@ import type { ModelCatalog } from "../protocol/index.js";
 import { createBedrockProvider } from "../providers/bedrock.js";
 import { createClaudeSdkProvider } from "../providers/claude-sdk.js";
 import { createCodexProvider } from "../providers/codex.js";
+import { createGymProvider } from "../providers/createGymProvider.js";
 import { modelOpenaiGpt56Sol } from "../providers/models.js";
 import { readBedrockBearerToken } from "../providers/readBedrockBearerToken.js";
 import type { Provider } from "../providers/types.js";
@@ -29,6 +30,16 @@ export function createModelCatalog(options: CreateModelCatalogOptions = {}): Mod
             tools: claudeCodeTools,
         }),
     ];
+    const gymEndpoint = env.RIG_GYM_INFERENCE_URL;
+    const gymEnabled = gymEndpoint !== undefined && gymEndpoint.trim().length > 0;
+    if (gymEnabled) {
+        providers.unshift(
+            createGymProvider({
+                endpoint: gymEndpoint,
+                ...(env.RIG_GYM_TOKEN === undefined ? {} : { token: env.RIG_GYM_TOKEN }),
+            }),
+        );
+    }
     const bedrockBearerToken = readBedrockBearerToken(env);
     if (bedrockBearerToken !== undefined) {
         providers.push(
@@ -40,8 +51,8 @@ export function createModelCatalog(options: CreateModelCatalogOptions = {}): Mod
     }
 
     return {
-        defaultModelId: modelOpenaiGpt56Sol.id,
-        defaultProviderId: "codex",
+        defaultModelId: gymEnabled ? "openai/gym" : modelOpenaiGpt56Sol.id,
+        defaultProviderId: gymEnabled ? "gym" : "codex",
         models: uniqueModelsById(providers.flatMap((provider) => provider.models)),
         providers: providers.map((provider) => ({
             providerId: provider.id,

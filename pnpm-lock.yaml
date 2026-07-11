@@ -24,6 +24,37 @@ importers:
         specifier: ^5.8.3
         version: 5.9.3
 
+  gym:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.10
+        version: 24.13.2
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)(yaml@2.9.0)
+
+  packages/gym:
+    dependencies:
+      '@lydell/node-pty':
+        specifier: 1.2.0-beta.12
+        version: 1.2.0-beta.12
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.10
+        version: 24.13.2
+      tsx:
+        specifier: ^4.23.0
+        version: 4.23.0
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)(yaml@2.9.0)
+
   packages/rig:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
@@ -861,6 +892,39 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@lydell/node-pty-darwin-arm64@1.2.0-beta.12':
+    resolution: {integrity: sha512-tqaifcY9Cr41SblO1+FLzh8oxxtkNhuW9Dhl22lKme9BreYvKvxEZcdPIXTuqkJc5tagOEC4QHShKmJjLyLXLQ==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@lydell/node-pty-darwin-x64@1.2.0-beta.12':
+    resolution: {integrity: sha512-4LrS5pCJwqHKDVf1zS2gyNV0m4hKAXch+XZNhbZ6LY8uwVL8BhchzQBO40Os5anuRxRCWzHpw4Sp64Ie8q7E4Q==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@lydell/node-pty-linux-arm64@1.2.0-beta.12':
+    resolution: {integrity: sha512-Sx+A71x5BDGHt9ansfrtGxwq2VFVDWvJUAdlUL0Hv0qeiJUfts+hgopx+CgT4PSwahKjdEgtu0+FAfY9rICKRw==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@lydell/node-pty-linux-x64@1.2.0-beta.12':
+    resolution: {integrity: sha512-bJzs94njofYhGg/UDqW1nj0dtvvu+2OvxMY+RlLS1T17VgcktKoIR6PuenTwE5HJ/D6StCPADmXcT0nNsCKmIQ==}
+    cpu: [x64]
+    os: [linux]
+
+  '@lydell/node-pty-win32-arm64@1.2.0-beta.12':
+    resolution: {integrity: sha512-p7POgjVEiFaBC3/y+AKuV1FzePCsJ6HmZDv2XK+jBZSfwP8+uBAw181ZiKYN1YuRa/XpmBGaWezcI8hZkbW++g==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@lydell/node-pty-win32-x64@1.2.0-beta.12':
+    resolution: {integrity: sha512-IDFa00g7qUDGUYgByrUBJtC+mOjYVt/8KYyWivCg5JjGOHbBUACUQZLl0jTWmnr+tld/UyTpX90a2PY6oTVtRw==}
+    cpu: [x64]
+    os: [win32]
+
+  '@lydell/node-pty@1.2.0-beta.12':
+    resolution: {integrity: sha512-qIK890UwPupoj07osVvgOIa++1mxeHbcGry4PKRHhNVNs81V2SCG34eJr46GybiOmBtc8Sj5PB1/GGM5PL549g==}
 
   '@mariozechner/clipboard-darwin-arm64@0.3.9':
     resolution: {integrity: sha512-BfgV7vCEWZwJwZJw03r6bP5+tf0iI/ANuQYCxi9RNn7FrWB3yzGuMKCrNLRl6V761vXRdL8+OqZ0wd4TqlsNOQ==}
@@ -5129,6 +5193,33 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@lydell/node-pty-darwin-arm64@1.2.0-beta.12':
+    optional: true
+
+  '@lydell/node-pty-darwin-x64@1.2.0-beta.12':
+    optional: true
+
+  '@lydell/node-pty-linux-arm64@1.2.0-beta.12':
+    optional: true
+
+  '@lydell/node-pty-linux-x64@1.2.0-beta.12':
+    optional: true
+
+  '@lydell/node-pty-win32-arm64@1.2.0-beta.12':
+    optional: true
+
+  '@lydell/node-pty-win32-x64@1.2.0-beta.12':
+    optional: true
+
+  '@lydell/node-pty@1.2.0-beta.12':
+    optionalDependencies:
+      '@lydell/node-pty-darwin-arm64': 1.2.0-beta.12
+      '@lydell/node-pty-darwin-x64': 1.2.0-beta.12
+      '@lydell/node-pty-linux-arm64': 1.2.0-beta.12
+      '@lydell/node-pty-linux-x64': 1.2.0-beta.12
+      '@lydell/node-pty-win32-arm64': 1.2.0-beta.12
+      '@lydell/node-pty-win32-x64': 1.2.0-beta.12
 
   '@mariozechner/clipboard-darwin-arm64@0.3.9':
     optional: true

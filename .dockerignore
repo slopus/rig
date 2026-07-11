@@ -1,0 +1,6 @@
+.context
+.git
+**/dist
+**/node_modules
+**/target
+coverage
