@@ -6,6 +6,7 @@ import {
     formatUnifiedExecOutput,
     unifiedExecOutputSchema,
 } from "./unifiedExecOutput.js";
+import { readSessionWithProgress } from "../utils/readSessionWithProgress.js";
 
 export const codexWriteStdinTool = defineTool({
     name: "write_stdin",
@@ -54,7 +55,10 @@ export const codexWriteStdinTool = defineTool({
         const maximumWaitMs = chars.length > 0 ? 30_000 : 300_000;
         const snapshot =
             interrupted ??
-            (await context.bash.readSession(session_id, {
+            (await readSessionWithProgress({
+                bash: context.bash,
+                ...(execution.onProgress === undefined ? {} : { onProgress: execution.onProgress }),
+                sessionId: session_id,
                 ...(execution.signal === undefined ? {} : { signal: execution.signal }),
                 waitMs: Math.max(0, Math.min(maximumWaitMs, yield_time_ms ?? defaultWaitMs)),
             }));

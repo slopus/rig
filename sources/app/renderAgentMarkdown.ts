@@ -1,6 +1,7 @@
 import { Markdown, truncateToWidth, type DefaultTextStyle } from "@earendil-works/pi-tui";
 
 import { createAgentMarkdownTheme } from "./createAgentMarkdownTheme.js";
+import { sanitizeTerminalText } from "./sanitizeTerminalText.js";
 
 const RESET = "\x1b[0m";
 const TEXT_FG = "\x1b[38;5;252m";
@@ -17,7 +18,7 @@ export interface RenderAgentMarkdownOptions {
 
 export function renderAgentMarkdown(options: RenderAgentMarkdownOptions): string[] {
     const width = Math.max(1, options.width);
-    const text = options.text.trimEnd();
+    const text = sanitizeTerminalText(options.text).trimEnd();
 
     if (text.length === 0) {
         return [" ".repeat(width)];

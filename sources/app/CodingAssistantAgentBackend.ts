@@ -28,6 +28,7 @@ export interface CodingAssistantAgentBackend {
         content: string | readonly ContentBlock[],
         options?: AgentRunOptions,
     ): Promise<AgentRunResult>;
+    steer(content: string | readonly ContentBlock[], options?: AgentRunOptions): Promise<void>;
     setEffort(effort: string | undefined): void;
     setModel(modelId: string, effort: string | undefined, providerId?: string): void;
     setPermissionMode(mode: PermissionMode): void;

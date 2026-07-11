@@ -37,6 +37,32 @@ describe("RemoteAgent", () => {
         expect(agent.permissionMode).toBe("read_only");
         expect(harness.context.permissions.mode).toBe("read_only");
     });
+
+    it("steers the active remote run through the dedicated endpoint", async () => {
+        const model = defineModel({
+            id: "openai/test",
+            name: "Test model",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const steerMessage = vi.fn(async () => ({
+            eventId: "event-2" as const,
+            runId: "run-1",
+            sessionId: "session-1",
+        }));
+        const agent = new RemoteAgent({
+            client: { steerMessage } as unknown as ProtocolHttpClient,
+            context: createJustBashToolHarness().context,
+            session: { ...protocolSession(model), status: "running" },
+        });
+
+        await agent.steer("Change direction.", { displayText: "Change direction." });
+
+        expect(steerMessage).toHaveBeenCalledWith("session-1", {
+            displayText: "Change direction.",
+            text: "Change direction.",
+        });
+    });
 });
 
 function protocolSession(model: ReturnType<typeof defineModel>): ProtocolSession {

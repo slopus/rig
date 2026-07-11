@@ -2,6 +2,7 @@ import { Type, type Static } from "@sinclair/typebox";
 
 import type { AgentContext } from "../../agent/context/AgentContext.js";
 import type { ContentBlock } from "../../agent/types.js";
+import { readSessionWithProgress } from "./readSessionWithProgress.js";
 
 export const shellToolOutputSchema = Type.Object({
     backgroundTaskId: Type.Optional(Type.String()),
@@ -17,6 +18,7 @@ export interface RunCommandOptions {
     cwd?: string;
     timeoutMs?: number;
     maxOutputBytes?: number;
+    onProgress?: (display: string) => void;
     signal?: AbortSignal;
 }
 
@@ -39,6 +41,30 @@ export async function runShellCommand(
     if (options.timeoutMs !== undefined) runOptions.timeoutMs = options.timeoutMs;
     if (options.maxOutputBytes !== undefined) runOptions.maxOutputBytes = options.maxOutputBytes;
     if (options.signal !== undefined) runOptions.signal = options.signal;
+    if (options.onProgress !== undefined) {
+        const { signal: _signal, ...sessionOptions } = runOptions;
+        const sessionId = await context.bash.startSession(sessionOptions);
+        const abort = () => void context.bash.killSession(sessionId);
+        options.signal?.addEventListener("abort", abort, { once: true });
+        if (options.signal?.aborted) abort();
+        try {
+            const snapshot = await readSessionWithProgress({
+                bash: context.bash,
+                onProgress: options.onProgress,
+                sessionId,
+                ...(options.signal === undefined ? {} : { signal: options.signal }),
+            });
+            if (snapshot === undefined) throw new Error("The shell session was not found.");
+            return {
+                stdout: snapshot.stdout,
+                stderr: snapshot.stderr,
+                exitCode: snapshot.exitCode,
+                timedOut: snapshot.timedOut,
+            };
+        } finally {
+            options.signal?.removeEventListener("abort", abort);
+        }
+    }
     return context.bash.run(runOptions);
 }
 

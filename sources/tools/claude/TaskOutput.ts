@@ -1,6 +1,7 @@
 import { Type } from "@sinclair/typebox";
 
 import { defineTool } from "../../agent/types.js";
+import { readSessionWithProgress } from "../utils/readSessionWithProgress.js";
 import { parseBackgroundTaskId } from "./parseBackgroundTaskId.js";
 
 const backgroundTaskSchema = Type.Object({
@@ -44,7 +45,10 @@ export const claudeTaskOutputTool = defineTool({
     }),
     execute: async ({ block = true, task_id, timeout = 30_000 }, context, execution) => {
         const sessionId = parseBackgroundTaskId(task_id);
-        const snapshot = await context.bash.readSession(sessionId, {
+        const snapshot = await readSessionWithProgress({
+            bash: context.bash,
+            ...(execution.onProgress === undefined ? {} : { onProgress: execution.onProgress }),
+            sessionId,
             ...(execution.signal === undefined ? {} : { signal: execution.signal }),
             waitMs: block ? timeout : 0,
         });

@@ -31,6 +31,7 @@ import type {
     SessionTitleStatus,
     SubmitMessageRequest,
     SubmitMessageResponse,
+    SteerMessageResponse,
 } from "../protocol/index.js";
 import type { Model, StopReason } from "../providers/types.js";
 import type { UserInputRequest, UserInputResponse } from "../user-input/index.js";
@@ -740,6 +741,39 @@ export class InMemorySession {
         return {
             eventId: event.id,
             runId,
+            sessionId: this.id,
+        };
+    }
+
+    steer(request: SubmitMessageRequest): SteerMessageResponse {
+        const activeRun = this.#activeRun;
+        if (activeRun === undefined) {
+            throw new Error("There is no active run to steer.");
+        }
+        const displayText = request.displayText ?? request.text;
+        const blocks: readonly ContentBlock[] = request.content ?? [
+            { type: "text", text: request.text },
+        ];
+        const userMessage: UserMessage = {
+            role: "user",
+            id: createId(),
+            blocks,
+        };
+
+        const agent = this.#ensureRuntime().agent;
+        if (agent.status === "running") agent.steerMessage(userMessage);
+        else agent.enqueueMessage(userMessage);
+        this.#interruption = undefined;
+        this.#lastMessageAt = this.#now();
+        this.#storeMessage(this.#messages.length, userMessage, false, activeRun.runId);
+        const event = this.#append("message_submitted", {
+            displayText,
+            message: userMessage,
+            runId: activeRun.runId,
+        });
+        return {
+            eventId: event.id,
+            runId: activeRun.runId,
             sessionId: this.id,
         };
     }

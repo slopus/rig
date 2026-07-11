@@ -56,7 +56,8 @@ describe("StartupStatusApp", () => {
         expect(tui.addChild).toHaveBeenCalledWith(app);
         expect(tui.start).toHaveBeenCalled();
         expect(tui.removeChild).toHaveBeenCalledWith(app);
-        expect(tui.requestRender).toHaveBeenCalledWith(true);
+        expect(tui.requestRender).toHaveBeenCalled();
+        expect(tui.requestRender).not.toHaveBeenCalledWith(true);
     });
 });
 

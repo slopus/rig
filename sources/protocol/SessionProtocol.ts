@@ -175,6 +175,9 @@ export interface SubmitMessageResponse {
     sessionId: string;
 }
 
+export type SteerMessageRequest = SubmitMessageRequest;
+export type SteerMessageResponse = SubmitMessageResponse;
+
 export interface ChangeModelRequest {
     effort?: string;
     modelId: string;

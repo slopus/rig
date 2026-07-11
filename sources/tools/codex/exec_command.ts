@@ -7,6 +7,7 @@ import {
     formatUnifiedExecOutput,
     unifiedExecOutputSchema,
 } from "./unifiedExecOutput.js";
+import { readSessionWithProgress } from "../utils/readSessionWithProgress.js";
 
 export const codexExecCommandTool = defineTool({
     name: "exec_command",
@@ -63,7 +64,10 @@ export const codexExecCommandTool = defineTool({
         if (workdir !== undefined) startOptions.cwd = workdir;
         if (shell !== undefined) startOptions.shell = shell;
         const sessionId = await context.bash.startSession(startOptions);
-        const snapshot = await context.bash.readSession(sessionId, {
+        const snapshot = await readSessionWithProgress({
+            bash: context.bash,
+            ...(execution.onProgress === undefined ? {} : { onProgress: execution.onProgress }),
+            sessionId,
             ...(execution.signal === undefined ? {} : { signal: execution.signal }),
             waitMs: Math.max(250, Math.min(30_000, yield_time_ms ?? 10_000)),
         });

@@ -1474,7 +1474,7 @@ describe("CodingAssistantApp", () => {
         expect(rendered).not.toContain("previous answer");
     });
 
-    it("cancels the model menu with Escape and still exits with Ctrl+C", async () => {
+    it("dismisses the model menu before Ctrl+C exits", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
             name: "GPT Test",
@@ -1509,6 +1509,9 @@ describe("CodingAssistantApp", () => {
         expect(stripAnsi(app.render(80).join("\n"))).toContain("Ask Rig to do anything");
 
         app.handleInput("\x1bm");
+        app.handleInput("\x03");
+        expect(tui.stop).not.toHaveBeenCalled();
+
         app.handleInput("\x03");
         await delay(30);
 
@@ -1547,6 +1550,8 @@ describe("CodingAssistantApp", () => {
 
         submit(app, "work");
         await started.promise;
+        app.handleInput("/");
+        expect(stripAnsi(app.render(80).join("\n"))).toContain("/model");
         app.handleInput("\x1b");
         await app.waitForIdle();
 
@@ -1559,6 +1564,105 @@ describe("CodingAssistantApp", () => {
         expect(rendered).not.toContain("message aborted");
         expect(rendered).not.toContain("Run aborted.");
         expect(rendered).not.toContain("Stopped: aborted");
+        expect(rendered).toContain("› /");
+    });
+
+    it("uses Enter to steer and Tab to queue while a run is active", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const gate = createTextStartStreamGate("first response");
+        const contexts: Context[] = [];
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream(_model, context) {
+                contexts.push(context);
+                return contexts.length === 1 ? gate.stream() : streamText("done");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        submit(app, "first");
+        await gate.startedText;
+        app.handleInput("queued later");
+        app.handleInput("\t");
+        const queued = stripAnsi(app.render(100).join("\n"));
+        expect(queued).toContain("↳ queued queued later");
+        expect(queued).toContain("Enter steers · Tab queues");
+
+        submit(app, "steer now");
+        gate.release();
+        await app.waitForIdle();
+
+        expect(contexts).toHaveLength(3);
+        expect(contexts[1]?.messages.at(-1)).toMatchObject({
+            role: "user",
+            content: [{ type: "text", text: "steer now" }],
+        });
+        expect(contexts[2]?.messages.at(-1)).toMatchObject({
+            role: "user",
+            content: [{ type: "text", text: "queued later" }],
+        });
+    });
+
+    it("restores queued prompts to the composer when Escape interrupts", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const started = deferred<void>();
+        let requests = 0;
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream(_model, _context, options) {
+                requests += 1;
+                return streamAbortAfterSignal(options?.signal, started.resolve);
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        submit(app, "first");
+        await started.promise;
+        app.handleInput("queued follow-up");
+        app.handleInput("\t");
+        app.handleInput("current draft");
+        app.handleInput("\x1b");
+        await app.waitForIdle();
+
+        const rendered = stripAnsi(app.render(100).join("\n"));
+        expect(requests).toBe(1);
+        expect(rendered).toContain("› queued follow-up");
+        expect(rendered).toContain("  current draft");
+        expect(rendered).not.toContain("↳ queued");
     });
 
     it("keeps the composer cursor steady while typing and blinks after idle", () => {
@@ -1830,6 +1934,74 @@ describe("CodingAssistantApp", () => {
         });
     });
 
+    it("keeps long multiline input scrollable around the cursor", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream: () => streamText("unused"),
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui({ rows: 10 }),
+        });
+
+        for (let line = 1; line <= 9; line += 1) {
+            app.handleInput(`line ${line}`);
+            if (line < 9) app.handleInput("\x1b[13;2~");
+        }
+
+        expect(stripAnsi(app.render(80).join("\n"))).toContain("↑ 4 more");
+        for (let line = 1; line <= 8; line += 1) app.handleInput("\x1b[A");
+        expect(stripAnsi(app.render(80).join("\n"))).toContain("↓ 4 more");
+    });
+
+    it("hides the composer cursor while the terminal is unfocused", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream: () => streamText("unused"),
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        app.focused = true;
+        app.handleInput("draft");
+        expect(app.render(80).join("\n")).toContain("\x1b[48;5;244m");
+
+        app.handleInput("\x1b[O");
+        expect(app.render(80).join("\n")).not.toContain("\x1b[48;5;244m");
+    });
+
     it("inserts plain multi-character paste without treating it as shortcuts", () => {
         const model = defineModel({
             id: "openai/gpt-test",
@@ -1905,7 +2077,7 @@ describe("CodingAssistantApp", () => {
         expect(rawLines[inputLineIndex + 1]).toContain("\x1b[48;5;236m");
     });
 
-    it("erases input before exiting on Ctrl+C and before process cleanup finishes", async () => {
+    it("clears input on the first Ctrl+C and exits on the next press", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
             name: "GPT Test",
@@ -1941,7 +2113,9 @@ describe("CodingAssistantApp", () => {
         expect(tui.requestRender).toHaveBeenCalled();
         expect(tui.requestRender).not.toHaveBeenCalledWith(true);
         expect(stripAnsi(app.render(80).join("\n"))).not.toContain("› h");
-        expect(app.render(80).join("\n")).not.toContain("\x1b[48;5;236m");
+        expect(tui.stop).not.toHaveBeenCalled();
+
+        app.handleInput("\x03");
         await delay(30);
 
         expect(tui.stop).toHaveBeenCalled();
@@ -2356,6 +2530,64 @@ describe("CodingAssistantApp", () => {
         expect(renderedAfterToolCall.match(/Ran printf ok/gu)).toHaveLength(1);
     });
 
+    it("sanitizes terminal controls from shell progress and results", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        let streamCalls = 0;
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                streamCalls += 1;
+                if (streamCalls === 1) {
+                    return streamMessage({
+                        role: "assistant",
+                        content: [
+                            {
+                                type: "toolCall",
+                                id: "tool-call-ansi",
+                                name: "exec_command",
+                                arguments: { cmd: "printf '\\033[2Junsafe'" },
+                            },
+                        ],
+                        api: "test",
+                        provider: "codex",
+                        model: "openai/gpt-test",
+                        usage: zeroUsage(),
+                        stopReason: "toolUse",
+                        timestamp: 1,
+                    });
+                }
+
+                return streamText("done");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        submit(app, "use tool");
+        await app.waitForIdle();
+
+        const raw = app.render(80).join("\n");
+        expect(raw).not.toContain("\x1b[2J");
+        expect(stripAnsi(raw)).toContain("└ unsafe");
+    });
+
     it("renders a separator when the loop starts a second inference iteration", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
@@ -2525,12 +2757,12 @@ describe("CodingAssistantApp", () => {
         const thinkingLine =
             rawWhileThinking.find((line) => stripAnsi(line).includes("• Thinking")) ?? "";
         const renderedWhileThinking = stripAnsi(rawWhileThinking.join("\n"));
-        expect(renderedWhileThinking).toContain("• Thinking (1m 5s)");
+        expect(renderedWhileThinking).toContain("• Thinking (1m 5s • Esc to interrupt)");
         expect(renderedWhileThinking).toContain("GPT Test High");
         expect(renderedWhileThinking).not.toContain("Idle |");
         expect(thinkingLine).toContain("\x1b[38;5;255m");
         expect(thinkingLine).toContain("\x1b[38;5;244m");
-        expect(thinkingLine).toContain("\x1b[2m\x1b[38;5;245m(1m 5s)");
+        expect(thinkingLine).toContain("\x1b[2m\x1b[38;5;245m(1m 5s • Esc to interrupt)");
         expect(thinkingLine).not.toContain("\x1b[38;5;255m(");
         expect(thinkingLine).not.toContain("\x1b[38;5;244m(");
 

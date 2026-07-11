@@ -58,6 +58,7 @@ import {
 } from "./readClipboardImage.js";
 import { ACTIVITY_WAVE_FRAME_COUNT, renderActivityWave } from "./renderActivityWave.js";
 import { renderAgentMarkdown } from "./renderAgentMarkdown.js";
+import { sanitizeTerminalText } from "./sanitizeTerminalText.js";
 import { upsertSubagentSummary } from "./upsertSubagentSummary.js";
 
 const RESET = "\x1b[0m";
@@ -92,6 +93,8 @@ const IMAGE_PASTE_RAW_KEYS = new Set(["\x16", "\x1bv"]);
 const AUTOCOMPLETE_MAX_VISIBLE = 6;
 const BRACKETED_PASTE_START = "\x1b[200~";
 const BRACKETED_PASTE_END = "\x1b[201~";
+const TERMINAL_FOCUS_IN = "\x1b[I";
+const TERMINAL_FOCUS_OUT = "\x1b[O";
 const IMAGE_PLACEHOLDER_REGEX = /\[Image #(\d+) [A-Z0-9]+\]/gu;
 const IMAGE_CHIP_BG = "\x1b[48;5;240m";
 const IMAGE_CHIP_FG = "\x1b[38;5;255m";
@@ -149,6 +152,7 @@ export interface AppSettings {
 interface PendingPrompt {
     content: string | readonly ContentBlock[];
     displayText: string;
+    transcriptAppended?: boolean;
 }
 
 interface PastedImage {
@@ -161,6 +165,7 @@ interface PastedImage {
 interface PromptSubmission {
     content: string | readonly ContentBlock[];
     displayText: string;
+    transcriptAppended?: boolean;
 }
 
 interface ActiveUserInput {
@@ -215,6 +220,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #exiting = false;
     #exitResolve: (() => void) | undefined;
     #focused = false;
+    #terminalFocused = true;
     #freeformUserInput: FreeformUserInput | undefined;
     #pendingPrompts: PendingPrompt[] = [];
     #compacting = false;
@@ -245,6 +251,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #tasks: readonly SessionTask[];
     #thinkingEntryIdsByContentIndex = new Map<number, string>();
     #toolCallEntryIdsByContentIndex = new Map<number, string>();
+    #runningToolCallIds = new Set<string>();
     #userInputRequests: UserInputRequest[] = [];
 
     constructor(options: CodingAssistantAppOptions) {
@@ -296,13 +303,14 @@ export class CodingAssistantApp implements Component, Focusable {
 
     set focused(value: boolean) {
         this.#focused = value;
-        this.#editor.focused = value;
+        this.#editor.focused = value && this.#terminalFocused;
         this.#cursorVisible = true;
-        if (value) {
+        if (value && this.#terminalFocused) {
             this.#cursorTyping = false;
             this.#startCursorBlink();
         } else {
             this.#stopCursorBlink();
+            if (!this.#terminalFocused) this.#cursorVisible = false;
         }
     }
 
@@ -410,6 +418,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#streamEntryId = undefined;
             this.#thinkingEntryIdsByContentIndex.clear();
             this.#toolCallEntryIdsByContentIndex.clear();
+            this.#runningToolCallIds.clear();
             this.#clearUserInputRequests();
             this.#requestRender();
             return;
@@ -419,6 +428,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#running = false;
             this.#statusText = "Error";
             this.#stopActivityAnimation();
+            this.#runningToolCallIds.clear();
             this.#clearUserInputRequests();
             this.#appendEntry({ role: "error", text: event.data.errorMessage });
             return;
@@ -431,6 +441,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#streamEntryId = undefined;
             this.#thinkingEntryIdsByContentIndex.clear();
             this.#toolCallEntryIdsByContentIndex.clear();
+            this.#runningToolCallIds.clear();
             this.#clearUserInputRequests();
             this.#appendEntry({
                 role: "system",
@@ -494,9 +505,15 @@ export class CodingAssistantApp implements Component, Focusable {
             return;
         }
 
+        if (data === TERMINAL_FOCUS_IN || data === TERMINAL_FOCUS_OUT) {
+            this.#setTerminalFocused(data === TERMINAL_FOCUS_IN);
+            return;
+        }
+
         if (this.#selectionPanel !== undefined) {
             if (matchesKey(data, "ctrl+c") || data === "\x03") {
-                void this.stop();
+                this.#selectionPanel.handleInput?.("\x1b");
+                this.#requestRender();
                 return;
             }
             this.#selectionPanel.handleInput?.(data);
@@ -507,7 +524,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (this.#freeformUserInput !== undefined) {
             if (this.#handlePastedInput(data)) return;
             if (matchesKey(data, "ctrl+c") || data === "\x03") {
-                void this.stop();
+                this.#handleCtrlC();
                 return;
             }
             if (matchesKey(data, "ctrl+d") && this.#editor.getText().length === 0) {
@@ -534,12 +551,18 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         if (matchesKey(data, "ctrl+c") || data === "\x03") {
-            void this.stop();
+            this.#handleCtrlC();
             return;
         }
 
         if (matchesKey(data, "ctrl+d") && this.#editor.getText().length === 0) {
             void this.stop();
+            return;
+        }
+
+        if (this.#running && matchesKey(data, "escape")) {
+            this.#handleEscape();
+            this.#requestRender();
             return;
         }
 
@@ -550,6 +573,15 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#requestRender(
                 nextSlashCommandSuggestionCount < previousSlashCommandSuggestionCount,
             );
+            return;
+        }
+
+        if (
+            this.#running &&
+            matchesKey(data, "tab") &&
+            previousFileMentionSuggestionCount === 0 &&
+            this.#queueCurrentInput()
+        ) {
             return;
         }
 
@@ -755,6 +787,7 @@ export class CodingAssistantApp implements Component, Focusable {
             ...header,
             ...this.#renderTranscript(safeWidth),
             "",
+            ...this.#renderQueuedPrompts(safeWidth),
             ...(this.#selectionPanel === undefined
                 ? input
                 : this.#selectionPanel.render(safeWidth)),
@@ -819,17 +852,17 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         this.#modelLocked = true;
+        if (this.#running) {
+            await this.#agent.steer(submission.content, { displayText: submission.displayText });
+            this.#clearSubmittedImages(prompt);
+            if (!this.#sessionBacked) this.#appendEntry({ role: "user", text: prompt });
+            this.#requestRender();
+            return;
+        }
         if (!this.#sessionBacked) {
             this.#appendEntry({ role: "user", text: prompt });
+            submission.transcriptAppended = true;
         }
-        if (this.#running && !this.#sessionBacked) {
-            this.#appendEntry({
-                role: "event",
-                title: "queue",
-                text: `Queued behind the active run.`,
-            });
-        }
-
         this.#pendingPrompts.push(submission);
         this.#startDrainQueue();
         this.#requestRender();
@@ -842,7 +875,6 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         const content = this.#contentFromPrompt(prompt);
-        this.#clearSubmittedImages(prompt);
         return {
             content,
             displayText: prompt,
@@ -940,6 +972,11 @@ export class CodingAssistantApp implements Component, Focusable {
         );
 
         this.#modelLocked = true;
+        if (this.#running) {
+            await this.#agent.steer(expandedPrompt, { displayText: prompt });
+            if (!this.#sessionBacked) this.#appendEntry({ role: "user", text: prompt });
+            return;
+        }
         if (!this.#sessionBacked) {
             this.#appendEntry({ role: "user", text: prompt });
         }
@@ -1136,6 +1173,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#streamEntryId = undefined;
         this.#thinkingEntryIdsByContentIndex.clear();
         this.#toolCallEntryIdsByContentIndex.clear();
+        this.#runningToolCallIds.clear();
         this.#abortNotified = false;
         this.#statusText = "Idle";
         this.#agent.reset();
@@ -1146,12 +1184,17 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #startDrainQueue(): void {
-        if (this.#activeRun !== undefined || this.#compacting) {
+        if (
+            this.#activeRun !== undefined ||
+            this.#compacting ||
+            this.#pendingPrompts.length === 0
+        ) {
             return;
         }
 
         this.#activeRun = this.#drainQueue().finally(() => {
             this.#activeRun = undefined;
+            this.#startDrainQueue();
             this.#requestRender();
         });
     }
@@ -1180,6 +1223,10 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#activityStartedAtMs = this.#now();
         this.#startActivityAnimation();
         this.#requestRender();
+        this.#clearSubmittedImages(prompt.displayText);
+        if (!this.#sessionBacked && prompt.transcriptAppended !== true) {
+            this.#appendEntry({ role: "user", text: prompt.displayText });
+        }
 
         try {
             await this.#refreshSkillCommands({ force: true });
@@ -1236,11 +1283,18 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #handleEscape(): void {
-        if (this.#abortActiveRun()) {
-            return;
-        }
+        this.#restoreQueuedPromptsToComposer();
+        this.#abortActiveRun();
+    }
 
-        void this.stop();
+    #restoreQueuedPromptsToComposer(): void {
+        if (this.#pendingPrompts.length === 0) return;
+        const draft = this.#editor.getText().trim();
+        const restored = this.#pendingPrompts.map((prompt) => prompt.displayText);
+        if (draft.length > 0) restored.push(draft);
+        this.#pendingPrompts = [];
+        this.#editor.setText(restored.join("\n"));
+        this.#syncAutocompleteState();
     }
 
     #abortActiveRun(options: { silent?: boolean } = {}): boolean {
@@ -1252,12 +1306,12 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#runToken += 1;
         controller.abort();
         this.#abortController = undefined;
-        this.#pendingPrompts = [];
         this.#running = false;
         this.#statusText = "Idle";
         this.#streamEntryId = undefined;
         this.#thinkingEntryIdsByContentIndex.clear();
         this.#toolCallEntryIdsByContentIndex.clear();
+        this.#runningToolCallIds.clear();
         this.#stopActivityAnimation();
         void this.#processManager.killAll({ forceAfterMs: 500 }).catch((error: unknown) => {
             this.#appendEntry({ role: "error", text: this.#formatError(error) });
@@ -1312,6 +1366,19 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#ensureToolCallEntry(event.contentIndex);
         } else if (event.type === "toolcall_end") {
             this.#finishToolCall(event.contentIndex, event.toolCall);
+        } else if (event.type === "tool_execution_start") {
+            this.#runningToolCallIds.add(event.toolCall.id);
+            this.#statusText = `Running ${this.#runningToolCallIds.size} tool${this.#runningToolCallIds.size === 1 ? "" : "s"}`;
+        } else if (event.type === "tool_execution_end") {
+            this.#runningToolCallIds.delete(event.result.toolCallId);
+            this.#finishToolResult(event.result);
+            this.#statusText =
+                this.#runningToolCallIds.size === 0
+                    ? "Working"
+                    : `Running ${this.#runningToolCallIds.size} tool${this.#runningToolCallIds.size === 1 ? "" : "s"}`;
+        } else if (event.type === "tool_execution_progress") {
+            const entry = this.#entries.find((candidate) => candidate.id === event.toolCallId);
+            if (entry !== undefined) entry.detail = this.#singleLine(event.display);
         } else if (event.type === "done") {
             this.#statusText = event.reason === "toolUse" ? "Running tools" : "Idle";
         } else if (event.type === "error") {
@@ -1630,6 +1697,9 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         const parts = [`${FOOTER_MODEL_FG}${this.#modelWithReasoningDisplayName()}${RESET}`];
+        if (this.#running) {
+            parts.push(`${FOOTER_QUEUED_FG}Enter steers · Tab queues${RESET}`);
+        }
         parts.push(`${FOOTER_CWD_FG}${this.#cwdDisplayName()}${RESET}`);
         if (this.#pendingPrompts.length > 0) {
             parts.push(`${FOOTER_QUEUED_FG}queued ${this.#pendingPrompts.length}${RESET}`);
@@ -1637,6 +1707,21 @@ export class CodingAssistantApp implements Component, Focusable {
 
         const line = `${" ".repeat(visibleWidth(INPUT_PROMPT))}${parts.join(`${DIM} • ${RESET}`)}`;
         return [this.#fitLine(line, width)];
+    }
+
+    #renderQueuedPrompts(width: number): string[] {
+        return this.#pendingPrompts.flatMap((prompt) => {
+            const prefix = `${DIM}↳ queued${RESET} `;
+            const prefixWidth = visibleWidth(prefix);
+            const wrapped = wrapTextWithAnsi(
+                prompt.displayText,
+                Math.max(1, width - prefixWidth),
+            ).slice(0, 3);
+            const indent = " ".repeat(prefixWidth);
+            return wrapped.map((line, index) =>
+                this.#fitLine(`${index === 0 ? prefix : indent}${DIM}${line}${RESET}`, width),
+            );
+        });
     }
 
     #renderAutocomplete(
@@ -2098,6 +2183,9 @@ export class CodingAssistantApp implements Component, Focusable {
         );
 
         return contentLines.map((line, index) => {
+            if (this.#isEditorScrollIndicator(line)) {
+                return this.#inputSurfaceLine(`${INPUT_LINE_INDENT}${DIM}${line}${RESET}`, width);
+            }
             const prefix = index === 0 ? this.#inputPrompt() : INPUT_LINE_INDENT;
             const rendered = `${prefix}${this.#styleImagePlaceholders(line)}`;
             return this.#inputSurfaceLine(
@@ -2107,7 +2195,9 @@ export class CodingAssistantApp implements Component, Focusable {
         });
     }
 
-    #finishToolResult(block: ToolResultBlock): void {
+    #finishToolResult(
+        block: Pick<ToolResultBlock, "display" | "isError" | "toolCallId" | "toolName">,
+    ): void {
         const existing = this.#entries.find((entry) => entry.id === block.toolCallId);
         const detail = this.#formatToolResult(block);
         if (existing !== undefined) {
@@ -2206,7 +2296,7 @@ export class CodingAssistantApp implements Component, Focusable {
         return humanizeToolName(toolName);
     }
 
-    #formatToolResult(block: ToolResultBlock): string {
+    #formatToolResult(block: Pick<ToolResultBlock, "display">): string {
         return this.#singleLine(block.display.length > 0 ? block.display : "(empty result)");
     }
 
@@ -2318,12 +2408,7 @@ export class CodingAssistantApp implements Component, Focusable {
             entry.title === PENDING_TOOL_CALL_TITLE &&
             entry.text === PENDING_TOOL_CALL_TITLE
         ) {
-            return [
-                this.#fitLine(
-                    `${DIM}•${RESET} ${renderActivityWave(PENDING_TOOL_CALL_TITLE, this.#activityAnimationFrame)}`,
-                    width,
-                ),
-            ];
+            return [this.#fitLine(`${DIM}• ${PENDING_TOOL_CALL_TITLE}${RESET}`, width)];
         }
 
         const toolName = entry.title ?? "tool";
@@ -2426,26 +2511,15 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #shouldRenderActivityAsLastMessage(): boolean {
-        if (this.#streamEntryId !== undefined) {
-            return false;
-        }
-
-        const lastEntry = this.#entries.at(-1);
-        return (
-            lastEntry === undefined ||
-            lastEntry.role === "separator" ||
-            lastEntry.role === "user" ||
-            lastEntry.role === "system" ||
-            (lastEntry.role === "thinking" && !this.#showReasoning)
-        );
+        return this.#running || this.#compacting;
     }
 
     #renderActivityLine(label: string, width: number): string[] {
         const prefix = `${RIG_ORANGE}•${RESET} `;
         const frame = this.#activityAnimationFrame;
         const elapsed = this.#activityElapsedText();
-        const elapsedSuffix =
-            elapsed === undefined ? "" : ` ${DIM}${SURFACE_MUTED_FG}(${elapsed})${RESET}`;
+        const elapsedText = elapsed ?? "0s";
+        const elapsedSuffix = ` ${DIM}${SURFACE_MUTED_FG}(${elapsedText} • Esc to interrupt)${RESET}`;
 
         return [
             this.#fitLine(`${prefix}${renderActivityWave(label, frame)}${elapsedSuffix}`, width),
@@ -2800,7 +2874,7 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #singleLine(text: string): string {
-        return text.replace(/\s+/gu, " ").trim();
+        return sanitizeTerminalText(text).replace(/\s+/gu, " ").trim();
     }
 
     #markTypingActivity(): void {
@@ -2828,9 +2902,12 @@ export class CodingAssistantApp implements Component, Focusable {
             content = content.slice(0, -1);
         }
 
-        return content.filter(
-            (line) => !line.includes(" more ") && !this.#isEditorBorderLine(line),
-        );
+        return content.filter((line) => !this.#isEditorBorderLine(line));
+    }
+
+    #isEditorScrollIndicator(line: string): boolean {
+        const stripped = line.replace(/\x1b\[[0-9;]*m/g, "");
+        return stripped.includes(" more ") && (stripped.includes("↑") || stripped.includes("↓"));
     }
 
     #isEditorBorderLine(line: string): boolean {
@@ -2905,7 +2982,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
             this.#activityAnimationFrame =
                 (this.#activityAnimationFrame + 1) % ACTIVITY_WAVE_FRAME_COUNT;
-            if (this.#activityText() !== undefined && this.#shouldRenderActivityAsLastMessage()) {
+            if (this.#activityText() !== undefined) {
                 this.#requestRender();
             }
         }, ACTIVITY_ANIMATION_MS);
@@ -2935,5 +3012,43 @@ export class CodingAssistantApp implements Component, Focusable {
         return new Promise((resolve) => {
             setTimeout(resolve, 25);
         });
+    }
+
+    #handleCtrlC(): void {
+        if (this.#editor.getText().length > 0) {
+            this.#editor.setText("");
+            this.#fileMentionAutocomplete?.clear();
+            this.#dismissedSlashCommandText = undefined;
+            this.#pastedImagesById.clear();
+            this.#requestRender();
+            return;
+        }
+        if (this.#abortActiveRun()) return;
+        void this.stop();
+    }
+
+    #queueCurrentInput(): boolean {
+        const submission = this.#createPromptSubmission(this.#editor.getText());
+        if (submission === undefined) return false;
+        this.#editor.setText("");
+        this.#fileMentionAutocomplete?.clear();
+        this.#modelLocked = true;
+        this.#pendingPrompts.push(submission);
+        this.#requestRender();
+        return true;
+    }
+
+    #setTerminalFocused(focused: boolean): void {
+        if (this.#terminalFocused === focused) return;
+        this.#terminalFocused = focused;
+        this.#editor.focused = this.#focused && focused;
+        if (focused && this.#focused) {
+            this.#cursorVisible = true;
+            this.#startCursorBlink();
+        } else {
+            this.#stopCursorBlink();
+            this.#cursorVisible = false;
+        }
+        this.#requestRender();
     }
 }

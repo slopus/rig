@@ -87,6 +87,7 @@ export class Agent {
     #messages: Message[] = [];
     #contextMessages: Message[] | undefined;
     #queue: QueuedAgentMessage[] = [];
+    #steeringQueue: UserMessage[] = [];
     #status: AgentStatus = "idle";
     #lastRunId: string | undefined;
     #activeRunId: string | undefined;
@@ -169,6 +170,13 @@ export class Agent {
         }
     }
 
+    #takeSteering(): readonly UserMessage[] {
+        const steering = this.#steeringQueue;
+        this.#steeringQueue = [];
+        for (const message of steering) this.#printMessage(message);
+        return steering;
+    }
+
     setTools(tools: readonly AnyDefinedTool[]): void {
         this.#tools = tools;
     }
@@ -181,6 +189,7 @@ export class Agent {
         this.#messages = [];
         this.#contextMessages = undefined;
         this.#queue = [];
+        this.#steeringQueue = [];
         this.#lastRunId = undefined;
         this.#resetVersion += 1;
         if (this.#activeRunId === undefined) {
@@ -231,6 +240,21 @@ export class Agent {
 
         this.enqueueUserMessage(text);
         return this.run(options);
+    }
+
+    async steer(content: string | readonly ContentBlock[]): Promise<void> {
+        this.steerMessage({
+            role: "user",
+            id: this.#idFactory(),
+            blocks: typeof content === "string" ? [{ type: "text", text: content }] : content,
+        });
+    }
+
+    steerMessage(message: UserMessage): void {
+        if (this.#activeRunId === undefined) {
+            throw new Error(`Agent '${this.id}' is not running`);
+        }
+        this.#steeringQueue.push(message);
     }
 
     async compact(signal?: AbortSignal): Promise<AgentCompactionResult> {
@@ -293,6 +317,7 @@ export class Agent {
                 context: this.context,
                 onEvent: async (event) => this.#handleEvent(event, options),
                 onMessage: async (message) => this.#handleMessage(message, options),
+                takeSteering: () => this.#takeSteering(),
             };
             if (this.#contextMessages !== undefined) {
                 loopOptions.contextMessages = this.#contextMessages;
@@ -306,6 +331,7 @@ export class Agent {
             if (this.#activeRunId === runId) {
                 this.#activeRunId = undefined;
             }
+            this.#steeringQueue = [];
             if (this.#resetVersion === resetVersion) {
                 this.#messages = [...result.messages];
                 if (this.#contextMessages !== undefined) {
@@ -323,6 +349,7 @@ export class Agent {
             if (this.#activeRunId === runId) {
                 this.#activeRunId = undefined;
             }
+            this.#steeringQueue = [];
             if (this.#resetVersion === resetVersion) {
                 this.#status = options.signal?.aborted ? "aborted" : "idle";
             } else if (this.#status === "running") {

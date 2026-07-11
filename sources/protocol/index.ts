@@ -49,6 +49,8 @@ export type {
     ShutdownServerResponse,
     SubmitMessageRequest,
     SubmitMessageResponse,
+    SteerMessageRequest,
+    SteerMessageResponse,
     TasksChangedEvent,
     UserInputRequestedEvent,
     UserInputResolvedEvent,

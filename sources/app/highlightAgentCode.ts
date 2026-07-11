@@ -30,11 +30,16 @@ const HIGHLIGHTED_LANGUAGES = new Set([
     "zsh",
 ]);
 
-const KEYWORD_PATTERN =
-    /\b(?:async|await|break|case|catch|class|const|continue|def|defer|else|enum|export|extends|false|for|from|func|function|go|if|impl|import|interface|let|new|null|package|private|protected|public|return|select|struct|switch|true|try|type|use|var|while)\b/g;
-const TYPE_PATTERN =
-    /\b(?:Array|Boolean|Error|Map|Number|Promise|Record|Set|String|unknown|void)\b/g;
-const NUMBER_PATTERN = /\b\d+(?:\.\d+)?\b/g;
+const KEYWORDS = new Set(
+    "async await break case catch class const continue def defer else enum export extends false for from func function go if impl import interface let new null package private protected public return select struct switch true try type use var while".split(
+        " ",
+    ),
+);
+const TYPES = new Set(
+    "Array Boolean Error Map Number Promise Record Set String unknown void".split(" "),
+);
+const PLAIN_TOKEN_PATTERN =
+    /\b(?:Array|Boolean|Error|Map|Number|Promise|Record|Set|String|unknown|void|async|await|break|case|catch|class|const|continue|def|defer|else|enum|export|extends|false|for|from|func|function|go|if|impl|import|interface|let|new|null|package|private|protected|public|return|select|struct|switch|true|try|type|use|var|while|\d+(?:\.\d+)?)\b/g;
 const STRING_PATTERN = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)/g;
 
 export function highlightAgentCode(code: string, lang?: string): string[] {
@@ -73,10 +78,11 @@ function highlightCodePart(line: string): string {
 }
 
 function highlightPlainSegment(segment: string): string {
-    return segment
-        .replace(TYPE_PATTERN, (value) => fg(TYPE, value))
-        .replace(KEYWORD_PATTERN, (value) => fg(KEYWORD, value))
-        .replace(NUMBER_PATTERN, (value) => fg(NUMBER, value));
+    return segment.replace(PLAIN_TOKEN_PATTERN, (value) => {
+        if (TYPES.has(value)) return fg(TYPE, value);
+        if (KEYWORDS.has(value)) return fg(KEYWORD, value);
+        return fg(NUMBER, value);
+    });
 }
 
 function commentIndex(line: string, lang: string): number {

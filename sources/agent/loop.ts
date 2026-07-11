@@ -56,6 +56,7 @@ export interface RunAgentLoopOptions {
     now?: () => number;
     onEvent?: (event: AgentLoopEvent) => void | Promise<void>;
     onMessage?: (message: Message) => void | Promise<void>;
+    takeSteering?: () => readonly UserMessage[];
     context: AgentContext;
 }
 
@@ -64,6 +65,19 @@ export type AgentLoopEvent =
     | {
           type: "inference_iteration_start";
           iteration: number;
+      }
+    | {
+          type: "tool_execution_start";
+          toolCall: ProviderToolCall;
+      }
+    | {
+          type: "tool_execution_end";
+          result: Pick<ToolResultBlock, "display" | "isError" | "toolCallId" | "toolName" | "type">;
+      }
+    | {
+          type: "tool_execution_progress";
+          display: string;
+          toolCallId: string;
       };
 
 export interface AgentLoopResult {
@@ -207,11 +221,18 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         contextTranscript.push(agentMessage);
         await options.onMessage?.(agentMessage);
 
-        if (
-            assistantMessage.stopReason === "aborted" ||
-            assistantMessage.stopReason === "error" ||
-            assistantMessage.stopReason !== "toolUse"
-        ) {
+        if (assistantMessage.stopReason === "aborted" || assistantMessage.stopReason === "error") {
+            return {
+                messages: transcript,
+                contextMessages: contextTranscript,
+                stopReason: assistantMessage.stopReason,
+            };
+        }
+
+        if (assistantMessage.stopReason !== "toolUse") {
+            if (appendSteering(options, transcript, contextTranscript, providerMessages, now) > 0) {
+                continue;
+            }
             return {
                 messages: transcript,
                 contextMessages: contextTranscript,
@@ -241,15 +262,34 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         }
 
         const toolResultBlocks = await Promise.all(
-            toolCalls.map((toolCall) =>
-                executeToolCall(toolCall, toolsByName, toolContext, {
+            toolCalls.map(async (toolCall) => {
+                await options.onEvent?.({ type: "tool_execution_start", toolCall });
+                const result = await executeToolCall(toolCall, toolsByName, toolContext, {
                     messages: contextTranscript,
                     model,
                     now,
+                    onProgress: (display) => {
+                        void options.onEvent?.({
+                            type: "tool_execution_progress",
+                            display,
+                            toolCallId: toolCall.id,
+                        });
+                    },
                     provider: options.provider,
                     ...(options.signal === undefined ? {} : { signal: options.signal }),
-                }),
-            ),
+                });
+                await options.onEvent?.({
+                    type: "tool_execution_end",
+                    result: {
+                        type: "tool_result",
+                        toolCallId: result.toolCallId,
+                        toolName: result.toolName,
+                        display: result.display,
+                        ...(result.isError === undefined ? {} : { isError: result.isError }),
+                    },
+                });
+                return result;
+            }),
         );
 
         if (options.signal?.aborted) {
@@ -276,7 +316,24 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         transcript.push(toolResultMessage);
         contextTranscript.push(toolResultMessage);
         await options.onMessage?.(toolResultMessage);
+        appendSteering(options, transcript, contextTranscript, providerMessages, now);
     }
+}
+
+function appendSteering(
+    options: RunAgentLoopOptions,
+    transcript: Message[],
+    contextTranscript: Message[],
+    providerMessages: ProviderMessage[],
+    now: () => number,
+): number {
+    const steering = options.takeSteering?.() ?? [];
+    for (const message of steering) {
+        transcript.push(message);
+        contextTranscript.push(message);
+        providerMessages.push(toProviderUserMessage(message, now));
+    }
+    return steering.length;
 }
 
 async function appendInterruptedToolResults(options: {
@@ -494,6 +551,7 @@ async function executeToolCall(
         messages: readonly Message[];
         model: Model;
         now: () => number;
+        onProgress?: (display: string) => void;
         provider: Provider;
         signal?: AbortSignal;
     },
@@ -548,13 +606,22 @@ async function executeToolCall(
         const execute = tool.execute as (
             args: unknown,
             context: AgentContext,
-            options: { signal?: AbortSignal },
+            options: {
+                onProgress?: (display: string) => void;
+                signal?: AbortSignal;
+                toolCallId?: string;
+            },
         ) => Promise<unknown> | unknown;
         const toLLM = tool.toLLM as (result: unknown) => readonly ContentBlock[];
         const toUI = tool.toUI as (result: unknown, args: unknown) => string;
-        const executionOptions: { signal?: AbortSignal; toolCallId?: string } = {
+        const executionOptions: {
+            onProgress?: (display: string) => void;
+            signal?: AbortSignal;
+            toolCallId?: string;
+        } = {
             toolCallId: toolCall.id,
         };
+        if (options.onProgress !== undefined) executionOptions.onProgress = options.onProgress;
         if (options.signal !== undefined) executionOptions.signal = options.signal;
         const run = () => execute(toolCall.arguments, context, executionOptions);
         const result =

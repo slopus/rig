@@ -20,6 +20,7 @@ import type {
     ShutdownServerResponse,
     SubmitMessageRequest,
     SubmitMessageResponse,
+    SteerMessageResponse,
 } from "../protocol/index.js";
 import { InMemorySessionStore } from "./InMemorySessionStore.js";
 import { createModelCatalog } from "./createModelCatalog.js";
@@ -180,6 +181,18 @@ async function handleRequest(
     if (request.method === "POST" && route.name === "messages") {
         const body = await readJson<SubmitMessageRequest>(request);
         sendJson<SubmitMessageResponse>(response, 202, session.submit(body));
+        return;
+    }
+
+    if (request.method === "POST" && route.name === "steer") {
+        const body = await readJson<SubmitMessageRequest>(request);
+        try {
+            sendJson<SteerMessageResponse>(response, 202, session.steer(body));
+        } catch (error) {
+            sendJson(response, 409, {
+                error: error instanceof Error ? error.message : "The active run cannot be steered.",
+            });
+        }
         return;
     }
 
@@ -360,6 +373,7 @@ function matchRoute(pathname: string):
               | "reset"
               | "session"
               | "stream"
+              | "steer"
               | "subagents";
           sessionId: string;
       }
@@ -396,13 +410,15 @@ function matchRoute(pathname: string):
     if (parts[2] === "permissions") return { name: "permissions", sessionId };
     if (parts[2] === "reset") return { name: "reset", sessionId };
     if (parts[2] === "stream") return { name: "stream", sessionId };
+    if (parts[2] === "steer") return { name: "steer", sessionId };
     if (parts[2] === "subagents") return { name: "subagents", sessionId };
     return undefined;
 }
 
 function isSessionMutation(routeName: string, method: string | undefined): boolean {
     return (
-        (method === "POST" && ["abort", "compact", "messages", "reset"].includes(routeName)) ||
+        (method === "POST" &&
+            ["abort", "compact", "messages", "reset", "steer"].includes(routeName)) ||
         (method === "POST" && routeName === "user-input") ||
         (method === "PATCH" && ["effort", "model", "permissions"].includes(routeName))
     );

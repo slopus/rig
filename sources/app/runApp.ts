@@ -1,4 +1,5 @@
-import { ProcessTerminal, TUI } from "@earendil-works/pi-tui";
+import { TUI } from "@earendil-works/pi-tui";
+import { basename } from "node:path";
 
 import { createNodeAgentContext } from "../agent/index.js";
 import { ensureLocalProtocolServer, RemoteAgent } from "../client/index.js";
@@ -11,6 +12,7 @@ import { type CreateCodingAssistantAgentOptions } from "./createCodingAssistantA
 import { createStopOnceHandler } from "./createStopOnceHandler.js";
 import { ensureSessionCanResume } from "./ensureSessionCanResume.js";
 import { readPackageVersion } from "./readPackageVersion.js";
+import { ScrollbackPreservingTerminal } from "./ScrollbackPreservingTerminal.js";
 import { StartupStatusApp } from "./StartupStatusApp.js";
 
 export interface RunAppOptions {
@@ -51,13 +53,16 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     let showReasoning = options.showReasoning ?? loadedConfig.config.settings.showReasoning;
 
     // Keep the terminal in TUI mode while the daemon starts so startup work is visible.
-    const tui = new TUI(new ProcessTerminal(), false);
+    const terminal = new ScrollbackPreservingTerminal();
+    terminal.setTitle(`Rig - ${sanitizeTerminalTitle(basename(cwd))}`);
+    const tui = new TUI(terminal, false);
     const startup = new StartupStatusApp({
         cwd,
         tui,
         version: readPackageVersion(),
     });
     startup.start();
+    terminal.write("\x1b[?1004h");
 
     const { history, localServer, modelCatalog, session } = await (async () => {
         try {
@@ -90,16 +95,21 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
             };
         } catch (error) {
             startup.stop();
+            terminal.write("\x1b[?1004l");
             tui.stop();
             throw error;
         }
     })();
     const processManager = new NativeProxessManager();
     const sessionCwd = session.session.cwd;
+    if (session.session.title !== undefined) {
+        terminal.setTitle(`Rig - ${sanitizeTerminalTitle(session.session.title)}`);
+    }
     const subagents = await localServer.client
         .listSubagents(session.session.id)
         .catch((error: unknown) => {
             startup.stop();
+            terminal.write("\x1b[?1004l");
             tui.stop();
             throw error;
         });
@@ -168,6 +178,9 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     void localServer.client.watchSessionEvents({
         ...(lastHistoryEventId !== undefined ? { after: lastHistoryEventId } : {}),
         onEvent: (event) => {
+            if (event.type === "session_title_changed" && event.data.title !== undefined) {
+                terminal.setTitle(`Rig - ${sanitizeTerminalTitle(event.data.title)}`);
+            }
             agent.applySessionEvent(event);
             app.applySessionEvent(event);
         },
@@ -195,9 +208,19 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         process.off("SIGINT", stop);
         process.off("SIGTERM", stop);
         followController.abort();
+        terminal.write("\x1b[?1004l");
         await processManager.killAll({ forceAfterMs: 500 });
         console.error("");
         console.error(`Session: ${session.session.id}`);
         console.error(`Resume: ${resumeCommand}`);
     }
+}
+
+function sanitizeTerminalTitle(value: string): string {
+    return [...value]
+        .filter((character) => {
+            const codePoint = character.codePointAt(0) ?? 0;
+            return codePoint > 31 && codePoint !== 127;
+        })
+        .join("");
 }

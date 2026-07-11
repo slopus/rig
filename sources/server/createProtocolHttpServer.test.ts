@@ -91,6 +91,19 @@ describe("createProtocolHttpServer", () => {
         }
     });
 
+    it("rejects steering when the session has no active run", async () => {
+        const { client, close } = await startServer();
+        try {
+            const created = await client.createSession({ cwd: "/tmp/rig-protocol-test" });
+
+            await expect(
+                client.steerMessage(created.session.id, { text: "Change direction." }),
+            ).rejects.toThrow("There is no active run to steer.");
+        } finally {
+            await close();
+        }
+    });
+
     it("answers a pending structured question through the protocol", async () => {
         const { client, close, store } = await startServer();
         try {

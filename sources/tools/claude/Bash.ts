@@ -51,6 +51,7 @@ export const claudeBashTool = defineTool({
         }
         const options: Parameters<typeof runShellCommand>[1] = {};
         if (timeout !== undefined) options.timeoutMs = timeout;
+        if (execution.onProgress !== undefined) options.onProgress = execution.onProgress;
         if (execution.signal !== undefined) options.signal = execution.signal;
         return runShellCommand(command, options, context);
     },

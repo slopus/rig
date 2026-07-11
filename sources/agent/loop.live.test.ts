@@ -169,7 +169,10 @@ describe("agent loop live", () => {
                 fs: expect.objectContaining({ cwd: "/workspace" }),
                 bash: expect.objectContaining({ cwd: "/workspace" }),
             }),
-            { toolCallId: "call-add" },
+            {
+                onProgress: expect.any(Function),
+                toolCallId: "call-add",
+            },
         );
         expect(addToLLM).toHaveBeenCalledExactlyOnceWith({ total: 7 });
         expect(addToUI).toHaveBeenCalledExactlyOnceWith(
@@ -185,7 +188,10 @@ describe("agent loop live", () => {
                 fs: expect.objectContaining({ cwd: "/workspace" }),
                 bash: expect.objectContaining({ cwd: "/workspace" }),
             }),
-            { toolCallId: "call-shout" },
+            {
+                onProgress: expect.any(Function),
+                toolCallId: "call-shout",
+            },
         );
         expect(shoutToLLM).toHaveBeenCalledExactlyOnceWith({
             shouted: "DUBLIN",
@@ -319,6 +325,7 @@ describe("agent loop live", () => {
         });
 
         const harness = createJustBashToolHarness();
+        const executionEvents: string[] = [];
         const result = await runAgentLoop({
             provider,
             modelId: "mock/model",
@@ -331,11 +338,25 @@ describe("agent loop live", () => {
                 },
             ],
             context: harness.context,
+            onEvent(event) {
+                if (event.type === "tool_execution_start") {
+                    executionEvents.push(`start:${event.toolCall.id}`);
+                }
+                if (event.type === "tool_execution_end") {
+                    executionEvents.push(`end:${event.result.toolCallId}`);
+                }
+            },
         });
 
         expect(result.stopReason).toBe("stop");
         expect(events.indexOf("fast-start")).toBeGreaterThan(events.indexOf("slow-start"));
         expect(events.indexOf("fast-start")).toBeLessThan(events.indexOf("slow-end"));
+        expect(executionEvents).toEqual([
+            "start:call-slow",
+            "start:call-fast",
+            "end:call-fast",
+            "end:call-slow",
+        ]);
         expect(contexts[1]?.messages.slice(2)).toMatchObject([
             {
                 role: "toolResult",

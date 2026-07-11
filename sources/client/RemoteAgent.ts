@@ -44,6 +44,18 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         this.#providerId = options.session.providerId;
     }
 
+    async steer(
+        content: string | readonly ContentBlock[],
+        options: AgentRunOptions = {},
+    ): Promise<void> {
+        const displayText = options.displayText ?? contentToDisplayText(content);
+        await this.#client.steerMessage(this.#session.id, {
+            ...(typeof content === "string" ? {} : { content }),
+            ...(options.displayText !== undefined ? { displayText: options.displayText } : {}),
+            text: displayText,
+        });
+    }
+
     get canChangeModel(): boolean {
         return !this.#session.modelLocked;
     }

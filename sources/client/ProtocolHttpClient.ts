@@ -20,6 +20,8 @@ import type {
     ShutdownServerResponse,
     SubmitMessageRequest,
     SubmitMessageResponse,
+    SteerMessageRequest,
+    SteerMessageResponse,
 } from "../protocol/index.js";
 
 export interface ProtocolHttpClientOptions {
@@ -41,6 +43,14 @@ export class ProtocolHttpClient {
     constructor(options: ProtocolHttpClientOptions) {
         this.socketPath = options.socketPath;
         this.token = options.token;
+    }
+
+    steerMessage(sessionId: string, request: SteerMessageRequest): Promise<SteerMessageResponse> {
+        return this.#requestJson(
+            "POST",
+            `/sessions/${encodeURIComponent(sessionId)}/steer`,
+            request,
+        );
     }
 
     abort(sessionId: string): Promise<AbortRunResponse> {

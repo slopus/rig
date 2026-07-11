@@ -5,6 +5,14 @@ import { defineModel } from "../providers/types.js";
 import { InMemorySessionStore } from "./InMemorySessionStore.js";
 
 describe("InMemorySession", () => {
+    it("rejects steering when no run is active", () => {
+        const session = new InMemorySessionStore().create({ cwd: "/tmp/rig-session-test" });
+
+        expect(() => session.steer({ text: "Change direction." })).toThrow(
+            "There is no active run to steer.",
+        );
+    });
+
     it("routes the same canonical model through the explicitly selected provider", () => {
         const sharedModel = defineModel({
             defaultThinkingLevel: "medium",

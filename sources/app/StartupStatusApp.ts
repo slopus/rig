@@ -77,7 +77,7 @@ export class StartupStatusApp implements Component {
             this.#timer = undefined;
         }
         this.#tui.removeChild(this);
-        this.#tui.requestRender(true);
+        this.#tui.requestRender();
     }
 
     #directoryName(): string {
