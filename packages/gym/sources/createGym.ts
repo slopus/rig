@@ -26,7 +26,10 @@ export async function createGym(options: GymOptions): Promise<Gym> {
     try {
         const startedGhostty = await GhosttyTerminal.create(cols, rows);
         ghostty = startedGhostty;
-        await Promise.all([buildGymImage(image, repositoryRoot), inference.start()]);
+        const [imageId] = await Promise.all([
+            buildGymImage(image, repositoryRoot),
+            inference.start(),
+        ]);
         const pty = spawn(
             "docker",
             [
@@ -53,7 +56,7 @@ export async function createGym(options: GymOptions): Promise<Gym> {
                 `${workspacePath}:/workspace`,
                 "--workdir",
                 "/workspace",
-                image,
+                imageId,
             ],
             {
                 cols,

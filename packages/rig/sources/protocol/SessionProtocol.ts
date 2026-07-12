@@ -10,6 +10,7 @@ import type { PermissionMode } from "../permissions/index.js";
 import type { UserInputRequest, UserInputResponse } from "../user-input/index.js";
 import type { McpServerSummary } from "../mcp/index.js";
 import type { SessionTask } from "../tasks/index.js";
+import type { WorkflowRun, WorkflowRunUpdate } from "../workflows/index.js";
 import type { ChangeGoalStatusRequest, CreateGoalRequest, SessionGoal } from "../goals/index.js";
 import type { EventId } from "./EventId.js";
 
@@ -85,6 +86,7 @@ export interface ProtocolSession {
     pendingUserInputs: readonly UserInputRequest[];
     mcpServers: readonly McpServerSummary[];
     tasks: readonly SessionTask[];
+    workflows?: readonly WorkflowRun[];
     goal?: SessionGoal;
 }
 
@@ -173,6 +175,10 @@ export interface ListSubagentsResponse {
     subagents: readonly SubagentSummary[];
 }
 
+export interface StopWorkflowResponse {
+    workflow: WorkflowRun;
+}
+
 export interface FileSearchResult {
     fileName: string;
     path: string;
@@ -236,7 +242,8 @@ export type SessionEvent =
     | McpServersChangedEvent
     | TasksChangedEvent
     | GoalChangedEvent
-    | SubagentChangedEvent;
+    | SubagentChangedEvent
+    | WorkflowChangedEvent;
 
 export interface BaseSessionEvent<TType extends string, TData> {
     createdAt: number;
@@ -370,5 +377,12 @@ export type SubagentChangedEvent = BaseSessionEvent<
     "subagent_changed",
     {
         subagent: SubagentSummary;
+    }
+>;
+
+export type WorkflowChangedEvent = BaseSessionEvent<
+    "workflow_changed",
+    {
+        update: WorkflowRunUpdate;
     }
 >;

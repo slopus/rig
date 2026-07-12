@@ -135,6 +135,10 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         initialSubagents: subagents.subagents,
         initialUserInputs: session.session.pendingUserInputs,
         initialTasks: session.session.tasks,
+        ...(session.session.lastEventId === undefined
+            ? {}
+            : { initialWorkflowEventId: session.session.lastEventId }),
+        initialWorkflows: session.session.workflows ?? [],
         modelLocked: session.session.modelLocked,
         onDefaultModelChange: (preference) =>
             writeRuntimeConfig(loadedConfig.paths.runtime, {
@@ -162,6 +166,8 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
                 settings,
             });
         },
+        onStopWorkflow: (runId) =>
+            localServer.client.stopWorkflow(session.session.id, runId).then(() => undefined),
         processManager,
         respondUserInput: (requestId, response) =>
             localServer.client

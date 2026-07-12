@@ -9,6 +9,7 @@ import {
     type TaskContext,
     type UserInputContext,
 } from "../agent/index.js";
+import type { WorkflowContext } from "../workflows/index.js";
 import type { Message } from "../agent/types.js";
 import { NativeProxessManager } from "../processes/index.js";
 import { createBedrockProvider } from "../providers/bedrock.js";
@@ -42,6 +43,7 @@ export interface CreateCodingAssistantAgentOptions {
     subagents?: SubagentContext;
     tasks?: TaskContext;
     userInput?: UserInputContext;
+    workflows?: WorkflowContext;
 }
 
 export function createCodingAssistantAgent(
@@ -55,6 +57,7 @@ export function createCodingAssistantAgent(
         ...(options.permissionMode !== undefined ? { permissionMode: options.permissionMode } : {}),
         ...(options.tasks !== undefined ? { tasks: options.tasks } : {}),
         ...(options.userInput !== undefined ? { userInput: options.userInput } : {}),
+        ...(options.workflows !== undefined ? { workflows: options.workflows } : {}),
     });
     if (options.subagents !== undefined) {
         context.subagents = options.subagents;

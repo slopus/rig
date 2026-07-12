@@ -120,6 +120,9 @@ describe("createCodingAssistantAgent", () => {
             "view_image",
             "update_plan",
             "request_user_input",
+            "workflow",
+            "workflow_status",
+            "stop_workflow",
             "spawn_agent",
             "followup_task",
             "wait_agent",
@@ -127,6 +130,7 @@ describe("createCodingAssistantAgent", () => {
             "interrupt_agent",
         ]);
         expect(deepest.agent.tools.map((tool) => tool.name)).not.toContain("spawn_agent");
+        expect(deepest.agent.tools.map((tool) => tool.name)).not.toContain("workflow");
 
         const claudeParent = createCodingAssistantAgent({
             cwd: "/tmp/rig-app-test",
@@ -135,6 +139,7 @@ describe("createCodingAssistantAgent", () => {
         });
         expect(claudeParent.agent.tools.map((tool) => tool.name)).toContain("Agent");
         expect(claudeParent.agent.tools.map((tool) => tool.name)).toContain("SendMessage");
+        expect(claudeParent.agent.tools.map((tool) => tool.name)).toContain("Workflow");
         expect(claudeParent.agent.tools.map((tool) => tool.name)).not.toContain("spawn_agent");
     });
 

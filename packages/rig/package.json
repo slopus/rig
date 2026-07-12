@@ -43,6 +43,7 @@
         "@mariozechner/pi-ai": "^0.73.1",
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@paralleldrive/cuid2": "^3.3.0",
+        "@pydantic/monty": "0.0.18",
         "@sinclair/typebox": "^0.34.49",
         "lru-cache": "^11.5.2",
         "openai": "6.46.0",

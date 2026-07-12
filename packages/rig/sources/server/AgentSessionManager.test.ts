@@ -431,6 +431,110 @@ describe("AgentSessionManager", () => {
         expect(createSubagent).not.toHaveBeenCalled();
     });
 
+    it("queues workflow agents until an active-agent slot is available", async () => {
+        let activeStatus: "completed" | "running" = "running";
+        const parent = {
+            agentMetadata: () => ({ depth: 0, rootSessionId: "root-1", type: "primary" }),
+            id: "root-1",
+            isSubagent: () => false,
+            recordSubagentChanged: vi.fn(),
+            requestForSubagent: () => ({
+                cwd: "/tmp/rig-manager-test",
+                modelId: "openai/gpt-5.5",
+            }),
+        } as unknown as InMemorySession;
+        const active = {
+            agentMetadata: () => ({
+                depth: 1,
+                description: "Active task",
+                parentSessionId: "root-1",
+                rootSessionId: "root-1",
+                taskName: "active_task",
+                type: "subagent" as const,
+            }),
+            subagentSummary: () => ({
+                agentId: "active-agent",
+                createdAt: 1,
+                depth: 1,
+                description: "Active task",
+                id: "active-child",
+                modelId: "openai/gpt-5.5",
+                parentSessionId: "root-1",
+                status: activeStatus,
+                updatedAt: 1,
+            }),
+        } as unknown as InMemorySession;
+        const queued = {
+            abort: vi.fn(),
+            agentMetadata: () => ({
+                depth: 1,
+                description: "Queued task",
+                parentSessionId: "root-1",
+                rootSessionId: "root-1",
+                taskName: "queued_task",
+                type: "subagent" as const,
+            }),
+            id: "queued-child",
+            isSubagent: () => true,
+            snapshot: () => ({
+                snapshot: {
+                    messages: [
+                        {
+                            blocks: [{ text: "Queued result", type: "text" }],
+                            id: "result",
+                            role: "agent",
+                        },
+                    ],
+                },
+            }),
+            subagentSummary: () => ({
+                agentId: "queued-agent",
+                createdAt: 2,
+                depth: 1,
+                description: "Queued task",
+                id: "queued-child",
+                modelId: "openai/gpt-5.5",
+                parentSessionId: "root-1",
+                status: "completed" as const,
+                taskName: "queued_task",
+                updatedAt: 2,
+            }),
+            submit: vi.fn(() => ({ eventId: "event", runId: "run", sessionId: "queued-child" })),
+            waitForRun: vi.fn(async () => ({ status: "completed" as const })),
+        } as unknown as InMemorySession;
+        let created = false;
+        const createSubagent = vi.fn(() => {
+            created = true;
+            return queued;
+        });
+        const manager = new AgentSessionManager({
+            maxActive: 1,
+            repository: {
+                createSubagent,
+                get: () => parent,
+                listByRoot: () => (created ? [active, queued] : [active]),
+            },
+        });
+
+        const spawning = manager.spawn("root-1", {
+            description: "Queued task",
+            prompt: "Run after the active task.",
+            taskName: "queued_task",
+            waitForSlot: true,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        expect(createSubagent).not.toHaveBeenCalled();
+
+        activeStatus = "completed";
+
+        await expect(spawning).resolves.toMatchObject({
+            output: "Queued result",
+            status: "completed",
+            taskName: "queued_task",
+        });
+        expect(createSubagent).toHaveBeenCalledOnce();
+    });
+
     it("routes subagent task operations to the root session", () => {
         const root = {
             agentMetadata: () => ({ depth: 0, rootSessionId: "session-1", type: "primary" }),

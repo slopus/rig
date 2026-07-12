@@ -22,6 +22,11 @@ import { codexFollowupTaskTool } from "./followup_task.js";
 import { codexInterruptAgentTool } from "./interrupt_agent.js";
 import { codexListAgentsTool } from "./list_agents.js";
 import { codexWaitAgentTool } from "./wait_agent.js";
+import {
+    codexStopWorkflowTool,
+    codexWorkflowStatusTool,
+    codexWorkflowTool,
+} from "../workflows/index.js";
 
 export const codexTools = [
     codexExecCommandTool,
@@ -33,6 +38,9 @@ export const codexTools = [
 ] as const;
 
 export const codexCollaborationTools = [
+    codexWorkflowTool,
+    codexWorkflowStatusTool,
+    codexStopWorkflowTool,
     codexSpawnAgentTool,
     codexFollowupTaskTool,
     codexWaitAgentTool,

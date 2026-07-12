@@ -32,6 +32,7 @@ import { claudeWebSearchTool } from "./WebSearch.js";
 import { claudeWriteTool } from "./Write.js";
 import { claudeAskUserQuestionTool } from "./AskUserQuestion.js";
 import { claudeSendMessageTool } from "./SendMessage.js";
+import { claudeWorkflowTool } from "../workflows/index.js";
 
 export const claudeCodeTools = [
     claudeTaskOutputTool,
@@ -51,4 +52,4 @@ export const claudeCodeTools = [
     claudeAskUserQuestionTool,
 ] as const;
 
-export const claudeCollaborationTools = [claudeSendMessageTool] as const;
+export const claudeCollaborationTools = [claudeWorkflowTool, claudeSendMessageTool] as const;

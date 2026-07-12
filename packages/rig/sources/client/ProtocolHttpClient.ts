@@ -25,6 +25,7 @@ import type {
     SetGoalRequest,
     SteerMessageRequest,
     SteerMessageResponse,
+    StopWorkflowResponse,
     SubmitMessageRequest,
     SubmitMessageResponse,
 } from "../protocol/index.js";
@@ -205,6 +206,13 @@ export class ProtocolHttpClient {
             "POST",
             `/sessions/${encodeURIComponent(sessionId)}/messages`,
             request,
+        );
+    }
+
+    stopWorkflow(sessionId: string, runId: string): Promise<StopWorkflowResponse> {
+        return this.#requestJson(
+            "POST",
+            `/sessions/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(runId)}/stop`,
         );
     }
 

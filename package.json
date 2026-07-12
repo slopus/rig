@@ -18,7 +18,7 @@
         "start": "node packages/rig/dist/main.js",
         "start:build": "pnpm build && pnpm start",
         "test": "pnpm --recursive --filter './packages/**' run test",
-        "test:gym": "pnpm build:gym && RIG_GYM_SKIP_BUILD=1 pnpm --filter @slopus/rig-gym-tests test",
+        "test:gym": "pnpm --filter @slopus/rig-gym-tests test",
         "test:live": "pnpm --filter @slopus/rig test:live",
         "test:watch": "pnpm --filter @slopus/rig test:watch",
         "web": "node packages/rig/dist/main.js web"

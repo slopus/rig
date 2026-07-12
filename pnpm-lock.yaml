@@ -87,6 +87,9 @@ importers:
       '@paralleldrive/cuid2':
         specifier: ^3.3.0
         version: 3.3.0
+      '@pydantic/monty':
+        specifier: 0.0.18
+        version: 0.0.18(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)
       '@sinclair/typebox':
         specifier: ^0.34.49
         version: 0.34.49
@@ -478,8 +481,14 @@ packages:
     resolution: {integrity: sha512-2BJI6qwRQfnM0Q7seL1+SbacU/jRRjBnN7Hu3n9BjAn7/s5FaBNnvdD1qBQYRsFTHfjqMaDsjYqanPyqwXj99w==}
     engines: {node: '>=22.19.0'}
 
+  '@emnapi/core@1.11.2':
+    resolution: {integrity: sha512-TC8MkTuZUtcTSiFeuC0ksCh9QIJ5+F21MvZ4Wn4ORfYaFJ/0dsiudv5tVkejgwZlwQ39jL9WWDe2lz8x0WglOA==}
+
   '@emnapi/runtime@1.11.2':
     resolution: {integrity: sha512-kyOl3X0DuTiT1h2ft8r2fYO8JYtU9a9Xis/zBSiGArNaagCOWx90N1k2wxp18czFDH+OgcWGb5ZP/XMt3dcyPA==}
+
+  '@emnapi/wasi-threads@1.2.2':
+    resolution: {integrity: sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA==}
 
   '@esbuild/aix-ppc64@0.28.1':
     resolution: {integrity: sha512-Svl7tq8k/08+p6CXPpRjQ1fKX+1odH/BQbb48fV6fj3CWHhsoIOoY87w1oHXm0qEpkIK3ZfVgp0hed3XBXzXMQ==}
@@ -1026,6 +1035,12 @@ packages:
     resolution: {integrity: sha512-mQ2s0pYYiav+tzCDR05Zptem8Ey2v8s11lri5RKGhTtL4COVCvVCk5vtyRYNT+9L8qSfyOqqefF9UtnW8mC5jA==}
     engines: {node: '>= 20.19.0'}
 
+  '@napi-rs/wasm-runtime@1.1.6':
+    resolution: {integrity: sha512-ZLv/JdUfkvOy9eCnnBaGfiO+XimbjebAeO+MRQqD/B+FR1tnRN0tpKSJHRbE8sFfS6aqsXZ67TQjfwfsxULVbg==}
+    peerDependencies:
+      '@emnapi/core': ^1.7.1
+      '@emnapi/runtime': ^1.7.1
+
   '@noble/hashes@2.2.0':
     resolution: {integrity: sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg==}
     engines: {node: '>= 20.19.0'}
@@ -1298,6 +1313,45 @@ packages:
 
   '@protobufjs/utf8@1.1.1':
     resolution: {integrity: sha512-oOAWABowe8EAbMyWKM0tYDKi8Yaox52D+HWZhAIJqQXbqe0xI/GV7FhLWqlEKreMkfDjshR5FKgi3mnle0h6Eg==}
+
+  '@pydantic/monty-darwin-arm64@0.0.18':
+    resolution: {integrity: sha512-63R8YhyXHc8O9lei+oEW4ns58Ss+34AlRN0lmzKJdzEKRh6YQ/N0cZI0n9CCqSi7ERmiQXJ0NhwWIKxgStx3Tg==}
+    engines: {node: '>= 6.14.2 < 7 || >= 8.11.2 < 9 || >= 9.11.0 < 10 || >= 10.0.0'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@pydantic/monty-darwin-x64@0.0.18':
+    resolution: {integrity: sha512-7ecWyb2sJxKnPPSiTqX8bdrMsKZZaP2/szZxbMa0wZVvoc5jLvkm3azg3n5L+vcVbP/vhlXTSno/huBt/Vvn+g==}
+    engines: {node: '>= 6.14.2 < 7 || >= 8.11.2 < 9 || >= 9.11.0 < 10 || >= 10.0.0'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@pydantic/monty-linux-arm64-gnu@0.0.18':
+    resolution: {integrity: sha512-IonXv0Er8QoHJKEoewurQRgnOoe2mwbrw8A0rj0FnsOkZaQ98KHMLxDsa1UUvTVmKx/XUYst3j9o/8nrfbW68g==}
+    engines: {node: '>= 6.14.2 < 7 || >= 8.11.2 < 9 || >= 9.11.0 < 10 || >= 10.0.0'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@pydantic/monty-linux-x64-gnu@0.0.18':
+    resolution: {integrity: sha512-7QWTiVO7T8YxpIuTtoTafTMOm3tXgje/hSddVSS4pqQbrf2UDQcRW89azqYWTf1JKFGmO27YKyniz70+gOWMMw==}
+    engines: {node: '>= 6.14.2 < 7 || >= 8.11.2 < 9 || >= 9.11.0 < 10 || >= 10.0.0'}
+    cpu: [x64]
+    os: [linux]
+
+  '@pydantic/monty-wasm32-wasi@0.0.18':
+    resolution: {integrity: sha512-64AWbkeoFxvjX4w8VHoRlJCa5P4pxNtbly3hHD9jpDD9qrHcxYu0/g5b0peceQ5wRxIpCC/sWsC46SyFYnma4A==}
+    engines: {node: '>=14.0.0'}
+    cpu: [wasm32]
+
+  '@pydantic/monty-win32-x64-msvc@0.0.18':
+    resolution: {integrity: sha512-3Pvqu5LZHJhZilV3/uEK+d0BiUUo+con55O2/iBxal/9cXBk0CSENpleruPOLp0is96AsYwrKmK/MRsjisd10g==}
+    engines: {node: '>= 6.14.2 < 7 || >= 8.11.2 < 9 || >= 9.11.0 < 10 || >= 10.0.0'}
+    cpu: [x64]
+    os: [win32]
+
+  '@pydantic/monty@0.0.18':
+    resolution: {integrity: sha512-4tCURCLkmpYm5nfZ0TFkBTIV1KWx62ns7Io7JihFAXPtFCYyMd4Q94t5PulEIbJeJ7EKwNsLZOX9ilb0By2LKw==}
+    engines: {node: '>= 6.14.2 < 7 || >= 8.11.2 < 9 || >= 9.11.0 < 10 || >= 10.0.0'}
 
   '@radix-ui/number@1.1.2':
     resolution: {integrity: sha512-ceTwaxc4I5IOi97DgCotl3pqiyRGvffcc0oOsE2dQYaJOFIDsDt4VWG6xEbg1QePv9QWausCEIppud/tJ1wNig==}
@@ -2277,6 +2331,9 @@ packages:
 
   '@tootallnate/quickjs-emscripten@0.23.0':
     resolution: {integrity: sha512-C5Mc6rdnsaJDjO3UpGW/CQTHtCKaYlScZTly4JIu97Jxo/odCiH0ITnDXSJPTOrEKk/ycSZ0AOgTmkDtkOsvIA==}
+
+  '@tybys/wasm-util@0.10.3':
+    resolution: {integrity: sha512-F3fo1MYrRJYL3zER0OUOmkutjr1Vp23m7OsSgp7nq4SP6OqX6C/56XFIPAl5bt3zaBRjmW7SGz3u/6LwFpYcOg==}
 
   '@types/babel__core@7.20.5':
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
@@ -4892,7 +4949,18 @@ snapshots:
       get-east-asian-width: 1.6.0
       marked: 18.0.5
 
+  '@emnapi/core@1.11.2':
+    dependencies:
+      '@emnapi/wasi-threads': 1.2.2
+      tslib: 2.8.1
+    optional: true
+
   '@emnapi/runtime@1.11.2':
+    dependencies:
+      tslib: 2.8.1
+    optional: true
+
+  '@emnapi/wasi-threads@1.2.2':
     dependencies:
       tslib: 2.8.1
     optional: true
@@ -5333,6 +5401,13 @@ snapshots:
       prebuild-install: 7.1.3
     optional: true
 
+  '@napi-rs/wasm-runtime@1.1.6(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)':
+    dependencies:
+      '@emnapi/core': 1.11.2
+      '@emnapi/runtime': 1.11.2
+      '@tybys/wasm-util': 0.10.3
+    optional: true
+
   '@noble/hashes@2.2.0': {}
 
   '@nodable/entities@2.2.0': {}
@@ -5480,6 +5555,41 @@ snapshots:
   '@protobufjs/pool@1.1.0': {}
 
   '@protobufjs/utf8@1.1.1': {}
+
+  '@pydantic/monty-darwin-arm64@0.0.18':
+    optional: true
+
+  '@pydantic/monty-darwin-x64@0.0.18':
+    optional: true
+
+  '@pydantic/monty-linux-arm64-gnu@0.0.18':
+    optional: true
+
+  '@pydantic/monty-linux-x64-gnu@0.0.18':
+    optional: true
+
+  '@pydantic/monty-wasm32-wasi@0.0.18(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)':
+    dependencies:
+      '@napi-rs/wasm-runtime': 1.1.6(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)
+    transitivePeerDependencies:
+      - '@emnapi/core'
+      - '@emnapi/runtime'
+    optional: true
+
+  '@pydantic/monty-win32-x64-msvc@0.0.18':
+    optional: true
+
+  '@pydantic/monty@0.0.18(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)':
+    optionalDependencies:
+      '@pydantic/monty-darwin-arm64': 0.0.18
+      '@pydantic/monty-darwin-x64': 0.0.18
+      '@pydantic/monty-linux-arm64-gnu': 0.0.18
+      '@pydantic/monty-linux-x64-gnu': 0.0.18
+      '@pydantic/monty-wasm32-wasi': 0.0.18(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)
+      '@pydantic/monty-win32-x64-msvc': 0.0.18
+    transitivePeerDependencies:
+      - '@emnapi/core'
+      - '@emnapi/runtime'
 
   '@radix-ui/number@1.1.2': {}
 
@@ -6457,6 +6567,11 @@ snapshots:
   '@tokenizer/token@0.3.0': {}
 
   '@tootallnate/quickjs-emscripten@0.23.0': {}
+
+  '@tybys/wasm-util@0.10.3':
+    dependencies:
+      tslib: 2.8.1
+    optional: true
 
   '@types/babel__core@7.20.5':
     dependencies:

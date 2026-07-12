@@ -43,6 +43,14 @@ import type {
 } from "../protocol/index.js";
 import type { Model, StopReason } from "../providers/types.js";
 import type { UserInputRequest, UserInputResponse } from "../user-input/index.js";
+import {
+    humanizeWorkflowName,
+    serializeWorkflowValue,
+    type LaunchWorkflowRequest,
+    type WorkflowAgentCacheEntry,
+    type WorkflowRun,
+    type WorkflowRunUpdate,
+} from "../workflows/index.js";
 import { createCodeReviewPrompt } from "../review/index.js";
 import { mergeMcpTools, type McpServerSummary, type McpToolProvider } from "../mcp/index.js";
 import type {
@@ -136,6 +144,14 @@ interface ActiveRun {
     runId: string;
 }
 
+interface InternalWorkflowRun {
+    agentCalls: (WorkflowAgentCacheEntry | undefined)[];
+    controller: AbortController;
+    state: WorkflowRun;
+}
+
+const MAX_WORKFLOW_LOG_CHARS = 4_000;
+
 interface PendingUserInput {
     onAbort?: () => void;
     request: UserInputRequest;
@@ -197,6 +213,7 @@ export class InMemorySession {
     #titleError: string | undefined;
     #titleStatus: SessionTitleStatus = "idle";
     #tools: readonly string[] = [];
+    #workflowRuns = new Map<string, InternalWorkflowRun>();
 
     constructor(options: InMemorySessionOptions) {
         this.#agentManager = options.agentManager;
@@ -668,6 +685,166 @@ export class InMemorySession {
         };
     }
 
+    getWorkflow(runId: string): WorkflowRun | undefined {
+        const run = this.#workflowRuns.get(runId)?.state;
+        return run === undefined ? undefined : cloneWorkflowRun(run);
+    }
+
+    listWorkflows(): readonly WorkflowRun[] {
+        return [...this.#workflowRuns.values()]
+            .map((run) => cloneWorkflowRun(run.state))
+            .sort((left, right) => right.startedAt - left.startedAt);
+    }
+
+    launchWorkflow(request: LaunchWorkflowRequest): WorkflowRun {
+        const resumed =
+            request.resumeFromRunId === undefined
+                ? undefined
+                : this.#workflowRuns.get(request.resumeFromRunId);
+        if (request.resumeFromRunId !== undefined && resumed === undefined) {
+            throw new Error("The workflow run to resume was not found in this session.");
+        }
+        if (resumed?.state.status === "running") {
+            throw new Error("Stop the previous workflow run before resuming it.");
+        }
+
+        const runId = createId();
+        const controller = new AbortController();
+        const state: WorkflowRun = {
+            agentCount: 0,
+            description: request.description,
+            logs: [],
+            name: request.name,
+            runId,
+            startedAt: this.#now(),
+            status: "running",
+            taskId: `workflow:${runId}`,
+        };
+        const internal: InternalWorkflowRun = {
+            agentCalls: [],
+            controller,
+            state,
+        };
+        this.#workflowRuns.set(runId, internal);
+        this.#recordWorkflowUpdate({
+            agentCount: state.agentCount,
+            description: state.description,
+            name: state.name,
+            runId,
+            startedAt: state.startedAt,
+            status: state.status,
+            taskId: state.taskId,
+        });
+        void request
+            .execute({
+                onAgentCall: () => {
+                    state.agentCount += 1;
+                    this.#recordWorkflowUpdate({ agentCount: state.agentCount, runId });
+                },
+                onAgentResult: (index, result) => {
+                    internal.agentCalls[index] = result;
+                },
+                onLog: (message) => {
+                    const trimmed = message.trim();
+                    if (trimmed.length === 0) return;
+                    const logs = state.logs as string[];
+                    logs.push(
+                        trimmed.length <= MAX_WORKFLOW_LOG_CHARS
+                            ? trimmed
+                            : `${trimmed.slice(0, MAX_WORKFLOW_LOG_CHARS)}…`,
+                    );
+                    if (logs.length > 200) logs.shift();
+                    const log = logs.at(-1);
+                    const phase = /^Phase:\s*(.+)$/u.exec(log ?? "")?.[1]?.trim();
+                    if (phase !== undefined && phase.length > 0) state.phase = phase;
+                    if (log !== undefined) {
+                        this.#recordWorkflowUpdate({
+                            log,
+                            ...(state.phase === undefined ? {} : { phase: state.phase }),
+                            runId,
+                        });
+                    }
+                },
+                resumeAgentCalls: resumed?.agentCalls ?? [],
+                runId,
+                signal: controller.signal,
+            })
+            .then((result) => {
+                if (this.#workflowRuns.get(runId) !== internal) return;
+                internal.agentCalls = [...result.agentCalls];
+                state.output = result.output;
+                state.finishedAt = this.#now();
+                state.status = "completed";
+                this.#recordWorkflowUpdate({
+                    finishedAt: state.finishedAt,
+                    output: state.output,
+                    runId,
+                    status: state.status,
+                });
+            })
+            .catch((error: unknown) => {
+                if (this.#workflowRuns.get(runId) !== internal) return;
+                if (state.status !== "stopped") {
+                    state.error = error instanceof Error ? error.message : String(error);
+                    state.finishedAt = this.#now();
+                    state.status = "error";
+                    this.#recordWorkflowUpdate({
+                        error: state.error,
+                        finishedAt: state.finishedAt,
+                        runId,
+                        status: state.status,
+                    });
+                }
+            })
+            .finally(() => {
+                if (this.#workflowRuns.get(runId) !== internal) return;
+                const statusText =
+                    state.status === "completed"
+                        ? "completed"
+                        : state.status === "stopped"
+                          ? "was stopped"
+                          : "failed";
+                const resultText =
+                    state.status === "completed"
+                        ? serializeWorkflowValue(state.output)
+                        : (state.error ?? "The workflow did not return a result.");
+                this.deliverNotification({
+                    displayText: `Workflow ${humanizeWorkflowName(state.name)} ${statusText}.`,
+                    text: [
+                        "<workflow-notification>",
+                        `Workflow: ${state.name}`,
+                        `Run ID: ${state.runId}`,
+                        `Status: ${state.status}`,
+                        `Agents: ${state.agentCount}`,
+                        `Result: ${resultText}`,
+                        ...(state.logs.length === 0
+                            ? []
+                            : ["Progress:", ...state.logs.map((log) => `- ${log}`)]),
+                        "</workflow-notification>",
+                    ].join("\n"),
+                });
+            });
+        return cloneWorkflowRun(state);
+    }
+
+    stopWorkflow(runId: string): WorkflowRun | undefined {
+        const run = this.#workflowRuns.get(runId);
+        if (run === undefined) return undefined;
+        if (run.state.status === "running") {
+            run.state.status = "stopped";
+            run.state.error = "The workflow was stopped.";
+            run.state.finishedAt = this.#now();
+            run.controller.abort();
+            this.#recordWorkflowUpdate({
+                error: run.state.error,
+                finishedAt: run.state.finishedAt,
+                runId,
+                status: run.state.status,
+            });
+        }
+        return cloneWorkflowRun(run.state);
+    }
+
     emitCreatedEvent(): void {
         this.#append("session_created", { session: this.snapshot() });
     }
@@ -706,6 +883,10 @@ export class InMemorySession {
 
     reset(): ProtocolSession {
         this.abort();
+        for (const run of this.#workflowRuns.values()) {
+            if (run.state.status === "running") run.controller.abort();
+        }
+        this.#workflowRuns.clear();
         this.#ensureRuntime().agent.reset();
         this.#status = "idle";
         this.#interruption = undefined;
@@ -826,6 +1007,7 @@ export class InMemorySession {
             ),
             mcpServers: this.#mcpServers,
             tasks: this.listTasks(),
+            workflows: this.listWorkflows(),
             ...(this.#goal !== undefined ? { goal: { ...this.#goal } } : {}),
             ...(snapshot.effort !== undefined ? { effort: snapshot.effort } : {}),
             ...(this.#title !== undefined ? { title: this.#title } : {}),
@@ -1181,6 +1363,10 @@ export class InMemorySession {
         return event;
     }
 
+    #recordWorkflowUpdate(update: WorkflowRunUpdate): void {
+        this.#append("workflow_changed", { update });
+    }
+
     #appendAgentEvent(runId: string, event: AgentLoopEvent): void {
         if (this.#activeRun?.runId !== runId) {
             return;
@@ -1276,6 +1462,11 @@ export class InMemorySession {
                 get: (taskId) => this.#taskSession().getTask(taskId),
                 list: () => this.#taskSession().listTasks(),
                 update: (taskId, request) => this.#taskSession().updateTask(taskId, request),
+            },
+            workflows: {
+                get: (runId) => this.getWorkflow(runId),
+                launch: (request) => this.launchWorkflow(request),
+                stop: (runId) => this.stopWorkflow(runId),
             },
         };
         if (!this.isSubagent()) {
@@ -1596,6 +1787,13 @@ export class InMemorySession {
         const message = assistantMessageToAgentMessage(partial, () => activePartial.fallbackId);
         this.#storeMessage(position, message, true, runId);
     }
+}
+
+function cloneWorkflowRun(run: WorkflowRun): WorkflowRun {
+    return {
+        ...run,
+        logs: [...run.logs],
+    };
 }
 
 function isSignalAborted(signal: AbortSignal | undefined): boolean {

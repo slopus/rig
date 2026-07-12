@@ -6,6 +6,7 @@ import type { SubagentContext } from "./SubagentContext.js";
 import type { UserInputContext } from "./UserInputContext.js";
 import type { TaskContext } from "./TaskContext.js";
 import type { PermissionContext } from "../../permissions/index.js";
+import type { WorkflowContext } from "../../workflows/index.js";
 
 export interface AgentContext {
     fs: FileSystemContext;
@@ -16,4 +17,5 @@ export interface AgentContext {
     subagents?: SubagentContext;
     tasks?: TaskContext;
     userInput?: UserInputContext;
+    workflows?: WorkflowContext;
 }

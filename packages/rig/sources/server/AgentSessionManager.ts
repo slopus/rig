@@ -30,6 +30,7 @@ export class AgentSessionManager {
     readonly maxDepth: number;
 
     readonly #repository: AgentSessionRepository;
+    readonly #slotReservations = new Map<string, number>();
 
     constructor(options: AgentSessionManagerOptions) {
         this.#repository = options.repository;
@@ -87,42 +88,44 @@ export class AgentSessionManager {
         if (depth > this.maxDepth) {
             throw new Error(`Subagents are limited to ${this.maxDepth} nested levels.`);
         }
-        const active = this.#repository
-            .listByRoot(parentMetadata.rootSessionId)
-            .filter((session) => {
-                const status = session.subagentSummary().status;
-                return status === "queued" || status === "running";
-            });
-        if (active.length >= this.maxActive) {
-            throw new Error(`No more than ${this.maxActive} subagents can run at once.`);
-        }
-
-        const taskName = this.#taskName(parent, request.taskName, request.description);
-        const metadata: SessionAgentMetadata = {
-            depth,
-            description: request.description,
-            parentSessionId,
-            ...(request.parentToolCallId !== undefined
-                ? { parentToolCallId: request.parentToolCallId }
-                : {}),
-            rootSessionId: parentMetadata.rootSessionId,
-            taskName,
-            type: "subagent",
-        };
-        const parentRequest = parent.requestForSubagent();
-        const child = this.#repository.createSubagent(
-            {
-                ...parentRequest,
-                instructions: createSubagentInstructions(
-                    parentRequest.instructions,
-                    depth,
-                    this.maxDepth,
-                ),
-            },
-            metadata,
+        const releaseSlot = await this.#reserveSlot(
+            parentMetadata.rootSessionId,
+            request.waitForSlot === true,
+            signal,
         );
-        const submitted = child.submit({ text: request.prompt });
-        parent.recordSubagentChanged(child.subagentSummary());
+        let child: InMemorySession;
+        let submitted: ReturnType<InMemorySession["submit"]>;
+        let taskName: string;
+        try {
+            taskName = this.#taskName(parent, request.taskName, request.description);
+            const metadata: SessionAgentMetadata = {
+                depth,
+                description: request.description,
+                parentSessionId,
+                ...(request.parentToolCallId !== undefined
+                    ? { parentToolCallId: request.parentToolCallId }
+                    : {}),
+                rootSessionId: parentMetadata.rootSessionId,
+                taskName,
+                type: "subagent",
+            };
+            const parentRequest = parent.requestForSubagent();
+            child = this.#repository.createSubagent(
+                {
+                    ...parentRequest,
+                    instructions: createSubagentInstructions(
+                        parentRequest.instructions,
+                        depth,
+                        this.maxDepth,
+                    ),
+                },
+                metadata,
+            );
+            submitted = child.submit({ text: request.prompt });
+            parent.recordSubagentChanged(child.subagentSummary());
+        } finally {
+            releaseSlot();
+        }
 
         if (request.background === true) {
             void this.#monitorBackground(parent, child, submitted.runId);
@@ -154,6 +157,36 @@ export class AgentSessionManager {
             throw error;
         } finally {
             signal?.removeEventListener("abort", abortChild);
+        }
+    }
+
+    async #reserveSlot(
+        rootSessionId: string,
+        waitForSlot: boolean,
+        signal?: AbortSignal,
+    ): Promise<() => void> {
+        for (;;) {
+            if (signal?.aborted) throw new Error("Waiting for a subagent slot was cancelled.");
+            const active = this.#repository.listByRoot(rootSessionId).filter((session) => {
+                const status = session.subagentSummary().status;
+                return status === "queued" || status === "running";
+            }).length;
+            const reserved = this.#slotReservations.get(rootSessionId) ?? 0;
+            if (active + reserved < this.maxActive) {
+                this.#slotReservations.set(rootSessionId, reserved + 1);
+                let released = false;
+                return () => {
+                    if (released) return;
+                    released = true;
+                    const current = this.#slotReservations.get(rootSessionId) ?? 1;
+                    if (current <= 1) this.#slotReservations.delete(rootSessionId);
+                    else this.#slotReservations.set(rootSessionId, current - 1);
+                };
+            }
+            if (!waitForSlot) {
+                throw new Error(`No more than ${this.maxActive} subagents can run at once.`);
+            }
+            await new Promise((resolve) => setTimeout(resolve, 25));
         }
     }
 

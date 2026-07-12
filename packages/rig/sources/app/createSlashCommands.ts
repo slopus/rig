@@ -55,6 +55,12 @@ export function createSlashCommands(): SlashCommandItem[] {
             aliases: [],
         },
         {
+            value: "workflows",
+            label: "/workflows",
+            description: "Open the live workflow monitor.",
+            aliases: ["workflow"],
+        },
+        {
             value: "goal",
             label: "/goal",
             description: "Set or manage a persistent long-running goal.",

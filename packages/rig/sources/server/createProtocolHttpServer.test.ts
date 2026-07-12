@@ -91,6 +91,40 @@ describe("createProtocolHttpServer", () => {
         }
     });
 
+    it("stops a running workflow through the protocol", async () => {
+        const { client, close, store } = await startServer();
+        try {
+            const created = await client.createSession({ cwd: "/tmp/rig-protocol-test" });
+            const session = store.get(created.session.id);
+            expect(session).toBeDefined();
+            const run = session?.launchWorkflow({
+                description: "Wait until stopped",
+                execute: ({ signal }) =>
+                    new Promise<never>((_resolve, reject) => {
+                        signal.addEventListener(
+                            "abort",
+                            () => reject(new Error("Cancelled by the monitor.")),
+                            { once: true },
+                        );
+                    }),
+                name: "monitor-stop",
+            });
+            expect(run).toBeDefined();
+            if (run === undefined) throw new Error("Expected a workflow run.");
+
+            await expect(client.stopWorkflow(created.session.id, run.runId)).resolves.toEqual({
+                workflow: expect.objectContaining({
+                    error: "The workflow was stopped.",
+                    runId: run.runId,
+                    status: "stopped",
+                }),
+            });
+            session?.abort();
+        } finally {
+            await close();
+        }
+    });
+
     it("rejects steering when the session has no active run", async () => {
         const { client, close } = await startServer();
         try {

@@ -25,6 +25,7 @@ import type {
     SetGoalRequest,
     ShutdownServerResponse,
     SteerMessageResponse,
+    StopWorkflowResponse,
     SubmitMessageRequest,
     SubmitMessageResponse,
 } from "../protocol/index.js";
@@ -164,6 +165,16 @@ async function handleRequest(
         sendJson<ListSubagentsResponse>(response, 200, {
             subagents: store.listSubagents(sessionId),
         });
+        return;
+    }
+
+    if (request.method === "POST" && route.name === "workflow-stop") {
+        const workflow = session.stopWorkflow(route.workflowRunId);
+        if (workflow === undefined) {
+            sendJson(response, 404, { error: "Workflow not found" });
+            return;
+        }
+        sendJson<StopWorkflowResponse>(response, 200, { workflow });
         return;
     }
 
@@ -466,6 +477,7 @@ function matchRoute(pathname: string):
           sessionId: string;
       }
     | { name: "user-input"; requestId: string; sessionId: string }
+    | { name: "workflow-stop"; sessionId: string; workflowRunId: string }
     | undefined {
     if (pathname === "/health") return { name: "health" };
     if (pathname === "/models") return { name: "models" };
@@ -484,6 +496,18 @@ function matchRoute(pathname: string):
             name: "user-input",
             requestId: decodeURIComponent(parts[3]),
             sessionId,
+        };
+    }
+    if (
+        parts.length === 5 &&
+        parts[2] === "workflows" &&
+        parts[3] !== undefined &&
+        parts[4] === "stop"
+    ) {
+        return {
+            name: "workflow-stop",
+            sessionId,
+            workflowRunId: decodeURIComponent(parts[3]),
         };
     }
     if (parts.length !== 3) return undefined;
@@ -512,6 +536,7 @@ function isSessionMutation(routeName: string, method: string | undefined): boole
             ["abort", "compact", "fork", "messages", "reset", "rewind", "steer"].includes(
                 routeName,
             )) ||
+        (method === "POST" && routeName === "workflow-stop") ||
         (["DELETE", "PATCH", "POST"].includes(method ?? "") && routeName === "goal") ||
         (method === "POST" && routeName === "user-input") ||
         (method === "PATCH" && ["effort", "model", "permissions"].includes(routeName))

@@ -31,10 +31,12 @@ import type { NativeProxessManager } from "../processes/index.js";
 import type { Usage } from "../providers/types.js";
 import type {
     FileSearchResult,
+    EventId,
     McpServerSummary,
     SessionEvent,
     SessionTask,
     SubagentSummary,
+    WorkflowRun,
 } from "../protocol/index.js";
 import type { UserInputRequest, UserInputResponse } from "../user-input/index.js";
 import { createCodeReviewPrompt } from "../review/index.js";
@@ -44,6 +46,7 @@ import type {
     CodingAssistantModelChoice,
 } from "./CodingAssistantAgentBackend.js";
 import { createSelectionPanel } from "./createSelectionPanel.js";
+import { createWorkflowMonitor } from "./createWorkflowMonitor.js";
 import { createSlashCommands, type SlashCommandItem } from "./createSlashCommands.js";
 import { describeModelChoice } from "./describeModelChoice.js";
 import { describeReasoningLevel } from "./describeReasoningLevel.js";
@@ -66,6 +69,7 @@ import { ACTIVITY_WAVE_FRAME_COUNT, renderActivityWave } from "./renderActivityW
 import { renderAgentMarkdown } from "./renderAgentMarkdown.js";
 import { sanitizeTerminalText } from "./sanitizeTerminalText.js";
 import { upsertSubagentSummary } from "./upsertSubagentSummary.js";
+import { applyWorkflowRunUpdate } from "./applyWorkflowRunUpdate.js";
 
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
@@ -126,6 +130,8 @@ export interface CodingAssistantAppOptions {
     initialSessionEvents?: readonly SessionEvent[];
     initialSubagents?: readonly SubagentSummary[];
     initialTasks?: readonly SessionTask[];
+    initialWorkflowEventId?: EventId;
+    initialWorkflows?: readonly WorkflowRun[];
     initialUserInputs?: readonly UserInputRequest[];
     modelLocked?: boolean;
     processManager: NativeProxessManager;
@@ -134,6 +140,7 @@ export interface CodingAssistantAppOptions {
     idFactory?: () => string;
     onDefaultModelChange?: (preference: DefaultModelPreference) => void | Promise<void>;
     onSettingsChange?: (settings: AppSettings) => void | Promise<void>;
+    onStopWorkflow?: (runId: string) => void | Promise<void>;
     onExit?: () => void | Promise<void>;
     respondUserInput?: (requestId: string, response: UserInputResponse) => void | Promise<void>;
     now?: () => number;
@@ -234,6 +241,7 @@ export class CodingAssistantApp implements Component, Focusable {
         | ((preference: DefaultModelPreference) => void | Promise<void>)
         | undefined;
     readonly #onSettingsChange: ((settings: AppSettings) => void | Promise<void>) | undefined;
+    readonly #onStopWorkflow: ((runId: string) => void | Promise<void>) | undefined;
     readonly #onExit: (() => void | Promise<void>) | undefined;
     readonly #respondUserInput:
         | ((requestId: string, response: UserInputResponse) => void | Promise<void>)
@@ -305,6 +313,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #usage: Usage = zeroUsage();
     #latestContextTokens = 0;
     #userInputRequests: UserInputRequest[] = [];
+    #workflows: readonly WorkflowRun[];
 
     constructor(options: CodingAssistantAppOptions) {
         this.#agent = options.agent;
@@ -313,6 +322,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#now = options.now ?? Date.now;
         this.#onDefaultModelChange = options.onDefaultModelChange;
         this.#onSettingsChange = options.onSettingsChange;
+        this.#onStopWorkflow = options.onStopWorkflow;
         this.#onExit = options.onExit;
         this.#respondUserInput = options.respondUserInput;
         this.#processManager = options.processManager;
@@ -324,6 +334,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#mcpServers = options.initialMcpServers ?? [];
         this.#subagents = options.initialSubagents ?? [];
         this.#tasks = options.initialTasks ?? [];
+        this.#workflows = options.initialWorkflows ?? [];
         this.#tui = options.tui;
         this.#version = options.version ?? "0.0.0";
         this.#editor = new Editor(this.#tui, EDITOR_THEME, { paddingX: 0 });
@@ -343,7 +354,15 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#enqueueUserInputRequest(request);
         }
 
+        let reachedWorkflowSnapshot = options.initialWorkflowEventId === undefined;
         for (const event of options.initialSessionEvents ?? []) {
+            // The snapshot is authoritative through its last event. Apply only workflow events
+            // that raced in after it so stale runs are not resurrected after a daemon restart.
+            if (event.type === "workflow_changed" && !reachedWorkflowSnapshot) {
+                if (event.id === options.initialWorkflowEventId) reachedWorkflowSnapshot = true;
+                continue;
+            }
+            if (event.id === options.initialWorkflowEventId) reachedWorkflowSnapshot = true;
             this.applySessionEvent(event);
         }
 
@@ -470,6 +489,12 @@ export class CodingAssistantApp implements Component, Focusable {
             return;
         }
 
+        if (event.type === "workflow_changed") {
+            this.#workflows = applyWorkflowRunUpdate(this.#workflows, event.data.update);
+            this.#requestRender();
+            return;
+        }
+
         if (event.type === "run_finished") {
             if (event.data.stopReason === "aborted") {
                 this.#markActiveToolCallsStopped();
@@ -515,6 +540,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#runningToolCallIds.clear();
             this.#usage = zeroUsage();
             this.#latestContextTokens = 0;
+            this.#workflows = [];
             this.#clearUserInputRequests();
             this.#appendEntry({
                 role: "system",
@@ -1149,6 +1175,11 @@ export class CodingAssistantApp implements Component, Focusable {
             return true;
         }
 
+        if (prompt === "/workflows" || prompt === "/workflow") {
+            this.#openWorkflowMonitor();
+            return true;
+        }
+
         if (prompt === "/new") {
             this.#resetSession();
             return true;
@@ -1327,6 +1358,38 @@ export class CodingAssistantApp implements Component, Focusable {
                 .map((subagent) => `${labels[subagent.status]} · ${subagent.description}`)
                 .join("\n"),
         });
+    }
+
+    #openWorkflowMonitor(): void {
+        this.#showSelectionPanel(
+            createWorkflowMonitor({
+                getWorkflows: () => this.#workflows,
+                now: this.#now,
+                onCancel: () => this.#closeSelectionPanel(),
+                onRequestRender: () => this.#requestRender(),
+                onStop: async (runId) => {
+                    if (this.#onStopWorkflow === undefined) {
+                        this.#appendEntry({
+                            role: "event",
+                            text: "Workflow controls are unavailable in this session.",
+                            title: "Workflows",
+                        });
+                        this.#closeSelectionPanel();
+                        return;
+                    }
+                    try {
+                        await this.#onStopWorkflow(runId);
+                    } catch (error) {
+                        this.#appendEntry({
+                            role: "error",
+                            text: error instanceof Error ? error.message : String(error),
+                            title: "Workflow",
+                        });
+                        this.#closeSelectionPanel();
+                    }
+                },
+            }),
+        );
     }
 
     async #compactSession(): Promise<void> {
@@ -2043,11 +2106,20 @@ export class CodingAssistantApp implements Component, Focusable {
             parts.push(`${FOOTER_QUEUED_FG}queued ${this.#pendingPrompts.length}${RESET}`);
         }
         const runningAgents = this.#subagents.filter(
-            (subagent) => subagent.status === "running",
+            (subagent) =>
+                subagent.status === "running" && !subagent.taskName?.startsWith("workflow_"),
         ).length;
         if (runningAgents > 0) {
             parts.push(
                 `${FOOTER_QUEUED_FG}${runningAgents} agent${runningAgents === 1 ? "" : "s"}${RESET}`,
+            );
+        }
+        const runningWorkflows = this.#workflows.filter(
+            (workflow) => workflow.status === "running",
+        ).length;
+        if (runningWorkflows > 0) {
+            parts.push(
+                `${FOOTER_QUEUED_FG}${runningWorkflows} workflow${runningWorkflows === 1 ? "" : "s"}${RESET}`,
             );
         }
         if (this.#runningBackgroundProcesses > 0) {

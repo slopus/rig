@@ -85,6 +85,79 @@ describe("InMemorySession", () => {
         session.abort();
     });
 
+    it("preserves the user-facing stop reason when workflow cancellation rejects", async () => {
+        const session = new InMemorySessionStore().create({ cwd: "/tmp/rig-session-test" });
+        const run = session.launchWorkflow({
+            description: "Wait for cancellation",
+            execute: ({ signal }) =>
+                new Promise<never>((_resolve, reject) => {
+                    signal.addEventListener(
+                        "abort",
+                        () => reject(new Error("Internal cancellation detail.")),
+                        { once: true },
+                    );
+                }),
+            name: "cancellation-check",
+        });
+
+        expect(session.stopWorkflow(run.runId)).toMatchObject({
+            error: "The workflow was stopped.",
+            status: "stopped",
+        });
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(session.getWorkflow(run.runId)).toMatchObject({
+            error: "The workflow was stopped.",
+            status: "stopped",
+        });
+        session.abort();
+    });
+
+    it("publishes live workflow phase, progress, and completion state", async () => {
+        const session = new InMemorySessionStore().create({ cwd: "/tmp/rig-session-test" });
+        const run = session.launchWorkflow({
+            description: "Inspect the workflow state",
+            execute: async ({ onAgentCall, onLog }) => {
+                onLog("Phase: Inspect");
+                onAgentCall();
+                onLog("Checked the target.");
+                return { agentCalls: [], output: { checked: true } };
+            },
+            name: "state-check",
+        });
+
+        await new Promise((resolve) => setImmediate(resolve));
+
+        expect(session.snapshot().workflows).toEqual([
+            expect.objectContaining({
+                agentCount: 1,
+                description: "Inspect the workflow state",
+                logs: ["Phase: Inspect", "Checked the target."],
+                output: { checked: true },
+                phase: "Inspect",
+                runId: run.runId,
+                status: "completed",
+            }),
+        ]);
+        expect(
+            session.events.since(undefined)?.filter((event) => event.type === "workflow_changed"),
+        ).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    data: { update: expect.objectContaining({ status: "running" }) },
+                }),
+                expect.objectContaining({
+                    data: {
+                        update: expect.objectContaining({
+                            output: { checked: true },
+                            status: "completed",
+                        }),
+                    },
+                }),
+            ]),
+        );
+        session.abort();
+    });
+
     it("routes the same canonical model through the explicitly selected provider", () => {
         const sharedModel = defineModel({
             defaultThinkingLevel: "medium",

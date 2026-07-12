@@ -2,6 +2,7 @@ export type { EventId } from "./EventId.js";
 export type { McpServerSummary } from "../mcp/index.js";
 export type { SessionTask, TaskStatus } from "../tasks/index.js";
 export type { GoalStatus, SessionGoal } from "../goals/index.js";
+export type { WorkflowRun, WorkflowRunStatus, WorkflowRunUpdate } from "../workflows/index.js";
 export { createEventIdFactory, type EventIdFactoryOptions } from "./createEventIdFactory.js";
 export type {
     AbortRequestedEvent,
@@ -54,6 +55,7 @@ export type {
     SessionSummary,
     SubagentChangedEvent,
     SubagentSummary,
+    StopWorkflowResponse,
     SessionTitleStatus,
     ShutdownServerResponse,
     SubmitMessageRequest,
@@ -63,4 +65,5 @@ export type {
     TasksChangedEvent,
     UserInputRequestedEvent,
     UserInputResolvedEvent,
+    WorkflowChangedEvent,
 } from "./SessionProtocol.js";

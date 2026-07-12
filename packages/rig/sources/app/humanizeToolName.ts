@@ -16,6 +16,9 @@ export function humanizeToolName(name: string): string {
     if (normalized === "list_agents") return "Subagents";
     if (normalized === "interrupt_agent") return "Stop subagent";
     if (normalized === "sendmessage") return "Subagent follow-up";
+    if (normalized === "workflow") return "Workflow";
+    if (normalized === "workflow_status") return "Workflow status";
+    if (normalized === "stop_workflow") return "Stop workflow";
     const parts = name.startsWith("mcp__") ? name.slice("mcp__".length).split("__") : [];
     if (parts.length >= 2) {
         return `${humanizeWords(parts[0] ?? "MCP")} · ${humanizeWords(parts.slice(1).join("__"))}`;

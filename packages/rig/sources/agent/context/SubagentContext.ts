@@ -14,6 +14,7 @@ export interface SpawnSubagentRequest {
     parentToolCallId?: string;
     prompt: string;
     taskName?: string;
+    waitForSlot?: boolean;
 }
 
 export interface SpawnSubagentResult {
