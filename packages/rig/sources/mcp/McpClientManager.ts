@@ -1,17 +1,33 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { homedir } from "node:os";
+import { resolve } from "node:path";
 
 import { connectMcpServer, type ConnectedMcpServer } from "./connectMcpServer.js";
 import { createMcpProtocolTools } from "./createMcpProtocolTools.js";
 import { createMcpTool } from "./createMcpTool.js";
-import { loadMcpServerConfigs } from "./loadMcpServerConfigs.js";
+import { fingerprintMcpServer } from "./fingerprintMcpServer.js";
+import { getDefaultMcpTrustPath } from "./getDefaultMcpTrustPath.js";
+import { loadMcpServerConfigEntries } from "./loadMcpServerConfigEntries.js";
+import { McpTrustStore } from "./McpTrustStore.js";
 import type {
     McpServerConfig,
+    McpServerConfigEntry,
     McpServerSummary,
     McpToolLoadResult,
+    McpToolLoadOptions,
     McpToolProvider,
 } from "./types.js";
+import type { PermissionMode } from "../permissions/index.js";
+
+const RESTRICTED_MCP_BLOCKED_REASON =
+    "MCP servers are available in Auto or Full access because they can act outside Rig's sandbox.";
+const MCP_TRUST_REQUIRED_REASON = "This MCP server needs one-time trust approval before it starts.";
+const MCP_NOT_TRUSTED_REASON = "This MCP server is not trusted on this machine.";
+const PROJECT_SHADOWED_REASON =
+    "A trusted user-level server with this name takes precedence over the project configuration.";
 
 interface LoadedConnectionSet extends McpToolLoadResult {
+    cacheable: boolean;
     connections: readonly ConnectedMcpServer[];
 }
 
@@ -32,31 +48,69 @@ type ServerResult = ConnectedServerResult | FailedServerResult;
 export interface McpClientManagerOptions {
     env?: NodeJS.ProcessEnv;
     homeDirectory?: string;
+    trustStore?: McpTrustStore;
 }
 
 export class McpClientManager implements McpToolProvider {
     #connectionSets = new Map<string, Promise<LoadedConnectionSet>>();
+    #connectionKeysByCwd = new Map<string, string>();
     #env: NodeJS.ProcessEnv;
     #homeDirectory: string | undefined;
+    #trustStore: McpTrustStore;
 
     constructor(options: McpClientManagerOptions = {}) {
         this.#env = options.env ?? process.env;
         this.#homeDirectory = options.homeDirectory;
+        this.#trustStore =
+            options.trustStore ??
+            new McpTrustStore(
+                getDefaultMcpTrustPath(this.#env, options.homeDirectory ?? homedir()),
+            );
     }
 
-    async load(cwd: string): Promise<McpToolLoadResult> {
-        let pending = this.#connectionSets.get(cwd);
+    async load(
+        cwd: string,
+        permissionMode: PermissionMode,
+        options: McpToolLoadOptions = {},
+    ): Promise<McpToolLoadResult> {
+        if (permissionMode !== "auto" && permissionMode !== "full_access") {
+            return this.#loadBlockedServerSummaries(cwd);
+        }
+        const entries = await this.#loadEntries(cwd);
+        const connectionKey = `${cwd}\0${entries
+            .map(
+                (entry) =>
+                    `${fingerprintMcpServer(entry, cwd)}:${entry.projectShadowed === true ? "shadowed" : "selected"}`,
+            )
+            .sort()
+            .join("\0")}`;
+        const previousKey = this.#connectionKeysByCwd.get(cwd);
+        if (previousKey !== undefined && previousKey !== connectionKey) {
+            const previous = this.#connectionSets.get(previousKey);
+            this.#connectionSets.delete(previousKey);
+            this.#connectionKeysByCwd.delete(cwd);
+            if (previous !== undefined) await closeConnectionSet(previous);
+        }
+        let pending = this.#connectionSets.get(connectionKey);
         if (pending === undefined) {
-            pending = this.#loadConnectionSet(cwd);
-            this.#connectionSets.set(cwd, pending);
+            pending = this.#loadConnectionSet(cwd, entries, options);
+            this.#connectionSets.set(connectionKey, pending);
+            this.#connectionKeysByCwd.set(cwd, connectionKey);
         }
         const loaded = await pending;
+        if (!loaded.cacheable && this.#connectionSets.get(connectionKey) === pending) {
+            this.#connectionSets.delete(connectionKey);
+            if (this.#connectionKeysByCwd.get(cwd) === connectionKey) {
+                this.#connectionKeysByCwd.delete(cwd);
+            }
+        }
         return { servers: loaded.servers, tools: loaded.tools };
     }
 
     async close(): Promise<void> {
         const sets = await Promise.allSettled(this.#connectionSets.values());
         this.#connectionSets.clear();
+        this.#connectionKeysByCwd.clear();
         await Promise.allSettled(
             sets.flatMap((set) =>
                 set.status === "fulfilled"
@@ -66,21 +120,81 @@ export class McpClientManager implements McpToolProvider {
         );
     }
 
-    async #loadConnectionSet(cwd: string): Promise<LoadedConnectionSet> {
-        const configs = await loadMcpServerConfigs(cwd, {
-            env: this.#env,
-            ...(this.#homeDirectory !== undefined ? { homeDirectory: this.#homeDirectory } : {}),
-        });
-        const entries = Object.entries(configs).sort(([left], [right]) =>
-            left.localeCompare(right),
+    async #loadConnectionSet(
+        cwd: string,
+        entries: readonly McpServerConfigEntry[],
+        options: McpToolLoadOptions,
+    ): Promise<LoadedConnectionSet> {
+        const sortedEntries = [...entries].sort((left, right) =>
+            left.name.localeCompare(right.name),
         );
+        const blockedSummaries: McpServerSummary[] = sortedEntries
+            .filter((entry) => entry.projectShadowed === true)
+            .map((entry) => ({
+                errorMessage: PROJECT_SHADOWED_REASON,
+                name: `${entry.name} (project configuration)`,
+                status: "blocked" as const,
+                toolCount: 0,
+            }));
         const disabledSummaries: McpServerSummary[] = entries
-            .filter(([, config]) => config.enabled === false)
-            .map(([name]) => ({ name, status: "disabled", toolCount: 0 }));
+            .filter((entry) => entry.config.enabled === false)
+            .map((entry) => ({ name: entry.name, status: "disabled", toolCount: 0 }));
+        const trustedEntries: McpServerConfigEntry[] = [];
+        let hasUnresolvedTrust = false;
+        for (const entry of sortedEntries.filter((entry) => entry.config.enabled !== false)) {
+            const fingerprint = fingerprintMcpServer(entry, cwd);
+            let decision = await this.#trustStore.decision(fingerprint);
+            if (decision === undefined && options.requestTrust !== undefined) {
+                decision = await options.requestTrust({
+                    config: entry.config,
+                    ...(entry.config.transport === "stdio"
+                        ? {
+                              effectiveCwd:
+                                  entry.config.cwd === undefined
+                                      ? (this.#homeDirectory ?? homedir())
+                                      : resolve(this.#homeDirectory ?? homedir(), entry.config.cwd),
+                          }
+                        : {}),
+                    fingerprint,
+                    name: entry.name,
+                    source: entry.source,
+                });
+                await this.#trustStore.remember(fingerprint, decision);
+            }
+            if (decision === true) {
+                trustedEntries.push(entry);
+            } else {
+                if (decision === undefined) hasUnresolvedTrust = true;
+                blockedSummaries.push({
+                    errorMessage:
+                        decision === undefined ? MCP_TRUST_REQUIRED_REASON : MCP_NOT_TRUSTED_REASON,
+                    name: entry.name,
+                    status: "blocked",
+                    toolCount: 0,
+                });
+            }
+        }
+
+        if (hasUnresolvedTrust) {
+            for (const entry of trustedEntries) {
+                blockedSummaries.push({
+                    errorMessage: "MCP loading is waiting for the remaining trust decisions.",
+                    name: entry.name,
+                    status: "blocked",
+                    toolCount: 0,
+                });
+            }
+            return {
+                cacheable: false,
+                connections: [],
+                servers: [...blockedSummaries, ...disabledSummaries].sort((left, right) =>
+                    left.name.localeCompare(right.name),
+                ),
+                tools: [],
+            };
+        }
         const results = await Promise.all(
-            entries
-                .filter(([, config]) => config.enabled !== false)
-                .map(([name, config]) => this.#connectServer(name, config, cwd)),
+            trustedEntries.map((entry) => this.#connectServer(entry.name, entry.config, cwd)),
         );
 
         const connections: ConnectedMcpServer[] = [];
@@ -91,7 +205,7 @@ export class McpClientManager implements McpToolProvider {
             name: string;
             timeoutMs?: number;
         }> = [];
-        const servers: McpServerSummary[] = [...disabledSummaries];
+        const servers: McpServerSummary[] = [...blockedSummaries, ...disabledSummaries];
         const tools: McpToolLoadResult["tools"][number][] = [];
         const toolNames = new Set<string>();
         for (const result of results) {
@@ -161,7 +275,42 @@ export class McpClientManager implements McpToolProvider {
         }
 
         servers.sort((left, right) => left.name.localeCompare(right.name));
-        return { connections, servers, tools };
+        return { cacheable: true, connections, servers, tools };
+    }
+
+    async #loadBlockedServerSummaries(cwd: string): Promise<McpToolLoadResult> {
+        const entries = await this.#loadEntries(cwd);
+        const servers: McpServerSummary[] = [];
+        for (const entry of [...entries].sort((left, right) =>
+            left.name.localeCompare(right.name),
+        )) {
+            if (entry.projectShadowed === true) {
+                servers.push({
+                    errorMessage: PROJECT_SHADOWED_REASON,
+                    name: `${entry.name} (project configuration)`,
+                    status: "blocked",
+                    toolCount: 0,
+                });
+            }
+            if (entry.config.enabled === false) {
+                servers.push({ name: entry.name, status: "disabled", toolCount: 0 });
+            } else {
+                servers.push({
+                    errorMessage: RESTRICTED_MCP_BLOCKED_REASON,
+                    name: entry.name,
+                    status: "blocked",
+                    toolCount: 0,
+                });
+            }
+        }
+        return { servers, tools: [] };
+    }
+
+    #loadEntries(cwd: string): Promise<readonly McpServerConfigEntry[]> {
+        return loadMcpServerConfigEntries(cwd, {
+            env: this.#env,
+            ...(this.#homeDirectory !== undefined ? { homeDirectory: this.#homeDirectory } : {}),
+        });
     }
 
     async #connectServer(
@@ -171,7 +320,13 @@ export class McpClientManager implements McpToolProvider {
     ): Promise<ServerResult> {
         let connection: ConnectedMcpServer | undefined;
         try {
-            connection = await connectMcpServer(name, config, cwd, this.#env);
+            connection = await connectMcpServer(
+                name,
+                config,
+                cwd,
+                this.#homeDirectory ?? homedir(),
+                this.#env,
+            );
             const tools = await listAllTools(connection.client, config.startupTimeoutMs ?? 10_000);
             const enabled =
                 config.enabledTools === undefined ? undefined : new Set(config.enabledTools);
@@ -193,6 +348,15 @@ export class McpClientManager implements McpToolProvider {
                 name,
             };
         }
+    }
+}
+
+async function closeConnectionSet(pending: Promise<LoadedConnectionSet>): Promise<void> {
+    try {
+        const loaded = await pending;
+        await Promise.allSettled(loaded.connections.map((connection) => connection.close()));
+    } catch {
+        // A failed connection set has already closed any partially started servers.
     }
 }
 

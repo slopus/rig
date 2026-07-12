@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { loadMcpServerConfigEntries } from "./loadMcpServerConfigEntries.js";
 import { loadMcpServerConfigs } from "./loadMcpServerConfigs.js";
 
 describe("loadMcpServerConfigs", () => {
@@ -39,6 +40,10 @@ oauth_scopes = ["tools.read"]
 [mcp_servers.legacy]
 url = "https://example.com/sse"
 transport = "sse"
+
+[mcp_servers.docs]
+command = "project-shadow"
+enabled = false
 `,
                 "utf8",
             );
@@ -76,6 +81,21 @@ transport = "sse"
                     transport: "http",
                     url: "https://example.com/mcp",
                 },
+            });
+            const entries = await loadMcpServerConfigEntries(cwd, {
+                env: { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv,
+                homeDirectory: join(root, "home"),
+            });
+            expect(Object.fromEntries(entries.map((entry) => [entry.name, entry.source]))).toEqual({
+                docs: "global",
+                project: "project",
+                legacy: "project",
+                remote: "project",
+            });
+            expect(entries.find((entry) => entry.name === "docs")).toMatchObject({
+                config: { command: "docs-server" },
+                projectShadowed: true,
+                source: "global",
             });
         } finally {
             await rm(root, { force: true, recursive: true });

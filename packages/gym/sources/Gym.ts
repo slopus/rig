@@ -19,17 +19,20 @@ export class Gym {
     #disposed = false;
     #exit: Promise<{ exitCode: number; signal?: number }>;
     #ghostty: GhosttyTerminal;
+    #homePath: string | undefined;
     #pty: IPty;
 
     constructor(options: {
         containerName: string;
         ghostty: GhosttyTerminal;
+        homePath?: string;
         inference: MockInferenceServer;
         pty: IPty;
         workspacePath: string;
     }) {
         this.#containerName = options.containerName;
         this.#ghostty = options.ghostty;
+        this.#homePath = options.homePath;
         this.#pty = options.pty;
         this.inference = options.inference;
         this.terminal = new GymTerminal(options.pty, options.ghostty);
@@ -46,7 +49,12 @@ export class Gym {
         await execFileAsync("docker", ["rm", "--force", this.#containerName]).catch(() => {});
         this.#ghostty.close();
         await this.inference.stop();
-        await rm(this.workspacePath, { force: true, recursive: true });
+        await Promise.all([
+            ...(this.#homePath === undefined
+                ? []
+                : [rm(this.#homePath, { force: true, recursive: true })]),
+            rm(this.workspacePath, { force: true, recursive: true }),
+        ]);
     }
 
     exit(): Promise<{ exitCode: number; signal?: number }> {

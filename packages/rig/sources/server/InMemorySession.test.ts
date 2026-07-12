@@ -291,7 +291,7 @@ describe("InMemorySession", () => {
         });
     });
 
-    it("changes permissions and passes them to subagents", () => {
+    it("changes permissions and passes them to subagents", async () => {
         const store = new InMemorySessionStore();
         const session = store.create({
             cwd: "/tmp/rig-session-test",
@@ -301,7 +301,7 @@ describe("InMemorySession", () => {
         expect(session.snapshot().permissionMode).toBe("read_only");
         expect(session.requestForSubagent().permissionMode).toBe("read_only");
 
-        session.changePermissionMode({ permissionMode: "full_access" });
+        await session.changePermissionMode({ permissionMode: "full_access" });
 
         expect(session.snapshot().permissionMode).toBe("full_access");
         expect(session.requestForSubagent().permissionMode).toBe("full_access");

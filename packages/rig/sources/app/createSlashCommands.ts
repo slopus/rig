@@ -99,7 +99,7 @@ export function createSlashCommands(): SlashCommandItem[] {
         {
             value: "abort",
             label: "/abort",
-            description: "Stop the current response.",
+            description: "Stop the current response and background commands.",
             aliases: [],
         },
     ];

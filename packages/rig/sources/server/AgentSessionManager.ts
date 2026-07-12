@@ -8,6 +8,7 @@ import {
     type WaitForSubagentResult,
 } from "../agent/index.js";
 import type { CreateSessionRequest, SessionAgentMetadata } from "../protocol/index.js";
+import type { PermissionMode } from "../permissions/index.js";
 import type { InMemorySession } from "./InMemorySession.js";
 
 export const DEFAULT_MAX_SUBAGENT_DEPTH = 3;
@@ -44,6 +45,20 @@ export class AgentSessionManager {
         return this.#repository.get(session.agentMetadata().rootSessionId) ?? session;
     }
 
+    async changeSubagentPermissionModes(
+        parentSessionId: string,
+        permissionMode: PermissionMode,
+    ): Promise<void> {
+        const root = this.#rootFor(parentSessionId);
+        await Promise.all(
+            this.#repository
+                .listByRoot(root.id)
+                .map((session) =>
+                    session.changePermissionMode({ permissionMode }, { updateSubagents: false }),
+                ),
+        );
+    }
+
     followUp(parentSessionId: string, target: string, message: string): ManagedSubagent {
         const child = this.#resolveTarget(parentSessionId, target);
         const submitted = child.submit({ text: message });
@@ -56,7 +71,7 @@ export class AgentSessionManager {
     interrupt(parentSessionId: string, target: string): ManagedSubagent {
         const child = this.#resolveTarget(parentSessionId, target);
         const previous = this.#managedSubagent(child);
-        child.abort();
+        void Promise.resolve(child.abort()).catch(() => undefined);
         this.#parentFor(child)?.recordSubagentChanged(child.subagentSummary());
         return previous;
     }
@@ -138,11 +153,13 @@ export class AgentSessionManager {
             };
         }
 
-        const abortChild = () => child.abort();
+        const abortChild = () => void Promise.resolve(child.abort()).catch(() => undefined);
         signal?.addEventListener("abort", abortChild, { once: true });
 
         try {
-            if (signal?.aborted) child.abort();
+            if (signal?.aborted) {
+                void Promise.resolve(child.abort()).catch(() => undefined);
+            }
             const completion = await child.waitForRun(submitted.runId);
             parent.recordSubagentChanged(child.subagentSummary());
             return {
@@ -153,7 +170,7 @@ export class AgentSessionManager {
                 taskName,
             };
         } catch (error) {
-            child.abort();
+            void Promise.resolve(child.abort()).catch(() => undefined);
             throw error;
         } finally {
             signal?.removeEventListener("abort", abortChild);

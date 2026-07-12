@@ -127,6 +127,7 @@ export interface CodingAssistantAppOptions {
     agent: CodingAssistantAgentBackend;
     cwd: string;
     initialMcpServers?: readonly McpServerSummary[];
+    initialNotices?: readonly { text: string; title: string }[];
     initialSessionEvents?: readonly SessionEvent[];
     initialSubagents?: readonly SubagentSummary[];
     initialTasks?: readonly SessionTask[];
@@ -308,6 +309,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #tasks: readonly SessionTask[];
     #thinkingEntryIdsByContentIndex = new Map<number, string>();
     #toolCallEntryIdsByContentIndex = new Map<number, string>();
+    #streamedToolCallEntries = new Set<AppTranscriptEntry>();
     #runningToolCallIds = new Set<string>();
     #runningBackgroundProcesses = 0;
     #usage: Usage = zeroUsage();
@@ -352,6 +354,10 @@ export class CodingAssistantApp implements Component, Focusable {
 
         for (const request of options.initialUserInputs ?? []) {
             this.#enqueueUserInputRequest(request);
+        }
+
+        for (const notice of options.initialNotices ?? []) {
+            this.#appendEntry({ role: "event", text: notice.text, title: notice.title });
         }
 
         let reachedWorkflowSnapshot = options.initialWorkflowEventId === undefined;
@@ -473,6 +479,22 @@ export class CodingAssistantApp implements Component, Focusable {
 
         if (event.type === "mcp_servers_changed") {
             this.#mcpServers = event.data.servers;
+            const blockedServers = event.data.servers.filter(
+                (server) => server.status === "blocked",
+            );
+            if (blockedServers.length > 0) {
+                this.#appendEntry({
+                    role: "event",
+                    title:
+                        blockedServers.length === 1 ? "MCP server blocked" : "MCP servers blocked",
+                    text: blockedServers
+                        .map(
+                            (server) =>
+                                `${server.name}: ${server.errorMessage ?? "This server is blocked by the current security boundary."}`,
+                        )
+                        .join("\n"),
+                });
+            }
             this.#requestRender();
             return;
         }
@@ -1204,11 +1226,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
         if (prompt === "/abort") {
             if (!this.#abortActiveRun()) {
-                this.#appendEntry({
-                    role: "event",
-                    title: "abort",
-                    text: "No active run.",
-                });
+                void this.#abortIdleSession();
             }
             return true;
         }
@@ -1285,6 +1303,9 @@ export class CodingAssistantApp implements Component, Focusable {
                     return `${server.name}: connected with ${server.toolCount} tool${server.toolCount === 1 ? "" : "s"}${capabilities.length === 0 ? "" : `, ${capabilities.join(" and ")}`}`;
                 }
                 if (server.status === "disabled") return `${server.name}: disabled`;
+                if (server.status === "blocked") {
+                    return `${server.name}: blocked${server.errorMessage === undefined ? "" : ` — ${server.errorMessage}`}`;
+                }
                 return `${server.name}: could not connect${server.errorMessage === undefined ? "" : ` — ${server.errorMessage}`}`;
             })
             .join("\n");
@@ -1645,6 +1666,31 @@ export class CodingAssistantApp implements Component, Focusable {
         return true;
     }
 
+    async #abortIdleSession(): Promise<void> {
+        try {
+            const localProcessCount = this.#processManager.activeCount();
+            let response;
+            if (this.#agent.abort === undefined) {
+                await this.#processManager.killAll({ forceAfterMs: 500 });
+                response = { aborted: false, stoppedProcesses: localProcessCount };
+            } else {
+                response = await this.#agent.abort();
+            }
+            const stoppedProcesses = response.stoppedProcesses ?? 0;
+            this.#appendEntry({
+                role: "event",
+                title: "abort",
+                text:
+                    stoppedProcesses === 0
+                        ? "No active run."
+                        : `Stopped ${String(stoppedProcesses)} background ${stoppedProcesses === 1 ? "process" : "processes"}.`,
+            });
+        } catch (error) {
+            this.#appendEntry({ role: "error", text: this.#formatError(error) });
+        }
+        this.#requestRender();
+    }
+
     #isCurrentRun(runToken: number): boolean {
         return !this.#stopped && runToken === this.#runToken;
     }
@@ -1661,6 +1707,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (event.type === "inference_iteration_start") {
             this.#statusText = "Running";
             this.#streamEntryId = undefined;
+            this.#streamedToolCallEntries.clear();
             this.#thinkingEntryIdsByContentIndex.clear();
             this.#toolCallEntryIdsByContentIndex.clear();
             if (event.iteration > 1) {
@@ -1703,6 +1750,23 @@ export class CodingAssistantApp implements Component, Focusable {
         } else if (event.type === "tool_execution_progress") {
             const entry = this.#entries.find((candidate) => candidate.id === event.toolCallId);
             if (entry !== undefined) entry.detail = this.#singleLine(event.display);
+        } else if (event.type === "tool_batch_rejected") {
+            const rejectedIds = new Set(event.toolCallIds);
+            this.#entries = this.#entries.filter(
+                (entry) => !this.#streamedToolCallEntries.has(entry),
+            );
+            this.#streamedToolCallEntries.clear();
+            this.#transcriptStartIndex = Math.min(this.#transcriptStartIndex, this.#entries.length);
+            for (const toolCallId of rejectedIds) {
+                this.#activeToolCallIds.delete(toolCallId);
+                this.#awaitingApprovalToolCallIds.delete(toolCallId);
+                this.#runningToolCallIds.delete(toolCallId);
+                if (!this.#entries.some((entry) => entry.id === toolCallId)) {
+                    this.#seenToolCallIds.delete(toolCallId);
+                    this.#stoppedToolCallIds.delete(toolCallId);
+                }
+            }
+            this.#statusText = "Working";
         } else if (event.type === "permission_review") {
             const outcome =
                 event.decision === "allow" ? "Approved automatically" : "Needs approval";
@@ -1717,6 +1781,13 @@ export class CodingAssistantApp implements Component, Focusable {
             });
         } else if (event.type === "background_processes_changed") {
             this.#runningBackgroundProcesses = event.running;
+        } else if (event.type === "background_processes_stopped") {
+            this.#runningBackgroundProcesses = 0;
+            this.#appendEntry({
+                role: "event",
+                title: "permissions",
+                text: `Stopped ${event.count} running process${event.count === 1 ? "" : "es"} before reducing permissions.`,
+            });
         } else if (event.type === "done") {
             this.#statusText = event.reason === "toolUse" ? "Running tools" : "Idle";
         } else if (event.type === "error") {
@@ -1890,6 +1961,7 @@ export class CodingAssistantApp implements Component, Focusable {
             title: PENDING_TOOL_CALL_TITLE,
             text: PENDING_TOOL_CALL_TITLE,
         });
+        this.#streamedToolCallEntries.add(entry);
         this.#toolCallEntryIdsByContentIndex.set(contentIndex, entry.id);
         return entry;
     }
@@ -2388,7 +2460,17 @@ export class CodingAssistantApp implements Component, Focusable {
             ],
             onSelect: (item) => {
                 const mode = item.value as "auto" | "workspace_write" | "read_only" | "full_access";
-                this.#agent.setPermissionMode(mode);
+                try {
+                    const change = this.#agent.setPermissionMode(mode);
+                    if (change !== undefined) {
+                        void change.catch((error: unknown) => {
+                            this.#appendEntry({ role: "error", text: this.#formatError(error) });
+                            this.#requestRender();
+                        });
+                    }
+                } catch (error) {
+                    this.#appendEntry({ role: "error", text: this.#formatError(error) });
+                }
                 if (!this.#sessionBacked) {
                     this.#appendEntry({
                         role: "event",
@@ -2684,7 +2766,9 @@ export class CodingAssistantApp implements Component, Focusable {
         }
         const command = stringField("cmd") ?? stringField("command");
         if (command !== undefined) {
-            return this.#singleLine(command);
+            const shell = stringField("shell");
+            const shellSuffix = shell === undefined ? "" : ` (Shell: ${this.#singleLine(shell)})`;
+            return `${this.#singleLine(command)}${shellSuffix}`;
         }
 
         const path = stringField("file_path") ?? stringField("path");

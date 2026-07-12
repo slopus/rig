@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Value } from "@sinclair/typebox/value";
 import { describe, expect, it } from "vitest";
 
@@ -9,6 +9,265 @@ import { createJustBashToolHarness } from "../tools/testing/createJustBashToolHa
 import { McpClientManager } from "./McpClientManager.js";
 
 describe("McpClientManager", () => {
+    it.each(["read_only", "workspace_write"] as const)(
+        "does not start trusted servers or expose their tools in %s mode",
+        async (permissionMode) => {
+            const root = await mkdtemp(join(tmpdir(), "rig-mcp-restricted-"));
+            const cwd = join(root, "workspace");
+            const homeDirectory = join(root, "home");
+            const marker = join(root, "server-started.txt");
+            const manager = new McpClientManager({
+                env: { XDG_CONFIG_HOME: join(root, "config") } as NodeJS.ProcessEnv,
+                homeDirectory,
+            });
+            try {
+                await mkdir(join(homeDirectory, ".codex"), { recursive: true });
+                await mkdir(cwd, { recursive: true });
+                await writeFile(
+                    join(homeDirectory, ".codex", "config.toml"),
+                    `[mcp_servers.trusted]\ncommand = "${process.execPath}"\nargs = ["server.mjs"]\n`,
+                    "utf8",
+                );
+                await writeFile(
+                    join(homeDirectory, "server.mjs"),
+                    `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker)}, "started");\n`,
+                    "utf8",
+                );
+
+                const loaded = await manager.load(cwd, permissionMode);
+
+                await expect(readFile(marker)).rejects.toMatchObject({ code: "ENOENT" });
+                expect(loaded.tools).toEqual([]);
+                expect(loaded.servers).toEqual([
+                    {
+                        errorMessage:
+                            "MCP servers are available in Auto or Full access because they can act outside Rig's sandbox.",
+                        name: "trusted",
+                        status: "blocked",
+                        toolCount: 0,
+                    },
+                ]);
+            } finally {
+                await manager.close();
+                await rm(root, { force: true, recursive: true });
+            }
+        },
+    );
+
+    it("asks once in Auto and remembers trust across manager restarts", async () => {
+        const root = await mkdtemp(join(tmpdir(), "rig-mcp-trust-"));
+        const cwd = join(root, "workspace");
+        const homeDirectory = join(root, "home");
+        const configHome = join(root, "config");
+        const fixture = join(
+            dirname(fileURLToPath(import.meta.url)),
+            "testing",
+            "stdioMcpServer.mjs",
+        );
+        await mkdir(join(homeDirectory, ".codex"), { recursive: true });
+        await mkdir(cwd, { recursive: true });
+        await writeFile(
+            join(homeDirectory, ".codex", "config.toml"),
+            `[mcp_servers.trusted]\ncommand = "${process.execPath}"\nargs = ["${fixture}"]\n`,
+            "utf8",
+        );
+        let prompts = 0;
+        const first = new McpClientManager({
+            env: { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv,
+            homeDirectory,
+        });
+        try {
+            const headless = await first.load(cwd, "auto");
+            expect(headless.tools).toEqual([]);
+            expect(headless.servers).toEqual([
+                expect.objectContaining({
+                    errorMessage: "This MCP server needs one-time trust approval before it starts.",
+                    name: "trusted",
+                    status: "blocked",
+                }),
+            ]);
+            const loaded = await first.load(cwd, "auto", {
+                requestTrust: async () => {
+                    prompts += 1;
+                    return true;
+                },
+            });
+            expect(loaded.tools.map((tool) => tool.name)).toContain("mcp__trusted__echo_value");
+            expect(prompts).toBe(1);
+        } finally {
+            await first.close();
+        }
+
+        const second = new McpClientManager({
+            env: { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv,
+            homeDirectory,
+        });
+        try {
+            const loaded = await second.load(cwd, "auto", {
+                requestTrust: async () => {
+                    prompts += 1;
+                    return true;
+                },
+            });
+            expect(loaded.tools.map((tool) => tool.name)).toContain("mcp__trusted__echo_value");
+            expect(prompts).toBe(1);
+            await writeFile(
+                join(homeDirectory, ".codex", "config.toml"),
+                `[mcp_servers.trusted]\ncommand = "${process.execPath}"\nargs = ["${fixture}"]\nenabled_tools = ["echo_value"]\n`,
+                "utf8",
+            );
+            await second.load(cwd, "auto", {
+                requestTrust: async () => {
+                    prompts += 1;
+                    return true;
+                },
+            });
+            expect(prompts).toBe(2);
+        } finally {
+            await second.close();
+            await rm(root, { force: true, recursive: true });
+        }
+    });
+
+    it("starts trusted stdio servers from the user home instead of an untrusted workspace", async () => {
+        const root = await mkdtemp(join(tmpdir(), "rig-mcp-cwd-"));
+        const cwd = join(root, "workspace");
+        const homeDirectory = join(root, "home");
+        const homeMarker = join(root, "home-server-started.txt");
+        const workspaceMarker = join(root, "workspace-shadow-started.txt");
+        const manager = new McpClientManager({
+            env: { XDG_CONFIG_HOME: join(root, "config") } as NodeJS.ProcessEnv,
+            homeDirectory,
+        });
+        try {
+            const fixture = join(
+                dirname(fileURLToPath(import.meta.url)),
+                "testing",
+                "stdioMcpServer.mjs",
+            );
+            await mkdir(join(homeDirectory, ".codex"), { recursive: true });
+            await mkdir(cwd, { recursive: true });
+            await writeFile(
+                join(homeDirectory, ".codex", "config.toml"),
+                `[mcp_servers.trusted]\ncommand = "${process.execPath}"\nargs = ["server.mjs"]\n`,
+                "utf8",
+            );
+            await writeFile(
+                join(homeDirectory, "server.mjs"),
+                `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(homeMarker)}, "home");\nawait import(${JSON.stringify(pathToFileURL(fixture).href)});\n`,
+                "utf8",
+            );
+            await writeFile(
+                join(cwd, "server.mjs"),
+                `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(workspaceMarker)}, "workspace");\nawait import(${JSON.stringify(pathToFileURL(fixture).href)});\n`,
+                "utf8",
+            );
+
+            const loaded = await manager.load(cwd, "full_access", {
+                requestTrust: async () => true,
+            });
+
+            await expect(readFile(homeMarker, "utf8")).resolves.toBe("home");
+            await expect(readFile(workspaceMarker)).rejects.toMatchObject({ code: "ENOENT" });
+            expect(loaded.servers).toEqual([
+                expect.objectContaining({ name: "trusted", status: "connected" }),
+            ]);
+            expect(loaded.tools.map((tool) => tool.name)).toContain("mcp__trusted__echo_value");
+        } finally {
+            await manager.close();
+            await rm(root, { force: true, recursive: true });
+        }
+    });
+
+    it("connects a permanently trusted project server without allowing it to shadow user config", async () => {
+        const cwd = await mkdtemp(join(tmpdir(), "rig-mcp-client-"));
+        const configHome = join(cwd, "config-home");
+        const homeDirectory = join(cwd, "home");
+        const manager = new McpClientManager({
+            env: { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv,
+            homeDirectory,
+        });
+        try {
+            const fixture = join(
+                dirname(fileURLToPath(import.meta.url)),
+                "testing",
+                "stdioMcpServer.mjs",
+            );
+            const projectMarker = join(cwd, "project-server-started.txt");
+            const projectServer = join(cwd, "project-server.mjs");
+            await mkdir(join(configHome, "rig"), { recursive: true });
+            await mkdir(homeDirectory, { recursive: true });
+            await writeFile(
+                join(configHome, "rig", "config.toml"),
+                `[mcp_servers."Global Docs"]\ncommand = "${process.execPath}"\nargs = ["${fixture}"]\n`,
+                "utf8",
+            );
+            await writeFile(
+                join(configHome, "rig", "runtime.toml"),
+                `[mcp_servers."Runtime Docs"]\ncommand = "${process.execPath}"\nargs = ["${fixture}"]\n`,
+                "utf8",
+            );
+            await writeFile(
+                join(cwd, "rig.toml"),
+                `[mcp_servers."Project Helper"]\ncommand = "${process.execPath}"\nargs = ["${projectServer}"]\n\n[mcp_servers."Global Docs"]\ncommand = "${process.execPath}"\nargs = ["${projectServer}"]\nenabled = false\n`,
+                "utf8",
+            );
+            await writeFile(
+                projectServer,
+                `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(projectMarker)}, "started\\n");\nawait import(${JSON.stringify(pathToFileURL(fixture).href)});\n`,
+                "utf8",
+            );
+
+            const trustedNames: string[] = [];
+            const loaded = await manager.load(cwd, "auto", {
+                requestTrust: async (request) => {
+                    trustedNames.push(request.name);
+                    return true;
+                },
+            });
+
+            await expect(readFile(projectMarker, "utf8")).resolves.toBe("started\n");
+            expect(trustedNames).toEqual(["Global Docs", "Project Helper", "Runtime Docs"]);
+            expect(loaded.servers).toEqual([
+                {
+                    name: "Global Docs",
+                    promptSupport: true,
+                    resourceSupport: true,
+                    status: "connected",
+                    toolCount: 2,
+                },
+                {
+                    errorMessage:
+                        "A trusted user-level server with this name takes precedence over the project configuration.",
+                    name: "Global Docs (project configuration)",
+                    status: "blocked",
+                    toolCount: 0,
+                },
+                {
+                    name: "Project Helper",
+                    promptSupport: true,
+                    resourceSupport: true,
+                    status: "connected",
+                    toolCount: 2,
+                },
+                {
+                    name: "Runtime Docs",
+                    promptSupport: true,
+                    resourceSupport: true,
+                    status: "connected",
+                    toolCount: 2,
+                },
+            ]);
+            const toolNames = loaded.tools.map((tool) => tool.name);
+            expect(toolNames).toContain("mcp__Global_Docs__echo_value");
+            expect(toolNames).toContain("mcp__Runtime_Docs__echo_value");
+            expect(toolNames).toContain("mcp__Project_Helper__echo_value");
+        } finally {
+            await manager.close();
+            await rm(cwd, { force: true, recursive: true });
+        }
+    });
+
     it("discovers and calls tools over a stdio MCP connection", async () => {
         const cwd = await mkdtemp(join(tmpdir(), "rig-mcp-client-"));
         const manager = new McpClientManager({
@@ -21,14 +280,16 @@ describe("McpClientManager", () => {
                 "testing",
                 "stdioMcpServer.mjs",
             );
-            await mkdir(join(cwd, ".codex"));
+            await mkdir(join(cwd, "empty-home", ".codex"), { recursive: true });
             await writeFile(
-                join(cwd, ".codex", "config.toml"),
+                join(cwd, "empty-home", ".codex", "config.toml"),
                 `[mcp_servers."test server"]\ncommand = "${process.execPath}"\nargs = ["${fixture}"]\n`,
                 "utf8",
             );
 
-            const loaded = await manager.load(cwd);
+            const loaded = await manager.load(cwd, "full_access", {
+                requestTrust: async () => true,
+            });
 
             expect(loaded.servers).toEqual([
                 {
@@ -114,14 +375,16 @@ describe("McpClientManager", () => {
             homeDirectory: join(cwd, "empty-home"),
         });
         try {
-            await mkdir(join(cwd, ".codex"));
+            await mkdir(join(cwd, "empty-home", ".codex"), { recursive: true });
             await writeFile(
-                join(cwd, ".codex", "config.toml"),
+                join(cwd, "empty-home", ".codex", "config.toml"),
                 '[mcp_servers.missing]\ncommand = "rig-command-that-does-not-exist"\n',
                 "utf8",
             );
 
-            const loaded = await manager.load(cwd);
+            const loaded = await manager.load(cwd, "full_access", {
+                requestTrust: async () => true,
+            });
 
             expect(loaded.tools).toEqual([]);
             expect(loaded.servers).toEqual([
@@ -150,13 +413,15 @@ describe("McpClientManager", () => {
                 "testing",
                 "stdioMcpServer.mjs",
             );
-            await mkdir(join(cwd, ".codex"));
+            await mkdir(join(cwd, "empty-home", ".codex"), { recursive: true });
             await writeFile(
-                join(cwd, ".codex", "config.toml"),
+                join(cwd, "empty-home", ".codex", "config.toml"),
                 `[mcp_servers.restricted]\ncommand = "${process.execPath}"\nargs = ["${fixture}"]\nenabled_tools = ["echo_value"]\n`,
                 "utf8",
             );
-            const loaded = await manager.load(cwd);
+            const loaded = await manager.load(cwd, "full_access", {
+                requestTrust: async () => true,
+            });
             const harness = createJustBashToolHarness();
             const listTools = loaded.tools.find((tool) => tool.name === "list_mcp_tools");
             const listResult = await listTools?.execute(

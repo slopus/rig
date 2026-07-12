@@ -105,7 +105,7 @@ describe("permission-sensitive command waits for approval before showing Running
         const awaitingText = normalizeWhitespace(awaitingApproval.text);
         expect(awaitingText).toContain("This writes a proof file after a deliberate delay.");
         expect(awaitingText).toContain("Allow running");
-        expect(awaitingText).toContain(command);
+        expect(awaitingText).toContain(visibleExact(command));
         expect(awaitingText).toContain("Permit running");
         expect(awaitingApproval.text).toContain("• Awaiting approval printf");
         expect(awaitingApproval.text).toContain("• Waiting for approval");
@@ -183,6 +183,10 @@ function messageText(message: { content: unknown } | undefined): string {
 
 function normalizeWhitespace(value: string): string {
     return value.replace(/\s+/gu, " ");
+}
+
+function visibleExact(value: string): string {
+    return value.replaceAll("\\", "\\\\");
 }
 
 function assertTerminalHealth(

@@ -7,7 +7,9 @@ import type {
 } from "../../processes/index.js";
 import type { PermissionContext } from "../../permissions/index.js";
 import type { BashContext, BashSessionSnapshot } from "./BashContext.js";
+import { assertCanUseCustomShell } from "./assertCanUseCustomShell.js";
 import { createSandboxedCommand } from "./createSandboxedCommand.js";
+import { createToolEnvironment } from "./createToolEnvironment.js";
 
 export interface CreateNodeBashContextOptions {
     cwd: string;
@@ -99,6 +101,7 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
         },
         readSession,
         async run(runOptions) {
+            assertCanUseCustomShell(options.permissions.mode, runOptions.shell);
             const cwd = runCwd(runOptions.cwd);
             const command = await createSandboxedCommand({
                 command: runOptions.command,
@@ -108,6 +111,11 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
             const processRunOptions: Parameters<NativeProxessManager["run"]>[0] = {
                 command,
                 cwd,
+                env: createToolEnvironment(options.permissions.mode),
+                ...(options.permissions.mode === "full_access" ||
+                globalThis.process.platform === "win32"
+                    ? {}
+                    : { shell: "/bin/sh" }),
                 timeoutMs: runOptions.timeoutMs ?? 120_000,
                 maxOutputBytes: runOptions.maxOutputBytes ?? 512_000,
             };
@@ -123,6 +131,7 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
             };
         },
         async startSession(runOptions) {
+            assertCanUseCustomShell(options.permissions.mode, runOptions.shell);
             const cwd = runCwd(runOptions.cwd);
             const command = await createSandboxedCommand({
                 command: runOptions.command,
@@ -133,8 +142,14 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
                 cleanupProcessGroupOnExit: true,
                 command,
                 cwd,
+                env: createToolEnvironment(options.permissions.mode),
                 maxOutputBytes: runOptions.maxOutputBytes ?? 512_000,
-                ...(runOptions.shell === undefined ? {} : { shell: runOptions.shell }),
+                ...(runOptions.shell !== undefined
+                    ? { shell: runOptions.shell }
+                    : options.permissions.mode === "full_access" ||
+                        globalThis.process.platform === "win32"
+                      ? {}
+                      : { shell: "/bin/sh" }),
             });
             const sessionId = nextSessionId;
             nextSessionId += 1;

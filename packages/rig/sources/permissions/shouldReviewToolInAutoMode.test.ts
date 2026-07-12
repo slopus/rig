@@ -54,6 +54,23 @@ describe("shouldReviewToolInAutoMode", () => {
             shouldReviewToolInAutoMode("write_stdin", { chars: "deploy\n" }, cwd),
         ).resolves.toBe(true);
         await expect(shouldReviewToolInAutoMode("mcp_publish", {}, cwd)).resolves.toBe(true);
+        await mkdir(join(cwd, ".git", "hooks"), { recursive: true });
+        await expect(
+            shouldReviewToolInAutoMode(
+                "Write",
+                { file_path: join(cwd, ".git", "hooks", "pre-commit") },
+                cwd,
+            ),
+        ).resolves.toBe(true);
+        await expect(
+            shouldReviewToolInAutoMode(
+                "apply_patch",
+                {
+                    patch: "*** Begin Patch\n*** Add File: .git/hooks/pre-commit\n+#!/bin/sh\n*** End Patch",
+                },
+                cwd,
+            ),
+        ).resolves.toBe(true);
     });
 });
 

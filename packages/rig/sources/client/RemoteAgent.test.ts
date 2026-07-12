@@ -28,9 +28,11 @@ describe("RemoteAgent", () => {
 
         agent.setPermissionMode("full_access");
 
-        expect(agent.permissionMode).toBe("full_access");
-        expect(harness.context.permissions.mode).toBe("full_access");
+        expect(agent.permissionMode).toBe("workspace_write");
+        expect(harness.context.permissions.mode).toBe("workspace_write");
         await vi.waitFor(() => expect(changePermissionMode).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(agent.permissionMode).toBe("full_access"));
+        expect(harness.context.permissions.mode).toBe("full_access");
 
         agent.applySessionEvent(permissionEvent(session.id, "read_only"));
 

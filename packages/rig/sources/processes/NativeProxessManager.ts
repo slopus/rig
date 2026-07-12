@@ -357,7 +357,7 @@ function shellArgs(shell: string, command: string): string[] {
             return ["/d", "/s", "/c", command];
         }
     }
-    return ["-lc", command];
+    return ["-c", command];
 }
 
 function appendCapped(

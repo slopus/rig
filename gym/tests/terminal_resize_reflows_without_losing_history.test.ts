@@ -153,6 +153,9 @@ async function captureScrollback(
     gym.terminal.scrollToBottom();
     const bottom = await gym.terminal.snapshot();
     expect(bottom.scroll.atBottom).toBe(true);
+    bottom.rows.forEach((row, index) => {
+        rows.set(bottom.scroll.offset + index, row);
+    });
     return {
         bottom,
         text: [...rows.entries()]

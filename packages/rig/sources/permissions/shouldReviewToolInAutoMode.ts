@@ -2,6 +2,8 @@ import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 
 import { isPathInsideWorkspace } from "../agent/context/isPathInsideWorkspace.js";
+import { isProtectedGitControlPath } from "../agent/context/isProtectedGitControlPath.js";
+import { resolvePotentialPath } from "../agent/context/resolvePotentialPath.js";
 
 const INTERNAL_TOOLS = new Set([
     "Agent",
@@ -39,6 +41,7 @@ const PATH_TOOLS = new Set([
 ]);
 
 const SHELL_TOOLS = new Set(["Bash", "bash", "exec_command"]);
+const WRITE_PATH_TOOLS = new Set(["Edit", "Write", "edit", "write"]);
 
 export async function shouldReviewToolInAutoMode(
     toolName: string,
@@ -56,9 +59,10 @@ export async function shouldReviewToolInAutoMode(
     }
     if (PATH_TOOLS.has(toolName)) {
         const path = readString(args, "file_path") ?? readString(args, "path");
-        return (
-            path !== undefined && !(await isPathInsideWorkspace(cwd, resolveToolPath(path, cwd)))
-        );
+        if (path === undefined) return false;
+        const resolvedPath = resolveToolPath(path, cwd);
+        if (!(await isPathInsideWorkspace(cwd, resolvedPath))) return true;
+        return WRITE_PATH_TOOLS.has(toolName) && (await isProtectedGitPath(resolvedPath));
     }
     return true;
 }
@@ -71,14 +75,24 @@ async function patchTouchesOutsideWorkspace(args: unknown, cwd: string): Promise
     if (patch === undefined) return true;
     const filePattern = /^\*\*\* (?:Add File|Delete File|Update File|Move to): (.+)$/gmu;
     const checks = await Promise.all(
-        [...patch.matchAll(filePattern)].map((match) => {
+        [...patch.matchAll(filePattern)].map(async (match) => {
             const path = match[1];
-            return path === undefined
-                ? Promise.resolve(false)
-                : isPathInsideWorkspace(cwd, resolveToolPath(path, resolvedWorkdir));
+            if (path === undefined) return false;
+            const resolvedPath = resolveToolPath(path, resolvedWorkdir);
+            return (
+                !(await isPathInsideWorkspace(cwd, resolvedPath)) ||
+                (await isProtectedGitPath(resolvedPath))
+            );
         }),
     );
-    return checks.some((inside) => !inside);
+    return checks.some(Boolean);
+}
+
+async function isProtectedGitPath(path: string): Promise<boolean> {
+    return (
+        isProtectedGitControlPath(path) ||
+        isProtectedGitControlPath(await resolvePotentialPath(path))
+    );
 }
 
 function resolveToolPath(path: string, cwd: string): string {

@@ -96,6 +96,10 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         return this.#session.goal === undefined ? undefined : { ...this.#session.goal };
     }
 
+    abort() {
+        return this.#client.abort(this.#session.id);
+    }
+
     async setGoal(objective: string): Promise<void> {
         const response = await this.#client.setGoal(this.#session.id, { objective });
         this.#replaceSession(response.session);
@@ -286,12 +290,11 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
             });
     }
 
-    setPermissionMode(permissionMode: PermissionMode): void {
-        this.#session = { ...this.#session, permissionMode };
-        this.context.permissions?.setMode(permissionMode);
-        void this.#client
-            .changePermissionMode(this.#session.id, { permissionMode })
-            .then((response) => this.#replaceSession(response.session));
+    async setPermissionMode(permissionMode: PermissionMode): Promise<void> {
+        const response = await this.#client.changePermissionMode(this.#session.id, {
+            permissionMode,
+        });
+        this.#replaceSession(response.session);
     }
 
     snapshot(): AgentSnapshot {

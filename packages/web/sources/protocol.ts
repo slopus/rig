@@ -246,7 +246,7 @@ export interface UserInputResponse {
 export interface McpServerSummary {
     errorMessage?: string;
     name: string;
-    status: "connected" | "disabled" | "failed";
+    status: "blocked" | "connected" | "disabled" | "failed";
     toolCount: number;
 }
 

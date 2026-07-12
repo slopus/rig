@@ -2,7 +2,12 @@ import { basename } from "node:path";
 
 import { createNodeAgentContext } from "../agent/index.js";
 import { ensureLocalProtocolServer, RemoteAgent } from "../client/index.js";
-import { loadConfig, writeRuntimeConfig } from "../config/index.js";
+import {
+    createProjectConfigSecurityNotice,
+    loadConfig,
+    writeRuntimeConfig,
+} from "../config/index.js";
+import { createProjectMcpSecurityNotice, loadMcpServerConfigEntries } from "../mcp/index.js";
 import { NativeProxessManager } from "../processes/index.js";
 import type { PermissionMode } from "../permissions/index.js";
 import type { SessionEvent } from "../protocol/index.js";
@@ -30,7 +35,14 @@ export interface RunAppOptions {
 
 export async function runApp(options: RunAppOptions = {}): Promise<void> {
     const cwd = options.cwd ?? process.cwd();
-    const loadedConfig = await loadConfig({ cwd });
+    const [loadedConfig, mcpConfigEntries] = await Promise.all([
+        loadConfig({ cwd }),
+        loadMcpServerConfigEntries(cwd),
+    ]);
+    const projectConfigNotice = createProjectConfigSecurityNotice(
+        loadedConfig.sources.local.values,
+    );
+    const projectMcpNotice = createProjectMcpSecurityNotice(mcpConfigEntries);
     const agentOptions: CreateCodingAssistantAgentOptions = {
         cwd,
         modelId: loadedConfig.config.defaults.modelId,
@@ -132,6 +144,18 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         cwd: sessionCwd,
         initialSessionEvents: history.events,
         initialMcpServers: session.session.mcpServers,
+        ...(projectConfigNotice === undefined && projectMcpNotice === undefined
+            ? {}
+            : {
+                  initialNotices: [
+                      ...(projectConfigNotice === undefined
+                          ? []
+                          : [{ text: projectConfigNotice, title: "Project permission ignored" }]),
+                      ...(projectMcpNotice === undefined
+                          ? []
+                          : [{ text: projectMcpNotice, title: "Project MCP needs trust" }]),
+                  ],
+              }),
         initialSubagents: subagents.subagents,
         initialUserInputs: session.session.pendingUserInputs,
         initialTasks: session.session.tasks,

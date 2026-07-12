@@ -9,6 +9,7 @@ import { ClientCredentialsProvider } from "@modelcontextprotocol/sdk/client/auth
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { ElicitRequestSchema, ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
+import { createShellEnvironment } from "../agent/context/createShellEnvironment.js";
 import { handleMcpElicitation } from "./handleMcpElicitation.js";
 import type { McpServerConfig } from "./types.js";
 
@@ -20,7 +21,8 @@ export interface ConnectedMcpServer {
 export async function connectMcpServer(
     name: string,
     config: McpServerConfig,
-    cwd: string,
+    workspaceCwd: string,
+    trustedServerCwd: string,
     env: NodeJS.ProcessEnv = process.env,
 ): Promise<ConnectedMcpServer> {
     const client = new Client(
@@ -31,9 +33,9 @@ export async function connectMcpServer(
         handleMcpElicitation(client, request),
     );
     client.setRequestHandler(ListRootsRequestSchema, async () => ({
-        roots: [{ uri: pathToFileURL(cwd).href, name: "Workspace" }],
+        roots: [{ uri: pathToFileURL(workspaceCwd).href, name: "Workspace" }],
     }));
-    const transport = createTransport(config, cwd, env);
+    const transport = createTransport(config, trustedServerCwd, env);
     try {
         await client.connect(transport, { timeout: config.startupTimeoutMs ?? 10_000 });
     } catch (error) {
@@ -48,14 +50,19 @@ export async function connectMcpServer(
     };
 }
 
-function createTransport(config: McpServerConfig, cwd: string, env: NodeJS.ProcessEnv): Transport {
+function createTransport(
+    config: McpServerConfig,
+    trustedServerCwd: string,
+    env: NodeJS.ProcessEnv,
+): Transport {
     if (config.transport === "stdio") {
         return new StdioClientTransport({
             args: [...(config.args ?? [])],
             command: config.command,
-            cwd: config.cwd === undefined ? cwd : resolve(cwd, config.cwd),
+            cwd:
+                config.cwd === undefined ? trustedServerCwd : resolve(trustedServerCwd, config.cwd),
             env: {
-                ...stringEnvironment(env),
+                ...stringEnvironment(createShellEnvironment(env)),
                 ...config.env,
             },
             stderr: "ignore",

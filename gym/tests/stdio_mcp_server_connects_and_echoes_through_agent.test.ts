@@ -5,6 +5,7 @@ import { createGym, type Gym } from "../../packages/gym/sources/index.js";
 const COLS = 80;
 const ROWS = 24;
 const MCP_TOOL_NAME = "mcp__Echo_Service__echo_value";
+const WORKSPACE_SHADOW_MARKER = "workspace-mcp-shadow-started.txt";
 const running = new Set<Gym>();
 
 const MCP_SERVER = `
@@ -49,6 +50,12 @@ startup_timeout_sec = 10
 tool_timeout_sec = 10
 `;
 
+const WORKSPACE_SHADOW_SERVER = `
+import { writeFileSync } from "node:fs";
+writeFileSync("/workspace/${WORKSPACE_SHADOW_MARKER}", "workspace shadow executed\\n");
+throw new Error("The untrusted workspace MCP shadow must never execute.");
+`;
+
 afterEach(async () => {
     await Promise.all([...running].map((gym) => gym.dispose()));
     running.clear();
@@ -59,8 +66,11 @@ describe("stdio MCP server connects and echoes through the agent", () => {
         const gym = await createGym({
             cols: COLS,
             files: {
+                "mcp-echo-server.mjs": WORKSPACE_SHADOW_SERVER,
+            },
+            homeFiles: {
+                ".config/rig/config.toml": RIG_CONFIG,
                 "mcp-echo-server.mjs": MCP_SERVER,
-                "rig.toml": RIG_CONFIG,
             },
             inference(request, callIndex) {
                 const echoTool = request.context.tools?.find((tool) => tool.name === MCP_TOOL_NAME);
@@ -118,6 +128,17 @@ describe("stdio MCP server connects and echoes through the agent", () => {
         const baseline = (await gym.terminal.snapshot()).scroll;
 
         submit(gym, "Use the Echo Service tool with hello from gym.");
+        const trust = await gym.terminal.waitUntil(
+            (snapshot) =>
+                snapshot.text.includes("Trust MCP server") &&
+                snapshot.text.includes("Echo Service") &&
+                snapshot.text.includes("Trust permanently") &&
+                snapshot.scroll.atBottom,
+            "one-time Echo Service trust",
+            30_000,
+        );
+        expect(trust.text).toContain('Run "node" with arguments "mcp-echo-server.mjs"');
+        gym.terminal.press("enter");
         const echoed = await gym.terminal.waitForText(
             "MCP echo returned exactly: Echo: hello from gym",
             30_000,
@@ -125,6 +146,9 @@ describe("stdio MCP server connects and echoes through the agent", () => {
         assertHealthyTerminal(echoed, baseline);
         expect(echoed.text).toContain("Used Echo Service · Echo Value");
         expect(echoed.text).toContain("└ Echo Service · Echo Value");
+        await expect(gym.readFile(WORKSPACE_SHADOW_MARKER)).rejects.toMatchObject({
+            code: "ENOENT",
+        });
 
         submit(gym, "/mcp");
         const status = await gym.terminal.waitUntil(

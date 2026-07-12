@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { findGitWritablePaths } from "./findGitWritablePaths.js";
+import { createSandboxFilesystemConfig } from "./createSandboxFilesystemConfig.js";
 import type { PermissionMode } from "../../permissions/index.js";
 
 const require = createRequire(import.meta.url);
@@ -17,22 +18,18 @@ export async function createSandboxedCommand(options: {
 }): Promise<string> {
     if (options.mode === "full_access") return options.command;
 
-    const writablePaths = [tmpdir()];
-    if (options.mode === "workspace_write" || options.mode === "auto") {
-        writablePaths.push(options.cwd);
-        writablePaths.push(...(await findGitWritablePaths(options.cwd)));
-    }
-    const config = {
-        network: { allowedDomains: [], deniedDomains: [] },
-        filesystem: {
-            denyRead: [],
-            allowRead: [],
-            allowWrite: writablePaths,
-            denyWrite: [],
-        },
-    };
     configDirectoryPromise ??= mkdtemp(join(tmpdir(), "rig-sandbox-"));
     const configDirectory = await configDirectoryPromise;
+    const config = {
+        // Gym's disposable Docker container is the outer isolation layer for nested sandbox tests.
+        enableWeakerNestedSandbox:
+            process.env.RIG_GYM_OUTER_ISOLATION === "docker" && existsSync("/.dockerenv"),
+        network: { allowedDomains: [], deniedDomains: [] },
+        filesystem: await createSandboxFilesystemConfig({
+            ...options,
+            sandboxConfigDirectory: configDirectory,
+        }),
+    };
     const key = createHash("sha256")
         .update(`${options.cwd}\0${options.mode}`)
         .digest("hex")

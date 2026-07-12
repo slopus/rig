@@ -4,6 +4,41 @@ import type { InMemorySession } from "./InMemorySession.js";
 import { AgentSessionManager } from "./AgentSessionManager.js";
 
 describe("AgentSessionManager", () => {
+    it("updates every subagent permission boundary with the root session", async () => {
+        const changeFirst = vi.fn(async () => ({ permissionMode: "read_only" }));
+        const changeSecond = vi.fn(async () => ({ permissionMode: "read_only" }));
+        const root = {
+            agentMetadata: () => ({ depth: 0, rootSessionId: "root-1", type: "primary" }),
+            id: "root-1",
+            isSubagent: () => false,
+        } as unknown as InMemorySession;
+        const children = [changeFirst, changeSecond].map(
+            (changePermissionMode, index) =>
+                ({
+                    changePermissionMode,
+                    id: `child-${index + 1}`,
+                }) as unknown as InMemorySession,
+        );
+        const manager = new AgentSessionManager({
+            repository: {
+                createSubagent: vi.fn(),
+                get: (sessionId) => (sessionId === root.id ? root : undefined),
+                listByRoot: () => children,
+            },
+        });
+
+        await manager.changeSubagentPermissionModes(root.id, "read_only");
+
+        expect(changeFirst).toHaveBeenCalledWith(
+            { permissionMode: "read_only" },
+            { updateSubagents: false },
+        );
+        expect(changeSecond).toHaveBeenCalledWith(
+            { permissionMode: "read_only" },
+            { updateSubagents: false },
+        );
+    });
+
     it("runs background agents, reports completion, and keeps them available for follow-up", async () => {
         let status: "completed" | "running" = "running";
         let resolveCompletion: ((value: { status: "completed" }) => void) | undefined;

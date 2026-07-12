@@ -121,9 +121,10 @@ describe("concurrent Auto approvals keep the remaining request waiting", () => {
         const bothPending = await gym.terminal.waitUntil(
             (snapshot) =>
                 snapshot.text.includes("Alpha still needs your explicit approval.") &&
-                snapshot.text.includes("Beta still needs your explicit approval.") &&
+                snapshot.text.includes("• Awaiting approval printf 'alpha approved") &&
+                snapshot.text.includes("• Awaiting approval printf 'beta approved") &&
                 normalizeWhitespace(snapshot.text).includes(
-                    `Allow running “${alphaCommand}”? · 1 of 1`,
+                    `Allow running "${visibleExact(alphaCommand)}". Working directory: "/workspace". Shell: "the default shell". Access: unrestricted filesystem and network access? · 1 of 1`,
                 ) &&
                 snapshot.text.includes("• Waiting for approval") &&
                 snapshot.scroll.atBottom,
@@ -144,7 +145,7 @@ describe("concurrent Auto approvals keep the remaining request waiting", () => {
         const betaStillPending = await gym.terminal.waitUntil(
             (snapshot) =>
                 normalizeWhitespace(snapshot.text).includes(
-                    `Allow running “${betaCommand}”? · 1 of 1`,
+                    `Allow running "${visibleExact(betaCommand)}". Working directory: "/workspace". Shell: "the default shell". Access: unrestricted filesystem and network access? · 1 of 1`,
                 ) &&
                 snapshot.text.includes("• Ran printf 'alpha approved") &&
                 snapshot.text.includes("• Awaiting approval printf 'beta approved") &&
@@ -214,6 +215,10 @@ function messageText(message: { content: unknown } | undefined): string {
 
 function normalizeWhitespace(value: string): string {
     return value.replace(/\s+/gu, " ");
+}
+
+function visibleExact(value: string): string {
+    return value.replaceAll("\\", "\\\\");
 }
 
 function assertTerminalHealth(

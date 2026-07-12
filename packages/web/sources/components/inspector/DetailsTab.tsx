@@ -135,7 +135,9 @@ export function DetailsTab(props: DetailsTabProps) {
                                             ? `${server.toolCount} tool${server.toolCount === 1 ? "" : "s"}`
                                             : server.status === "disabled"
                                               ? "Disabled"
-                                              : "Connection failed"}
+                                              : server.status === "blocked"
+                                                ? "Blocked"
+                                                : "Connection failed"}
                                     </span>
                                 </div>
                                 {server.errorMessage !== undefined && (

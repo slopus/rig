@@ -52,7 +52,14 @@ import {
     type WorkflowRunUpdate,
 } from "../workflows/index.js";
 import { createCodeReviewPrompt } from "../review/index.js";
-import { mergeMcpTools, type McpServerSummary, type McpToolProvider } from "../mcp/index.js";
+import {
+    createMcpTrustUserInputRequest,
+    MCP_TRUST_ANSWER,
+    mergeMcpTools,
+    type McpServerSummary,
+    type McpServerTrustRequest,
+    type McpToolProvider,
+} from "../mcp/index.js";
 import type {
     CreateTaskRequest,
     SessionTask,
@@ -61,6 +68,7 @@ import type {
 } from "../tasks/index.js";
 import {
     DEFAULT_PERMISSION_MODE,
+    isPermissionReduction,
     parsePermissionMode,
     type PermissionMode,
 } from "../permissions/index.js";
@@ -80,6 +88,7 @@ export interface PersistedSessionMessage {
 
 export interface PersistedQueuedRun {
     displayText: string;
+    interactive?: boolean;
     kind: "goal" | "user";
     runId: string;
     text: string;
@@ -192,6 +201,7 @@ export class InMemorySession {
     #messages: PersistedSessionMessage[] = [];
     #mcpLoaded = false;
     #mcpServers: readonly McpServerSummary[] = [];
+    #mcpToolNames = new Set<string>();
     #mcpToolProvider: McpToolProvider | undefined;
     #modelCatalog: ModelCatalog;
     #modelId: string;
@@ -304,10 +314,16 @@ export class InMemorySession {
         }
     }
 
-    abort(): { aborted: boolean; eventId?: EventId } {
+    async abort(): Promise<{ aborted: boolean; eventId?: EventId; stoppedProcesses?: number }> {
         const runId = this.#activeRun?.runId;
-        if (this.#activeRun === undefined && this.#queue.length === 0) {
+        const runningProcesses = this.#runtime?.processManager.activeCount() ?? 0;
+        if (this.#activeRun === undefined && this.#queue.length === 0 && runningProcesses === 0) {
             return { aborted: false };
+        }
+
+        if (this.#activeRun === undefined && this.#queue.length === 0) {
+            await this.#runtime?.processManager.killAll({ forceAfterMs: 500 });
+            return { aborted: false, stoppedProcesses: runningProcesses };
         }
 
         const queuedRunIds = this.#queue.map((queued) => queued.runId);
@@ -318,7 +334,7 @@ export class InMemorySession {
         this.#pauseActiveGoal();
         this.#activeRun?.controller.abort();
         this.#restoredActiveRunId = undefined;
-        void this.#runtime?.processManager.killAll({ forceAfterMs: 500 });
+        await this.#runtime?.processManager.killAll({ forceAfterMs: 500 });
         const event = this.#append("abort_requested", runId !== undefined ? { runId } : {});
         for (const queuedRunId of queuedRunIds) {
             this.#append("run_error", {
@@ -327,7 +343,11 @@ export class InMemorySession {
                 runId: queuedRunId,
             });
         }
-        return { aborted: true, eventId: event.id };
+        return {
+            aborted: true,
+            eventId: event.id,
+            ...(runningProcesses > 0 ? { stoppedProcesses: runningProcesses } : {}),
+        };
     }
 
     agentMetadata(): SessionAgentMetadata {
@@ -364,6 +384,8 @@ export class InMemorySession {
         void this.#runtime?.processManager.killAll({ forceAfterMs: 500 });
         this.#runtime = undefined;
         this.#mcpLoaded = false;
+        this.#mcpServers = [];
+        this.#mcpToolNames.clear();
         this.#tools = [];
         this.#modelId = model.id;
         this.#providerId = providerId;
@@ -433,11 +455,39 @@ export class InMemorySession {
         return this.snapshot();
     }
 
-    changePermissionMode(request: ChangePermissionModeRequest): ProtocolSession {
+    async changePermissionMode(
+        request: ChangePermissionModeRequest,
+        options: { updateSubagents?: boolean } = {},
+    ): Promise<ProtocolSession> {
         const permissionMode = parsePermissionMode(request.permissionMode);
+        if (!this.isSubagent() && options.updateSubagents !== false) {
+            await this.#agentManager?.changeSubagentPermissionModes(this.id, permissionMode);
+        }
+        const runtime = this.#runtime;
+        const running = runtime?.processManager.activeCount() ?? 0;
+        if (running > 0 && isPermissionReduction(this.#permissionMode, permissionMode)) {
+            await runtime?.processManager.killAll({ forceAfterMs: 500 });
+            const runId = this.#activeRun?.runId ?? this.#lastSessionRunId ?? "background";
+            this.#append("agent_event", {
+                event: { type: "background_processes_stopped", count: running },
+                runId,
+            });
+        }
+        const permissionChanged = this.#permissionMode !== permissionMode;
         this.#permissionMode = permissionMode;
-        this.#runtime?.context.permissions?.setMode(permissionMode);
+        runtime?.context.permissions?.setMode(permissionMode);
+        if (permissionChanged) {
+            this.#removeMcpTools(runtime);
+        }
         this.#append("permission_mode_changed", { permissionMode });
+        if (
+            permissionChanged &&
+            runtime !== undefined &&
+            permissionMode !== "auto" &&
+            permissionMode !== "full_access"
+        ) {
+            await this.#ensureMcpTools(runtime);
+        }
         return this.snapshot();
     }
 
@@ -882,7 +932,7 @@ export class InMemorySession {
     }
 
     reset(): ProtocolSession {
-        this.abort();
+        void this.abort().catch(() => undefined);
         for (const run of this.#workflowRuns.values()) {
             if (run.state.status === "running") run.controller.abort();
         }
@@ -929,6 +979,7 @@ export class InMemorySession {
         this.#runtime = undefined;
         this.#mcpLoaded = false;
         this.#mcpServers = [];
+        this.#mcpToolNames.clear();
         this.#tools = [];
         this.#messages = this.#messages.filter((entry) => entry.position < target.position);
         this.#contextMessages = undefined;
@@ -1099,6 +1150,7 @@ export class InMemorySession {
         };
         const queued: PersistedQueuedRun = {
             displayText,
+            ...(request.interactive === undefined ? {} : { interactive: request.interactive }),
             kind: "user",
             runId,
             text: request.text,
@@ -1329,22 +1381,74 @@ export class InMemorySession {
         this.#append("tasks_changed", { tasks: this.listTasks() });
     }
 
-    async #ensureMcpTools(runtime: CodingAssistantRuntime): Promise<void> {
-        if (this.#mcpLoaded) return;
+    async #ensureMcpTools(
+        runtime: CodingAssistantRuntime,
+        signal?: AbortSignal,
+        interactive = true,
+    ): Promise<void> {
+        if (
+            this.#mcpLoaded &&
+            this.#permissionMode !== "auto" &&
+            this.#permissionMode !== "full_access"
+        ) {
+            return;
+        }
         if (this.#mcpToolProvider === undefined) {
             this.#mcpLoaded = true;
             return;
         }
 
-        const loaded = await this.#mcpToolProvider.load(this.#request.cwd);
-        const merged = mergeMcpTools(runtime.agent.tools, loaded);
+        const permissionMode = this.#permissionMode;
+        const mcpLoadOptions =
+            !this.isSubagent() &&
+            interactive &&
+            (permissionMode === "auto" || permissionMode === "full_access")
+                ? {
+                      requestTrust: (request: McpServerTrustRequest) =>
+                          this.#requestMcpTrust(request, signal),
+                  }
+                : {};
+        const loaded = await this.#mcpToolProvider.load(
+            this.#request.cwd,
+            permissionMode,
+            mcpLoadOptions,
+        );
+        if (this.#permissionMode !== permissionMode) return;
+        const baseTools = runtime.agent.tools.filter((tool) => !this.#mcpToolNames.has(tool.name));
+        const baseToolNames = new Set(baseTools.map((tool) => tool.name));
+        const merged = mergeMcpTools(baseTools, loaded);
         runtime.agent.setTools(merged.tools);
+        this.#mcpToolNames = new Set(
+            merged.tools.filter((tool) => !baseToolNames.has(tool.name)).map((tool) => tool.name),
+        );
         this.#tools = runtime.agent.tools.map((tool) => tool.name);
+        const serversChanged = JSON.stringify(this.#mcpServers) !== JSON.stringify(merged.servers);
         this.#mcpServers = merged.servers;
         this.#mcpLoaded = true;
-        if (merged.servers.length > 0) {
+        if (serversChanged && merged.servers.length > 0) {
             this.#append("mcp_servers_changed", { servers: merged.servers });
         }
+    }
+
+    async #requestMcpTrust(request: McpServerTrustRequest, signal?: AbortSignal): Promise<boolean> {
+        const response = await this.requestUserInput(
+            createMcpTrustUserInputRequest(request),
+            signal === undefined ? {} : { signal },
+        );
+        return response.answers.mcp_trust?.includes(MCP_TRUST_ANSWER) === true;
+    }
+
+    #removeMcpTools(runtime: CodingAssistantRuntime | undefined): void {
+        if (runtime !== undefined && this.#mcpToolNames.size > 0) {
+            runtime.agent.setTools(
+                runtime.agent.tools.filter((tool) => !this.#mcpToolNames.has(tool.name)),
+            );
+            this.#tools = runtime.agent.tools.map((tool) => tool.name);
+        }
+        this.#mcpLoaded = false;
+        this.#mcpServers = [];
+        this.#mcpToolNames.clear();
+        this.#append("mcp_servers_changed", { servers: [] });
     }
 
     #append<TType extends SessionEvent["type"]>(
@@ -1638,7 +1742,7 @@ export class InMemorySession {
 
         try {
             const runtime = this.#ensureRuntime();
-            await this.#ensureMcpTools(runtime);
+            await this.#ensureMcpTools(runtime, controller.signal, queued.interactive !== false);
             runtime.agent.enqueueMessage(queued.userMessage);
             if (this.#contextMessages !== undefined) {
                 this.#contextMessages = [...this.#contextMessages, queued.userMessage];

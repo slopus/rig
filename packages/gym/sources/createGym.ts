@@ -12,13 +12,22 @@ import { MockInferenceServer } from "./MockInferenceServer.js";
 import type { GymOptions } from "./types.js";
 
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
-const DEFAULT_IMAGE = "rig-gym:local";
+const DEFAULT_IMAGE = process.env.RIG_GYM_IMAGE ?? "rig-gym:local";
 
 export async function createGym(options: GymOptions): Promise<Gym> {
     const cols = options.cols ?? 100;
     const rows = options.rows ?? 32;
     const image = options.image ?? DEFAULT_IMAGE;
     const workspacePath = await createFixtureWorkspace(options.files);
+    let homePath: string | undefined;
+    try {
+        if (options.homeFiles !== undefined) {
+            homePath = await createFixtureWorkspace(options.homeFiles);
+        }
+    } catch (error) {
+        await rm(workspacePath, { force: true, recursive: true });
+        throw error;
+    }
     const inference = new MockInferenceServer(options.inference);
     const containerName = `rig-gym-${randomUUID()}`;
     let ghostty: GhosttyTerminal | undefined;
@@ -40,6 +49,8 @@ export async function createGym(options: GymOptions): Promise<Gym> {
                 "--tty",
                 "--name",
                 containerName,
+                "--security-opt",
+                "seccomp=unconfined",
                 "--add-host",
                 "host.docker.internal:host-gateway",
                 "--env",
@@ -47,13 +58,17 @@ export async function createGym(options: GymOptions): Promise<Gym> {
                 "--env",
                 `RIG_GYM_TOKEN=${inference.token}`,
                 "--env",
-                "RIG_MODEL=openai/gym",
+                "RIG_GYM_OUTER_ISOLATION=docker",
                 "--env",
-                "RIG_PERMISSION_MODE=full_access",
+                "RIG_MODEL=openai/gym",
+                ...(options.permissionMode === "from_config"
+                    ? []
+                    : ["--env", `RIG_PERMISSION_MODE=${options.permissionMode ?? "full_access"}`]),
                 "--env",
                 "RIG_PROVIDER=gym",
                 "--volume",
                 `${workspacePath}:/workspace`,
+                ...(homePath === undefined ? [] : ["--volume", `${homePath}:/home/rig`]),
                 "--workdir",
                 "/workspace",
                 imageId,
@@ -70,6 +85,7 @@ export async function createGym(options: GymOptions): Promise<Gym> {
         const startedGym = new Gym({
             containerName,
             ghostty: startedGhostty,
+            ...(homePath === undefined ? {} : { homePath }),
             inference,
             pty,
             workspacePath,
@@ -94,7 +110,10 @@ export async function createGym(options: GymOptions): Promise<Gym> {
         } else {
             ghostty?.close();
             await inference.stop().catch(() => {});
-            await rm(workspacePath, { force: true, recursive: true });
+            await Promise.all([
+                ...(homePath === undefined ? [] : [rm(homePath, { force: true, recursive: true })]),
+                rm(workspacePath, { force: true, recursive: true }),
+            ]);
         }
         throw error;
     }

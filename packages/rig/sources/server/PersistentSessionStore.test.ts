@@ -455,7 +455,7 @@ describe("PersistentSessionStore", () => {
             store.insertQueuedRun("session-1", queuedRun);
 
             const session = store.get("session-1");
-            const response = session?.abort();
+            const response = await session?.abort();
             const events = session?.events.since(undefined) ?? [];
 
             expect(response?.aborted).toBe(true);

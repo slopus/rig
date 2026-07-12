@@ -101,6 +101,47 @@ describe("CodingAssistantApp", () => {
         expect(rawLines[inputLineIndex + 2]).toBe("");
     });
 
+    it("uses the idle abort command to stop session background processes", async () => {
+        const model = defineModel({
+            defaultThinkingLevel: "off",
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const abort = vi.fn(async () => ({ aborted: false, stoppedProcesses: 1 }));
+        const agent = Object.assign(
+            new Agent({
+                context: harness.context,
+                modelId: model.id,
+                printToConsole: false,
+                provider,
+            }),
+            { abort },
+        );
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            sessionBacked: true,
+            tui: fakeTui(),
+        });
+
+        submit(app, "/abort");
+
+        await vi.waitFor(() => expect(abort).toHaveBeenCalledOnce());
+        await vi.waitFor(() =>
+            expect(stripAnsi(app.render(80).join("\n"))).toContain("Stopped 1 background process."),
+        );
+    });
+
     it("opens Codex-style backtracking on Escape and restores the selected prompt", async () => {
         const model = defineModel({
             defaultThinkingLevel: "off",
@@ -728,6 +769,12 @@ describe("CodingAssistantApp", () => {
             initialMcpServers: [
                 { name: "docs", status: "connected", toolCount: 2 },
                 {
+                    errorMessage: "This MCP server is not trusted on this machine.",
+                    name: "project helper",
+                    status: "blocked",
+                    toolCount: 0,
+                },
+                {
                     errorMessage: "The server process exited.",
                     name: "issues",
                     status: "failed",
@@ -741,8 +788,56 @@ describe("CodingAssistantApp", () => {
         submit(app, "/mcp");
 
         const rendered = stripAnsi(app.render(100).join("\n"));
-        expect(rendered).toContain("docs: connected with 2 tools");
-        expect(rendered).toContain("issues: could not connect — The server process exited.");
+        const normalized = rendered.replace(/\s+/gu, " ");
+        expect(normalized).toContain("docs: connected with 2 tools");
+        expect(normalized).toContain(
+            "project helper: blocked — This MCP server is not trusted on this machine.",
+        );
+        expect(normalized).toContain("issues: could not connect — The server process exited.");
+
+        app.applySessionEvent({
+            createdAt: 1,
+            data: {
+                servers: [
+                    {
+                        errorMessage: "This MCP server is not trusted on this machine.",
+                        name: "Project Helper",
+                        status: "blocked",
+                        toolCount: 0,
+                    },
+                ],
+            },
+            id: "mcp-blocked",
+            sessionId: "session-1",
+            type: "mcp_servers_changed",
+        });
+        const blocked = stripAnsi(app.render(100).join("\n")).replace(/\s+/gu, " ");
+        expect(blocked).toContain("MCP server blocked");
+        expect(blocked).toContain(
+            "Project Helper: This MCP server is not trusted on this machine.",
+        );
+
+        app.applySessionEvent({
+            createdAt: 2,
+            data: {
+                servers: [
+                    {
+                        errorMessage:
+                            "MCP servers are available in Auto or Full access because they can act outside Rig's sandbox.",
+                        name: "Trusted Helper",
+                        status: "blocked",
+                        toolCount: 0,
+                    },
+                ],
+            },
+            id: "mcp-permission-blocked",
+            sessionId: "session-1",
+            type: "mcp_servers_changed",
+        });
+        const permissionBlocked = stripAnsi(app.render(100).join("\n")).replace(/\s+/gu, " ");
+        expect(permissionBlocked).toContain(
+            "Trusted Helper: MCP servers are available in Auto or Full access because they can act outside Rig's sandbox.",
+        );
     });
 
     it("shows persisted task progress from the tasks command", () => {
@@ -2627,7 +2722,10 @@ describe("CodingAssistantApp", () => {
                                 type: "toolCall",
                                 id: "tool-call-1",
                                 name: "exec_command",
-                                arguments: { cmd: "printf 'line one\\nline two\\n'" },
+                                arguments: {
+                                    cmd: "printf 'line one\\nline two\\n'",
+                                    shell: "/bin/zsh",
+                                },
                             },
                         ],
                         api: "test",
@@ -2662,7 +2760,7 @@ describe("CodingAssistantApp", () => {
         const raw = app.render(80).join("\n");
         const rendered = stripAnsi(raw);
         expect(raw).toContain("\x1b[38;5;202m\x1b[1mRan");
-        expect(rendered).toContain("• Ran printf 'line one\\nline two\\n'");
+        expect(rendered).toContain("• Ran printf 'line one\\nline two\\n' (Shell: /bin/zsh)");
         expect(rendered).toContain("└ line one (+1 lines)");
         const resultLines = rendered.split("\n").filter((line) => line.trimStart().startsWith("└"));
         expect(resultLines).toHaveLength(1);

@@ -26,8 +26,10 @@ export type GymFixture =
 export interface GymOptions {
     cols?: number;
     files?: Readonly<Record<string, GymFixture>>;
+    homeFiles?: Readonly<Record<string, GymFixture>>;
     image?: string;
     inference: readonly GymMockResponse[] | GymInferenceHandler;
+    permissionMode?: "auto" | "from_config" | "full_access" | "read_only" | "workspace_write";
     rows?: number;
     startupText?: string;
     timeoutMs?: number;

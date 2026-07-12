@@ -40,6 +40,55 @@ describe("createNodeAgentContext", () => {
         expect(processManager.activeCount()).toBe(0);
     });
 
+    it("rejects attacker-selected shells outside Full access", async () => {
+        const cwd = await makeTempDir();
+        const context = createNodeAgentContext({
+            cwd,
+            processManager: new NativeProxessManager(),
+        });
+
+        for (const mode of ["workspace_write", "read_only", "auto"] as const) {
+            context.permissions?.setMode(mode);
+            await expect(
+                context.bash.run({ command: "printf blocked", shell: "/bin/sh" }),
+            ).rejects.toThrow("Custom shells are available only in Full access mode.");
+        }
+
+        context.permissions?.setMode("full_access");
+        await expect(
+            context.bash.run({ command: "printf allowed", shell: "/bin/sh" }),
+        ).resolves.toMatchObject({ exitCode: 0, stdout: "allowed" });
+    });
+
+    it("does not inherit provider or control-channel secrets in shell subprocesses", async () => {
+        const cwd = await makeTempDir();
+        const previousToken = process.env.RIG_GYM_TOKEN;
+        const previousUrl = process.env.RIG_GYM_INFERENCE_URL;
+        const previousSafeValue = process.env.SHELL_SAFE_TEST_VALUE;
+        process.env.RIG_GYM_TOKEN = "synthetic-gym-secret";
+        process.env.RIG_GYM_INFERENCE_URL = "http://control-channel.invalid";
+        process.env.SHELL_SAFE_TEST_VALUE = "ordinary-value";
+
+        try {
+            const context = createNodeAgentContext({
+                cwd,
+                permissionMode: "full_access",
+                processManager: new NativeProxessManager(),
+            });
+            const script =
+                "process.stdout.write(JSON.stringify({token:process.env.RIG_GYM_TOKEN,url:process.env.RIG_GYM_INFERENCE_URL,safe:process.env.SHELL_SAFE_TEST_VALUE}))";
+            const result = await context.bash.run({
+                command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`,
+            });
+
+            expect(JSON.parse(result.stdout)).toEqual({ safe: "ordinary-value" });
+        } finally {
+            restoreEnvironment("RIG_GYM_TOKEN", previousToken);
+            restoreEnvironment("RIG_GYM_INFERENCE_URL", previousUrl);
+            restoreEnvironment("SHELL_SAFE_TEST_VALUE", previousSafeValue);
+        }
+    });
+
     it("keeps yielded shell sessions alive for polling and stdin", async () => {
         const cwd = await makeTempDir();
         const processManager = new NativeProxessManager();
@@ -256,4 +305,12 @@ async function makeWorkspaceRoot(): Promise<string> {
     const path = await mkdtemp(join(process.cwd(), ".rig-context-"));
     tempDirs.push(path);
     return path;
+}
+
+function restoreEnvironment(name: string, value: string | undefined): void {
+    if (value === undefined) {
+        delete process.env[name];
+    } else {
+        process.env[name] = value;
+    }
 }

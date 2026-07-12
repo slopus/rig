@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 
+import { assertCanReadPath } from "./assertCanReadPath.js";
 import { assertCanWritePath } from "./assertCanWritePath.js";
 import type { FileSystemContext } from "./FileSystemContext.js";
 import type { PermissionMode } from "../../permissions/index.js";
@@ -18,11 +19,14 @@ export function createNodeFileSystemContext(
 ): FileSystemContext {
     const permissionMode = options.permissionMode ?? (() => "full_access" as const);
     const resolvePath = (path: string) => (isAbsolute(path) ? path : resolve(cwd, path));
+    const readPathOptions = options.home === undefined ? {} : { homeDirectory: options.home };
     return {
         cwd,
         home: options.home ?? homedir(),
         async exists(path) {
-            return existsSync(resolvePath(path));
+            const target = resolvePath(path);
+            await assertCanReadPath(cwd, target, permissionMode(), readPathOptions);
+            return existsSync(target);
         },
         async mkdir(path, options) {
             const target = resolvePath(path);
@@ -30,13 +34,19 @@ export function createNodeFileSystemContext(
             await mkdir(target, { recursive: options?.recursive ?? false });
         },
         async readFile(path) {
-            return readFile(resolvePath(path), "utf8");
+            const target = resolvePath(path);
+            await assertCanReadPath(cwd, target, permissionMode(), readPathOptions);
+            return readFile(target, "utf8");
         },
         async readFileBuffer(path) {
-            return readFile(resolvePath(path));
+            const target = resolvePath(path);
+            await assertCanReadPath(cwd, target, permissionMode(), readPathOptions);
+            return readFile(target);
         },
         async readdir(path) {
-            return readdir(resolvePath(path));
+            const target = resolvePath(path);
+            await assertCanReadPath(cwd, target, permissionMode(), readPathOptions);
+            return readdir(target);
         },
         async rm(path, options) {
             const target = resolvePath(path);
@@ -47,7 +57,9 @@ export function createNodeFileSystemContext(
             });
         },
         async stat(path) {
-            const stats = await stat(resolvePath(path));
+            const target = resolvePath(path);
+            await assertCanReadPath(cwd, target, permissionMode(), readPathOptions);
+            const stats = await stat(target);
             return {
                 isFile: stats.isFile(),
                 isDirectory: stats.isDirectory(),

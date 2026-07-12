@@ -195,6 +195,7 @@ export interface ShutdownServerResponse {
 export interface SubmitMessageRequest {
     content?: readonly ContentBlock[];
     displayText?: string;
+    interactive?: boolean;
     text: string;
 }
 
@@ -220,6 +221,7 @@ export interface ChangeEffortRequest {
 export interface AbortRunResponse {
     aborted: boolean;
     eventId?: EventId;
+    stoppedProcesses?: number;
 }
 
 export type SessionEvent =

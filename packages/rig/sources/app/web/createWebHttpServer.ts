@@ -3,6 +3,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFile, stat } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 
+import { setWebSecurityHeaders, webSecurityHeaderNames } from "./setWebSecurityHeaders.js";
+import { validateWebApiRequest } from "./validateWebApiRequest.js";
+
 export interface WebHttpServerOptions {
     assetRoot: string;
     socketPath: string;
@@ -28,8 +31,14 @@ async function handleWebRequest(
     response: ServerResponse,
     options: WebHttpServerOptions,
 ): Promise<void> {
+    setWebSecurityHeaders(response);
     const url = new URL(request.url ?? "/", "http://web.rig.localhost");
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
+        const rejectionMessage = validateWebApiRequest(request);
+        if (rejectionMessage !== undefined) {
+            sendText(response, 403, rejectionMessage);
+            return;
+        }
         proxyDaemonRequest(request, response, options, url);
         return;
     }
@@ -111,6 +120,9 @@ function sanitizeProxyHeaders(headers: IncomingHttpHeaders): IncomingHttpHeaders
     delete responseHeaders.trailer;
     delete responseHeaders["transfer-encoding"];
     delete responseHeaders.upgrade;
+    for (const headerName of webSecurityHeaderNames) {
+        delete responseHeaders[headerName];
+    }
     return responseHeaders;
 }
 

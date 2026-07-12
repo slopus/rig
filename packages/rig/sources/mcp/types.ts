@@ -1,4 +1,5 @@
 import type { AnyDefinedTool } from "../agent/index.js";
+import type { PermissionMode } from "../permissions/index.js";
 
 export interface McpServerConfigBase {
     disabledTools?: readonly string[];
@@ -28,10 +29,31 @@ export interface McpHttpServerConfig extends McpServerConfigBase {
 
 export type McpServerConfig = McpStdioServerConfig | McpHttpServerConfig;
 
+export type McpServerConfigSource = "global" | "project" | "runtime";
+
+export interface McpServerConfigEntry {
+    config: McpServerConfig;
+    name: string;
+    projectShadowed?: boolean;
+    source: McpServerConfigSource;
+}
+
+export interface McpServerTrustRequest {
+    config: McpServerConfig;
+    effectiveCwd?: string;
+    fingerprint: string;
+    name: string;
+    source: McpServerConfigSource;
+}
+
+export interface McpToolLoadOptions {
+    requestTrust?: (request: McpServerTrustRequest) => Promise<boolean>;
+}
+
 export interface McpServerSummary {
     errorMessage?: string;
     name: string;
-    status: "connected" | "disabled" | "failed";
+    status: "blocked" | "connected" | "disabled" | "failed";
     promptSupport?: boolean;
     resourceSupport?: boolean;
     toolCount: number;
@@ -44,5 +66,9 @@ export interface McpToolLoadResult {
 
 export interface McpToolProvider {
     close(): Promise<void>;
-    load(cwd: string): Promise<McpToolLoadResult>;
+    load(
+        cwd: string,
+        permissionMode: PermissionMode,
+        options?: McpToolLoadOptions,
+    ): Promise<McpToolLoadResult>;
 }

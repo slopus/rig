@@ -235,7 +235,13 @@ async function handleRequest(
     }
 
     if (request.method === "POST" && route.name === "abort") {
-        sendJson<AbortRunResponse>(response, 200, session.abort());
+        try {
+            sendJson<AbortRunResponse>(response, 200, await session.abort());
+        } catch (error) {
+            sendJson(response, 409, {
+                error: error instanceof Error ? error.message : "The run could not be aborted.",
+            });
+        }
         return;
     }
 
@@ -289,7 +295,7 @@ async function handleRequest(
             });
             return;
         }
-        sendJson(response, 200, { session: session.changePermissionMode(body) });
+        sendJson(response, 200, { session: await session.changePermissionMode(body) });
         return;
     }
 

@@ -2,6 +2,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { Value } from "@sinclair/typebox/value";
 
 import { assistantMessageToAgentMessage } from "./assistantMessageToAgentMessage.js";
+import { createAmbiguousToolCallRejection } from "./createAmbiguousToolCallRejection.js";
 import type { AgentContext } from "./context/AgentContext.js";
 import { isInvalidImageRequestError } from "./isInvalidImageRequestError.js";
 import { prepareProviderMessageImages } from "./prepareProviderMessageImages.js";
@@ -34,9 +35,9 @@ import type {
     UserContent as ProviderUserContent,
 } from "../providers/types.js";
 import {
+    isPotentiallyMutatingMcpTool,
     requestAutoPermissionApproval,
     reviewAutoPermission,
-    shouldElevateToolInAutoMode,
     shouldReviewToolInAutoMode,
     summarizePermissionAction,
 } from "../permissions/index.js";
@@ -80,6 +81,10 @@ export type AgentLoopEvent =
           toolCallId: string;
       }
     | {
+          type: "tool_batch_rejected";
+          toolCallIds: readonly string[];
+      }
+    | {
           type: "permission_review";
           action: string;
           decision: "allow" | "ask";
@@ -91,6 +96,10 @@ export type AgentLoopEvent =
     | {
           type: "background_processes_changed";
           running: number;
+      }
+    | {
+          type: "background_processes_stopped";
+          count: number;
       };
 
 export interface AgentLoopResult {
@@ -227,6 +236,33 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
             await options.onEvent?.(event);
         }
 
+        const ambiguousToolCallRejection = createAmbiguousToolCallRejection(
+            assistantMessage,
+            idFactory,
+            collectToolCallIds(transcript),
+        );
+        if (ambiguousToolCallRejection !== undefined) {
+            await options.onEvent?.({
+                type: "tool_batch_rejected",
+                toolCallIds: ambiguousToolCallRejection.originalToolCallIds,
+            });
+            transcript.push(
+                ambiguousToolCallRejection.assistantMessage,
+                ambiguousToolCallRejection.resultMessage,
+            );
+            contextTranscript.push(
+                ambiguousToolCallRejection.assistantMessage,
+                ambiguousToolCallRejection.resultMessage,
+            );
+            await options.onMessage?.(ambiguousToolCallRejection.assistantMessage);
+            await options.onMessage?.(ambiguousToolCallRejection.resultMessage);
+            return {
+                messages: transcript,
+                contextMessages: contextTranscript,
+                stopReason: "error",
+            };
+        }
+
         providerMessages.push(assistantMessage);
 
         const agentMessage = assistantMessageToAgentMessage(assistantMessage, idFactory);
@@ -341,6 +377,17 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         await options.onMessage?.(toolResultMessage);
         appendSteering(options, transcript, contextTranscript, providerMessages, now);
     }
+}
+
+function collectToolCallIds(messages: readonly Message[]): ReadonlySet<string> {
+    const ids = new Set<string>();
+    for (const message of messages) {
+        if (message.role !== "agent") continue;
+        for (const block of message.blocks) {
+            if (block.type === "tool_call") ids.add(block.id);
+        }
+    }
+    return ids;
 }
 
 function appendSteering(
@@ -595,6 +642,18 @@ async function executeToolCall(
         return errorToolResultBlock(toolCall, `Invalid arguments for tool '${tool.name}'`);
     }
 
+    if (
+        isPotentiallyMutatingMcpTool(tool.name) &&
+        context.permissions?.mode !== undefined &&
+        context.permissions.mode !== "auto" &&
+        context.permissions.mode !== "full_access"
+    ) {
+        return errorToolResultBlock(
+            toolCall,
+            "MCP actions require Auto or Full access so Rig can disclose the unsandboxed boundary.",
+        );
+    }
+
     try {
         let runWithFullAccess = false;
         if (
@@ -610,7 +669,7 @@ async function executeToolCall(
                 ...(options.signal === undefined ? {} : { signal: options.signal }),
                 toolName: tool.name,
             });
-            const action = summarizePermissionAction(tool.name, toolCall.arguments);
+            const action = summarizePermissionAction(tool.name, toolCall.arguments, context.fs.cwd);
             await options.onPermissionReview?.({
                 action,
                 decision: review.decision,
@@ -633,11 +692,7 @@ async function executeToolCall(
                     );
                 }
             }
-            runWithFullAccess = await shouldElevateToolInAutoMode(
-                tool.name,
-                toolCall.arguments,
-                context.fs.cwd,
-            );
+            runWithFullAccess = true;
         }
 
         const execute = tool.execute as (

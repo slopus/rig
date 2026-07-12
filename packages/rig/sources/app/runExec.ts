@@ -1,6 +1,7 @@
 import { findLastAgentResponseText } from "../agent/findLastAgentResponseText.js";
 import { ensureLocalProtocolServer } from "../client/index.js";
-import { loadConfig } from "../config/index.js";
+import { createProjectConfigSecurityNotice, loadConfig } from "../config/index.js";
+import { createProjectMcpSecurityNotice, loadMcpServerConfigEntries } from "../mcp/index.js";
 import type { CreateSessionRequest, ProtocolSession, SessionEvent } from "../protocol/index.js";
 import type { StopReason } from "../providers/types.js";
 import type { PermissionMode } from "../permissions/index.js";
@@ -27,7 +28,32 @@ export async function runExec(
 async function run(options: ExecCommandOptions, environment: NodeJS.ProcessEnv): Promise<void> {
     const cwd = process.cwd();
     const prompt = await readExecPrompt(options.prompt);
-    const loadedConfig = await loadConfig({ cwd, env: environment });
+    const [loadedConfig, mcpConfigEntries] = await Promise.all([
+        loadConfig({ cwd, env: environment }),
+        loadMcpServerConfigEntries(cwd, { env: environment }),
+    ]);
+    const projectConfigNotice = createProjectConfigSecurityNotice(
+        loadedConfig.sources.local.values,
+    );
+    const projectMcpNotice = createProjectMcpSecurityNotice(mcpConfigEntries);
+    if (projectConfigNotice !== undefined) {
+        if (options.outputFormat === "stream-json") {
+            process.stdout.write(
+                `${JSON.stringify({ message: projectConfigNotice, title: "Project permission ignored", type: "warning" })}\n`,
+            );
+        } else {
+            process.stderr.write(`Project permission ignored: ${projectConfigNotice}\n`);
+        }
+    }
+    if (projectMcpNotice !== undefined) {
+        if (options.outputFormat === "stream-json") {
+            process.stdout.write(
+                `${JSON.stringify({ message: projectMcpNotice, title: "Project MCP needs trust", type: "warning" })}\n`,
+            );
+        } else {
+            process.stderr.write(`Project MCP needs trust: ${projectMcpNotice}\n`);
+        }
+    }
     const connection = await ensureLocalProtocolServer(
         options.outputFormat === "text"
             ? { onStatus: (message: string) => process.stderr.write(`${message}\n`) }
@@ -64,7 +90,10 @@ async function run(options: ExecCommandOptions, environment: NodeJS.ProcessEnv):
             .session;
     }
 
-    const submitted = await connection.client.submitMessage(session.id, { text: prompt });
+    const submitted = await connection.client.submitMessage(session.id, {
+        interactive: false,
+        text: prompt,
+    });
     const controller = new AbortController();
     let failure: string | undefined;
     let stopReason: StopReason | undefined;

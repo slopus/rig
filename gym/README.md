@@ -62,6 +62,8 @@ Vitest scenario on the host
 8. Waits until the Rig composer is visible before returning the `Gym` instance.
 9. On disposal, kills the PTY, force-removes the container, closes the terminal helper and inference server, and deletes the temporary workspace.
 
+Restricted-command scenarios run Sandbox Runtime inside the disposable Gym container. Gym removes Docker's seccomp filter so Bubblewrap can create nested user and PID namespaces, but adds no host capabilities; `RIG_GYM_OUTER_ISOLATION=docker` enables Sandbox Runtime's documented nested-container mode only when `/.dockerenv` is also present. The outer unprivileged container and its temporary workspace remain the host boundary.
+
 ## Repository layout
 
 ```text
@@ -125,6 +127,14 @@ Run all gym tests against the existing image with:
 
 ```sh
 RIG_GYM_SKIP_BUILD=1 pnpm --filter @slopus/rig-gym-tests test
+```
+
+Set `RIG_GYM_IMAGE` to use a uniquely tagged image when other workspaces or agents may build Gym
+at the same time. This avoids another build replacing the shared `rig-gym:local` tag during a run:
+
+```sh
+RIG_GYM_IMAGE=rig-gym:my-workspace RIG_GYM_SKIP_BUILD=1 \
+  pnpm --filter @slopus/rig-gym-tests test
 ```
 
 Rebuild the Docker image whenever production Rig code, package dependencies, or `packages/gym/Dockerfile` changes. Changes limited to `gym/tests`, the host runner in `packages/gym/sources`, or the Rust terminal helper do not require an image rebuild. The Rust helper is compiled on the host when the gym starts.
@@ -207,6 +217,7 @@ Cleanup must run when assertions fail. Leaked containers, servers, or fixture di
 interface GymOptions {
     cols?: number;
     files?: Readonly<Record<string, GymFixture>>;
+    homeFiles?: Readonly<Record<string, GymFixture>>;
     image?: string;
     inference: readonly GymMockResponse[] | GymInferenceHandler;
     rows?: number;
@@ -215,15 +226,16 @@ interface GymOptions {
 }
 ```
 
-| Option        | Default                  | Purpose                                     |
-| ------------- | ------------------------ | ------------------------------------------- |
-| `cols`        | `100`                    | Terminal width in cells                     |
-| `rows`        | `32`                     | Terminal height in cells                    |
-| `files`       | `{}`                     | Fixture tree mounted into `/workspace`      |
-| `image`       | `rig-gym:local`          | Docker image tag to build or run            |
-| `inference`   | Required                 | Ordered responses or a request handler      |
-| `startupText` | `Ask Rig to do anything` | Visible text that marks startup as complete |
-| `timeoutMs`   | `20_000`                 | Maximum startup wait for the composer       |
+| Option        | Default                  | Purpose                                       |
+| ------------- | ------------------------ | --------------------------------------------- |
+| `cols`        | `100`                    | Terminal width in cells                       |
+| `rows`        | `32`                     | Terminal height in cells                      |
+| `files`       | `{}`                     | Fixture tree mounted into `/workspace`        |
+| `homeFiles`   | `{}`                     | Trusted fixture tree mounted into `/home/rig` |
+| `image`       | `rig-gym:local`          | Docker image tag to build or run              |
+| `inference`   | Required                 | Ordered responses or a request handler        |
+| `startupText` | `Ask Rig to do anything` | Visible text that marks startup as complete   |
+| `timeoutMs`   | `20_000`                 | Maximum startup wait for the composer         |
 
 Set `startupText` to a stable visible fragment only when a deliberately narrow startup viewport
 truncates the default placeholder.
@@ -262,6 +274,10 @@ await expect(gym.readFile("src/result.txt")).resolves.toBe("created in Docker\n"
 ```
 
 `gym.workspacePath` exposes the temporary host path for advanced diagnostics. Prefer `gym.readFile` in assertions so tests remain clear and path-safe.
+
+Use `homeFiles` for configuration that must originate from the simulated user's trusted home
+directory, such as `.config/rig/config.toml`. Its keys are relative to `/home/rig`. Keep
+repository-controlled fixtures in `files` so security tests preserve the source boundary.
 
 ## Mock inference
 

@@ -14,7 +14,10 @@ describe("permission prompt reveals commands without terminal-control spoofing",
         const titleControl = "\x1b]0;CORRUPTED_PERMISSION_TITLE\x07";
         const safePadding = "x".repeat(150);
         const command = `printf 'must not run\\n' > spoofed-command.txt; # ${titleControl}${safePadding} VISIBLE_COMMAND_SUFFIX`;
-        const visibleCommand = command.replace(titleControl, "");
+        const visibleCommand = command
+            .replaceAll("\\", "\\\\")
+            .replaceAll("\x1b", "\\u{001b}")
+            .replaceAll("\x07", "\\u{0007}");
         const gym = await createGym({
             cols: 96,
             inference(request, callIndex) {
@@ -102,7 +105,7 @@ describe("permission prompt reveals commands without terminal-control spoofing",
         expect(withoutWhitespace(prompt.text)).toContain(withoutWhitespace(visibleCommand));
         expect(normalizedPrompt).toContain("VISIBLE_COMMAND_SUFFIX");
         expect(normalizedPrompt).not.toContain("…");
-        expect(prompt.text).not.toContain("CORRUPTED_PERMISSION_TITLE");
+        expect(prompt.text).toContain("\\u{001b}]0;CORRUPTED_PERMISSION_TITLE\\u{0007}");
         expect(prompt.text).not.toContain("spoofed-permission-command");
         expect(prompt.text).not.toContain("\x1b");
         await expect(gym.readFile("spoofed-command.txt")).rejects.toMatchObject({ code: "ENOENT" });

@@ -18,7 +18,14 @@ RUN pnpm --filter @slopus/rig deploy --prod --legacy /prod/rig
 FROM node:24-bookworm-slim
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends bash ca-certificates git procps ripgrep \
+    && apt-get install --yes --no-install-recommends \
+        bash \
+        bubblewrap \
+        ca-certificates \
+        git \
+        procps \
+        ripgrep \
+        socat \
     && rm -rf /var/lib/apt/lists/* \
     && git config --system --add safe.directory /workspace
 

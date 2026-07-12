@@ -1,4 +1,5 @@
 export { createConfigFile } from "./createConfigFile.js";
+export { createProjectConfigSecurityNotice } from "./createProjectConfigSecurityNotice.js";
 export { DEFAULT_RIG_CONFIG } from "./defaultConfig.js";
 export { getDefaultGlobalConfigPath } from "./getDefaultGlobalConfigPath.js";
 export { getDefaultLocalConfigPath } from "./getDefaultLocalConfigPath.js";

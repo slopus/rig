@@ -58,8 +58,6 @@ describe("Auto permissions review and user denial are enforced", () => {
                             {
                                 arguments: {
                                     cmd: allowedCommand,
-                                    justification: "Create the requested workspace proof file.",
-                                    sandbox_permissions: "require_escalated",
                                     workdir: "/workspace",
                                 },
                                 id: "auto-approved-command",
@@ -167,9 +165,13 @@ describe("Auto permissions review and user denial are enforced", () => {
             "one-time approval prompt",
             30_000,
         );
-        expect(approvalPrompt.text).toContain("This command needs explicit one-time approval.");
+        expect(normalizeWhitespace(approvalPrompt.text)).toContain(
+            "This command needs explicit one-time approval.",
+        );
         expect(approvalPrompt.text).toContain("Allow running");
-        expect(normalizeWhitespace(approvalPrompt.text)).toContain("auto-denied.txt”? · 1 of 1");
+        expect(normalizeWhitespace(approvalPrompt.text)).toContain(
+            'auto-denied.txt". Working directory: "/workspace". Shell: "the default shell". Access: unrestricted filesystem and network access? · 1 of 1',
+        );
         expect(
             approvalPrompt.rows.some((row) =>
                 row.includes("• Awaiting approval printf 'this must not run"),

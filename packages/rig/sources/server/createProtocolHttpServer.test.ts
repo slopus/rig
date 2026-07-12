@@ -138,6 +138,25 @@ describe("createProtocolHttpServer", () => {
         }
     });
 
+    it("reports abort failures without dropping the protocol connection", async () => {
+        const { client, close, store } = await startServer();
+        try {
+            const created = await client.createSession({ cwd: "/tmp/rig-protocol-test" });
+            const session = store.get(created.session.id);
+            expect(session).toBeDefined();
+            vi.spyOn(session!, "abort").mockRejectedValueOnce(
+                new Error("The background process could not be stopped."),
+            );
+
+            await expect(client.abort(created.session.id)).rejects.toThrow(
+                "The background process could not be stopped.",
+            );
+            await expect(client.health()).resolves.toMatchObject({ healthy: true });
+        } finally {
+            await close();
+        }
+    });
+
     it("updates and clears a persisted goal through dedicated endpoints", async () => {
         const store = new PersistentSessionStore({ databasePath: ":memory:" });
         store.saveSession(pausedGoalState());
