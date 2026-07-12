@@ -5,6 +5,9 @@ export const DEFAULT_RIG_CONFIG: RigConfig = {
         modelId: "openai/gpt-5.5",
         permissionMode: "workspace_write",
     },
+    features: {
+        workflows: true,
+    },
     mcpServers: {},
     settings: {
         showReasoning: false,

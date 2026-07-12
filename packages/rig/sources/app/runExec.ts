@@ -64,6 +64,7 @@ async function run(options: ExecCommandOptions, environment: NodeJS.ProcessEnv):
         options,
         cwd,
         loadedConfig.config.defaults,
+        loadedConfig.config.features.workflows,
         connection.client,
         environment,
     );
@@ -167,6 +168,7 @@ async function openSession(
         permissionMode: PermissionMode;
         providerId?: string;
     },
+    workflowsEnabled: boolean,
     client: Awaited<ReturnType<typeof ensureLocalProtocolServer>>["client"],
     environment: NodeJS.ProcessEnv,
 ): Promise<ProtocolSession> {
@@ -184,6 +186,7 @@ async function openSession(
         cwd,
         modelId: options.modelId ?? environment.RIG_MODEL ?? defaults.modelId,
         permissionMode: options.permissionMode ?? defaults.permissionMode,
+        workflowsEnabled,
     };
     const providerId = options.providerId ?? environment.RIG_PROVIDER ?? defaults.providerId;
     const effort = options.effort ?? environment.RIG_EFFORT ?? defaults.effort;

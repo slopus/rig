@@ -47,6 +47,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         cwd,
         modelId: loadedConfig.config.defaults.modelId,
         permissionMode: loadedConfig.config.defaults.permissionMode,
+        workflowsEnabled: loadedConfig.config.features.workflows,
     };
     if (loadedConfig.config.defaults.providerId !== undefined) {
         agentOptions.providerId = loadedConfig.config.defaults.providerId;
@@ -163,6 +164,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
             ? {}
             : { initialWorkflowEventId: session.session.lastEventId }),
         initialWorkflows: session.session.workflows ?? [],
+        workflowsEnabled: session.session.workflowsEnabled !== false,
         modelLocked: session.session.modelLocked,
         onDefaultModelChange: (preference) =>
             writeRuntimeConfig(loadedConfig.paths.runtime, {

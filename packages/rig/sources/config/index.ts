@@ -12,6 +12,7 @@ export { writeRuntimeConfig } from "./writeRuntimeConfig.js";
 export { writeRuntimeConfigDefaults } from "./writeRuntimeConfigDefaults.js";
 export type {
     ConfigDefaults,
+    ConfigFeatures,
     ConfigPaths,
     ConfigSettings,
     ConfigSource,
@@ -19,6 +20,7 @@ export type {
     LoadConfigOptions,
     RigConfig,
     PartialConfigDefaults,
+    PartialConfigFeatures,
     PartialConfigSettings,
     PartialRigConfig,
 } from "./types.js";

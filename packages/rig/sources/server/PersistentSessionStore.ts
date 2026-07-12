@@ -391,6 +391,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     tools_json,
                     tasks_json,
                     workflows_json,
+                    workflows_enabled,
                     goal_json,
                     next_task_id,
                     title,
@@ -402,7 +403,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     created_at_ms,
                     updated_at_ms
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     agent_id = excluded.agent_id,
                     session_kind = excluded.session_kind,
@@ -425,6 +426,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     tools_json = excluded.tools_json,
                     tasks_json = excluded.tasks_json,
                     workflows_json = excluded.workflows_json,
+                    workflows_enabled = excluded.workflows_enabled,
                     goal_json = excluded.goal_json,
                     next_task_id = excluded.next_task_id,
                     title = excluded.title,
@@ -459,6 +461,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 JSON.stringify(state.tools),
                 JSON.stringify(state.tasks),
                 JSON.stringify(state.workflows ?? []),
+                state.workflowsEnabled === false ? 0 : 1,
                 state.goal === undefined ? null : JSON.stringify(state.goal),
                 state.nextTaskId,
                 state.title ?? null,
@@ -573,6 +576,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 tools_json TEXT NOT NULL,
                 tasks_json TEXT NOT NULL DEFAULT '[]',
                 workflows_json TEXT NOT NULL DEFAULT '[]',
+                workflows_enabled INTEGER NOT NULL DEFAULT 1,
                 goal_json TEXT,
                 next_task_id INTEGER NOT NULL DEFAULT 1,
                 title TEXT,
@@ -638,6 +642,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         this.#ensureSessionColumn("permission_mode", "TEXT NOT NULL DEFAULT 'workspace_write'");
         this.#ensureSessionColumn("tasks_json", "TEXT NOT NULL DEFAULT '[]'");
         this.#ensureSessionColumn("workflows_json", "TEXT NOT NULL DEFAULT '[]'");
+        this.#ensureSessionColumn("workflows_enabled", "INTEGER NOT NULL DEFAULT 1");
         this.#ensureSessionColumn("goal_json", "TEXT");
         this.#ensureSessionColumn("next_task_id", "INTEGER NOT NULL DEFAULT 1");
         this.#ensureQueuedRunColumn("kind", "TEXT NOT NULL DEFAULT 'user'");
@@ -775,6 +780,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             status: readString(row, "status") as PersistedSessionState["status"],
             tasks: JSON.parse(readString(row, "tasks_json")) as PersistedSessionState["tasks"],
             workflows: JSON.parse(readString(row, "workflows_json")) as PersistedWorkflowRun[],
+            workflowsEnabled: readNumber(row, "workflows_enabled") !== 0,
             nextTaskId: readNumber(row, "next_task_id"),
             ...(title !== undefined ? { title } : {}),
             ...(titleError !== undefined ? { titleError } : {}),
@@ -791,6 +797,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             ...(restore.instructions !== undefined ? { instructions: restore.instructions } : {}),
             modelId,
             providerId: restore.providerId,
+            workflowsEnabled: restore.workflowsEnabled !== false,
         };
         return new InMemorySession({
             agentManager: this.#agentManager,

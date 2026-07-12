@@ -29,6 +29,9 @@ export async function createConfigFile(
                 show_reasoning: config.settings.showReasoning,
                 show_usage: config.settings.showUsage,
             },
+            features: {
+                workflows: config.features.workflows,
+            },
             ...(Object.keys(config.mcpServers).length > 0
                 ? { mcp_servers: serializeMcpServers(config.mcpServers) }
                 : {}),

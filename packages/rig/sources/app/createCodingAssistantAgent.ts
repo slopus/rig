@@ -44,12 +44,14 @@ export interface CreateCodingAssistantAgentOptions {
     tasks?: TaskContext;
     userInput?: UserInputContext;
     workflows?: WorkflowContext;
+    workflowsEnabled?: boolean;
 }
 
 export function createCodingAssistantAgent(
     options: CreateCodingAssistantAgentOptions,
 ): CodingAssistantRuntime {
     const processManager = options.processManager ?? new NativeProxessManager();
+    const workflowsEnabled = options.workflows !== undefined && options.workflowsEnabled !== false;
     const context = createNodeAgentContext({
         cwd: options.cwd,
         ...(options.goals !== undefined ? { goals: options.goals } : {}),
@@ -57,7 +59,7 @@ export function createCodingAssistantAgent(
         ...(options.permissionMode !== undefined ? { permissionMode: options.permissionMode } : {}),
         ...(options.tasks !== undefined ? { tasks: options.tasks } : {}),
         ...(options.userInput !== undefined ? { userInput: options.userInput } : {}),
-        ...(options.workflows !== undefined ? { workflows: options.workflows } : {}),
+        ...(workflowsEnabled ? { workflows: options.workflows } : {}),
     });
     if (options.subagents !== undefined) {
         context.subagents = options.subagents;
@@ -81,14 +83,28 @@ export function createCodingAssistantAgent(
         : usesCodexTools
           ? codexTools
           : piTools;
+    const collaborationTools = (
+        usesCodexTools
+            ? codexCollaborationTools
+            : usesClaudeTools
+              ? [agentTool, ...claudeCollaborationTools]
+              : [agentTool]
+    ).filter(
+        (tool) =>
+            workflowsEnabled ||
+            ![
+                "workflow",
+                "wait_for_workflow",
+                "workflow_status",
+                "stop_workflow",
+                "Workflow",
+                "WaitForWorkflow",
+            ].includes(tool.name),
+    );
     const toolsWithoutGoals =
         options.subagents?.canSpawn !== true
             ? [...baseTools]
-            : usesCodexTools
-              ? [...baseTools, ...codexCollaborationTools]
-              : usesClaudeTools
-                ? [...baseTools, agentTool, ...claudeCollaborationTools]
-                : [...baseTools, agentTool];
+            : [...baseTools, ...collaborationTools];
     const tools =
         options.goals === undefined ? toolsWithoutGoals : [...toolsWithoutGoals, ...goalTools];
     const provider =

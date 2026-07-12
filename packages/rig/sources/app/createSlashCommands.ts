@@ -4,8 +4,10 @@ export interface SlashCommandItem extends AutocompleteItem {
     aliases: readonly string[];
 }
 
-export function createSlashCommands(): SlashCommandItem[] {
-    return [
+export function createSlashCommands(
+    options: { workflowsEnabled?: boolean } = {},
+): SlashCommandItem[] {
+    const commands: SlashCommandItem[] = [
         {
             value: "model",
             label: "/model",
@@ -55,12 +57,6 @@ export function createSlashCommands(): SlashCommandItem[] {
             aliases: [],
         },
         {
-            value: "workflows",
-            label: "/workflows",
-            description: "Open the live workflow monitor.",
-            aliases: ["workflow"],
-        },
-        {
             value: "goal",
             label: "/goal",
             description: "Set or manage a persistent long-running goal.",
@@ -103,4 +99,13 @@ export function createSlashCommands(): SlashCommandItem[] {
             aliases: [],
         },
     ];
+    if (options.workflowsEnabled !== false) {
+        commands.splice(8, 0, {
+            value: "workflows",
+            label: "/workflows",
+            description: "Open the live workflow monitor.",
+            aliases: ["workflow"],
+        });
+    }
+    return commands;
 }

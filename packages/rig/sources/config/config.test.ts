@@ -24,6 +24,9 @@ permission_mode = "auto"
 
 [settings]
 show_reasoning = false
+
+[features]
+workflows = false
 `),
         ).toEqual({
             defaults: {
@@ -35,6 +38,9 @@ show_reasoning = false
             },
             settings: {
                 showReasoning: false,
+            },
+            features: {
+                workflows: false,
             },
         });
     });
@@ -58,6 +64,8 @@ effort = "low"
 permission_mode = "read_only"
 [settings]
 show_reasoning = false
+[features]
+workflows = false
 `,
                 "utf8",
             );
@@ -73,6 +81,8 @@ permission_mode = "full_access"
 [settings]
 show_reasoning = true
 show_usage = true
+[features]
+workflows = true
 `,
                 "utf8",
             );
@@ -102,6 +112,7 @@ effort = "minimal"
                 showReasoning: true,
                 showUsage: true,
             });
+            expect(loaded.config.features.workflows).toBe(true);
             expect(createProjectConfigSecurityNotice(loaded.sources.local.values)).toBe(
                 "This project's rig.toml requested a permission mode. Rig applied the other project preferences but kept your user-level permission choice.",
             );
@@ -116,6 +127,7 @@ effort = "minimal"
                 showReasoning: false,
                 showUsage: false,
             });
+            expect(defaultLoaded.config.features.workflows).toBe(true);
             expect(defaultLoaded.config.defaults.permissionMode).toBe("workspace_write");
             expect(loaded.paths.global).toBe(globalPath);
             expect(loaded.paths.local).toBe(localPath);
@@ -141,6 +153,9 @@ effort = "minimal"
                 settings: {
                     showReasoning: true,
                     showUsage: true,
+                },
+                features: {
+                    workflows: false,
                 },
                 mcpServers: {},
             });
@@ -172,6 +187,9 @@ effort = "minimal"
                     "[settings]",
                     "show_reasoning = true",
                     "show_usage = true",
+                    "",
+                    "[features]",
+                    "workflows = false",
                     "",
                 ].join("\n"),
             );

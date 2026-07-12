@@ -27,14 +27,24 @@ export interface PartialConfigSettings {
     showUsage?: boolean;
 }
 
+export interface ConfigFeatures {
+    workflows: boolean;
+}
+
+export interface PartialConfigFeatures {
+    workflows?: boolean;
+}
+
 export interface RigConfig {
     defaults: ConfigDefaults;
+    features: ConfigFeatures;
     mcpServers: Readonly<Record<string, McpServerConfig>>;
     settings: ConfigSettings;
 }
 
 export interface PartialRigConfig {
     defaults?: PartialConfigDefaults;
+    features?: PartialConfigFeatures;
     mcpServers?: Readonly<Record<string, McpServerConfig>>;
     settings?: PartialConfigSettings;
 }

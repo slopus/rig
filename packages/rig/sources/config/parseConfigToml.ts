@@ -1,11 +1,17 @@
 import { parse, TomlDate, type TomlTable, type TomlValue } from "smol-toml";
 
-import type { PartialConfigDefaults, PartialConfigSettings, PartialRigConfig } from "./types.js";
+import type {
+    PartialConfigDefaults,
+    PartialConfigFeatures,
+    PartialConfigSettings,
+    PartialRigConfig,
+} from "./types.js";
 import type { McpServerConfig } from "../mcp/types.js";
 import { isPermissionMode, type PermissionMode } from "../permissions/index.js";
 
 export function parseConfigToml(source: string): PartialRigConfig {
     const defaults: PartialConfigDefaults = {};
+    const features: PartialConfigFeatures = {};
     const settings: PartialConfigSettings = {};
     const table = parse(source);
     const defaultsTable = table.defaults;
@@ -46,9 +52,15 @@ export function parseConfigToml(source: string): PartialRigConfig {
     }
 
     const mcpServers = readMcpServers(table.mcp_servers);
+    const featuresTable = table.features;
+    if (isTomlTable(featuresTable)) {
+        const workflows = readBoolean(featuresTable, "workflows");
+        if (workflows !== undefined) features.workflows = workflows;
+    }
 
     return {
         ...(Object.keys(defaults).length > 0 ? { defaults } : {}),
+        ...(Object.keys(features).length > 0 ? { features } : {}),
         ...(mcpServers !== undefined ? { mcpServers } : {}),
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
     };

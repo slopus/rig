@@ -280,6 +280,21 @@ see current status and open a child transcript.
 Team/swarm coordination, remote agents, and automatic worktree isolation are
 intentionally outside this core workflow.
 
+### Workflows
+
+Workflows are enabled by default. Set a user-wide preference in
+`~/.config/rig/config.toml`, and override it for a repository with `rig.toml`:
+
+```toml
+[features]
+workflows = false
+```
+
+The repository value wins when both files define `workflows`. When disabled,
+workflow tools and the `/workflows` command are not offered to the model or in
+command suggestions. Existing saved sessions keep the setting they were created
+with when the daemon restarts.
+
 ### Long-running commands
 
 Codex `exec_command` now yields a live session when a command outlasts its wait

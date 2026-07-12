@@ -137,6 +137,7 @@ export interface CodingAssistantAppOptions {
     initialTasks?: readonly SessionTask[];
     initialWorkflowEventId?: EventId;
     initialWorkflows?: readonly WorkflowRun[];
+    workflowsEnabled?: boolean;
     initialUserInputs?: readonly UserInputRequest[];
     modelLocked?: boolean;
     processManager: NativeProxessManager;
@@ -294,7 +295,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #modelLocked: boolean;
     #mcpServers: readonly McpServerSummary[];
     #slashCommandSelectionIndex = 0;
-    readonly #slashCommands = createSlashCommands();
+    readonly #slashCommands: readonly SlashCommandItem[];
     #skillCommands: SlashCommandItem[] = [];
     #skillCommandsLoaded = false;
     #skillCommandsRefresh: Promise<void> | undefined;
@@ -321,6 +322,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #latestContextTokens = 0;
     #userInputRequests: UserInputRequest[] = [];
     #workflows: readonly WorkflowRun[];
+    #workflowsEnabled: boolean;
 
     constructor(options: CodingAssistantAppOptions) {
         this.#agent = options.agent;
@@ -342,6 +344,8 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#subagents = options.initialSubagents ?? [];
         this.#tasks = options.initialTasks ?? [];
         this.#workflows = options.initialWorkflows ?? [];
+        this.#workflowsEnabled = options.workflowsEnabled ?? true;
+        this.#slashCommands = createSlashCommands({ workflowsEnabled: this.#workflowsEnabled });
         this.#tui = options.tui;
         this.#version = options.version ?? "0.0.0";
         this.#editor = new Editor(this.#tui, EDITOR_THEME, { paddingX: 0 });
@@ -1213,7 +1217,16 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         if (prompt === "/workflows" || prompt === "/workflow") {
-            this.#openWorkflowMonitor();
+            if (this.#workflowsEnabled) {
+                this.#openWorkflowMonitor();
+            } else {
+                this.#appendEntry({
+                    role: "event",
+                    text: "Workflows are disabled for this session.",
+                    title: "Workflows",
+                });
+                this.#requestRender();
+            }
             return true;
         }
 

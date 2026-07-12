@@ -42,6 +42,36 @@ describe("PersistentSessionStore", () => {
         }
     });
 
+    it("keeps workflows disabled across daemon restarts", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        try {
+            const store = new PersistentSessionStore({ databasePath });
+            const sessionId = store.create({
+                cwd: "/tmp/rig-persistent-session-test",
+                workflowsEnabled: false,
+            }).id;
+            store.close();
+
+            const restoredStore = new PersistentSessionStore({ databasePath });
+            try {
+                const restored = restoredStore.get(sessionId);
+                expect(restored?.snapshot().workflowsEnabled).toBe(false);
+                expect(() =>
+                    restored?.launchWorkflow({
+                        code: "42",
+                        description: "Must stay disabled",
+                        execute: async () => ({ agentCalls: [], output: 42 }),
+                        name: "disabled-workflow",
+                    }),
+                ).toThrow("Workflows are disabled for this session.");
+            } finally {
+                restoredStore.close();
+            }
+        } finally {
+            await cleanup();
+        }
+    });
+
     it("persists a Monty checkpoint and completed workflow calls across daemon restarts", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         try {

@@ -125,6 +125,7 @@ export interface PersistedSessionState {
     titleStatus: SessionTitleStatus;
     tools: readonly string[];
     workflows?: readonly PersistedWorkflowRun[];
+    workflowsEnabled?: boolean;
 }
 
 export interface PersistedWorkflowRun {
@@ -243,6 +244,7 @@ export class InMemorySession {
     #titleStatus: SessionTitleStatus = "idle";
     #tools: readonly string[] = [];
     #workflowRuns = new Map<string, InternalWorkflowRun>();
+    #workflowsEnabled: boolean;
 
     constructor(options: InMemorySessionOptions) {
         this.#agentManager = options.agentManager;
@@ -253,6 +255,8 @@ export class InMemorySession {
         this.#modelCatalog = options.modelCatalog;
         this.#persistence = options.persistence;
         this.#request = { ...options.request };
+        this.#workflowsEnabled =
+            options.restore?.workflowsEnabled ?? options.request.workflowsEnabled ?? true;
         this.id = options.restore?.id ?? createId();
         this.#agentMetadata = options.restore?.agent ??
             options.metadata ?? {
@@ -828,6 +832,9 @@ export class InMemorySession {
     }
 
     launchWorkflow(request: LaunchWorkflowRequest): WorkflowRun {
+        if (!this.#workflowsEnabled) {
+            throw new Error("Workflows are disabled for this session.");
+        }
         const resumed =
             request.resumeFromRunId === undefined
                 ? undefined
@@ -1132,6 +1139,7 @@ export class InMemorySession {
             modelId: this.#modelId,
             ...(this.#request.apiKey !== undefined ? { apiKey: this.#request.apiKey } : {}),
             permissionMode: this.#permissionMode,
+            workflowsEnabled: this.#workflowsEnabled,
         };
     }
 
@@ -1156,6 +1164,7 @@ export class InMemorySession {
             ),
             mcpServers: this.#mcpServers,
             tasks: this.listTasks(),
+            workflowsEnabled: this.#workflowsEnabled,
             workflows: this.listWorkflows(),
             ...(this.#goal !== undefined ? { goal: { ...this.#goal } } : {}),
             ...(snapshot.effort !== undefined ? { effort: snapshot.effort } : {}),
@@ -1219,6 +1228,7 @@ export class InMemorySession {
             ...(this.#titleError !== undefined ? { titleError: this.#titleError } : {}),
             titleStatus: this.#titleStatus,
             tools: this.#tools,
+            workflowsEnabled: this.#workflowsEnabled,
             workflows: [...this.#workflowRuns.values()].map((run) => ({
                 agentCalls: [...run.agentCalls],
                 ...(run.checkpoint === undefined
@@ -1685,13 +1695,18 @@ export class InMemorySession {
                 list: () => this.#taskSession().listTasks(),
                 update: (taskId, request) => this.#taskSession().updateTask(taskId, request),
             },
-            workflows: {
+        };
+        if (this.#workflowsEnabled) {
+            options.workflowsEnabled = true;
+            options.workflows = {
                 get: (runId) => this.getWorkflow(runId),
                 launch: (request) => this.launchWorkflow(request),
                 stop: (runId) => this.stopWorkflow(runId),
                 wait: (runId, signal) => this.waitForWorkflow(runId, signal),
-            },
-        };
+            };
+        } else {
+            options.workflowsEnabled = false;
+        }
         if (!this.isSubagent()) {
             options.goals = {
                 create: (request) => this.setGoal(request),

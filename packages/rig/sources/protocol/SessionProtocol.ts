@@ -86,6 +86,7 @@ export interface ProtocolSession {
     pendingUserInputs: readonly UserInputRequest[];
     mcpServers: readonly McpServerSummary[];
     tasks: readonly SessionTask[];
+    workflowsEnabled?: boolean;
     workflows?: readonly WorkflowRun[];
     goal?: SessionGoal;
 }
@@ -131,6 +132,7 @@ export interface CreateSessionRequest {
     modelId?: string;
     providerId?: string;
     permissionMode?: PermissionMode;
+    workflowsEnabled?: boolean;
 }
 
 export interface ChangePermissionModeRequest {

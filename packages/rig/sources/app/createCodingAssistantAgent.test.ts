@@ -104,9 +104,18 @@ describe("createCodingAssistantAgent", () => {
             spawn,
             wait: async () => ({ agents: [], timedOut: false }),
         };
+        const workflows = {
+            get: () => undefined,
+            launch: () => {
+                throw new Error("not used");
+            },
+            stop: () => undefined,
+            wait: async () => undefined,
+        };
         const parent = createCodingAssistantAgent({
             cwd: "/tmp/rig-app-test",
             subagents: { ...controls, canSpawn: true },
+            workflows,
         });
         const deepest = createCodingAssistantAgent({
             cwd: "/tmp/rig-app-test",
@@ -137,12 +146,54 @@ describe("createCodingAssistantAgent", () => {
             cwd: "/tmp/rig-app-test",
             modelId: modelAnthropicFable5.id,
             subagents: { ...controls, canSpawn: true },
+            workflows,
         });
         expect(claudeParent.agent.tools.map((tool) => tool.name)).toContain("Agent");
         expect(claudeParent.agent.tools.map((tool) => tool.name)).toContain("SendMessage");
         expect(claudeParent.agent.tools.map((tool) => tool.name)).toContain("Workflow");
         expect(claudeParent.agent.tools.map((tool) => tool.name)).toContain("WaitForWorkflow");
         expect(claudeParent.agent.tools.map((tool) => tool.name)).not.toContain("spawn_agent");
+    });
+
+    it("omits workflow tools when workflow support is disabled", () => {
+        const runtime = createCodingAssistantAgent({
+            cwd: "/tmp/rig-app-test",
+            subagents: {
+                canSpawn: true,
+                depth: 0,
+                followUp: () => {
+                    throw new Error("not used");
+                },
+                interrupt: () => {
+                    throw new Error("not used");
+                },
+                list: () => [],
+                maxDepth: 3,
+                spawn: async () => {
+                    throw new Error("not used");
+                },
+                wait: async () => ({ agents: [], timedOut: false }),
+            },
+            workflows: {
+                get: () => undefined,
+                launch: () => {
+                    throw new Error("not used");
+                },
+                stop: () => undefined,
+                wait: async () => undefined,
+            },
+            workflowsEnabled: false,
+        });
+
+        expect(runtime.agent.tools.map((tool) => tool.name)).not.toEqual(
+            expect.arrayContaining([
+                "workflow",
+                "wait_for_workflow",
+                "workflow_status",
+                "stop_workflow",
+            ]),
+        );
+        expect(runtime.agent.tools.map((tool) => tool.name)).toContain("spawn_agent");
     });
 
     it("creates an Amazon Bedrock agent for Bedrock Anthropic models", () => {
