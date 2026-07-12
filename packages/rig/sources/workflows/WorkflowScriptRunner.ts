@@ -1,5 +1,3 @@
-import { Monty } from "@pydantic/monty";
-
 import type { AgentContext } from "../agent/index.js";
 import type {
     WorkflowAgentCacheEntry,
@@ -76,11 +74,8 @@ export class WorkflowScriptRunner {
     }
 
     async run(script: string): Promise<WorkflowExecutionResult> {
-        const monty = new Monty(script, {
-            inputs: ["args"],
-            scriptName: "workflow.py",
-        });
         const output = await runMontyWithExternals({
+            code: script,
             externalFunctions: {
                 agent: (prompt, options) =>
                     this.#runAgent(fromMontyValue(prompt), fromMontyValue(options)),
@@ -90,6 +85,7 @@ export class WorkflowScriptRunner {
                 pipeline: (items, stages) =>
                     this.#runPipeline(fromMontyValue(items), fromMontyValue(stages)),
             },
+            inputNames: ["args"],
             inputs: { args: this.#args },
             limits: {
                 maxAllocations: 1_000_000,
@@ -97,7 +93,6 @@ export class WorkflowScriptRunner {
                 maxMemory: 32 * 1024 * 1024,
                 maxRecursionDepth: 200,
             },
-            monty,
             onPrint: (text) => this.#onLog(text.trimEnd()),
             onSnapshot: (snapshot) =>
                 this.#onCheckpoint?.({
@@ -106,6 +101,7 @@ export class WorkflowScriptRunner {
                     snapshot,
                 }),
             signal: this.#signal,
+            scriptName: "workflow.py",
             ...(this.#resumeCheckpoint === undefined
                 ? {}
                 : { snapshot: this.#resumeCheckpoint.snapshot }),

@@ -47,7 +47,8 @@ describe("Python workflow orchestration", () => {
                                         '    {"prompt": "Return WORKFLOW_ALPHA only.", "label": "Alpha check", "model": "openai/gym"},',
                                         '    {"prompt": "Return WORKFLOW_BETA only.", "label": "Beta check", "model": "openai/gym"},',
                                         "])",
-                                        '{"checks": results}',
+                                        'summary = agent("Consolidate the completed inspection reports. Return WORKFLOW_CONSOLIDATED only.", {"label": "Consolidate", "model": "openai/gym"})',
+                                        '{"checks": results, "summary": summary}',
                                     ].join("\n"),
                                 },
                                 id: "launch-python-workflow",
@@ -74,6 +75,13 @@ describe("Python workflow orchestration", () => {
                     if (childSessions.size === 2) releaseChildren?.();
                     await bothChildrenStarted;
                     return { content: [{ text: "WORKFLOW_BETA", type: "text" }] };
+                }
+
+                if (lastText.includes("Return WORKFLOW_CONSOLIDATED only.")) {
+                    expect(sessionId).not.toBe(parentSessionId);
+                    expect(request.modelId).toBe("openai/gym");
+                    childSessions.add(sessionId ?? "");
+                    return { content: [{ text: "WORKFLOW_CONSOLIDATED", type: "text" }] };
                 }
 
                 const launchResult = [...request.context.messages]
@@ -104,6 +112,7 @@ describe("Python workflow orchestration", () => {
                     expect(lastText).toContain("Status: completed");
                     expect(lastText).toContain("WORKFLOW_ALPHA");
                     expect(lastText).toContain("WORKFLOW_BETA");
+                    expect(lastText).toContain("WORKFLOW_CONSOLIDATED");
                     sawWorkflowNotification = true;
                     return {
                         content: [{ text: "WORKFLOW_RESULT_ACKNOWLEDGED", type: "text" }],
@@ -127,7 +136,7 @@ describe("Python workflow orchestration", () => {
         );
 
         expect(completed.text).toContain("Workflow Parallel checks completed.");
-        expect(childSessions.size).toBe(2);
+        expect(childSessions.size).toBe(3);
         expect(sawLaunchResult).toBe(true);
         expect(sawWorkflowNotification).toBe(true);
     }, 120_000);

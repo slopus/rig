@@ -1,5 +1,5 @@
-import { type AssistantMessageEventStream, type BedrockOptions } from "@mariozechner/pi-ai";
-import { bedrockProviderModule } from "@mariozechner/pi-ai/bedrock-provider";
+import { type AssistantMessageEventStream, type BedrockOptions } from "@earendil-works/pi-ai";
+import { bedrockProviderModule } from "@earendil-works/pi-ai/bedrock-provider";
 
 import type { BedrockModelRoute } from "./bedrock-model-routes.js";
 import { applyBedrockAdaptiveThinking } from "./applyBedrockAdaptiveThinking.js";
@@ -10,7 +10,7 @@ import { toPiContext } from "./pi-bridge.js";
 import { toPiReasoningLevel } from "./toPiReasoningLevel.js";
 import type { Context, StreamOptions } from "./types.js";
 
-export type PiBedrockRuntimeStream = typeof bedrockProviderModule.streamBedrock;
+export type PiBedrockRuntimeStream = typeof bedrockProviderModule.stream;
 
 export function createBedrockRuntimeStream(options: {
     bearerToken: string;
@@ -20,7 +20,7 @@ export function createBedrockRuntimeStream(options: {
     stream?: PiBedrockRuntimeStream;
     streamOptions?: StreamOptions;
 }): AssistantMessageEventStream {
-    const stream = options.stream ?? bedrockProviderModule.streamBedrock;
+    const stream = options.stream ?? bedrockProviderModule.stream;
     const model = createPiBedrockRuntimeModel(options.modelRoute, options.region);
     const effort = options.streamOptions?.thinking ?? options.modelRoute.model.defaultThinkingLevel;
     const streamOptions: BedrockOptions = {

@@ -11,7 +11,7 @@ import {
 import type { Base64ImageSource, ContentBlockParam } from "@anthropic-ai/sdk/resources/messages.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { TSchema } from "@sinclair/typebox";
-import { parseStreamingJson } from "@mariozechner/pi-ai";
+import { parseStreamingJson } from "@earendil-works/pi-ai";
 import { z, type ZodTypeAny } from "zod/v4";
 
 import type { AgentContext, AnyDefinedTool } from "../agent/index.js";

@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@mariozechner/pi-ai";
+import type { ThinkingLevel } from "@earendil-works/pi-ai";
 
 export function toPiReasoningLevel(effort: string): ThinkingLevel | undefined {
     if (effort === "off") {

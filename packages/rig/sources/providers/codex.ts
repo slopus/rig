@@ -4,14 +4,14 @@ import path from "node:path";
 
 import {
     clampThinkingLevel,
-    getModels,
     type Model as PiModel,
     type SimpleStreamOptions,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai";
+import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import {
-    streamOpenAICodexResponses,
+    stream as streamOpenAICodexResponses,
     type OpenAICodexResponsesOptions,
-} from "@mariozechner/pi-ai/openai-codex-responses";
+} from "@earendil-works/pi-ai/api/openai-codex-responses";
 
 import { applyCodexImageDetailsToPayload } from "./applyCodexImageDetailsToPayload.js";
 import { classifyCodexErrorCode } from "./classifyCodexErrorCode.js";
@@ -51,7 +51,9 @@ const codexModels = [
 const codexThinkingLevels = ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
 
 export function createCodexProvider(options: CodexProviderOptions = {}): Provider {
-    const piModelById = new Map(getModels(CODEX_PROVIDER_ID).map((model) => [model.id, model]));
+    const piModelById = new Map(
+        getBuiltinModels(CODEX_PROVIDER_ID).map((model) => [model.id, model]),
+    );
     for (const model of codexModels) {
         const piModelId = toPiCodexModelId(model.id);
         if (!piModelById.has(piModelId)) {

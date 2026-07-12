@@ -1,4 +1,4 @@
-import type { AssistantMessageEventStream } from "@mariozechner/pi-ai";
+import type { AssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { BedrockOpenAI } from "openai";
 import type { Response } from "openai/resources/responses/responses.js";
 import { describe, expect, it, vi } from "vitest";

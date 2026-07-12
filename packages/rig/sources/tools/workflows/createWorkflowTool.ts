@@ -22,7 +22,7 @@ Available Python globals:
 - log(message): include a progress note in the workflow run.
 - print(...): also records a progress note.
 
-External calls block until their host operation completes, even though subagents run asynchronously. The sandbox is checkpointed at every external-call boundary, so model inference time is outside the 30-second Monty execution budget. Call agent(), parallel(), and pipeline() directly; do not write await. Use parallel for a barrier and pipeline when every item can advance independently.
+External calls block until their host operation completes, even though subagents run asynchronously. The sandbox is checkpointed and unloaded at every external-call boundary, then freshly restored after the host operation finishes. Model inference time and earlier Python segments therefore do not consume the next segment's 30-second Monty execution budget. Call agent(), parallel(), and pipeline() directly; do not write await. Use parallel for a barrier and pipeline when every item can advance independently.
 
 Example:
 phase("Review")

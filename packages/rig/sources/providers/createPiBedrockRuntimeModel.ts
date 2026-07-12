@@ -1,4 +1,4 @@
-import type { Model as PiModel } from "@mariozechner/pi-ai";
+import type { Model as PiModel } from "@earendil-works/pi-ai";
 
 import type { BedrockModelRoute } from "./bedrock-model-routes.js";
 import { resolveBedrockRuntimeModelId } from "./resolveBedrockRuntimeModelId.js";

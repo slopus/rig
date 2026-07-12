@@ -11,7 +11,7 @@ import type {
     ToolCall as PiToolCall,
     ToolResultMessage as PiToolResultMessage,
     UserMessage as PiUserMessage,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai";
 
 import type {
     AssistantContent,

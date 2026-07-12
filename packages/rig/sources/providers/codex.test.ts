@@ -1,3 +1,5 @@
+import { zstdDecompressSync } from "node:zlib";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { validJpeg32Base64, validPng32Base64 } from "../tools/testing/validImageFixtures.js";
@@ -20,7 +22,7 @@ describe("codex provider", () => {
             vi.stubGlobal(
                 "fetch",
                 vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
-                    requestBody = JSON.parse(String(init?.body));
+                    requestBody = parseRequestBody(init);
                     return new Response("data: [DONE]\n\n", {
                         status: 200,
                         headers: { "content-type": "text/event-stream" },
@@ -65,7 +67,7 @@ describe("codex provider", () => {
         vi.stubGlobal(
             "fetch",
             vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
-                requestBody = JSON.parse(String(init?.body));
+                requestBody = parseRequestBody(init);
                 return new Response("data: [DONE]\n\n", {
                     status: 200,
                     headers: { "content-type": "text/event-stream" },
@@ -93,6 +95,14 @@ describe("codex provider", () => {
         });
     });
 });
+
+function parseRequestBody(init: RequestInit | undefined): unknown {
+    if (typeof init?.body === "string") return JSON.parse(init.body);
+    if (init?.body === undefined || init.body === null) return undefined;
+    const body = Buffer.from(init.body as Uint8Array);
+    const encoding = new Headers(init.headers).get("content-encoding");
+    return JSON.parse((encoding === "zstd" ? zstdDecompressSync(body) : body).toString("utf8"));
+}
 
 function emptyContext(): Context {
     return {
