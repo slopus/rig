@@ -649,6 +649,7 @@ async function executeToolCall(
                 toolCallId?: string;
             },
         ) => Promise<unknown> | unknown;
+        const isError = tool.isError as ((result: unknown) => boolean) | undefined;
         const toLLM = tool.toLLM as (result: unknown) => readonly ContentBlock[];
         const toUI = tool.toUI as (result: unknown, args: unknown) => string;
         const executionOptions: {
@@ -665,6 +666,7 @@ async function executeToolCall(
             runWithFullAccess && context.permissions !== undefined
                 ? await context.permissions.runWithMode("full_access", run)
                 : await run();
+        const resultIsError = isError?.(result);
 
         return {
             type: "tool_result",
@@ -672,6 +674,7 @@ async function executeToolCall(
             toolName: tool.name,
             rendered: toLLM(result),
             display: toUI(result, toolCall.arguments),
+            ...(resultIsError === undefined ? {} : { isError: resultIsError }),
         };
     } catch (error) {
         return errorToolResultBlock(

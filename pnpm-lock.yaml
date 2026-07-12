@@ -26,6 +26,9 @@ importers:
 
   gym:
     devDependencies:
+      '@earendil-works/pi-tui':
+        specifier: ^0.80.3
+        version: 0.80.3
       '@types/node':
         specifier: ^24.0.10
         version: 24.13.2

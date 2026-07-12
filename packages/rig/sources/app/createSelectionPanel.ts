@@ -2,9 +2,12 @@ import {
     SelectList,
     truncateToWidth,
     visibleWidth,
+    wrapTextWithAnsi,
     type Component,
     type SelectItem,
 } from "@earendil-works/pi-tui";
+
+import { sanitizeTerminalText } from "./sanitizeTerminalText.js";
 
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
@@ -34,10 +37,16 @@ class SelectionPanel implements Component {
     readonly #title: string;
 
     constructor(options: CreateSelectionPanelOptions) {
-        this.#title = options.title;
-        this.#subtitle = options.subtitle;
+        this.#title = sanitizeTerminalText(options.title);
+        this.#subtitle = sanitizeTerminalText(options.subtitle);
         this.#list = new SelectList(
-            [...options.items],
+            options.items.map((item) => ({
+                ...item,
+                label: sanitizeTerminalText(item.label),
+                ...(item.description === undefined
+                    ? {}
+                    : { description: sanitizeTerminalText(item.description) }),
+            })),
             8,
             {
                 selectedPrefix: (text) => `${ORANGE}${text}${RESET}`,
@@ -69,10 +78,11 @@ class SelectionPanel implements Component {
     render(width: number): string[] {
         const safeWidth = Math.max(1, width);
         const contentWidth = Math.max(1, safeWidth - 2);
+        const subtitleLines = wrapTextWithAnsi(this.#subtitle, contentWidth);
         const lines = [
             "",
             `  ${ORANGE}${BOLD}${this.#title}${NOT_BOLD_OR_DIM}${INPUT_FG}`,
-            `  ${MUTED}${this.#subtitle}${INPUT_FG}`,
+            ...subtitleLines.map((line) => `  ${MUTED}${line}${INPUT_FG}`),
             "",
             ...this.#list.render(contentWidth).map((line) => `  ${line}`),
             "",

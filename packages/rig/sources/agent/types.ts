@@ -107,6 +107,7 @@ export interface DefinedTool<
         context: AgentContext,
         options: ToolExecutionOptions,
     ) => Promise<Static<TReturnSchema>> | Static<TReturnSchema>;
+    isError?: (result: Static<TReturnSchema>) => boolean;
     toLLM: (result: Static<TReturnSchema>) => readonly ContentBlock[];
     toUI: (result: Static<TReturnSchema>, args: Static<TArgsSchema>) => string;
     /** Locks acquired for each invocation; constants or argument-derived keys. */
@@ -124,6 +125,7 @@ export interface AnyDefinedTool {
         context: AgentContext,
         options: ToolExecutionOptions,
     ) => Promise<unknown> | unknown;
+    isError?: (result: never) => boolean;
     toLLM: (result: never) => readonly ContentBlock[];
     toUI: (result: never, args: never) => string;
     locks: readonly Lock<never>[];
@@ -152,6 +154,7 @@ export function defineTool<
         context: AgentContext,
         options: ToolExecutionOptions,
     ) => Promise<Static<TReturnSchema>> | Static<TReturnSchema>;
+    isError?: (result: Static<TReturnSchema>) => boolean;
     toLLM: (result: Static<TReturnSchema>) => readonly ContentBlock[];
     toUI: (result: Static<TReturnSchema>, args: Static<TArgsSchema>) => string;
     locks: readonly Lock<Static<TArgsSchema>>[];

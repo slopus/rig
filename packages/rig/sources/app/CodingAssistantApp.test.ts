@@ -75,6 +75,8 @@ describe("CodingAssistantApp", () => {
         expect(rendered).toContain("GPT Test");
         expect(rendered).toContain("GPT Test Off");
         expect(rendered).toContain("/workspace");
+        expect(rendered).toContain("Full access");
+        expect(rendered).not.toContain("full_access");
         expect(rendered).not.toContain("reasoning off");
         expect(rendered).not.toContain("/clear /abort /quit");
 
@@ -2675,6 +2677,327 @@ describe("CodingAssistantApp", () => {
                     text: expect.stringContaining("line one\nline two"),
                 },
             ],
+        });
+    });
+
+    it("names an unavailable model tool instead of presenting its argument as the failed action", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        let streamCalls = 0;
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                streamCalls += 1;
+                if (streamCalls === 1) {
+                    return streamMessage({
+                        role: "assistant",
+                        content: [
+                            {
+                                type: "toolCall",
+                                id: "unavailable-tool-call",
+                                name: "erase_everything",
+                                arguments: { path: "/workspace/protected.txt" },
+                            },
+                        ],
+                        api: "test",
+                        provider: "codex",
+                        model: model.id,
+                        usage: zeroUsage(),
+                        stopReason: "toolUse",
+                        timestamp: 1,
+                    });
+                }
+
+                return streamText("done");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        submit(app, "Check the file without changing it.");
+        await app.waitForIdle();
+
+        const rendered = stripAnsi(app.render(100).join("\n"));
+        expect(rendered).toContain("• Failed Erase everything");
+        expect(rendered).toContain(
+            'The model requested "Erase everything", but that tool is not available in this session.',
+        );
+        expect(rendered).not.toContain("• Failed /workspace/protected.txt");
+        expect(rendered).not.toContain("erase_everything");
+
+        const narrowRendered = stripAnsi(app.render(60).join("\n")).replace(/\s+/gu, " ");
+        expect(narrowRendered).toContain(
+            'The model requested "Erase everything", but that tool is not available in this session.',
+        );
+    });
+
+    it("keeps progress active until execution ends and clears it after interruption", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+        const toolCall = {
+            arguments: { cmd: "printf progress" },
+            id: "progress-tool",
+            name: "exec_command",
+            type: "toolCall" as const,
+        };
+
+        app.applySessionEvent({
+            createdAt: 0,
+            data: { runId: "run-1" },
+            id: "event-run-start",
+            sessionId: "session-1",
+            type: "run_started",
+        });
+        app.applySessionEvent({
+            createdAt: 1,
+            data: {
+                message: {
+                    blocks: [
+                        {
+                            arguments: toolCall.arguments,
+                            id: toolCall.id,
+                            name: toolCall.name,
+                            type: "tool_call",
+                        },
+                    ],
+                    id: "tool-message",
+                    role: "agent",
+                },
+                runId: "run-1",
+            },
+            id: "event-message",
+            sessionId: "session-1",
+            type: "agent_message",
+        });
+        app.applySessionEvent({
+            createdAt: 2,
+            data: { event: { toolCall, type: "tool_execution_start" }, runId: "run-1" },
+            id: "event-start",
+            sessionId: "session-1",
+            type: "agent_event",
+        });
+        app.applySessionEvent({
+            createdAt: 3,
+            data: {
+                event: {
+                    display: "Processed 5 rows",
+                    toolCallId: toolCall.id,
+                    type: "tool_execution_progress",
+                },
+                runId: "run-1",
+            },
+            id: "event-progress",
+            sessionId: "session-1",
+            type: "agent_event",
+        });
+
+        const active = stripAnsi(app.render(80).join("\n"));
+        expect(active).toContain("• Running printf progress");
+        expect(active).toContain("└ Processed 5 rows");
+        expect(active).not.toContain("• Ran printf progress");
+
+        app.applySessionEvent({
+            createdAt: 4,
+            data: {
+                event: {
+                    result: {
+                        display: "Command finished with exit code 0.",
+                        isError: false,
+                        toolCallId: toolCall.id,
+                        toolName: toolCall.name,
+                        type: "tool_result",
+                    },
+                    type: "tool_execution_end",
+                },
+                runId: "run-1",
+            },
+            id: "event-end",
+            sessionId: "session-1",
+            type: "agent_event",
+        });
+
+        const completed = stripAnsi(app.render(80).join("\n"));
+        expect(completed).toContain("• Ran printf progress");
+        expect(completed).toContain("└ Command finished with exit code 0.");
+        expect(completed).not.toContain("• Running printf progress");
+
+        app.applySessionEvent({
+            createdAt: 5,
+            data: {
+                agentRunId: "agent-run-1",
+                modelLocked: false,
+                runId: "run-1",
+                stopReason: "stop",
+            },
+            id: "event-run-finished",
+            sessionId: "session-1",
+            type: "run_finished",
+        });
+        const interruptedToolCall = {
+            arguments: { cmd: "sleep 10" },
+            id: "interrupted-tool",
+            name: "exec_command",
+            type: "toolCall" as const,
+        };
+        app.applySessionEvent({
+            createdAt: 6,
+            data: { runId: "run-2" },
+            id: "event-interrupted-run-start",
+            sessionId: "session-1",
+            type: "run_started",
+        });
+        app.applySessionEvent({
+            createdAt: 7,
+            data: {
+                message: {
+                    blocks: [
+                        {
+                            arguments: interruptedToolCall.arguments,
+                            id: interruptedToolCall.id,
+                            name: interruptedToolCall.name,
+                            type: "tool_call",
+                        },
+                    ],
+                    id: "interrupted-tool-message",
+                    role: "agent",
+                },
+                runId: "run-2",
+            },
+            id: "event-interrupted-message",
+            sessionId: "session-1",
+            type: "agent_message",
+        });
+        app.applySessionEvent({
+            createdAt: 8,
+            data: {
+                event: { toolCall: interruptedToolCall, type: "tool_execution_start" },
+                runId: "run-2",
+            },
+            id: "event-interrupted-start",
+            sessionId: "session-1",
+            type: "agent_event",
+        });
+        app.applySessionEvent({
+            createdAt: 9,
+            data: {
+                event: {
+                    display: "Waiting for the command",
+                    toolCallId: interruptedToolCall.id,
+                    type: "tool_execution_progress",
+                },
+                runId: "run-2",
+            },
+            id: "event-interrupted-progress",
+            sessionId: "session-1",
+            type: "agent_event",
+        });
+        expect(stripAnsi(app.render(80).join("\n"))).toContain("• Running sleep 10");
+
+        app.applySessionEvent({
+            createdAt: 10,
+            data: {
+                event: {
+                    error: {
+                        api: "test",
+                        content: [],
+                        model: model.id,
+                        provider: provider.id,
+                        role: "assistant",
+                        stopReason: "aborted",
+                        timestamp: 10,
+                        usage: zeroUsage(),
+                    },
+                    reason: "aborted",
+                    type: "error",
+                },
+                runId: "run-2",
+            },
+            id: "event-interrupted-error",
+            sessionId: "session-1",
+            type: "agent_event",
+        });
+        app.applySessionEvent({
+            createdAt: 11,
+            data: {
+                agentRunId: "agent-run-2",
+                modelLocked: false,
+                runId: "run-2",
+                stopReason: "aborted",
+            },
+            id: "event-interrupted-finished",
+            sessionId: "session-1",
+            type: "run_finished",
+        });
+
+        const interrupted = stripAnsi(app.render(80).join("\n"));
+        expect(interrupted).toContain("Session interrupted");
+        expect(interrupted).toContain("• Stopped sleep 10");
+        expect(interrupted).not.toContain("• Running sleep 10");
+        expect(interrupted).not.toContain("• Ran sleep 10");
+        expect(app.render(80).join("\n")).toContain(
+            "\x1b[31m•\x1b[0m \x1b[38;5;202m\x1b[1mStopped",
+        );
+
+        app.applySessionEvent({
+            createdAt: 12,
+            data: { runId: "run-3" },
+            id: "event-later-run-start",
+            sessionId: "session-1",
+            type: "run_started",
+        });
+        const laterRun = stripAnsi(app.render(80).join("\n"));
+        expect(laterRun).toContain("• Stopped sleep 10");
+        expect(laterRun).not.toContain("• Running sleep 10");
+        expect(laterRun).not.toContain("• Ran sleep 10");
+        app.applySessionEvent({
+            createdAt: 13,
+            data: {
+                agentRunId: "agent-run-3",
+                modelLocked: false,
+                runId: "run-3",
+                stopReason: "stop",
+            },
+            id: "event-later-run-finished",
+            sessionId: "session-1",
+            type: "run_finished",
         });
     });
 

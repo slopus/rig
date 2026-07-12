@@ -73,7 +73,10 @@ export async function createGym(options: GymOptions): Promise<Gym> {
         });
         gym = startedGym;
         await Promise.race([
-            startedGym.terminal.waitForText("Ask Rig to do anything", options.timeoutMs ?? 20_000),
+            startedGym.terminal.waitForText(
+                options.startupText ?? "Ask Rig to do anything",
+                options.timeoutMs ?? 20_000,
+            ),
             startedGym.exit().then(async ({ exitCode, signal }) => {
                 const snapshot = await startedGym.terminal.snapshot();
                 throw new Error(

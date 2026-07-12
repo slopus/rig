@@ -392,6 +392,89 @@ describe("agent loop live", () => {
         });
     });
 
+    it("propagates an optional tool result failure predicate", async () => {
+        const model = defineModel({
+            id: "mock/model",
+            name: "Mock Model",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const contexts: Context[] = [];
+        const provider = defineProvider({
+            id: "mock",
+            models: [model],
+            stream(_model, context) {
+                contexts.push(context);
+                return contexts.length === 1
+                    ? streamFor(
+                          assistantMessage(
+                              [
+                                  {
+                                      type: "toolCall",
+                                      id: "call-failed-result",
+                                      name: "checked-action",
+                                      arguments: {},
+                                  },
+                              ],
+                              "toolUse",
+                          ),
+                      )
+                    : streamFor(assistantMessage([{ type: "text", text: "done" }], "stop"));
+            },
+        });
+        const checkedTool = defineTool({
+            name: "checked-action",
+            label: "Checked action",
+            description: "Returns a result whose status is determined after execution.",
+            arguments: Type.Object({}),
+            returnType: Type.Object({ failed: Type.Boolean() }),
+            execute: () => ({ failed: true }),
+            isError: (result) => result.failed,
+            toLLM: (result) => [{ type: "text", text: `failed=${String(result.failed)}` }],
+            toUI: () => "The checked action failed.",
+            locks: [],
+        });
+        const executionResults: Array<{ isError?: boolean }> = [];
+        const harness = createJustBashToolHarness();
+        const result = await runAgentLoop({
+            provider,
+            modelId: model.id,
+            tools: [checkedTool],
+            messages: [
+                {
+                    role: "user",
+                    id: "user-1",
+                    blocks: [{ type: "text", text: "Run the checked action." }],
+                },
+            ],
+            context: harness.context,
+            onEvent(event) {
+                if (event.type === "tool_execution_end") executionResults.push(event.result);
+            },
+        });
+
+        expect(executionResults).toEqual([expect.objectContaining({ isError: true })]);
+        expect(contexts[1]?.messages.at(-1)).toMatchObject({
+            content: [{ type: "text", text: "failed=true" }],
+            isError: true,
+            role: "toolResult",
+            toolCallId: "call-failed-result",
+            toolName: "checked-action",
+        });
+        expect(result.messages[2]).toMatchObject({
+            blocks: [
+                {
+                    display: "The checked action failed.",
+                    isError: true,
+                    toolCallId: "call-failed-result",
+                    toolName: "checked-action",
+                    type: "tool_result",
+                },
+            ],
+            role: "agent",
+        });
+    });
+
     it("passes the abort signal to active tool calls and omits results after abort", async () => {
         const model = defineModel({
             id: "mock/model",

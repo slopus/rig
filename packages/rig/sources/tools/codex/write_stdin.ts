@@ -7,6 +7,7 @@ import {
     unifiedExecOutputSchema,
 } from "./unifiedExecOutput.js";
 import { readSessionWithProgress } from "../utils/readSessionWithProgress.js";
+import { summarizeTextOutput } from "../utils/index.js";
 
 export const codexWriteStdinTool = defineTool({
     name: "write_stdin",
@@ -69,14 +70,22 @@ export const codexWriteStdinTool = defineTool({
             max_output_tokens,
         );
     },
+    isError: (result) => result.exit_code !== undefined && result.exit_code !== 0,
     toLLM: (result) => [{ type: "text", text: formatUnifiedExecOutput(result) }],
-    toUI: (result, args) =>
-        args.chars === undefined || args.chars.length === 0
+    toUI: (result, args) => {
+        if (result.exit_code !== undefined && result.exit_code !== 0) {
+            const summary = summarizeTextOutput(result.output, "");
+            return summary === ""
+                ? `Shell command exited with code ${result.exit_code}.`
+                : `Shell command exited with code ${result.exit_code}: ${summary}`;
+        }
+        return args.chars === undefined || args.chars.length === 0
             ? result.session_id === undefined
                 ? "The shell command has finished."
                 : "Checked the running shell command."
             : result.session_id === undefined
               ? "Sent input; the shell command has finished."
-              : "Sent input to the running shell command.",
+              : "Sent input to the running shell command.";
+    },
     locks: [],
 });

@@ -29,6 +29,7 @@ export interface GymOptions {
     image?: string;
     inference: readonly GymMockResponse[] | GymInferenceHandler;
     rows?: number;
+    startupText?: string;
     timeoutMs?: number;
 }
 

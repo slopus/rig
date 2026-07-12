@@ -78,13 +78,22 @@ export const codexExecCommandTool = defineTool({
             max_output_tokens,
         );
     },
+    isError: (result) => result.exit_code !== undefined && result.exit_code !== 0,
     toLLM: (result) => [{ type: "text", text: formatUnifiedExecOutput(result) }],
     toUI: (result) => {
         const summary = summarizeTextOutput(result.output, "");
+        if (result.exit_code !== undefined && result.exit_code !== 0) {
+            return summary === ""
+                ? `Command exited with code ${result.exit_code}.`
+                : `Command exited with code ${result.exit_code}: ${summary}`;
+        }
+        if (result.session_id !== undefined) {
+            return summary === ""
+                ? "Command is still running in the background."
+                : `Command is still running in the background. Output so far: ${summary}`;
+        }
         if (summary !== "") return summary;
-        return result.session_id === undefined
-            ? `Command finished${result.exit_code === undefined ? "." : ` with exit code ${result.exit_code}.`}`
-            : "Command is still running in the background.";
+        return `Command finished${result.exit_code === undefined ? "." : ` with exit code ${result.exit_code}.`}`;
     },
     locks: [],
 });

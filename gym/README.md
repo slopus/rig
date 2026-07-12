@@ -210,18 +210,23 @@ interface GymOptions {
     image?: string;
     inference: readonly GymMockResponse[] | GymInferenceHandler;
     rows?: number;
+    startupText?: string;
     timeoutMs?: number;
 }
 ```
 
-| Option      | Default         | Purpose                                |
-| ----------- | --------------- | -------------------------------------- |
-| `cols`      | `100`           | Terminal width in cells                |
-| `rows`      | `32`            | Terminal height in cells               |
-| `files`     | `{}`            | Fixture tree mounted into `/workspace` |
-| `image`     | `rig-gym:local` | Docker image tag to build or run       |
-| `inference` | Required        | Ordered responses or a request handler |
-| `timeoutMs` | `20_000`        | Maximum startup wait for the composer  |
+| Option        | Default                  | Purpose                                     |
+| ------------- | ------------------------ | ------------------------------------------- |
+| `cols`        | `100`                    | Terminal width in cells                     |
+| `rows`        | `32`                     | Terminal height in cells                    |
+| `files`       | `{}`                     | Fixture tree mounted into `/workspace`      |
+| `image`       | `rig-gym:local`          | Docker image tag to build or run            |
+| `inference`   | Required                 | Ordered responses or a request handler      |
+| `startupText` | `Ask Rig to do anything` | Visible text that marks startup as complete |
+| `timeoutMs`   | `20_000`                 | Maximum startup wait for the composer       |
+
+Set `startupText` to a stable visible fragment only when a deliberately narrow startup viewport
+truncates the default placeholder.
 
 Use explicit `cols` and `rows` when layout, wrapping, resize behavior, or cursor placement matters. Otherwise prefer the defaults.
 

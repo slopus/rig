@@ -30,7 +30,7 @@ describe("long-running exec accepts input and completes", () => {
                     return {
                         content: [
                             {
-                                arguments: { cmd: command, yield_time_ms: 250 },
+                                arguments: { cmd: command, yield_time_ms: 2_000 },
                                 id: "start-interactive-command",
                                 name: "exec_command",
                                 type: "toolCall",
@@ -99,13 +99,32 @@ describe("long-running exec accepts input and completes", () => {
         gym.terminal.type("Run an interactive command and send its requested input.");
         gym.terminal.press("enter");
 
+        const progressing = await gym.terminal.waitUntil(
+            (snapshot) =>
+                snapshot.text.includes("• Running printf") &&
+                snapshot.text.includes("└ WAITING_FOR_INPUT") &&
+                snapshot.scroll.atBottom,
+            "the active command and its initial progress",
+            30_000,
+        );
+        expect(progressing.text).not.toContain("• Ran printf");
+        expect(progressing.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
+        expect(progressing.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
+
         const yielded = await gym.terminal.waitUntil(
-            (snapshot) => snapshot.text.includes("└ WAITING_FOR_INPUT") && snapshot.scroll.atBottom,
-            "the yielded command and its initial output",
+            (snapshot) =>
+                yieldedSessionId !== undefined &&
+                snapshot.text.includes("• Ran printf") &&
+                snapshot.text.includes("Command is still running in the background.") &&
+                snapshot.text.includes("Output so far: WAITING_FOR_INPUT") &&
+                snapshot.scroll.atBottom,
+            "the yielded command after tool execution ended",
             30_000,
         );
         expect(yielded.text).toContain("Ran printf");
-        expect(yielded.text).toContain("└ WAITING_FOR_INPUT");
+        expect(yielded.text).not.toContain("• Running printf");
+        expect(yielded.text).toContain("Command is still running in the background.");
+        expect(yielded.text).toContain("Output so far: WAITING_FOR_INPUT");
         expect(yielded.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
         expect(yielded.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
 
