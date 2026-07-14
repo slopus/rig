@@ -33,6 +33,7 @@ export interface CodingAssistantAgentBackend {
     clearGoal?(): Promise<void>;
     reset(): void;
     rewind?(messageId: string): Promise<UserMessage>;
+    stopBackgroundProcesses?(): Promise<number>;
     send(
         content: string | readonly ContentBlock[],
         options?: AgentRunOptions,

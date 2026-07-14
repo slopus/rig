@@ -78,6 +78,13 @@ export class ProtocolHttpClient {
         return this.#requestJson("POST", `/sessions/${encodeURIComponent(sessionId)}/abort`);
     }
 
+    stopBackgroundProcesses(sessionId: string): Promise<{ stoppedProcesses: number }> {
+        return this.#requestJson(
+            "POST",
+            `/sessions/${encodeURIComponent(sessionId)}/background-processes/stop`,
+        );
+    }
+
     answerUserInput(
         sessionId: string,
         requestId: string,

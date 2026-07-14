@@ -406,6 +406,12 @@ async function handleRequest(
         return;
     }
 
+    if (request.method === "POST" && route.name === "background-processes-stop") {
+        const stoppedProcesses = await session.stopBackgroundProcesses();
+        sendJson(response, 200, { stoppedProcesses });
+        return;
+    }
+
     if (request.method === "POST" && route.name === "reset") {
         sendJson(response, 200, { session: session.reset() });
         return;
@@ -663,6 +669,7 @@ function matchRoute(pathname: string):
     | {
           name:
               | "abort"
+              | "background-processes-stop"
               | "compact"
               | "effort"
               | "events"
@@ -719,6 +726,9 @@ function matchRoute(pathname: string):
             workflowRunId: decodeURIComponent(parts[3]),
         };
     }
+    if (parts.length === 4 && parts[2] === "background-processes" && parts[3] === "stop") {
+        return { name: "background-processes-stop", sessionId };
+    }
     if (parts.length !== 3) return undefined;
 
     if (parts[2] === "abort") return { name: "abort", sessionId };
@@ -743,9 +753,16 @@ function matchRoute(pathname: string):
 function isSessionMutation(routeName: string, method: string | undefined): boolean {
     return (
         (method === "POST" &&
-            ["abort", "compact", "fork", "messages", "reset", "rewind", "steer"].includes(
-                routeName,
-            )) ||
+            [
+                "abort",
+                "background-processes-stop",
+                "compact",
+                "fork",
+                "messages",
+                "reset",
+                "rewind",
+                "steer",
+            ].includes(routeName)) ||
         (method === "POST" && routeName === "workflow-stop") ||
         (["DELETE", "PATCH", "POST"].includes(method ?? "") && routeName === "goal") ||
         (method === "POST" && routeName === "user-input") ||

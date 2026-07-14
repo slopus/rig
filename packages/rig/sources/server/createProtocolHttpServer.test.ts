@@ -342,6 +342,26 @@ describe("createProtocolHttpServer", () => {
         }
     });
 
+    it("stops background terminals through a dedicated endpoint", async () => {
+        const { client, close, store } = await startServer();
+        try {
+            const created = await client.createSession({ cwd: "/tmp/rig-protocol-test" });
+            const session = store.get(created.session.id);
+            expect(session).toBeDefined();
+            const stopBackgroundProcesses = vi
+                .spyOn(session!, "stopBackgroundProcesses")
+                .mockResolvedValueOnce(2);
+
+            await expect(client.stopBackgroundProcesses(created.session.id)).resolves.toEqual({
+                stoppedProcesses: 2,
+            });
+            expect(stopBackgroundProcesses).toHaveBeenCalledOnce();
+            await expect(client.health()).resolves.toMatchObject({ healthy: true });
+        } finally {
+            await close();
+        }
+    });
+
     it("rejects steering when the session has no active run", async () => {
         const { client, close } = await startServer();
         try {
