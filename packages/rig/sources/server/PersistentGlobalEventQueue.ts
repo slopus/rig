@@ -10,6 +10,7 @@ import type {
     GlobalEventQueueListener,
     ListGlobalEventQueueOptions,
 } from "./GlobalEventQueue.js";
+import { shouldPersistGlobalEventType } from "./shouldPersistGlobalEventType.js";
 
 export class PersistentGlobalEventQueue implements GlobalEventQueue {
     readonly #database: DatabaseSync;
@@ -21,7 +22,9 @@ export class PersistentGlobalEventQueue implements GlobalEventQueue {
         this.#initialize();
     }
 
-    persist(event: SessionEvent): GlobalEventQueueEntry {
+    persist(event: SessionEvent): GlobalEventQueueEntry | undefined {
+        if (!shouldPersistGlobalEventType(event.type)) return undefined;
+
         const result = this.#database
             .prepare(
                 `

@@ -57,6 +57,8 @@ describe("enabled global event queue syncs and trims daemon events", () => {
             trim: { through: number; trimmed: number };
         };
         expect(result.queuedTypes).toContain("session_created");
+        expect(result.queuedTypes).toContain("agent_message");
+        expect(result.queuedTypes).not.toContain("agent_event");
         expect(result.trim.trimmed).toBe(1);
         expect(result.remainingCursors.every((cursor) => cursor > result.trim.through)).toBe(true);
         expect(result.sessionHistoryTypes).toContain("session_created");

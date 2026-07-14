@@ -354,9 +354,11 @@ with when the daemon restarts.
 
 ### Durable global event queue
 
-The daemon can keep an opt-in, durable queue of every session and subagent event
-for synchronizing Rig with another backend. Enable it from `/configure` or in the
-user-wide `~/.config/rig/config.toml` file:
+The daemon can keep an opt-in, durable queue of session and subagent lifecycle
+events for synchronizing Rig with another backend. High-volume streaming agent
+updates are omitted; submitted and completed messages, run completions and
+errors, and other non-streaming changes remain queued. Enable it from
+`/configure` or in the user-wide `~/.config/rig/config.toml` file:
 
 ```toml
 [settings]
@@ -376,7 +378,8 @@ acknowledge synced entries with `POST /events/trim` and a JSON body such as
 original session `event`; the SSE stream uses the same cursor as its event ID.
 `after` resumes either endpoint, and `limit` controls batch size. Events remain
 queued until trimmed, and trimming the global queue does not remove per-session
-history.
+history. See the [event reference](EVENTS.md) for every session event, its
+payload, and its global queue behavior.
 
 ### Long-running commands
 
