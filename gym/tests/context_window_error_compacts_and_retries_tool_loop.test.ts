@@ -53,6 +53,7 @@ describe("context-window recovery during a tool loop", () => {
 
                 if (callIndex === 2) {
                     expect(lastMessage).toContain(RETRY_PROMPT);
+                    expect(request.options.thinking).toBe("off");
                     return {
                         content: [
                             {
@@ -81,6 +82,7 @@ describe("context-window recovery during a tool loop", () => {
                 if (callIndex === 4) {
                     expect(isCompaction).toBe(true);
                     expect(request.context.tools).toEqual([]);
+                    expect(request.options.thinking).toBe("off");
                     expect(context).toContain("HISTORY_FIXTURE_SENTINEL");
                     return {
                         content: [

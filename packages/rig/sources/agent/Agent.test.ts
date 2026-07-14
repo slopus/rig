@@ -563,12 +563,12 @@ describe("Agent", () => {
         });
     });
 
-    it("manually compacts completed history without removing transcript messages", async () => {
+    it("manually compacts with the active reasoning and service tier without changing history", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
             name: "GPT Test",
             thinkingLevels: ["off", "low", "high"],
-            defaultThinkingLevel: "high",
+            defaultThinkingLevel: "low",
         });
         const compactionThinking: (string | undefined)[] = [];
         const compactionServiceTiers: (string | undefined)[] = [];
@@ -601,6 +601,7 @@ describe("Agent", () => {
             provider,
             modelId: model.id,
             context: harness.context,
+            effort: "high",
             serviceTier: "fast",
             printToConsole: false,
         });
@@ -621,7 +622,7 @@ describe("Agent", () => {
                 blocks: [{ type: "text", text: expect.stringContaining("Brief.") }],
             },
         ]);
-        expect(compactionThinking).toEqual(["low"]);
+        expect(compactionThinking).toEqual(["high"]);
         expect(compactionServiceTiers).toEqual(["fast"]);
     });
 

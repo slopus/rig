@@ -487,6 +487,7 @@ export class Agent {
             ...(options.reportedTokens === undefined
                 ? {}
                 : { reportedTokens: options.reportedTokens }),
+            ...(this.#effort !== undefined ? { thinking: this.#effort } : {}),
             ...(this.#serviceTier !== undefined ? { serviceTier: this.#serviceTier } : {}),
             ...(options.signal !== undefined ? { signal: options.signal } : {}),
         });

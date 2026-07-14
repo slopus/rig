@@ -27,6 +27,7 @@ export async function compactConversation(options: {
     preserveLatestUserMessage: boolean;
     signal?: AbortSignal;
     serviceTier?: ServiceTier;
+    thinking?: string;
 }): Promise<CompactConversationResult> {
     const estimatedTokensBefore = estimateMessagesTokens(options.messages);
     const contextWindow = options.model.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
@@ -56,6 +57,7 @@ export async function compactConversation(options: {
         messages: messagesToCompact,
         now: options.now,
         ...(options.serviceTier !== undefined ? { serviceTier: options.serviceTier } : {}),
+        ...(options.thinking !== undefined ? { thinking: options.thinking } : {}),
         ...(options.signal !== undefined ? { signal: options.signal } : {}),
     });
     const summaryMessage: UserMessage = {
