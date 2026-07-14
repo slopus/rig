@@ -42,7 +42,7 @@ describe("cursor editing submits the exact prompt and keeps the terminal healthy
         gym.terminal.press("enter");
         const completed = await gym.terminal.waitForText("EDIT_ACCEPTED", 30_000);
         expect(completed.text).toContain("Ask Rig to do anything");
-        expect(completed.text).toContain("Gym Off • /workspace");
+        expect(completed.text).toContain("gym off · /workspace");
         expect(completed.scroll.atBottom).toBe(true);
 
         const request = agentRequests(gym).at(0);

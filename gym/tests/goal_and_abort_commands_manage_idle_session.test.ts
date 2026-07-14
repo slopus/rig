@@ -49,7 +49,7 @@ describe("goal and abort commands manage an idle session", () => {
         const started = await gym.terminal.waitUntil(
             (snapshot) =>
                 snapshot.text.includes("Goal started: Ship a verified release") &&
-                snapshot.text.includes("Gym Off • /workspace") &&
+                snapshot.text.includes("gym off · /workspace") &&
                 snapshot.scroll.atBottom,
             "the started goal with the normal status bar",
             30_000,
@@ -111,7 +111,7 @@ describe("goal and abort commands manage an idle session", () => {
         assertHealthyTerminal(emptyGoal, baseline);
 
         await gym.terminal.waitUntil(
-            (snapshot) => !snapshot.text.includes("Esc to interrupt"),
+            (snapshot) => !snapshot.text.includes("esc to interrupt"),
             "the cleared goal run to become idle",
             30_000,
         );
@@ -153,7 +153,7 @@ function assertHealthyTerminal(
     expect(snapshot.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
     expect(snapshot.cursor.x).toBeLessThan(COLS);
     expect(snapshot.cursor.y).toBeLessThan(ROWS);
-    expect(snapshot.text).toContain("Gym Off");
+    expect(snapshot.text).toContain("gym off");
     expect(snapshot.text).toContain("/workspace");
     expect(snapshot.text).not.toContain("�");
 }

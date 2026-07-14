@@ -108,7 +108,7 @@ describe("permission-sensitive command waits for approval before showing Running
         expect(awaitingText).toContain(visibleExact(command));
         expect(awaitingText).toContain("Permit running");
         expect(awaitingApproval.text).toContain("• Awaiting approval printf");
-        expect(awaitingApproval.text).toContain("• Waiting for approval");
+        expect(awaitingApproval.text).toContain("◦ Waiting for approval");
         expect(awaitingApproval.text).not.toContain("• Running 1 tool");
         expect(awaitingApproval.text).not.toContain("• Running printf");
         expect(awaitingApproval.text).not.toContain("• Ran printf");
@@ -201,7 +201,7 @@ function assertTerminalHealth(
     expect(snapshot.scroll.atBottom).toBe(true);
     expect(snapshot.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
     expect(snapshot.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
-    expect(snapshot.text).toContain("Gym Off");
+    expect(snapshot.text).toContain("gym off");
     expect(snapshot.text).toContain("/workspace");
     expect(snapshot.text).not.toContain("�");
     expect(snapshot.cursor.x).toBeLessThan(100);

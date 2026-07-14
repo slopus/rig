@@ -81,7 +81,7 @@ describe("shell tools do not inherit inference credentials", () => {
         const selected = await gym.terminal.waitUntil(
             (snapshot) =>
                 snapshot.text.includes("Permissions changed to Workspace write.") &&
-                footerRow(snapshot).includes("Workspace write") &&
+                footerRow(snapshot).includes("workspace write") &&
                 snapshot.scroll.atBottom,
             "Workspace write permission scope",
         );
@@ -106,7 +106,7 @@ describe("shell tools do not inherit inference credentials", () => {
         expect(completed.text.includes(inferenceToken)).toBe(false);
         expect(completed.text).toContain("RIG_GYM_TOKEN");
         expect(completed.text).not.toContain("compromised-model-probes-provider-secret");
-        expect(footerRow(completed)).toContain("Workspace write");
+        expect(footerRow(completed)).toContain("workspace write");
         assertHealthyTerminal(completed, baseline);
 
         submit(gym, "Confirm normal operation after the credential probe.");
@@ -119,7 +119,7 @@ describe("shell tools do not inherit inference credentials", () => {
             30_000,
         );
         expect(followUp.text.includes(inferenceToken)).toBe(false);
-        expect(footerRow(followUp)).toContain("Workspace write");
+        expect(footerRow(followUp)).toContain("workspace write");
         assertHealthyTerminal(followUp, baseline);
     }, 120_000);
 });
@@ -138,7 +138,7 @@ function submit(gym: Gym, text: string): void {
 }
 
 function footerRow(snapshot: Awaited<ReturnType<Gym["terminal"]["snapshot"]>>): string {
-    return snapshot.rows.find((row) => row.includes("Gym Off")) ?? "";
+    return snapshot.rows.find((row) => row.includes("gym off")) ?? "";
 }
 
 function messageText(message: { content: unknown } | undefined): string {
@@ -169,7 +169,7 @@ function assertHealthyTerminal(
     expect(snapshot.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
     expect(snapshot.cursor.x).toBeLessThan(100);
     expect(snapshot.cursor.y).toBeLessThan(30);
-    expect(snapshot.text).toContain("Gym Off");
+    expect(snapshot.text).toContain("gym off");
     expect(snapshot.text).toContain("/workspace");
     expect(snapshot.text).not.toContain("\x1b");
     expect(snapshot.text).not.toContain("�");

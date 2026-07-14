@@ -86,7 +86,7 @@ function assertHealthyNarrowTerminal(
     expect(snapshot.cursor.y).toBeLessThan(40);
     expect(snapshot.title).toContain("Rig");
     expect(snapshot.text).toContain("Ask Rig");
-    expect(snapshot.text).toContain("Gym Off");
+    expect(snapshot.text).toContain("gym off");
     expect(snapshot.text).not.toContain("\x1b[200~");
     expect(snapshot.text).not.toContain("\x1b[201~");
     expect(snapshot.text).not.toContain("�");

@@ -157,7 +157,7 @@ function assertHealthySmallTerminal(
     expect(snapshot.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
     expect(snapshot.cursor.x).toBeLessThan(COLS);
     expect(snapshot.cursor.y).toBeLessThan(ROWS);
-    expect(snapshot.text).toContain("Gym Off");
+    expect(snapshot.text).toContain("gym off");
     expect(snapshot.text).toContain("/workspace");
     expect(snapshot.text).not.toContain("�");
     expect(snapshot.text).not.toContain("\x1b[200~");

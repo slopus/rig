@@ -72,7 +72,7 @@ describe("interrupting an active shell command is honest about what stopped", ()
         expect(stopped.text).toContain("The active run was stopped.");
         expect(stopped.text).not.toMatch(/session ID/iu);
         expect(stopped.rows).toHaveLength(24);
-        expect(stopped.text).toContain("Gym Off • /workspace");
+        expect(stopped.text).toContain("gym off · /workspace");
         expect(stopped.text).not.toContain("�");
         expect(stopped.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
         expect(stopped.scroll.topArrivalCount).toBe(baseline.topArrivalCount);

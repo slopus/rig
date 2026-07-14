@@ -1,7 +1,10 @@
 import type { FileSystemStat } from "../agent/context/FileSystemContext.js";
 
 const GO_MODE_DIRECTORY = 0x80000000;
+const GO_MODE_SETGID = 0x00400000;
+const GO_MODE_SETUID = 0x00800000;
 const GO_MODE_SYMLINK = 0x08000000;
+const GO_MODE_STICKY = 0x00100000;
 const GO_MODE_TYPE = 0x8f280000;
 
 export function parseDockerPathStat(
@@ -32,6 +35,11 @@ export function parseDockerPathStat(
         isDirectory: (parsed.mode & GO_MODE_DIRECTORY) !== 0,
         isFile: (parsed.mode & GO_MODE_TYPE) === 0,
         isSymbolicLink: (parsed.mode & GO_MODE_SYMLINK) !== 0,
+        mode:
+            (parsed.mode & 0o777) |
+            ((parsed.mode & GO_MODE_SETUID) === 0 ? 0 : 0o4000) |
+            ((parsed.mode & GO_MODE_SETGID) === 0 ? 0 : 0o2000) |
+            ((parsed.mode & GO_MODE_STICKY) === 0 ? 0 : 0o1000),
         mtimeMs,
         size: parsed.size,
     };

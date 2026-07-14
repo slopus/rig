@@ -267,6 +267,6 @@ function assertStableViewport(
     expect(snapshot.scroll.atBottom).toBe(true);
     expect(snapshot.scroll.bottomDepartureCount).toBe(startup.scroll.bottomDepartureCount);
     expect(snapshot.scroll.topArrivalCount).toBe(startup.scroll.topArrivalCount);
-    expect(snapshot.text).toContain("Gym Off");
+    expect(snapshot.text).toContain("gym off");
     expect(snapshot.text).toContain("/workspace");
 }

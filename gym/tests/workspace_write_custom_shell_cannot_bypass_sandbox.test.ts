@@ -115,7 +115,7 @@ describe("Workspace write custom shells cannot bypass the sandbox", () => {
         const selected = await gym.terminal.waitUntil(
             (snapshot) =>
                 snapshot.text.includes("Permissions changed to Workspace write.") &&
-                footerRow(snapshot).includes("Workspace write") &&
+                footerRow(snapshot).includes("workspace write") &&
                 snapshot.scroll.atBottom,
             "Workspace write permission scope",
         );
@@ -136,14 +136,14 @@ describe("Workspace write custom shells cannot bypass the sandbox", () => {
             .toContain("Custom shells are available only in Full access mode.");
         expect.soft(attempted.text).not.toContain(executedMarker);
         expect(attempted.text).not.toContain("compromised-model-custom-shell");
-        expect(footerRow(attempted)).toContain("Workspace write");
+        expect(footerRow(attempted)).toContain("workspace write");
         assertHealthyTerminal(attempted, baseline);
 
         await selectFullAccess(gym);
         const fullAccess = await gym.terminal.waitUntil(
             (snapshot) =>
                 snapshot.text.includes("Permissions changed to Full access.") &&
-                footerRow(snapshot).includes("Full access") &&
+                footerRow(snapshot).includes("full access") &&
                 snapshot.scroll.atBottom,
             "Full access for the independent audit and cleanup",
         );
@@ -165,7 +165,7 @@ describe("Workspace write custom shells cannot bypass the sandbox", () => {
         expect.soft(completed.text).toContain(containedMarker);
         expect.soft(completed.text).not.toContain(escapedMarker);
         expect(completed.text).not.toContain("audit-and-clean-custom-shell-confinement");
-        expect(footerRow(completed)).toContain("Full access");
+        expect(footerRow(completed)).toContain("full access");
         assertHealthyTerminal(completed, baseline);
 
         submit(gym, "Confirm the terminal remains usable after the blocked shell.");
@@ -177,7 +177,7 @@ describe("Workspace write custom shells cannot bypass the sandbox", () => {
             "follow-up after custom shell confinement",
             30_000,
         );
-        expect(footerRow(followUp)).toContain("Full access");
+        expect(footerRow(followUp)).toContain("full access");
         assertHealthyTerminal(followUp, baseline);
     }, 120_000);
 });
@@ -204,7 +204,7 @@ function submit(gym: Gym, text: string): void {
 }
 
 function footerRow(snapshot: Awaited<ReturnType<Gym["terminal"]["snapshot"]>>): string {
-    return snapshot.rows.find((row) => row.includes("Gym Off")) ?? "";
+    return snapshot.rows.find((row) => row.includes("gym off")) ?? "";
 }
 
 function messageText(message: { content: unknown } | undefined): string {
@@ -235,7 +235,7 @@ function assertHealthyTerminal(
     expect(snapshot.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
     expect(snapshot.cursor.x).toBeLessThan(100);
     expect(snapshot.cursor.y).toBeLessThan(32);
-    expect(snapshot.text).toContain("Gym Off");
+    expect(snapshot.text).toContain("gym off");
     expect(snapshot.text).toContain("/workspace");
     expect(snapshot.text).not.toContain("\x1b");
     expect(snapshot.text).not.toContain("�");

@@ -42,6 +42,15 @@ export type {
     ToolResultBlock,
     UserMessage,
 } from "./types.js";
+export type {
+    FileDiff,
+    FileDiffHunk,
+    FileDiffKind,
+    FileDiffLine,
+    FileDiffLineKind,
+    FileDiffToolResultPresentation,
+    ToolResultPresentation,
+} from "./ToolResultPresentation.js";
 export type { AgentContext } from "./context/AgentContext.js";
 export type { PermissionMode } from "../permissions/index.js";
 export type {

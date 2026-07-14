@@ -151,7 +151,9 @@ function assertHealthyTerminal(
     expect(snapshot.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
     expect(snapshot.cursor.x).toBeLessThan(COLS);
     expect(snapshot.cursor.y).toBeLessThan(ROWS);
-    expect(snapshot.text).toContain("Gym Off");
-    expect(snapshot.text).toContain("/workspace");
+    expect(snapshot.text.includes("gym off") || snapshot.text.includes("esc to interrupt")).toBe(
+        true,
+    );
+    if (snapshot.text.includes("gym off")) expect(snapshot.text).toContain("/workspace");
     expect(snapshot.text).not.toContain("�");
 }

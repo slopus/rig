@@ -1,3 +1,4 @@
+import type { FileDiff } from "../agent/ToolResultPresentation.js";
 import type { CodexMcpToolCall } from "./CodexMcpToolCall.js";
 
 export type AppTranscriptRole =
@@ -11,6 +12,8 @@ export type AppTranscriptRole =
     | "separator";
 
 export interface AppTranscriptEntry {
+    fileDiffs?: readonly FileDiff[];
+    omittedFileDiffs?: number;
     id: string;
     mcpToolCall?: CodexMcpToolCall;
     permissionReview?: string;

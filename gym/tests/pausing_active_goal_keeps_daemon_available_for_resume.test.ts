@@ -58,7 +58,7 @@ describe("pausing an active goal keeps the daemon available for resume", () => {
         const active = await gym.terminal.waitUntil(
             (snapshot) =>
                 snapshot.text.includes("Goal started: Verify active goal pause recovery") &&
-                snapshot.text.includes("Esc to interrupt") &&
+                snapshot.text.includes("esc to interrupt") &&
                 agentRequests(gym).length === 1,
             "the first goal continuation to be actively waiting on inference",
             30_000,
@@ -71,7 +71,7 @@ describe("pausing an active goal keeps the daemon available for resume", () => {
         expect(paused.text).not.toContain("STALE_GOAL_RESPONSE_MUST_NOT_RENDER");
 
         const settled = await gym.terminal.waitUntil(
-            (snapshot) => !snapshot.text.includes("Esc to interrupt"),
+            (snapshot) => !snapshot.text.includes("esc to interrupt"),
             "the paused goal run to settle before resuming",
             30_000,
         );
@@ -118,7 +118,7 @@ function assertHealthyTerminal(
     expect(snapshot.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
     expect(snapshot.cursor.x).toBeLessThan(COLS);
     expect(snapshot.cursor.y).toBeLessThan(ROWS);
-    expect(snapshot.text).toContain("Gym Off");
+    expect(snapshot.text).toContain("gym off");
     expect(snapshot.text).toContain("/workspace");
     expect(snapshot.text).not.toContain("�");
 }

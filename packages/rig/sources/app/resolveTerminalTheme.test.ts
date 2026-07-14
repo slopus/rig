@@ -23,6 +23,7 @@ describe("resolveTerminalTheme", () => {
             success: "\x1b[92m",
             warning: "\x1b[38;2;161;178;195m",
             inputBackground: "\x1b[48;5;235m",
+            isLight: false,
         });
     });
 
@@ -46,6 +47,9 @@ describe("resolveTerminalTheme", () => {
         expect(
             resolveTerminalTheme(config, { r: 250, g: 250, b: 250 }, "truecolor").inputBackground,
         ).toBe("\x1b[48;2;240;240;240m");
+        expect(resolveTerminalTheme(config, { r: 250, g: 250, b: 250 }, "truecolor").isLight).toBe(
+            true,
+        );
     });
 
     it("rejects invalid values with the semantic role", () => {

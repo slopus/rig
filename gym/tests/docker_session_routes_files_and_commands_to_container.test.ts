@@ -44,7 +44,7 @@ describe("Docker-backed sessions", () => {
                     content: [
                         {
                             arguments: {
-                                cmd: "printf '%s\\n' \"$RIG_DOCKER_MARKER\" > result.txt && cat result.txt",
+                                cmd: "printf '%s\\n' \"$RIG_DOCKER_MARKER\" > result.txt && chmod 755 result.txt && cat result.txt",
                             },
                             id: "call-1",
                             name: "exec_command",
@@ -86,6 +86,15 @@ describe("Docker-backed sessions", () => {
             "/workspace/result.txt",
         ]);
         expect(stdout).toBe("inside the session container\nedited through container filesystem\n");
+        const { stdout: metadata } = await execFileAsync("docker", [
+            "exec",
+            created[0] ?? "",
+            "stat",
+            "-c",
+            "%u:%g %a",
+            "/workspace/result.txt",
+        ]);
+        expect(metadata).toBe("1000:1000 755\n");
     }, 60_000);
 
     it("connects to an existing running container selected for the session", async () => {

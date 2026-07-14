@@ -48,21 +48,12 @@ describe("terminal resize reflows without losing history", () => {
         );
 
         gym.terminal.resize(44, 14);
-        const narrow = await gym.terminal.waitUntil(
-            (snapshot) =>
-                snapshot.rows.length === 14 &&
-                snapshot.scroll.visibleRows === 14 &&
-                snapshot.text.includes("REFLOW_HISTORY_END") &&
-                snapshot.text.includes("Ask Rig to do anything") &&
-                snapshot.scroll.atBottom,
-            "healthy narrow layout at the bottom",
-            30_000,
-        );
+        const narrow = await settleResize(gym, 44, 14, "narrow-settled");
         expect(narrow.scroll.totalRows).toBeGreaterThan(narrow.scroll.visibleRows);
         expect(narrow.scroll.offset + narrow.scroll.visibleRows).toBe(narrow.scroll.totalRows);
         expect(narrow.scroll.bottomDepartureCount).toBe(startupScroll.bottomDepartureCount);
         expect(narrow.scroll.topArrivalCount).toBe(startupScroll.topArrivalCount);
-        expect(narrow.text).toContain("Gym Off • /workspace");
+        expect(narrow.text).toContain("gym off · /workspace");
         expect(narrow.text).not.toContain("�");
         expect(narrow.cursor.x).toBeLessThan(44);
         expect(narrow.cursor.y).toBeLessThan(14);
@@ -71,24 +62,16 @@ describe("terminal resize reflows without losing history", () => {
         expect(countOccurrences(narrowHistory.text, "REFLOW_HISTORY_BEGIN")).toBe(1);
         expect(countOccurrences(narrowHistory.text, "REFLOW_UNIQUE_MIDDLE_MARKER")).toBe(1);
         expect(countOccurrences(narrowHistory.text, "REFLOW_HISTORY_END")).toBe(1);
+        expect(narrowHistory.text).not.toContain("narrow-settled");
 
         const beforeWideResize = narrowHistory.bottom.scroll;
         gym.terminal.resize(112, 28);
-        const wide = await gym.terminal.waitUntil(
-            (snapshot) =>
-                snapshot.rows.length === 28 &&
-                snapshot.scroll.visibleRows === 28 &&
-                snapshot.text.includes("REFLOW_HISTORY_END") &&
-                snapshot.text.includes("Ask Rig to do anything") &&
-                snapshot.scroll.atBottom,
-            "healthy wide layout at the bottom",
-            30_000,
-        );
+        const wide = await settleResize(gym, 112, 28, "wide-settled");
         expect(wide.scroll.totalRows).toBeGreaterThan(wide.scroll.visibleRows);
         expect(wide.scroll.offset + wide.scroll.visibleRows).toBe(wide.scroll.totalRows);
         expect(wide.scroll.bottomDepartureCount).toBe(beforeWideResize.bottomDepartureCount);
         expect(wide.scroll.topArrivalCount).toBe(beforeWideResize.topArrivalCount);
-        expect(wide.text).toContain("Gym Off • /workspace");
+        expect(wide.text).toContain("gym off · /workspace");
         expect(wide.text).not.toContain("�");
         expect(wide.cursor.x).toBeLessThan(112);
         expect(wide.cursor.y).toBeLessThan(28);
@@ -97,6 +80,7 @@ describe("terminal resize reflows without losing history", () => {
         expect(countOccurrences(wideHistory.text, "REFLOW_HISTORY_BEGIN")).toBe(1);
         expect(countOccurrences(wideHistory.text, "REFLOW_UNIQUE_MIDDLE_MARKER")).toBe(1);
         expect(countOccurrences(wideHistory.text, "REFLOW_HISTORY_END")).toBe(1);
+        expect(wideHistory.text).not.toContain("wide-settled");
 
         const beforeFollowUp = wideHistory.bottom.scroll;
         gym.terminal.type("Confirm input still works after both resizes.");
@@ -116,12 +100,41 @@ describe("terminal resize reflows without losing history", () => {
         );
         expect(followUp.scroll.bottomDepartureCount).toBe(beforeFollowUp.bottomDepartureCount);
         expect(followUp.scroll.topArrivalCount).toBe(beforeFollowUp.topArrivalCount);
-        expect(followUp.text).toContain("Gym Off • /workspace");
+        expect(followUp.text).toContain("gym off · /workspace");
         expect(followUp.text).not.toContain("�");
         expect(followUp.cursor.x).toBeLessThan(112);
         expect(followUp.cursor.y).toBeLessThan(28);
     }, 120_000);
 });
+
+async function settleResize(
+    gym: Gym,
+    columns: number,
+    rows: number,
+    marker: string,
+): Promise<Awaited<ReturnType<Gym["terminal"]["snapshot"]>>> {
+    gym.terminal.type(marker);
+    await gym.terminal.waitUntil(
+        (snapshot) =>
+            snapshot.rows.length === rows &&
+            snapshot.scroll.visibleRows === rows &&
+            snapshot.text.includes(marker) &&
+            snapshot.scroll.atBottom,
+        `the ${columns} by ${rows} resize to render a draft`,
+        30_000,
+    );
+    for (const _character of marker) gym.terminal.press("backspace");
+    return gym.terminal.waitUntil(
+        (snapshot) =>
+            snapshot.rows.length === rows &&
+            snapshot.scroll.visibleRows === rows &&
+            !snapshot.text.includes(marker) &&
+            snapshot.text.includes("Ask Rig to do anything") &&
+            snapshot.scroll.atBottom,
+        `healthy ${columns} by ${rows} layout at the bottom`,
+        30_000,
+    );
+}
 
 async function captureScrollback(
     gym: Gym,
@@ -129,39 +142,28 @@ async function captureScrollback(
     gym.terminal.scrollToTop();
     let snapshot = await gym.terminal.snapshot();
     expect(snapshot.scroll.atTop).toBe(true);
-    const rows = new Map<number, string>();
+    const rows: string[] = [];
 
     for (;;) {
-        snapshot.rows.forEach((row, index) => {
-            rows.set(snapshot.scroll.offset + index, row);
-        });
-        if (snapshot.scroll.atBottom) break;
+        if (snapshot.scroll.atBottom) {
+            rows.push(...snapshot.rows);
+            break;
+        }
 
-        const largestOffset = snapshot.scroll.totalRows - snapshot.scroll.visibleRows;
-        const nextOffset = Math.min(
-            snapshot.scroll.offset + snapshot.scroll.visibleRows,
-            largestOffset,
-        );
-        const delta = nextOffset - snapshot.scroll.offset;
-        expect(delta).toBeGreaterThan(0);
-        gym.terminal.scrollBy(delta);
+        rows.push(snapshot.rows[0] ?? "");
+        const previousOffset = snapshot.scroll.offset;
+        gym.terminal.scrollBy(1);
         const next = await gym.terminal.snapshot();
-        expect(next.scroll.offset).toBeGreaterThan(snapshot.scroll.offset);
+        expect(next.scroll.offset).toBeGreaterThan(previousOffset);
         snapshot = next;
     }
 
     gym.terminal.scrollToBottom();
     const bottom = await gym.terminal.snapshot();
     expect(bottom.scroll.atBottom).toBe(true);
-    bottom.rows.forEach((row, index) => {
-        rows.set(bottom.scroll.offset + index, row);
-    });
     return {
         bottom,
-        text: [...rows.entries()]
-            .sort(([left], [right]) => left - right)
-            .map(([, row]) => row)
-            .join("\n"),
+        text: rows.join("\n"),
     };
 }
 

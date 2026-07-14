@@ -104,7 +104,7 @@ describe("Escape during a workflow-resurrected turn", () => {
             await gym.terminal.waitUntil(
                 (snapshot) =>
                     snapshot.text.includes("Workflow Resurrect session completed.") &&
-                    snapshot.text.includes("Esc to interrupt"),
+                    snapshot.text.includes("esc to interrupt"),
                 "notification-driven agent turn",
                 30_000,
             );

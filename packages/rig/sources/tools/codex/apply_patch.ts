@@ -1,7 +1,35 @@
 import { Type } from "@sinclair/typebox";
 
 import { defineTool } from "../../agent/types.js";
-import { applyPatchText, textOutputSchema, toTextBlocks } from "../utils/index.js";
+import { applyPatchText } from "../utils/index.js";
+import { resolveFileSystemPath } from "../utils/resolveFileSystemPath.js";
+
+const fileDiffLineSchema = Type.Object({
+    kind: Type.Union([Type.Literal("add"), Type.Literal("context"), Type.Literal("delete")]),
+    text: Type.String(),
+});
+
+const fileDiffSchema = Type.Object({
+    added: Type.Optional(Type.Number()),
+    deleted: Type.Optional(Type.Number()),
+    hunks: Type.Array(
+        Type.Object({
+            lines: Type.Array(fileDiffLineSchema),
+            newStart: Type.Number(),
+            oldStart: Type.Number(),
+        }),
+    ),
+    kind: Type.Union([Type.Literal("add"), Type.Literal("delete"), Type.Literal("update")]),
+    language: Type.Optional(Type.String()),
+    omittedLines: Type.Optional(Type.Number()),
+    path: Type.String(),
+});
+
+const applyPatchOutputSchema = Type.Object({
+    files: Type.Array(fileDiffSchema),
+    omittedFiles: Type.Optional(Type.Number()),
+    text: Type.String(),
+});
 
 export const codexApplyPatchTool = defineTool({
     name: "apply_patch",
@@ -16,14 +44,37 @@ export const codexApplyPatchTool = defineTool({
             Type.String({ description: "Working directory for relative paths." }),
         ),
     }),
-    returnType: textOutputSchema,
+    returnType: applyPatchOutputSchema,
     execute: async ({ patch, workdir }, context) => {
-        const result = await applyPatchText(patch, workdir ?? context.fs.cwd, context);
+        const cwd = resolveFileSystemPath(
+            workdir ?? context.fs.cwd,
+            context.fs.cwd,
+            context.fs.home,
+        );
+        const result = await applyPatchText(patch, cwd, context);
         return {
+            files: result.files.map((file) => ({
+                ...file,
+                hunks: file.hunks.map((hunk) => ({
+                    ...hunk,
+                    lines: hunk.lines.map((line) => ({ ...line })),
+                })),
+            })),
+            ...(result.omittedFiles === undefined ? {} : { omittedFiles: result.omittedFiles }),
             text: result.applied ? result.summary : "patch not applied",
         };
     },
-    toLLM: toTextBlocks,
+    toLLM: (result) => [{ type: "text", text: result.text }],
+    toPresentation: (result) =>
+        result.files.length === 0
+            ? undefined
+            : {
+                  files: result.files,
+                  ...(result.omittedFiles === undefined
+                      ? {}
+                      : { omittedFiles: result.omittedFiles }),
+                  type: "file_diff",
+              },
     toUI: (result) => (result.text === "patch not applied" ? "Patch not applied" : "Applied patch"),
     locks: ["apply_patch"],
 });

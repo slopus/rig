@@ -92,7 +92,7 @@ describe("background shell activity stays visible until it really finishes", () 
         await expect(gym.readFile("background-process-state.txt")).resolves.toBe("finished\n");
         expect(finished.text).not.toMatch(/session ID/iu);
         expect(finished.rows).toHaveLength(24);
-        expect(finished.text).toContain("Gym Off • /workspace");
+        expect(finished.text).toContain("gym off · /workspace");
         expect(finished.text).not.toContain("�");
         expect(finished.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
         expect(finished.scroll.topArrivalCount).toBe(baseline.topArrivalCount);

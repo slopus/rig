@@ -27,6 +27,7 @@ import {
 } from "../agent/index.js";
 import type { BashSessionActivity } from "../agent/context/BashContext.js";
 import { parseSkillFrontmatter } from "../agent/skills/parseSkillFrontmatter.js";
+import type { FileDiff } from "../agent/ToolResultPresentation.js";
 import type { NativeProxessManager } from "../processes/index.js";
 import type { ServiceTier, Usage } from "../providers/types.js";
 import type {
@@ -43,6 +44,7 @@ import { createCodeReviewPrompt } from "../review/index.js";
 import type { ActiveWorkItem } from "./ActiveWorkItem.js";
 import type { AppTranscriptEntry } from "./AppTranscriptEntry.js";
 import type { CodexMcpToolCall } from "./CodexMcpToolCall.js";
+import { CODEX_DARK_DIFF_PALETTE, CODEX_LIGHT_DIFF_PALETTE } from "./CodexFileDiff.js";
 import type {
     CodingAssistantAgentBackend,
     CodingAssistantModelChoice,
@@ -75,6 +77,7 @@ import {
 import { ACTIVITY_WAVE_FRAME_COUNT, renderActivityWave } from "./renderActivityWave.js";
 import { renderActiveWorkItem } from "./renderActiveWorkItem.js";
 import { renderAgentMarkdown } from "./renderAgentMarkdown.js";
+import { renderCodexFileDiff } from "./renderCodexFileDiff.js";
 import { renderCodexMcpToolCall } from "./renderCodexMcpToolCall.js";
 import { sanitizeTerminalText } from "./sanitizeTerminalText.js";
 import { upsertSubagentSummary } from "./upsertSubagentSummary.js";
@@ -111,6 +114,8 @@ const FAST_MODE_ON_MESSAGE = "Fast mode is on. Fast inference uses 2× plan usag
 const FAST_MODE_OFF_MESSAGE = "Fast mode is off.";
 
 const MAX_TRANSCRIPT_ENTRIES = 500;
+const MAX_DIFF_FILES_PER_TOOL = 20;
+const MAX_DIFF_ROWS_PER_TOOL = 120;
 
 export interface CodingAssistantAppOptions {
     agent: CodingAssistantAgentBackend;
@@ -963,11 +968,10 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#entries.length === 0 && this.#showHeaderInFrame
                 ? [{ id: "ready", role: "system" as const, text: "Ready." }]
                 : this.#visibleTranscriptEntries(this.#transcriptStartIndex, endIndex);
-        const remainingEntries = this.#visibleTranscriptEntries(endIndex, this.#entries.length);
         const lineCount =
             (this.#showHeaderInFrame ? this.#renderHeader(this.#lastRenderedWidth).length : 0) +
             this.#renderTranscriptEntries(prefixEntries, this.#lastRenderedWidth).length +
-            (prefixEntries.length > 0 && remainingEntries.length > 0 ? 1 : 0);
+            (prefixEntries.length > 0 ? 1 : 0);
         if (lineCount === 0) return undefined;
 
         return {
@@ -2181,6 +2185,12 @@ export class CodingAssistantApp implements Component, Focusable {
         if (entry.detail !== undefined) {
             completeEntry.detail = entry.detail;
         }
+        if (entry.fileDiffs !== undefined) {
+            completeEntry.fileDiffs = entry.fileDiffs;
+        }
+        if (entry.omittedFileDiffs !== undefined) {
+            completeEntry.omittedFileDiffs = entry.omittedFileDiffs;
+        }
         if (entry.mcpToolCall !== undefined) {
             completeEntry.mcpToolCall = entry.mcpToolCall;
         }
@@ -2318,6 +2328,9 @@ export class CodingAssistantApp implements Component, Focusable {
         }
         if (entry.mcpToolCall !== undefined) {
             return this.#renderMcpToolEntry(entry, width);
+        }
+        if (entry.fileDiffs !== undefined && entry.fileDiffs.length > 0 && entry.role !== "error") {
+            return this.#renderFileDiffEntry(entry, width);
         }
         if (entry.role === "tool") {
             return this.#renderToolEntry(entry, width, false);
@@ -2933,7 +2946,10 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #finishToolResult(
-        block: Pick<ToolResultBlock, "display" | "isError" | "toolCallId" | "toolName"> &
+        block: Pick<
+            ToolResultBlock,
+            "display" | "isError" | "presentation" | "toolCallId" | "toolName"
+        > &
             Partial<Pick<ToolResultBlock, "rendered">>,
     ): void {
         this.#activeToolCallIds.delete(block.toolCallId);
@@ -2955,6 +2971,20 @@ export class CodingAssistantApp implements Component, Focusable {
         if (existing !== undefined) {
             existing.role = block.isError ? "error" : "tool";
             existing.title = this.#toolDisplayName(block.toolName);
+            if (block.isError === true) {
+                delete existing.fileDiffs;
+                delete existing.omittedFileDiffs;
+            } else if (
+                block.presentation?.type === "file_diff" &&
+                block.presentation.files.length > 0
+            ) {
+                existing.fileDiffs = block.presentation.files;
+                if (block.presentation.omittedFiles === undefined) {
+                    delete existing.omittedFileDiffs;
+                } else {
+                    existing.omittedFileDiffs = block.presentation.omittedFiles;
+                }
+            }
             if (existing.mcpToolCall !== undefined) {
                 const result = formatCodexMcpToolResult(block.rendered);
                 existing.mcpToolCall = {
@@ -2980,6 +3010,16 @@ export class CodingAssistantApp implements Component, Focusable {
             title: this.#toolDisplayName(block.toolName),
             text: this.#toolDisplayName(block.toolName),
             detail,
+            ...(block.isError !== true &&
+            block.presentation?.type === "file_diff" &&
+            block.presentation.files.length > 0
+                ? { fileDiffs: block.presentation.files }
+                : {}),
+            ...(block.isError !== true &&
+            block.presentation?.type === "file_diff" &&
+            block.presentation.omittedFiles !== undefined
+                ? { omittedFileDiffs: block.presentation.omittedFiles }
+                : {}),
         });
     }
 
@@ -3210,7 +3250,7 @@ export class CodingAssistantApp implements Component, Focusable {
         const displayText = callText.length > 0 && callText !== toolName ? callText : toolName;
         const title = `${dot}•${RESET} ${this.#theme.brand}${BOLD}${verb}${NOT_BOLD_OR_DIM}${this.#theme.primary} ${displayText}${RESET}`;
         const lines = [this.#fitLine(title, width)];
-        if (entry.permissionReview !== undefined) {
+        if (entry.permissionReview !== undefined && width >= 5) {
             const reviewPrefix = `  ${DIM}${entry.detail === undefined ? "└" : "├"}${RESET} ${DIM}`;
             const reviewWidth = Math.max(1, width - visibleWidth(reviewPrefix));
             const reviewLines = wrapTextWithAnsi(entry.permissionReview, reviewWidth);
@@ -3271,6 +3311,61 @@ export class CodingAssistantApp implements Component, Focusable {
                 width,
             },
         );
+    }
+
+    #renderFileDiffEntry(entry: AppTranscriptEntry, width: number): string[] {
+        const diffs: readonly FileDiff[] = entry.fileDiffs ?? [];
+        const visibleDiffs = diffs.slice(0, MAX_DIFF_FILES_PER_TOOL);
+        const rowsPerFile = Math.max(
+            1,
+            Math.floor(MAX_DIFF_ROWS_PER_TOOL / Math.max(1, visibleDiffs.length)) - 1,
+        );
+        const palette =
+            this.#theme.isLight === true ? CODEX_LIGHT_DIFF_PALETTE : CODEX_DARK_DIFF_PALETTE;
+        const lines: string[] = [];
+        if (entry.permissionReview !== undefined && width >= 5) {
+            const prefix = "  └ ";
+            const review = wrapTextWithAnsi(
+                sanitizeTerminalText(entry.permissionReview),
+                Math.max(1, width - prefix.length),
+            );
+            lines.push(
+                ...review.map((line, index) =>
+                    this.#fitLine(
+                        `${DIM}${index === 0 ? prefix : " ".repeat(prefix.length)}${line}${NOT_BOLD_OR_DIM}`,
+                        width,
+                    ),
+                ),
+            );
+        }
+        for (const [index, diff] of visibleDiffs.entries()) {
+            if (index > 0) lines.push("");
+            lines.push(...renderCodexFileDiff(diff, { maxRows: rowsPerFile, palette, width }));
+        }
+        const hiddenFiles =
+            diffs.length -
+            visibleDiffs.length +
+            Math.max(0, Math.floor(entry.omittedFileDiffs ?? 0));
+        const hiddenFilesLine =
+            hiddenFiles === 0
+                ? undefined
+                : this.#fitLine(
+                      `${DIM}… ${hiddenFiles} more file${hiddenFiles === 1 ? "" : "s"}${NOT_BOLD_OR_DIM}`,
+                      width,
+                  );
+        if (hiddenFilesLine !== undefined) lines.push(hiddenFilesLine);
+        if (lines.length <= MAX_DIFF_ROWS_PER_TOOL) return lines;
+        const reservedTailRows = hiddenFilesLine === undefined ? 1 : 2;
+        const visible = lines.slice(0, MAX_DIFF_ROWS_PER_TOOL - reservedTailRows);
+        const hidden = lines.length - visible.length - (hiddenFilesLine === undefined ? 0 : 1);
+        visible.push(
+            this.#fitLine(
+                `${DIM}… ${hidden} more row${hidden === 1 ? "" : "s"}${NOT_BOLD_OR_DIM}`,
+                width,
+            ),
+        );
+        if (hiddenFilesLine !== undefined) visible.push(hiddenFilesLine);
+        return visible;
     }
 
     #renderNoticeEntry(title: string, text: string, width: number, color: string): string[] {

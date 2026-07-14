@@ -49,7 +49,7 @@ describe("shrinking terminal does not duplicate transcript scrollback", () => {
             (snapshot) =>
                 agentRequestCount(gym) === 3 &&
                 snapshot.text.includes("Ask Rig to do anything") &&
-                !snapshot.text.includes("Esc to interrupt"),
+                !snapshot.text.includes("esc to interrupt"),
             "the resized follow-up to finish and return to the idle composer",
             30_000,
         );
@@ -65,7 +65,7 @@ describe("shrinking terminal does not duplicate transcript scrollback", () => {
         expect(bottom.rows).toHaveLength(6);
         expect(bottom.scroll).toMatchObject({ atBottom: true, visibleRows: 6 });
         expect(bottom.text).toContain("Ask Rig to do anything");
-        expect(bottom.text).toContain("Gym Off • /workspace");
+        expect(bottom.text).toContain("gym off · /workspace");
         expect(bottom.text).not.toContain("�");
     }, 120_000);
 });

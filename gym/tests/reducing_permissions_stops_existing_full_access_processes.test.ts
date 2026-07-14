@@ -52,7 +52,7 @@ describe("reducing permissions stops existing Full access processes", () => {
             (snapshot) =>
                 snapshot.text.includes("FULL_ACCESS_PROCESS_IS_RUNNING") &&
                 snapshot.text.includes("Process printf 'PRIVILEGED_PROCESS_STARTED") &&
-                snapshot.text.includes("Full access") &&
+                snapshot.text.includes("full access") &&
                 snapshot.scroll.atBottom,
             "the Full access process running in the background",
             30_000,
@@ -69,7 +69,7 @@ describe("reducing permissions stops existing Full access processes", () => {
             (snapshot) =>
                 snapshot.text.includes("Permissions changed to Read only.") &&
                 !snapshot.text.includes("Process printf 'PRIVILEGED_PROCESS_STARTED") &&
-                snapshot.text.includes("Read only") &&
+                snapshot.text.includes("read only") &&
                 snapshot.scroll.atBottom,
             "the privilege downgrade stopping prior processes",
             30_000,
@@ -85,7 +85,7 @@ describe("reducing permissions stops existing Full access processes", () => {
         await expect(gym.readFile("privileged-after-downgrade.txt")).rejects.toMatchObject({
             code: "ENOENT",
         });
-        expect(followUp.text).toContain("Read only");
+        expect(followUp.text).toContain("read only");
         expect(followUp.text).not.toContain("Process printf 'PRIVILEGED_PROCESS_STARTED");
         assertHealthy(followUp, baseline);
     }, 120_000);
@@ -107,7 +107,7 @@ function assertHealthy(
     expect(snapshot.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
     expect(snapshot.cursor.x).toBeLessThan(96);
     expect(snapshot.cursor.y).toBeLessThan(26);
-    expect(snapshot.text).toContain("Gym Off");
+    expect(snapshot.text).toContain("gym off");
     expect(snapshot.text).toContain("/workspace");
     expect(snapshot.text).not.toContain("�");
 }

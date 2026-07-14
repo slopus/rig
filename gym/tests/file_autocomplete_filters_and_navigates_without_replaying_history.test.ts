@@ -115,7 +115,7 @@ describe("file autocomplete filters and navigates without replaying history", ()
         expect(completed.scroll.visibleRows).toBe(12);
         expect(completed.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
         expect(completed.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
-        expect(completed.text).toContain("Gym Off • /workspace");
+        expect(completed.text).toContain("gym off · /workspace");
         expect(completed.text).not.toContain("�");
 
         const agentRequests = gym.inference.requests.filter(
@@ -138,7 +138,7 @@ describe("file autocomplete filters and navigates without replaying history", ()
         expect(bottom.scroll.atBottom).toBe(true);
         expect(bottom.text).toContain("FILE_MENTION_FILTER_ACCEPTED");
         expect(bottom.text).toContain("Ask Rig to do anything");
-        expect(bottom.text).toContain("Gym Off • /workspace");
+        expect(bottom.text).toContain("gym off · /workspace");
     }, 120_000);
 });
 

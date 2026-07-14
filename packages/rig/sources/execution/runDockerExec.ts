@@ -13,16 +13,23 @@ export interface DockerExecResult {
 export async function runDockerExec(
     container: Dockerode.Container,
     command: readonly string[],
-    options: { cwd?: string; maxOutputBytes?: number; timeoutMs?: number } = {},
+    options: {
+        cwd?: string;
+        maxOutputBytes?: number;
+        stdin?: string | Uint8Array;
+        timeoutMs?: number;
+    } = {},
 ): Promise<DockerExecResult> {
+    const hasStdin = options.stdin !== undefined;
     const exec = await container.exec({
+        AttachStdin: hasStdin,
         AttachStderr: true,
         AttachStdout: true,
         Cmd: [...command],
         Tty: false,
         ...(options.cwd === undefined ? {} : { WorkingDir: options.cwd }),
     });
-    const stream = await exec.start({ hijack: true, stdin: false, Tty: false });
+    const stream = await exec.start({ hijack: true, stdin: hasStdin, Tty: false });
     const stdoutStream = new PassThrough();
     const stderrStream = new PassThrough();
     const maxOutputBytes = options.maxOutputBytes ?? 512_000;
@@ -56,6 +63,9 @@ export async function runDockerExec(
         stream.once("close", () => finish());
     });
     container.modem.demuxStream(stream, stdoutStream, stderrStream);
+    if (options.stdin !== undefined) {
+        stream.end(Buffer.from(options.stdin));
+    }
     await completion;
     const inspected = await exec.inspect();
     return {

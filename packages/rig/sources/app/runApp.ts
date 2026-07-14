@@ -288,8 +288,8 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
 
     const preserveTranscript = () => {
         const pending = app.prepareForTerminalResize();
-        if (pending !== undefined && tui.preserveRenderedPrefix(pending.lineCount)) {
-            pending.commit();
+        if (tui.preserveRenderedPrefix(pending?.lineCount ?? 0)) {
+            pending?.commit();
         }
     };
 

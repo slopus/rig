@@ -152,7 +152,7 @@ describe("long-running exec accepts input and completes", () => {
         expect(completed.scroll.visibleRows).toBe(26);
         expect(completed.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
         expect(completed.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
-        expect(completed.text).toContain("Gym Off • /workspace");
+        expect(completed.text).toContain("gym off · /workspace");
         expect(completed.text).not.toContain("�");
         expect(completed.cursor.x).toBeLessThan(90);
         expect(completed.cursor.y).toBeLessThan(26);
@@ -169,7 +169,7 @@ describe("long-running exec accepts input and completes", () => {
         );
         expect(followUp.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
         expect(followUp.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
-        expect(followUp.text).toContain("Gym Off • /workspace");
+        expect(followUp.text).toContain("gym off · /workspace");
         expect(followUp.text).not.toContain("�");
 
         const agentRequests = gym.inference.requests.filter(

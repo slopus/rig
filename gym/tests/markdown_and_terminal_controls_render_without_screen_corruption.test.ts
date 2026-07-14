@@ -45,7 +45,7 @@ describe("Markdown and terminal controls render without screen corruption", () =
         expect(rendered.text).toContain("CONTROL_ACONTROL_BCONTROL_C");
         expect(rendered.text).toContain("const answer: number = 42;");
         expect(rendered.text).toContain("Ask Rig to do anything");
-        expect(rendered.text).toContain("Gym Off • /workspace");
+        expect(rendered.text).toContain("gym off · /workspace");
         expect(rendered.text).not.toContain("\x1b[2J");
         expect(rendered.text).not.toContain("�");
         expect(rendered.rows).toHaveLength(18);

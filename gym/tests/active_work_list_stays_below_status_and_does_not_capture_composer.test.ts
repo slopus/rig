@@ -76,11 +76,11 @@ describe("passive active-work list", () => {
                 (snapshot) =>
                     snapshot.text.includes("WORKFLOW_RUNNING") &&
                     snapshot.text.includes("Workflow Visible workflow") &&
-                    snapshot.text.includes("Gym Off • /workspace • Full access"),
+                    snapshot.text.includes("gym off · /workspace · main [default] · full access"),
                 "workflow row below the normal status bar",
                 30_000,
             );
-            const statusRow = passiveList.rows.findIndex((row) => row.includes("Gym Off"));
+            const statusRow = passiveList.rows.findIndex((row) => row.includes("gym off"));
             const workflowRow = passiveList.rows.findIndex((row) =>
                 row.includes("Workflow Visible workflow"),
             );

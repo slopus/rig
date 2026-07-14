@@ -87,7 +87,7 @@ describe("project MCP requires one-time permanent trust", () => {
             30_000,
         );
         await expect(gym.readFile("project-mcp-started.txt")).resolves.toBe("started\n");
-        expect(first.text).toContain("Auto");
+        expect(first.text).toContain("auto");
 
         submit(gym, "Use the same trusted project helper again.");
         const second = await gym.terminal.waitUntil(

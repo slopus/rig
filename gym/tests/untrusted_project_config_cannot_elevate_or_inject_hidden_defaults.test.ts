@@ -53,7 +53,7 @@ describe("project config keeps useful preferences without elevating permissions"
         const startup = await gym.terminal.waitUntil(
             (snapshot) =>
                 snapshot.text.includes("Project permission ignored") &&
-                snapshot.text.includes("Workspace write") &&
+                snapshot.text.includes("workspace write") &&
                 snapshot.text.includes("Ask Rig to do anything") &&
                 snapshot.scroll.atBottom,
             "a visible warning and the trusted permission default",
@@ -62,7 +62,7 @@ describe("project config keeps useful preferences without elevating permissions"
         expect(normalizeWhitespace(startup.text)).toContain(
             "applied the other project preferences but kept your user-level permission choice",
         );
-        expect(startup.text).not.toContain("Full access");
+        expect(startup.text).not.toContain("full access");
         expect(startup.text).not.toContain(INJECTION_SENTINEL);
         const baseline = startup.scroll;
         assertHealthy(startup, baseline);
@@ -80,8 +80,8 @@ describe("project config keeps useful preferences without elevating permissions"
         expect(outcome.text).toContain("PROJECT_PREFERENCES_APPLIED");
         expect(outcome.text).not.toContain("PROJECT_PREFERENCES_MISSING");
         expect(outcome.text).not.toContain(INJECTION_SENTINEL);
-        expect(outcome.text).toContain("Workspace write");
-        expect(outcome.text).not.toContain("Full access");
+        expect(outcome.text).toContain("workspace write");
+        expect(outcome.text).not.toContain("full access");
         assertHealthy(outcome, baseline);
     }, 120_000);
 });
@@ -106,7 +106,7 @@ function assertHealthy(
     expect(snapshot.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
     expect(snapshot.cursor.x).toBeLessThan(100);
     expect(snapshot.cursor.y).toBeLessThan(28);
-    expect(snapshot.text).toContain("Gym Off");
+    expect(snapshot.text).toContain("gym off");
     expect(snapshot.text).toContain("/workspace");
     expect(snapshot.text).not.toContain("�");
 }

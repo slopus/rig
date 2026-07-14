@@ -154,8 +154,8 @@ function assertHealthy(
     expect(snapshot.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
     expect(snapshot.cursor.x).toBeLessThan(100);
     expect(snapshot.cursor.y).toBeLessThan(28);
-    expect(snapshot.text).toContain("Gym Off");
+    expect(snapshot.text).toContain("gym off");
     expect(snapshot.text).toContain("/workspace");
-    expect(snapshot.text).toContain("Workspace write");
+    expect(snapshot.text).toContain("workspace write");
     expect(snapshot.text).not.toContain("�");
 }

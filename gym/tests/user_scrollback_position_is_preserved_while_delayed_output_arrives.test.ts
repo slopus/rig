@@ -105,7 +105,7 @@ describe("user scrollback position is preserved while delayed output arrives", (
             readingHistory.scroll.bottomDepartureCount,
         );
         expect(liveOutput.scroll.topArrivalCount).toBe(readingHistory.scroll.topArrivalCount);
-        expect(liveOutput.text).toContain("Gym Off • /workspace");
+        expect(liveOutput.text).toContain("gym off · /workspace");
         expect(liveOutput.text).not.toContain("�");
         expect(liveOutput.cursor.x).toBeLessThan(68);
         expect(liveOutput.cursor.y).toBeLessThan(16);

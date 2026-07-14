@@ -124,7 +124,7 @@ function assertHealthyInteractiveTerminal(
     expect(snapshot.cursor.y).toBeLessThan(ROWS);
     expect(snapshot.title).toContain("Rig");
     expect(snapshot.text).toContain("Ask Rig to do anything");
-    expect(snapshot.text).toContain("Gym Off • /workspace");
+    expect(snapshot.text).toContain("gym off · /workspace");
     expect(snapshot.text).not.toContain("ECONNRESET");
     assertControlHygiene(snapshot);
 }

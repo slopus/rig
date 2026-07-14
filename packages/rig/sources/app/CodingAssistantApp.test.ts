@@ -3506,6 +3506,210 @@ describe("CodingAssistantApp", () => {
         expect(afterRunError).toContain("Interrupted.");
     });
 
+    it("replays durable syntax-highlighted file diffs and never presents failed changes", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+        const successfulPresentation = {
+            type: "file_diff" as const,
+            files: [
+                {
+                    path: "src/greet.ts",
+                    kind: "update" as const,
+                    hunks: [
+                        {
+                            oldStart: 1,
+                            newStart: 1,
+                            lines: [
+                                {
+                                    kind: "context" as const,
+                                    text: "export function greet(name: string) {",
+                                },
+                                {
+                                    kind: "delete" as const,
+                                    text: "  return `goodbye, ${name}`;",
+                                },
+                                {
+                                    kind: "add" as const,
+                                    text: "  return `hello, ${name}`;",
+                                },
+                                { kind: "context" as const, text: "}" },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        };
+
+        app.applySessionEvent({
+            createdAt: 1,
+            data: {
+                message: {
+                    blocks: [
+                        {
+                            arguments: { patch: "successful patch" },
+                            id: "patch-success",
+                            name: "apply_patch",
+                            type: "tool_call",
+                        },
+                        {
+                            display: "Applied patch",
+                            isError: false,
+                            presentation: successfulPresentation,
+                            rendered: [{ type: "text", text: "Success." }],
+                            toolCallId: "patch-success",
+                            toolName: "apply_patch",
+                            type: "tool_result",
+                        },
+                        {
+                            arguments: { patch: "failed patch" },
+                            id: "patch-error",
+                            name: "apply_patch",
+                            type: "tool_call",
+                        },
+                        {
+                            display: "Tool 'apply_patch' failed: hunk did not match",
+                            isError: true,
+                            presentation: {
+                                type: "file_diff",
+                                files: [
+                                    {
+                                        path: "SHOULD_NOT_RENDER.ts",
+                                        kind: "add",
+                                        hunks: [],
+                                    },
+                                ],
+                            },
+                            rendered: [
+                                {
+                                    type: "text",
+                                    text: "Tool 'apply_patch' failed: hunk did not match",
+                                },
+                            ],
+                            toolCallId: "patch-error",
+                            toolName: "apply_patch",
+                            type: "tool_result",
+                        },
+                        {
+                            arguments: { patch: "empty patch" },
+                            id: "patch-empty",
+                            name: "apply_patch",
+                            type: "tool_call",
+                        },
+                        {
+                            display: "Applied patch",
+                            isError: false,
+                            presentation: { type: "file_diff", files: [] },
+                            rendered: [{ type: "text", text: "Applied patch" }],
+                            toolCallId: "patch-empty",
+                            toolName: "apply_patch",
+                            type: "tool_result",
+                        },
+                    ],
+                    id: "patch-message",
+                    role: "agent",
+                },
+                runId: "run-1",
+            },
+            id: "patch-agent-message",
+            sessionId: "session-1",
+            type: "agent_message",
+        });
+
+        const raw = app.render(100).join("\n");
+        const rendered = stripAnsi(raw);
+        expect(rendered).toContain("• Edited src/greet.ts (+1 -1)");
+        expect(rendered).toContain("    2 -  return `goodbye, ${name}`;");
+        expect(rendered).toContain("    2 +  return `hello, ${name}`;");
+        expect(rendered).toContain("• Failed Apply patch");
+        expect(rendered).toContain("hunk did not match");
+        expect(rendered).not.toContain("SHOULD_NOT_RENDER");
+        expect(rendered).toContain("• Edited Apply patch");
+        expect(rendered).toContain("  └ Applied patch");
+        expect(raw).toContain("\x1b[48;5;52m");
+        expect(raw).toContain("\x1b[48;5;22m");
+        expect(raw).toContain("\x1b[38;2;148;226;213mexport");
+
+        app.applySessionEvent({
+            createdAt: 2,
+            data: {
+                message: {
+                    blocks: [
+                        {
+                            display: "Applied large patch",
+                            isError: false,
+                            presentation: {
+                                type: "file_diff",
+                                omittedFiles: 4,
+                                files: Array.from({ length: 20 }, (_, fileIndex) => ({
+                                    path: `generated/file-${fileIndex}.ts`,
+                                    kind: "add" as const,
+                                    hunks: [
+                                        {
+                                            oldStart: 0,
+                                            newStart: 1,
+                                            lines: Array.from({ length: 20 }, (_, lineIndex) => ({
+                                                kind: "add" as const,
+                                                text: `export const value${lineIndex} = ${lineIndex};`,
+                                            })),
+                                        },
+                                    ],
+                                })),
+                            },
+                            rendered: [{ type: "text", text: "Applied large patch" }],
+                            toolCallId: "patch-large",
+                            toolName: "apply_patch",
+                            type: "tool_result",
+                        },
+                    ],
+                    id: "patch-large-message",
+                    role: "agent",
+                },
+                runId: "run-2",
+            },
+            id: "patch-large-agent-message",
+            sessionId: "session-1",
+            type: "agent_message",
+        });
+
+        const largeRendered = app.render(100).map(stripAnsi);
+        const largeStart = largeRendered.findIndex((line) =>
+            line.includes("• Added generated/file-0.ts"),
+        );
+        const largeEnd = largeRendered.findIndex(
+            (line, index) => index >= largeStart && line.includes("more rows"),
+        );
+        const omittedFilesRow = largeRendered.findIndex(
+            (line, index) => index >= largeStart && line.includes("… 4 more files"),
+        );
+        expect(largeStart).toBeGreaterThanOrEqual(0);
+        expect(largeEnd).toBeGreaterThan(largeStart);
+        expect(omittedFilesRow).toBeGreaterThan(largeEnd);
+        expect(omittedFilesRow - largeStart + 1).toBe(120);
+    });
+
     it("names an unavailable model tool instead of presenting its argument as the failed action", async () => {
         const model = defineModel({
             id: "openai/gpt-test",

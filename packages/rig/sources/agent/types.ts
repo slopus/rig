@@ -6,6 +6,7 @@ import type { Static, TSchema } from "@sinclair/typebox";
 
 import type { AgentContext } from "./context/AgentContext.js";
 import type { Usage } from "../providers/types.js";
+import type { ToolResultPresentation } from "./ToolResultPresentation.js";
 
 /** Plain text content. */
 export interface TextBlock {
@@ -50,6 +51,8 @@ export interface ToolResultBlock {
     /** Short human-facing tool summary produced by the tool's `toUI` serializer. */
     display: string;
     isError?: boolean;
+    /** Durable model-invisible data used for rich transcript rendering. */
+    presentation?: ToolResultPresentation;
 }
 
 /** Blocks allowed on agent messages. */
@@ -111,6 +114,10 @@ export interface DefinedTool<
     ) => Promise<Static<TReturnSchema>> | Static<TReturnSchema>;
     isError?: (result: Static<TReturnSchema>) => boolean;
     toLLM: (result: Static<TReturnSchema>) => readonly ContentBlock[];
+    toPresentation?: (
+        result: Static<TReturnSchema>,
+        args: Static<TArgsSchema>,
+    ) => ToolResultPresentation | undefined;
     toUI: (result: Static<TReturnSchema>, args: Static<TArgsSchema>) => string;
     /** Locks acquired for each invocation; constants or argument-derived keys. */
     locks: readonly Lock<Static<TArgsSchema>>[];
@@ -129,6 +136,7 @@ export interface AnyDefinedTool {
     ) => Promise<unknown> | unknown;
     isError?: (result: never) => boolean;
     toLLM: (result: never) => readonly ContentBlock[];
+    toPresentation?: (result: never, args: never) => ToolResultPresentation | undefined;
     toUI: (result: never, args: never) => string;
     locks: readonly Lock<never>[];
 }
@@ -158,6 +166,10 @@ export function defineTool<
     ) => Promise<Static<TReturnSchema>> | Static<TReturnSchema>;
     isError?: (result: Static<TReturnSchema>) => boolean;
     toLLM: (result: Static<TReturnSchema>) => readonly ContentBlock[];
+    toPresentation?: (
+        result: Static<TReturnSchema>,
+        args: Static<TArgsSchema>,
+    ) => ToolResultPresentation | undefined;
     toUI: (result: Static<TReturnSchema>, args: Static<TArgsSchema>) => string;
     locks: readonly Lock<Static<TArgsSchema>>[];
 }): DefinedTool<TArgsSchema, TReturnSchema> {

@@ -168,7 +168,7 @@ describe("active Unicode tool session survives repeated resizes", () => {
             "follow-up after repeated active resizes",
             30_000,
         );
-        expect(followUp.text).toContain("Gym Off • /workspace");
+        expect(followUp.text).toContain("gym off · /workspace");
         expect(followUp.text).not.toContain("�");
         expect(gym.inference.requests.filter(isAgentRequest)).toHaveLength(5);
     }, 120_000);
@@ -250,7 +250,7 @@ function assertHealthyLayout(
     expect(snapshot.scroll.offset + snapshot.scroll.visibleRows).toBe(snapshot.scroll.totalRows);
     expect(snapshot.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
     expect(snapshot.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
-    expect(snapshot.text).toContain("Gym Off");
+    expect(snapshot.text).toContain("gym off");
     expect(snapshot.text).toContain("/work");
     expect(snapshot.text).not.toContain("�");
     expect(snapshot.text).not.toContain("\x1b[200~");

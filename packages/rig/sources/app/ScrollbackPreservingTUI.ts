@@ -21,8 +21,8 @@ export class ScrollbackPreservingTUI extends TUI {
 
     preserveRenderedPrefix(lineCount: number): boolean {
         const state = this as unknown as TuiRenderState;
+        if (state.previousLines.length === 0) return false;
         const prefixLineCount = Math.min(Math.max(0, lineCount), state.previousLines.length);
-        if (prefixLineCount === 0) return false;
 
         const suffix = state.previousLines.slice(prefixLineCount);
         const suffixRows = suffix.reduce(

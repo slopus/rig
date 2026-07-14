@@ -20,7 +20,7 @@ describe("active permission scope is visible without opening a menu", () => {
         const startup = await gym.terminal.snapshot();
         const baseline = startup.scroll;
 
-        expect(footerRow(startup)).toContain("Full access");
+        expect(footerRow(startup)).toContain("full access");
         assertHealthyTerminal(startup, baseline);
 
         submit(gym, "/permissions");
@@ -40,11 +40,11 @@ describe("active permission scope is visible without opening a menu", () => {
         const readOnly = await gym.terminal.waitUntil(
             (snapshot) =>
                 snapshot.text.includes("Permissions changed to Read only.") &&
-                footerRow(snapshot).includes("Read only") &&
+                footerRow(snapshot).includes("read only") &&
                 snapshot.scroll.atBottom,
             "Read only scope in the live footer",
         );
-        expect(footerRow(readOnly)).not.toContain("Full access");
+        expect(footerRow(readOnly)).not.toContain("full access");
         expect(footerRow(readOnly)).not.toContain("read_only");
         assertHealthyTerminal(readOnly, baseline);
 
@@ -64,12 +64,12 @@ describe("active permission scope is visible without opening a menu", () => {
         const auto = await gym.terminal.waitUntil(
             (snapshot) =>
                 snapshot.text.includes("Permissions changed to Auto.") &&
-                footerRow(snapshot).includes("Auto") &&
+                footerRow(snapshot).includes("auto") &&
                 snapshot.scroll.atBottom,
             "Auto scope in the live footer",
         );
-        expect(footerRow(auto)).not.toContain("Read only");
-        expect(footerRow(auto)).not.toContain("Full access");
+        expect(footerRow(auto)).not.toContain("read only");
+        expect(footerRow(auto)).not.toContain("full access");
         assertHealthyTerminal(auto, baseline);
         expect(agentRequests(gym)).toHaveLength(0);
     }, 120_000);
@@ -81,7 +81,7 @@ function submit(gym: Gym, text: string): void {
 }
 
 function footerRow(snapshot: Awaited<ReturnType<Gym["terminal"]["snapshot"]>>): string {
-    return snapshot.rows.find((row) => row.includes("Gym Off")) ?? "";
+    return snapshot.rows.find((row) => row.includes("gym off")) ?? "";
 }
 
 function agentRequests(gym: Gym) {
@@ -101,7 +101,7 @@ function assertHealthyTerminal(
     expect(snapshot.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
     expect(snapshot.cursor.x).toBeLessThan(100);
     expect(snapshot.cursor.y).toBeLessThan(24);
-    expect(snapshot.text).toContain("Gym Off");
+    expect(snapshot.text).toContain("gym off");
     expect(snapshot.text).toContain("/workspace");
     expect(snapshot.text).not.toContain("�");
 }

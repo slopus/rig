@@ -87,7 +87,10 @@ export type AgentLoopEvent =
       }
     | {
           type: "tool_execution_end";
-          result: Pick<ToolResultBlock, "display" | "isError" | "toolCallId" | "toolName" | "type">;
+          result: Pick<
+              ToolResultBlock,
+              "display" | "isError" | "presentation" | "toolCallId" | "toolName" | "type"
+          >;
       }
     | {
           type: "tool_execution_progress";
@@ -400,6 +403,9 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                         toolName: result.toolName,
                         display: result.display,
                         ...(result.isError === undefined ? {} : { isError: result.isError }),
+                        ...(result.presentation === undefined
+                            ? {}
+                            : { presentation: result.presentation }),
                     },
                 });
                 await options.onEvent?.({
@@ -797,6 +803,9 @@ async function executeToolCall(
         ) => Promise<unknown> | unknown;
         const isError = tool.isError as ((result: unknown) => boolean) | undefined;
         const toLLM = tool.toLLM as (result: unknown) => readonly ContentBlock[];
+        const toPresentation = tool.toPresentation as
+            | ((result: unknown, args: unknown) => ToolResultBlock["presentation"])
+            | undefined;
         const toUI = tool.toUI as (result: unknown, args: unknown) => string;
         const executionOptions: {
             onProgress?: (display: string) => void;
@@ -815,6 +824,8 @@ async function executeToolCall(
                 ? await context.permissions.runWithMode("full_access", run)
                 : await run();
         const resultIsError = isError?.(result);
+        const presentation =
+            resultIsError === true ? undefined : toPresentation?.(result, toolCall.arguments);
 
         return {
             type: "tool_result",
@@ -823,6 +834,7 @@ async function executeToolCall(
             rendered: toLLM(result),
             display: toUI(result, toolCall.arguments),
             ...(resultIsError === undefined ? {} : { isError: resultIsError }),
+            ...(presentation === undefined ? {} : { presentation }),
         };
     } catch (error) {
         return errorToolResultBlock(

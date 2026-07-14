@@ -54,7 +54,7 @@ describe("filtering slash autocomplete does not replay transcript", () => {
         expect(bottom.scroll.atBottom).toBe(true);
         expect(bottom.text).toContain("SLASH_FOLLOW_UP_OK");
         expect(bottom.text).toContain("Ask Rig to do anything");
-        expect(bottom.text).toContain("Gym Off • /workspace");
+        expect(bottom.text).toContain("gym off · /workspace");
         expect(bottom.text).not.toContain("�");
     }, 120_000);
 });

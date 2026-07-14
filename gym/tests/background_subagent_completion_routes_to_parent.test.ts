@@ -166,7 +166,7 @@ describe("background subagent completion routes to its parent", () => {
         expect(completed.scroll.visibleRows).toBe(28);
         expect(completed.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
         expect(completed.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
-        expect(completed.text).toContain("Gym Off • /workspace");
+        expect(completed.text).toContain("gym off · /workspace");
         expect(completed.text).not.toContain("�");
         expect(completed.cursor.x).toBeLessThan(92);
         expect(completed.cursor.y).toBeLessThan(28);
@@ -200,7 +200,7 @@ describe("background subagent completion routes to its parent", () => {
         expect(followUp.scroll.visibleRows).toBe(28);
         expect(followUp.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
         expect(followUp.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
-        expect(followUp.text).toContain("Gym Off • /workspace");
+        expect(followUp.text).toContain("gym off · /workspace");
         expect(followUp.text).not.toContain("�");
         expect(followUp.cursor.x).toBeLessThan(92);
         expect(followUp.cursor.y).toBeLessThan(28);

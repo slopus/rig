@@ -140,7 +140,7 @@ describe("permissions menu enforces Read only then Full access", () => {
             "Read only permission selection",
         );
         expect(readOnlySelected.text).not.toContain("read_only");
-        expect(readOnlySelected.text).toContain("Gym Off • /workspace");
+        expect(readOnlySelected.text).toContain("gym off · /workspace");
         expect(readOnlySelected.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
         expect(readOnlySelected.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
 
@@ -167,7 +167,7 @@ describe("permissions menu enforces Read only then Full access", () => {
             "read-only result and recovered composer",
             30_000,
         );
-        expect(readOnlyComplete.text).toContain("Gym Off • /workspace");
+        expect(readOnlyComplete.text).toContain("gym off · /workspace");
 
         gym.terminal.type("/permissions");
         gym.terminal.press("enter");
@@ -189,18 +189,21 @@ describe("permissions menu enforces Read only then Full access", () => {
             "Full access permission selection",
         );
         expect(fullAccessSelected.text).not.toContain("full_access");
-        expect(fullAccessSelected.text).toContain("Gym Off • /workspace");
+        expect(fullAccessSelected.text).toContain("gym off · /workspace");
         expect(fullAccessSelected.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
         expect(fullAccessSelected.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
 
         gym.terminal.type("Change the protected file with full access.");
         gym.terminal.press("enter");
         const applied = await gym.terminal.waitUntil(
-            (snapshot) => snapshot.text.includes("Applied patch") && snapshot.scroll.atBottom,
+            (snapshot) =>
+                snapshot.text.includes("• Edited protected.txt (+1 -1)") &&
+                snapshot.scroll.atBottom,
             "successful Full access write",
             30_000,
         );
-        expect(applied.text).toContain("└ Applied patch");
+        expect(applied.text).toContain("    1 -original value");
+        expect(applied.text).toContain("    1 +changed with full access");
         expect(applied.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
         expect(applied.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
         await expect(gym.readFile("protected.txt")).resolves.toBe("changed with full access\n");
@@ -217,7 +220,7 @@ describe("permissions menu enforces Read only then Full access", () => {
         expect(fullAccessComplete.scroll.visibleRows).toBe(26);
         expect(fullAccessComplete.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
         expect(fullAccessComplete.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
-        expect(fullAccessComplete.text).toContain("Gym Off • /workspace");
+        expect(fullAccessComplete.text).toContain("gym off · /workspace");
         expect(fullAccessComplete.text).not.toContain("�");
         expect(fullAccessComplete.cursor.x).toBeLessThan(94);
         expect(fullAccessComplete.cursor.y).toBeLessThan(26);
@@ -234,7 +237,7 @@ describe("permissions menu enforces Read only then Full access", () => {
         );
         expect(recovery.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
         expect(recovery.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
-        expect(recovery.text).toContain("Gym Off • /workspace");
+        expect(recovery.text).toContain("gym off · /workspace");
         expect(recovery.text).not.toContain("�");
     }, 120_000);
 });

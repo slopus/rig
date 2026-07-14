@@ -50,7 +50,7 @@ describe("long assistant response stays pinned to the bottom", () => {
         );
         expect(firstTurn.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
         expect(firstTurn.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
-        expect(firstTurn.text).toContain("Gym Off • /workspace");
+        expect(firstTurn.text).toContain("gym off · /workspace");
         expect(firstTurn.text).not.toContain("\x1b[200~");
         expect(firstTurn.text).not.toContain("\x1b[201~");
         expect(firstTurn.text).not.toContain("�");
@@ -75,7 +75,7 @@ describe("long assistant response stays pinned to the bottom", () => {
         );
         expect(followUp.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
         expect(followUp.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
-        expect(followUp.text).toContain("Gym Off • /workspace");
+        expect(followUp.text).toContain("gym off · /workspace");
         expect(followUp.text).not.toContain("�");
         expect(followUp.cursor.x).toBeLessThan(72);
         expect(followUp.cursor.y).toBeLessThan(18);

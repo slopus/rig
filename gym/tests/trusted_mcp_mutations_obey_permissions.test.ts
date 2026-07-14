@@ -40,8 +40,8 @@ afterEach(async () => {
 
 describe("trusted MCP mutations obey permissions", () => {
     it.each([
-        ["read_only", "Read only"],
-        ["workspace_write", "Workspace write"],
+        ["read_only", "read only"],
+        ["workspace_write", "workspace write"],
     ] as const)("keeps MCP unavailable in %s", async (permissionMode, permissionLabel) => {
         const gym = await createMcpGym(permissionMode, (request) => {
             assertNoMcpTools(request.context.tools?.map((tool) => tool.name) ?? []);
@@ -155,7 +155,7 @@ describe("trusted MCP mutations obey permissions", () => {
         await gym.terminal.waitForText("Permissions changed to Workspace write.");
         submit(gym, "Confirm MCP tools are removed.");
         const downgraded = await gym.terminal.waitForText("MCP_REMOVED_AFTER_DOWNGRADE", 30_000);
-        expect(downgraded.text).toContain("Workspace write");
+        expect(downgraded.text).toContain("workspace write");
     }, 120_000);
 });
 

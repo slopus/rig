@@ -69,6 +69,6 @@ function assertHealthyTinyTerminal(
     expect(snapshot.cursor.y).toBeLessThan(40);
     expect(snapshot.title).toContain("Rig");
     expect(snapshot.text).toContain("Ask Rig");
-    expect(snapshot.text).toContain("Gym Off");
+    expect(snapshot.text).toContain("gym off");
     expect(snapshot.text).not.toContain("�");
 }

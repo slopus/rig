@@ -1,11 +1,22 @@
-import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import {
+    chmod,
+    lstat,
+    mkdir,
+    readFile,
+    readdir,
+    rename,
+    rm,
+    stat,
+    utimes,
+    writeFile,
+} from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 
 import { assertCanReadPath } from "./assertCanReadPath.js";
 import { assertCanWritePath } from "./assertCanWritePath.js";
 import type { FileSystemContext } from "./FileSystemContext.js";
+import { toFileSystemStat } from "./toFileSystemStat.js";
 import type { PermissionMode } from "../../permissions/index.js";
 
 export interface CreateNodeFileSystemContextOptions {
@@ -23,15 +34,44 @@ export function createNodeFileSystemContext(
     return {
         cwd,
         home: options.home ?? homedir(),
+        async chmod(path, mode) {
+            const target = resolvePath(path);
+            await assertCanWritePath(cwd, target, permissionMode());
+            await chmod(target, mode);
+        },
         async exists(path) {
             const target = resolvePath(path);
             await assertCanReadPath(cwd, target, permissionMode(), readPathOptions);
-            return existsSync(target);
+            try {
+                await lstat(target);
+                return true;
+            } catch (error) {
+                if (
+                    error instanceof Error &&
+                    "code" in error &&
+                    ["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")
+                ) {
+                    return false;
+                }
+                throw error;
+            }
+        },
+        async lstat(path) {
+            const target = resolvePath(path);
+            await assertCanReadPath(cwd, target, permissionMode(), readPathOptions);
+            return toFileSystemStat(await lstat(target));
         },
         async mkdir(path, options) {
             const target = resolvePath(path);
             await assertCanWritePath(cwd, target, permissionMode());
             await mkdir(target, { recursive: options?.recursive ?? false });
+        },
+        async move(source, destination) {
+            const sourceTarget = resolvePath(source);
+            const destinationTarget = resolvePath(destination);
+            await assertCanWritePath(cwd, sourceTarget, permissionMode());
+            await assertCanWritePath(cwd, destinationTarget, permissionMode());
+            await rename(sourceTarget, destinationTarget);
         },
         async readFile(path) {
             const target = resolvePath(path);
@@ -56,17 +96,16 @@ export function createNodeFileSystemContext(
                 force: options?.force ?? false,
             });
         },
+        async setModificationTime(path, mtimeMs) {
+            const target = resolvePath(path);
+            await assertCanWritePath(cwd, target, permissionMode());
+            const time = new Date(mtimeMs);
+            await utimes(target, time, time);
+        },
         async stat(path) {
             const target = resolvePath(path);
             await assertCanReadPath(cwd, target, permissionMode(), readPathOptions);
-            const stats = await stat(target);
-            return {
-                isFile: stats.isFile(),
-                isDirectory: stats.isDirectory(),
-                isSymbolicLink: stats.isSymbolicLink(),
-                size: stats.size,
-                mtimeMs: stats.mtimeMs,
-            };
+            return toFileSystemStat(await stat(target));
         },
         async writeFile(path, content) {
             const target = resolvePath(path);

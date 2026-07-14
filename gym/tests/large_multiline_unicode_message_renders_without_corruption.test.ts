@@ -49,7 +49,7 @@ describe("large multiline Unicode message renders without corruption", () => {
 
         gym.terminal.type(message);
         const editing = await gym.terminal.waitForText("[paste #", 30_000);
-        expect(editing.text).toContain("Gym Off • /workspace");
+        expect(editing.text).toContain("gym off · /workspace");
         assertViewportStayedAtBottom(editing, initialScroll);
         gym.terminal.press("enter");
 
@@ -90,7 +90,7 @@ function assertHealthyTerminal(
 ): void {
     expect(snapshot.rows).toHaveLength(34);
     expect(snapshot.text).toContain("Ask Rig to do anything");
-    expect(snapshot.text).toContain("Gym Off • /workspace");
+    expect(snapshot.text).toContain("gym off · /workspace");
     expect(snapshot.text).not.toContain("\x1b[200~");
     expect(snapshot.text).not.toContain("\x1b[201~");
     expect(snapshot.text).not.toContain("�");

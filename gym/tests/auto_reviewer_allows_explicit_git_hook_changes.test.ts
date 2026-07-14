@@ -82,8 +82,8 @@ describe("Auto reviewer allows explicit Git hook changes", () => {
 
         await expect(gym.readFile(".git/hooks/pre-commit")).resolves.toBe("#!/bin/sh\npnpm lint");
         expect(completed.text).toContain("Approved automatically");
-        expect(completed.text).not.toContain("Full access");
-        expect(footer(completed)).toContain("Auto");
+        expect(completed.text).not.toContain("full access");
+        expect(footer(completed)).toContain("auto");
     }, 120_000);
 });
 
@@ -93,7 +93,7 @@ function submit(gym: Gym, text: string): void {
 }
 
 function footer(snapshot: Awaited<ReturnType<Gym["terminal"]["snapshot"]>>): string {
-    return snapshot.rows.find((row) => row.includes("Gym Off")) ?? "";
+    return snapshot.rows.find((row) => row.includes("gym off")) ?? "";
 }
 
 function messageText(message: { content: unknown } | undefined): string {

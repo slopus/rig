@@ -74,7 +74,7 @@ describe("Auto reviewer allows authorized host commands without extra prompts", 
         expect(completed.text).toContain("Approved automatically");
         expect(completed.text).not.toContain("Allow once");
         expect(completed.text).not.toContain("Waiting for approval");
-        expect(footer(completed)).toContain("Auto");
+        expect(footer(completed)).toContain("auto");
     }, 120_000);
 });
 
@@ -84,5 +84,5 @@ function submit(gym: Gym, text: string): void {
 }
 
 function footer(snapshot: Awaited<ReturnType<Gym["terminal"]["snapshot"]>>): string {
-    return snapshot.rows.find((row) => row.includes("Gym Off")) ?? "";
+    return snapshot.rows.find((row) => row.includes("gym off")) ?? "";
 }

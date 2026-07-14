@@ -38,14 +38,39 @@ describe("runDockerExec", () => {
             vi.useRealTimers();
         }
     });
+
+    it("streams binary stdin through an attached Docker exec", async () => {
+        const stream = new PassThrough();
+        const exec = vi.fn();
+        const start = vi.fn();
+        const input = Uint8Array.from([0, 1, 2, 255]);
+
+        const result = await runDockerExec(createContainer(stream, { exec, start }), ["consume"], {
+            stdin: input,
+        });
+
+        expect(result.stdout).toEqual(Buffer.from(input));
+        expect(exec).toHaveBeenCalledWith(expect.objectContaining({ AttachStdin: true }));
+        expect(start).toHaveBeenCalledWith(expect.objectContaining({ stdin: true }));
+    });
 });
 
-function createContainer(stream: PassThrough): Dockerode.Container {
+function createContainer(
+    stream: PassThrough,
+    spies: { exec?: ReturnType<typeof vi.fn>; start?: ReturnType<typeof vi.fn> } = {},
+): Dockerode.Container {
+    const start = async (options: unknown) => {
+        spies.start?.(options);
+        return stream;
+    };
     return {
-        exec: async () => ({
-            inspect: async () => ({ ExitCode: 0 }),
-            start: async () => stream,
-        }),
+        exec: async (options: unknown) => {
+            spies.exec?.(options);
+            return {
+                inspect: async () => ({ ExitCode: 0 }),
+                start,
+            };
+        },
         modem: {
             demuxStream(source: NodeJS.ReadableStream, stdout: NodeJS.WritableStream) {
                 source.pipe(stdout);

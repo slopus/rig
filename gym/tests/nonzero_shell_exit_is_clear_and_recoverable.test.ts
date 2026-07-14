@@ -136,7 +136,7 @@ function assertHealthy(
     expect(snapshot.cursor.x).toBeLessThan(COLS);
     expect(snapshot.cursor.y).toBeLessThan(ROWS);
     expect(snapshot.title).toContain("Rig");
-    expect(snapshot.text).toContain("Gym Off");
+    expect(snapshot.text).toContain("gym off");
     expect(snapshot.text).toContain("/workspace");
     for (const control of ["\u0000", "\u0007", "\u001b", "�"]) {
         expect(snapshot.text).not.toContain(control);

@@ -66,7 +66,7 @@ describe("model and effort menus control reasoning requests", () => {
             (snapshot) =>
                 !snapshot.text.includes("Choose Model") &&
                 snapshot.text.includes("Ask Rig to do anything") &&
-                snapshot.text.includes("Gym Off • /workspace") &&
+                snapshot.text.includes("gym off · /workspace") &&
                 snapshot.scroll.atBottom,
             "model menu cancellation",
         );
@@ -97,7 +97,7 @@ describe("model and effort menus control reasoning requests", () => {
         const lowSelected = await gym.terminal.waitUntil(
             (snapshot) =>
                 snapshot.text.includes("Reasoning changed to Low.") &&
-                snapshot.text.includes("Gym Low • /workspace") &&
+                snapshot.text.includes("gym low · /workspace") &&
                 snapshot.scroll.atBottom,
             "Low reasoning selected through the model menu",
         );
@@ -118,7 +118,7 @@ describe("model and effort menus control reasoning requests", () => {
         const effortCancelled = await gym.terminal.waitUntil(
             (snapshot) =>
                 !snapshot.text.includes("Choose Reasoning") &&
-                snapshot.text.includes("Gym Low • /workspace") &&
+                snapshot.text.includes("gym low · /workspace") &&
                 snapshot.scroll.atBottom,
             "effort menu cancellation",
         );
@@ -135,7 +135,7 @@ describe("model and effort menus control reasoning requests", () => {
         const highSelected = await gym.terminal.waitUntil(
             (snapshot) =>
                 snapshot.text.includes("Reasoning changed to High.") &&
-                snapshot.text.includes("Gym High • /workspace") &&
+                snapshot.text.includes("gym high · /workspace") &&
                 snapshot.scroll.atBottom,
             "High reasoning selection",
         );
@@ -149,7 +149,7 @@ describe("model and effort menus control reasoning requests", () => {
             (snapshot) =>
                 snapshot.text.includes("HIGH_REASONING_REQUEST_ACCEPTED") &&
                 snapshot.text.includes("Ask Rig to do anything") &&
-                snapshot.text.includes("Gym High • /workspace") &&
+                snapshot.text.includes("gym high · /workspace") &&
                 snapshot.scroll.atBottom,
             "response using High reasoning",
             30_000,
@@ -168,7 +168,7 @@ describe("model and effort menus control reasoning requests", () => {
             (snapshot) =>
                 snapshot.text.includes("HIGH_REASONING_FOLLOW_UP_ACCEPTED") &&
                 snapshot.text.includes("Ask Rig to do anything") &&
-                snapshot.text.includes("Gym High • /workspace") &&
+                snapshot.text.includes("gym high · /workspace") &&
                 snapshot.scroll.atBottom,
             "follow-up with persistent High reasoning",
             30_000,

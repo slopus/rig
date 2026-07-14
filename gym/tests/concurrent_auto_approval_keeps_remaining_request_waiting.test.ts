@@ -126,7 +126,7 @@ describe("concurrent Auto approvals keep the remaining request waiting", () => {
                 normalizeWhitespace(snapshot.text).includes(
                     `Allow running "${visibleExact(alphaCommand)}". Working directory: "/workspace". Shell: "the default shell". Access: unrestricted filesystem and network access? · 1 of 1`,
                 ) &&
-                snapshot.text.includes("• Waiting for approval") &&
+                snapshot.text.includes("◦ Waiting for approval") &&
                 snapshot.scroll.atBottom,
             "both reviews pending while the alpha approval is open",
             30_000,
@@ -153,7 +153,7 @@ describe("concurrent Auto approvals keep the remaining request waiting", () => {
             "the beta prompt remaining after alpha finishes",
             30_000,
         );
-        expect(betaStillPending.text).toContain("• Waiting for approval");
+        expect(betaStillPending.text).toContain("◦ Waiting for approval");
         expect(betaStillPending.text).not.toContain("• Running 1 tool");
         expect(betaStillPending.text).not.toContain("• Running printf 'beta approved");
         await expect(gym.readFile("alpha-approved.txt")).resolves.toBe("alpha approved\n");
@@ -170,7 +170,7 @@ describe("concurrent Auto approvals keep the remaining request waiting", () => {
             "both approved commands completed",
             30_000,
         );
-        expect(completed.text).not.toContain("• Waiting for approval");
+        expect(completed.text).not.toContain("◦ Waiting for approval");
         expect(completed.text).not.toContain("• Running 1 tool");
         expect(completed.text).not.toContain("concurrent-alpha-approval");
         expect(completed.text).not.toContain("concurrent-beta-approval");
@@ -232,7 +232,7 @@ function assertTerminalHealth(
     expect(snapshot.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
     expect(snapshot.cursor.x).toBeLessThan(110);
     expect(snapshot.cursor.y).toBeLessThan(36);
-    expect(snapshot.text).toContain("Gym Off");
+    expect(snapshot.text).toContain("gym off");
     expect(snapshot.text).toContain("/workspace");
     expect(snapshot.text).not.toContain("�");
 }

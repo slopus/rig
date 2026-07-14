@@ -27,7 +27,7 @@ describe("escape interrupts a delayed response and restores queued input", () =>
 
         gym.terminal.type("Begin a delayed response.");
         gym.terminal.press("enter");
-        await gym.terminal.waitForText("Esc to interrupt", 30_000);
+        await gym.terminal.waitForText("esc to interrupt", 30_000);
 
         gym.terminal.type("queued prompt");
         await gym.terminal.waitForText("› queued prompt");
@@ -53,7 +53,7 @@ describe("escape interrupts a delayed response and restores queued input", () =>
         expect(recovered.text).not.toContain("STALE_DELAYED_OUTPUT");
         expect(recovered.text.match(/Session interrupted/gu)).toHaveLength(1);
         expect(recovered.rows).toHaveLength(20);
-        expect(recovered.text).toContain("Gym Off • /workspace");
+        expect(recovered.text).toContain("gym off · /workspace");
         expect(recovered.scroll.atBottom).toBe(true);
         expect(recovered.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
         expect(recovered.scroll.topArrivalCount).toBe(baseline.topArrivalCount);

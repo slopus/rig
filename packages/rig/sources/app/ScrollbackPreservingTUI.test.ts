@@ -42,6 +42,47 @@ describe("ScrollbackPreservingTUI", () => {
         tui.stop();
     });
 
+    it("preserves existing scrollback when only the live tail remains on a later resize", async () => {
+        const terminal = new RecordingTerminal(20, 5);
+        const tui = new ScrollbackPreservingTUI(terminal, false);
+        let transcriptPreserved = false;
+        const component: Component = {
+            invalidate: () => {},
+            render: (width) =>
+                transcriptPreserved
+                    ? [`input at ${width}`]
+                    : [
+                          "history 1",
+                          "history 2",
+                          "history 3",
+                          "history 4",
+                          "history 5",
+                          "history 6",
+                          "input at 20",
+                      ],
+        };
+        tui.addChild(component);
+        tui.start();
+        await renderCycle();
+
+        terminal.columns = 30;
+        expect(tui.preserveRenderedPrefix(6)).toBe(true);
+        transcriptPreserved = true;
+        tui.requestRender();
+        await renderCycle();
+
+        terminal.columns = 40;
+        expect(tui.preserveRenderedPrefix(0)).toBe(true);
+        tui.requestRender();
+        await renderCycle();
+
+        const output = terminal.output.join("");
+        expect(output.match(/history 1/gu)).toHaveLength(1);
+        expect(output).toContain("input at 40");
+        expect(output).not.toContain("\x1b[3J");
+        tui.stop();
+    });
+
     it("clears only the live screen when the mutable tail already fills the viewport", async () => {
         const terminal = new RecordingTerminal(20, 5);
         const tui = new ScrollbackPreservingTUI(terminal, false);

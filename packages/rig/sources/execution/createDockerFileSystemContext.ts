@@ -4,8 +4,8 @@ import type { FileSystemContext } from "../agent/context/FileSystemContext.js";
 import type { PermissionContext } from "../permissions/index.js";
 import { assertDockerReadPath } from "./assertDockerReadPath.js";
 import { assertDockerWritePath } from "./assertDockerWritePath.js";
-import { createTarBuffer } from "./createTarBuffer.js";
 import type { DockerEnvironment } from "./DockerEnvironment.js";
+import { formatDockerTouchTimestamp } from "./formatDockerTouchTimestamp.js";
 import { isDockerNotFoundError } from "./isDockerNotFoundError.js";
 import { parseDockerPathStat } from "./parseDockerPathStat.js";
 import { resolveDockerPath } from "./resolveDockerPath.js";
@@ -29,6 +29,10 @@ export function createDockerFileSystemContext(
     };
     return {
         cwd,
+        async chmod(path, mode) {
+            const target = await assertDockerWritePath(cwd, path, permissions.mode, resolvePath);
+            await successfulExec(environment, ["chmod", (mode & 0o7777).toString(8), target]);
+        },
         async exists(path) {
             const target = await assertDockerReadPath(cwd, path, permissions.mode, resolvePath);
             const result = await runDockerExec(await environment.container(), [
@@ -40,6 +44,9 @@ export function createDockerFileSystemContext(
             ]);
             return result.exitCode === 0;
         },
+        async lstat(path) {
+            return this.stat(path);
+        },
         async mkdir(path, options) {
             const target = await assertDockerWritePath(cwd, path, permissions.mode, resolvePath);
             await successfulExec(environment, [
@@ -48,6 +55,21 @@ export function createDockerFileSystemContext(
                 "--",
                 target,
             ]);
+        },
+        async move(source, destination) {
+            const sourceTarget = await assertDockerWritePath(
+                cwd,
+                source,
+                permissions.mode,
+                resolvePath,
+            );
+            const destinationTarget = await assertDockerWritePath(
+                cwd,
+                destination,
+                permissions.mode,
+                resolvePath,
+            );
+            await successfulExec(environment, ["mv", "--", sourceTarget, destinationTarget]);
         },
         async readFile(path) {
             return Buffer.from(await this.readFileBuffer(path)).toString("utf8");
@@ -92,6 +114,19 @@ export function createDockerFileSystemContext(
                 target,
             ]);
         },
+        async setModificationTime(path, mtimeMs) {
+            const target = await assertDockerWritePath(cwd, path, permissions.mode, resolvePath);
+            await successfulExec(environment, [
+                "env",
+                "TZ=UTC0",
+                "touch",
+                "-m",
+                "-t",
+                formatDockerTouchTimestamp(mtimeMs),
+                "--",
+                target,
+            ]);
+        },
         async stat(path) {
             const target = await assertDockerReadPath(cwd, path, permissions.mode, resolvePath);
             const container = await environment.container();
@@ -114,11 +149,10 @@ export function createDockerFileSystemContext(
         },
         async writeFile(path, content) {
             const target = await assertDockerWritePath(cwd, path, permissions.mode, resolvePath);
-            const container = await environment.container();
             const parent = posix.dirname(target);
             await successfulExec(environment, ["mkdir", "-p", "--", parent]);
-            await container.putArchive(await createTarBuffer(posix.basename(target), content), {
-                path: parent,
+            await successfulExec(environment, ["/bin/sh", "-c", 'cat > "$1"', "rig", target], {
+                stdin: content,
             });
         },
     };
@@ -128,8 +162,12 @@ function fileReadLimitError(path: string): Error {
     return new Error(`Could not read '${path}' in the Docker container because it exceeds 32 MB.`);
 }
 
-async function successfulExec(environment: DockerEnvironment, command: readonly string[]) {
-    const result = await runDockerExec(await environment.container(), command);
+async function successfulExec(
+    environment: DockerEnvironment,
+    command: readonly string[],
+    options: { stdin?: string | Uint8Array } = {},
+) {
+    const result = await runDockerExec(await environment.container(), command, options);
     if (result.exitCode !== 0)
         throw dockerCommandError("access", command.at(-1) ?? "path", result.stderr);
 }

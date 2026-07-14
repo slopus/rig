@@ -134,7 +134,7 @@ describe("middle scrollback anchor survives delayed tool output", () => {
             "follow-up response after restoring live output",
             30_000,
         );
-        expect(followUp.text).toContain("Gym Off • /workspace");
+        expect(followUp.text).toContain("gym off · /workspace");
         expect(followUp.text).not.toContain("�");
 
         const agentRequests = gym.inference.requests.filter(isAgentRequest);
@@ -194,7 +194,7 @@ function assertHealthyBottom(
     expect(snapshot.scroll.offset + snapshot.scroll.visibleRows).toBe(snapshot.scroll.totalRows);
     expect(snapshot.scroll.bottomDepartureCount).toBe(middleScroll.bottomDepartureCount);
     expect(snapshot.scroll.topArrivalCount).toBe(middleScroll.topArrivalCount);
-    expect(snapshot.text).toContain("Gym Off • /workspace");
+    expect(snapshot.text).toContain("gym off · /workspace");
     expect(snapshot.text).not.toContain("�");
     expect(snapshot.cursor.x).toBeLessThan(68);
     expect(snapshot.cursor.y).toBeLessThan(16);
