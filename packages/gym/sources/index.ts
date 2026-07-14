@@ -19,6 +19,8 @@ export type {
     GymInferenceHandler,
     GymMockResponse,
     GymOptions,
+    TerminalCellSnapshot,
+    TerminalColorSnapshot,
     TerminalCursorSnapshot,
     TerminalScrollSnapshot,
     TerminalSnapshot,

@@ -21,6 +21,11 @@ interface HelperSnapshot extends TerminalSnapshot {
     id: number;
 }
 
+interface HelperPtyWrite {
+    data: string;
+    event: "pty_write";
+}
+
 export class GhosttyTerminal {
     #buffer = "";
     #closed = false;
@@ -30,6 +35,7 @@ export class GhosttyTerminal {
         number,
         { reject: (error: unknown) => void; resolve: (snapshot: TerminalSnapshot) => void }
     >();
+    #ptyWriteHandlers = new Set<(data: string) => void>();
     #stderr = "";
 
     private constructor(helper: ChildProcessWithoutNullStreams) {
@@ -71,6 +77,11 @@ export class GhosttyTerminal {
         this.#send({ type: "resize", cols, rows });
     }
 
+    onPtyWrite(handler: (data: string) => void): () => void {
+        this.#ptyWriteHandlers.add(handler);
+        return () => this.#ptyWriteHandlers.delete(handler);
+    }
+
     scrollBy(rows: number): void {
         this.#send({ type: "scroll_by", rows });
     }
@@ -103,7 +114,13 @@ export class GhosttyTerminal {
             const line = this.#buffer.slice(0, newline);
             this.#buffer = this.#buffer.slice(newline + 1);
             if (line.length === 0) continue;
-            const { id, ...snapshot } = JSON.parse(line) as HelperSnapshot;
+            const message = JSON.parse(line) as HelperPtyWrite | HelperSnapshot;
+            if (!("id" in message)) {
+                const data = Buffer.from(message.data, "base64").toString("utf8");
+                for (const handler of this.#ptyWriteHandlers) handler(data);
+                continue;
+            }
+            const { id, ...snapshot } = message;
             const pending = this.#pending.get(id);
             if (pending === undefined) continue;
             this.#pending.delete(id);

@@ -49,6 +49,21 @@ export interface TerminalCursorSnapshot {
     y: number;
 }
 
+export type TerminalColorSnapshot =
+    | { kind: "palette"; index: number }
+    | { kind: "rgb"; red: number; green: number; blue: number };
+
+export interface TerminalCellSnapshot {
+    background: TerminalColorSnapshot | null;
+    bold: boolean;
+    dim: boolean;
+    foreground: TerminalColorSnapshot | null;
+    italic: boolean;
+    text: string;
+    x: number;
+    y: number;
+}
+
 export interface TerminalScrollSnapshot {
     atBottom: boolean;
     atTop: boolean;
@@ -60,6 +75,7 @@ export interface TerminalScrollSnapshot {
 }
 
 export interface TerminalSnapshot {
+    cells: readonly TerminalCellSnapshot[];
     cursor: TerminalCursorSnapshot;
     rows: readonly string[];
     scroll: TerminalScrollSnapshot;
