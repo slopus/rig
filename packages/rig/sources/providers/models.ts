@@ -9,7 +9,7 @@ import { defineModel } from "./types.js";
 export const modelAnthropicFable5 = defineModel({
     id: "anthropic/fable-5",
     name: "Fable 5",
-    thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
+    thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max", "ultra"],
     defaultThinkingLevel: "medium",
     contextWindow: 1_000_000,
 });
@@ -17,7 +17,7 @@ export const modelAnthropicFable5 = defineModel({
 export const modelAnthropicOpus48 = defineModel({
     id: "anthropic/opus-4-8",
     name: "Opus 4.8 1M",
-    thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
+    thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max", "ultra"],
     defaultThinkingLevel: "medium",
     contextWindow: 1_000_000,
 });
@@ -25,7 +25,7 @@ export const modelAnthropicOpus48 = defineModel({
 export const modelAnthropicOpus47 = defineModel({
     id: "anthropic/opus-4-7",
     name: "Opus 4.7 1M",
-    thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
+    thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max", "ultra"],
     defaultThinkingLevel: "medium",
     contextWindow: 1_000_000,
 });
@@ -41,7 +41,7 @@ export const modelAnthropicOpus46 = defineModel({
 export const modelAnthropicSonnet5 = defineModel({
     id: "anthropic/sonnet-5",
     name: "Sonnet 5",
-    thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
+    thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max", "ultra"],
     defaultThinkingLevel: "medium",
     contextWindow: 1_000_000,
 });

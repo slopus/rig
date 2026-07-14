@@ -6,12 +6,14 @@ RUN corepack enable
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json tsconfig.base.json ./
+COPY gym/package.json gym/package.json
 COPY packages/rig/package.json packages/rig/package.json
 RUN pnpm install --frozen-lockfile
 
 COPY packages/rig packages/rig
 RUN pnpm --filter @slopus/rig build
 RUN pnpm --filter @slopus/rig deploy --prod --legacy /prod/rig
+RUN pnpm --filter @slopus/rig-gym-tests deploy --prod --legacy /prod/gym
 
 FROM node:24-bookworm-slim
 
@@ -29,6 +31,7 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=build /prod/rig packages/rig
+COPY --from=build /prod/gym gym
 
 ENV HOME=/home/rig
 ENV TERM=xterm-256color

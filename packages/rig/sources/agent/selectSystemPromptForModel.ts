@@ -1,6 +1,8 @@
 import { CLAUDE_CODE_SYSTEM_PROMPT } from "./prompts/claudeCodeSystemPrompt.js";
 import { GPT_5_4_SYSTEM_PROMPT } from "./prompts/gpt54SystemPrompt.js";
 import { GPT_5_5_SYSTEM_PROMPT } from "./prompts/gpt55SystemPrompt.js";
+import { GPT_5_6_SOL_SYSTEM_PROMPT } from "./prompts/gpt56SolSystemPrompt.js";
+import { GPT_5_6_TERRA_SYSTEM_PROMPT } from "./prompts/gpt56TerraSystemPrompt.js";
 import { KIMI_SYSTEM_PROMPT } from "./prompts/kimiSystemPrompt.js";
 import type { Model, Provider } from "../providers/types.js";
 
@@ -32,7 +34,15 @@ export function selectSystemPromptForModel(provider: Provider, model: Model): st
         modelId.includes("openai/") ||
         modelName.includes("gpt")
     ) {
-        if (modelIdentity.includes("gpt-5.6") || modelIdentity.includes("gpt-5.5")) {
+        if (modelIdentity.includes("gpt-5.6-sol")) {
+            return GPT_5_6_SOL_SYSTEM_PROMPT;
+        }
+
+        if (modelIdentity.includes("gpt-5.6-terra") || modelIdentity.includes("gpt-5.6-luna")) {
+            return GPT_5_6_TERRA_SYSTEM_PROMPT;
+        }
+
+        if (modelIdentity.includes("gpt-5.5")) {
             return GPT_5_5_SYSTEM_PROMPT;
         }
 

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { validJpeg32Base64, validPng32Base64 } from "../tools/testing/validImageFixtures.js";
 import { createCodexProvider } from "./codex.js";
+import { CODEX_ULTRA_INSTRUCTIONS } from "./codexUltraInstructions.js";
 import { modelOpenaiGpt55, modelOpenaiGpt56Sol } from "./models.js";
 import type { Context } from "./types.js";
 
@@ -62,38 +63,50 @@ describe("codex provider", () => {
         },
     );
 
-    it.each(["max", "ultra"])("maps GPT-5.6 %s reasoning to Codex xhigh", async (thinking) => {
-        let requestBody: unknown;
-        vi.stubGlobal(
-            "fetch",
-            vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
-                requestBody = parseRequestBody(init);
-                return new Response("data: [DONE]\n\n", {
-                    status: 200,
-                    headers: { "content-type": "text/event-stream" },
-                });
-            }),
-        );
+    it.each([
+        { thinking: "max", expectedEffort: "max", hasUltraInstructions: false },
+        { thinking: "ultra", expectedEffort: "max", hasUltraInstructions: true },
+    ])(
+        "maps GPT-5.6 $thinking reasoning to Codex $expectedEffort",
+        async ({ thinking, expectedEffort, hasUltraInstructions }) => {
+            let requestBody: unknown;
+            vi.stubGlobal(
+                "fetch",
+                vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+                    requestBody = parseRequestBody(init);
+                    return new Response("data: [DONE]\n\n", {
+                        status: 200,
+                        headers: { "content-type": "text/event-stream" },
+                    });
+                }),
+            );
 
-        const provider = createCodexProvider({
-            apiKey: "e30.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC10ZXN0In19.x",
-            transport: "sse",
-        });
-        const stream = provider.stream(modelOpenaiGpt56Sol, emptyContext(), {
-            thinking,
-        });
+            const provider = createCodexProvider({
+                apiKey: "e30.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC10ZXN0In19.x",
+                transport: "sse",
+            });
+            const stream = provider.stream(modelOpenaiGpt56Sol, emptyContext(), {
+                thinking,
+            });
 
-        for await (const _event of stream) {
-            // Draining the stream makes the provider build and send its request.
-        }
+            for await (const _event of stream) {
+                // Draining the stream makes the provider build and send its request.
+            }
 
-        expect(requestBody).toMatchObject({
-            model: "gpt-5.6-sol",
-            reasoning: {
-                effort: "xhigh",
-            },
-        });
-    });
+            expect(requestBody).toMatchObject({
+                model: "gpt-5.6-sol",
+                reasoning: {
+                    effort: expectedEffort,
+                },
+            });
+            const instructions = (requestBody as { instructions?: unknown }).instructions;
+            if (hasUltraInstructions) {
+                expect(instructions).toContain(CODEX_ULTRA_INSTRUCTIONS);
+            } else {
+                expect(instructions).not.toContain(CODEX_ULTRA_INSTRUCTIONS);
+            }
+        },
+    );
 });
 
 function parseRequestBody(init: RequestInit | undefined): unknown {

@@ -9,6 +9,8 @@ import { createSystemPrompt } from "./createSystemPrompt.js";
 import { CLAUDE_CODE_SYSTEM_PROMPT } from "./prompts/claudeCodeSystemPrompt.js";
 import { GPT_5_4_SYSTEM_PROMPT } from "./prompts/gpt54SystemPrompt.js";
 import { GPT_5_5_SYSTEM_PROMPT } from "./prompts/gpt55SystemPrompt.js";
+import { GPT_5_6_SOL_SYSTEM_PROMPT } from "./prompts/gpt56SolSystemPrompt.js";
+import { GPT_5_6_TERRA_SYSTEM_PROMPT } from "./prompts/gpt56TerraSystemPrompt.js";
 import { KIMI_SYSTEM_PROMPT } from "./prompts/kimiSystemPrompt.js";
 import type { Message } from "./types.js";
 import { createPermissionContext } from "../permissions/index.js";
@@ -90,6 +92,47 @@ describe("createSystemPrompt", () => {
         expect(prompt).toContain("You are Codex, a coding agent based on GPT-5.");
         expect(prompt).not.toContain("You are GPT-5.2 running in the Codex CLI");
         expect(prompt).not.toContain("IGN-CMD");
+    });
+
+    it("uses the current Codex prompt for GPT-5.6 models", async () => {
+        const cwd = await makeTempDir();
+        const model = defineModel({
+            id: "openai/gpt-5.6-sol",
+            name: "GPT-5.6 Sol",
+            thinkingLevels: ["off", "medium"],
+            defaultThinkingLevel: "medium",
+        });
+
+        await expect(
+            createSystemPrompt({
+                provider: providerFor("codex", model),
+                model,
+                messages: [],
+                context: contextFor(cwd),
+            }),
+        ).resolves.toBe(GPT_5_6_SOL_SYSTEM_PROMPT);
+    });
+
+    it("uses Terra's current Codex prompt for GPT-5.6 Terra and Luna", async () => {
+        const cwd = await makeTempDir();
+
+        for (const variant of ["terra", "luna"] as const) {
+            const model = defineModel({
+                id: `openai/gpt-5.6-${variant}`,
+                name: `GPT-5.6 ${variant}`,
+                thinkingLevels: ["off", "medium"],
+                defaultThinkingLevel: "medium",
+            });
+
+            await expect(
+                createSystemPrompt({
+                    provider: providerFor("codex", model),
+                    model,
+                    messages: [],
+                    context: contextFor(cwd),
+                }),
+            ).resolves.toBe(GPT_5_6_TERRA_SYSTEM_PROMPT);
+        }
     });
 
     it("does not fall back to a GPT prompt for unsupported GPT models", async () => {

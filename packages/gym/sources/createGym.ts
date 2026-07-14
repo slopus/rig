@@ -9,6 +9,7 @@ import { buildGymImage } from "./buildGymImage.js";
 import { createFixtureWorkspace } from "./createFixtureWorkspace.js";
 import { GhosttyTerminal } from "./GhosttyTerminal.js";
 import { Gym } from "./Gym.js";
+import { InterceptingHttpProxy } from "./InterceptingHttpProxy.js";
 import { MockInferenceServer } from "./MockInferenceServer.js";
 import type { GymOptions } from "./types.js";
 
@@ -29,7 +30,13 @@ export async function createGym(options: GymOptions): Promise<Gym> {
         await rm(workspacePath, { force: true, recursive: true });
         throw error;
     }
-    const inference = new MockInferenceServer(options.inference);
+    const inference = new MockInferenceServer(options.inference ?? []);
+    const httpProxy =
+        options.httpProxy === undefined
+            ? undefined
+            : new InterceptingHttpProxy(
+                  options.httpProxy === true ? undefined : options.httpProxy.handler,
+              );
     const containerName = `rig-gym-${randomUUID()}`;
     let ghostty: GhosttyTerminal | undefined;
     let gym: Gym | undefined;
@@ -39,7 +46,10 @@ export async function createGym(options: GymOptions): Promise<Gym> {
         const [imageId] = await Promise.all([
             buildGymImage(image, repositoryRoot),
             inference.start(),
+            httpProxy?.start(),
         ]);
+        const providerId = options.providerId ?? "gym";
+        const modelId = options.modelId ?? defaultModelId(providerId);
         const pty = spawn(
             "docker",
             [
@@ -61,12 +71,27 @@ export async function createGym(options: GymOptions): Promise<Gym> {
                 "--env",
                 "RIG_GYM_OUTER_ISOLATION=docker",
                 "--env",
-                "RIG_MODEL=openai/gym",
+                `RIG_MODEL=${modelId}`,
                 ...(options.permissionMode === "from_config"
                     ? []
                     : ["--env", `RIG_PERMISSION_MODE=${options.permissionMode ?? "full_access"}`]),
                 "--env",
-                "RIG_PROVIDER=gym",
+                `RIG_PROVIDER=${providerId}`,
+                ...environmentArguments(options.environment, httpProxy?.url),
+                ...(httpProxy === undefined
+                    ? []
+                    : [
+                          "--env",
+                          `HTTP_PROXY=${httpProxy.url}`,
+                          "--env",
+                          `http_proxy=${httpProxy.url}`,
+                          "--env",
+                          `HTTPS_PROXY=${httpProxy.url}`,
+                          "--env",
+                          `https_proxy=${httpProxy.url}`,
+                          "--env",
+                          "NODE_USE_ENV_PROXY=1",
+                      ]),
                 ...(options.entrypoint === undefined
                     ? []
                     : ["--entrypoint", options.entrypoint[0]]),
@@ -102,6 +127,7 @@ export async function createGym(options: GymOptions): Promise<Gym> {
             containerName,
             ghostty: startedGhostty,
             ...(homePath === undefined ? {} : { homePath }),
+            ...(httpProxy === undefined ? {} : { httpProxy }),
             inference,
             pty,
             workspacePath,
@@ -125,7 +151,10 @@ export async function createGym(options: GymOptions): Promise<Gym> {
             await gym.dispose().catch(() => {});
         } else {
             ghostty?.close();
-            await inference.stop().catch(() => {});
+            await Promise.all([
+                inference.stop().catch(() => {}),
+                httpProxy?.stop().catch(() => {}),
+            ]);
             await Promise.all([
                 ...(homePath === undefined ? [] : [rm(homePath, { force: true, recursive: true })]),
                 rm(workspacePath, { force: true, recursive: true }),
@@ -133,4 +162,27 @@ export async function createGym(options: GymOptions): Promise<Gym> {
         }
         throw error;
     }
+}
+
+function defaultModelId(providerId: "claude-sdk" | "codex" | "gym"): string {
+    if (providerId === "claude-sdk") return "anthropic/sonnet-4-6";
+    if (providerId === "codex") return "openai/gpt-5.4";
+    return "openai/gym";
+}
+
+function environmentArguments(
+    environment: Readonly<Record<string, string>> | undefined,
+    httpProxyUrl?: string,
+): string[] {
+    if (environment === undefined) return [];
+    return Object.entries(environment).flatMap(([name, value]) => {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name)) {
+            throw new Error(`Invalid Gym environment variable name '${name}'.`);
+        }
+        const expandedValue =
+            httpProxyUrl === undefined
+                ? value
+                : value.replaceAll("{{HTTP_PROXY_URL}}", httpProxyUrl);
+        return ["--env", `${name}=${expandedValue}`];
+    });
 }

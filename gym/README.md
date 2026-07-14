@@ -219,29 +219,37 @@ interface GymOptions {
     cols?: number;
     dockerSocket?: boolean;
     entrypoint?: readonly [string, ...string[]];
+    environment?: Readonly<Record<string, string>>;
     files?: Readonly<Record<string, GymFixture>>;
     homeFiles?: Readonly<Record<string, GymFixture>>;
+    httpProxy?: true | { handler?: HttpInterceptHandler };
     image?: string;
-    inference: readonly GymMockResponse[] | GymInferenceHandler;
+    inference?: readonly GymMockResponse[] | GymInferenceHandler;
+    modelId?: string;
+    providerId?: "claude-sdk" | "codex" | "gym";
     rows?: number;
     startupText?: string;
     timeoutMs?: number;
 }
 ```
 
-| Option         | Default                  | Purpose                                       |
-| -------------- | ------------------------ | --------------------------------------------- |
-| `args`         | `[]`                     | Arguments passed to the built Rig CLI         |
-| `cols`         | `100`                    | Terminal width in cells                       |
-| `dockerSocket` | `false`                  | Exposes the daemon socket for Docker tests    |
-| `entrypoint`   | Image default            | Replaces the image entrypoint for setup cases |
-| `rows`         | `32`                     | Terminal height in cells                      |
-| `files`        | `{}`                     | Fixture tree mounted into `/workspace`        |
-| `homeFiles`    | `{}`                     | Trusted fixture tree mounted into `/home/rig` |
-| `image`        | `rig-gym:local`          | Docker image tag to build or run              |
-| `inference`    | Required                 | Ordered responses or a request handler        |
-| `startupText`  | `Ask Rig to do anything` | Visible text that marks startup as complete   |
-| `timeoutMs`    | `20_000`                 | Maximum startup wait for the composer         |
+| Option         | Default                  | Purpose                                             |
+| -------------- | ------------------------ | --------------------------------------------------- |
+| `args`         | `[]`                     | Arguments passed to the built Rig CLI               |
+| `cols`         | `100`                    | Terminal width in cells                             |
+| `dockerSocket` | `false`                  | Exposes the daemon socket for Docker tests          |
+| `entrypoint`   | Image default            | Replaces the image entrypoint for setup cases       |
+| `environment`  | `{}`                     | Extra environment variables inside the container    |
+| `files`        | `{}`                     | Fixture tree mounted into `/workspace`              |
+| `homeFiles`    | `{}`                     | Trusted fixture tree mounted into `/home/rig`       |
+| `httpProxy`    | Disabled                 | Record, replace, rewrite, or forward provider HTTP  |
+| `image`        | `rig-gym:local`          | Docker image tag to build or run                    |
+| `inference`    | `[]`                     | Ordered gym-provider responses or a request handler |
+| `modelId`      | Provider default         | Model selected for the session                      |
+| `providerId`   | `gym`                    | `gym`, compiled `claude-sdk`, or `codex`            |
+| `rows`         | `32`                     | Terminal height in cells                            |
+| `startupText`  | `Ask Rig to do anything` | Visible text that marks startup as complete         |
+| `timeoutMs`    | `20_000`                 | Maximum startup wait for the composer               |
 
 Set `startupText` to a stable visible fragment only when a deliberately narrow startup viewport
 truncates the default placeholder.
@@ -284,6 +292,11 @@ await expect(gym.readFile("src/result.txt")).resolves.toBe("created in Docker\n"
 Use `homeFiles` for configuration that must originate from the simulated user's trusted home
 directory, such as `.config/rig/config.toml`. Its keys are relative to `/home/rig`. Keep
 repository-controlled fixtures in `files` so security tests preserve the source boundary.
+
+For provider-boundary tests that need to compare Rig with a directly invoked SDK in the same
+deployed image, `gym.runInContainer(command, args, options)` runs a command in `/workspace` and
+returns its standard output and error. Keep normal product scenarios at the terminal boundary;
+this helper is intended for controlled companion processes such as a vanilla provider SDK probe.
 
 ## Mock inference
 
@@ -396,6 +409,64 @@ expect(agentRequests[1]?.context.messages.at(-1)).toMatchObject({
 ```
 
 Use request assertions to verify exact user text, normalized paste content, tool results, conversation ordering, stream options, or selected model behavior.
+
+## Intercepting provider HTTP
+
+Set `providerId` to run the deployed Claude Agent SDK or Codex provider instead of the deterministic
+gym provider. Adding `httpProxy` starts a test-owned proxy on the host and sets `HTTP_PROXY`,
+`HTTPS_PROXY`, `http_proxy`, and `https_proxy` inside the container. Every observed exchange is
+available through `gym.httpProxy.exchanges`. The gym also enables Node's environment-proxy support
+so the Codex provider's `fetch` transport uses these variables.
+
+```ts
+const gym = await createGym({
+    providerId: "claude-sdk",
+    modelId: "anthropic/sonnet-4-6",
+    environment: {
+        ANTHROPIC_API_KEY: "test-only-placeholder",
+        ANTHROPIC_BASE_URL: "http://api.anthropic.test",
+    },
+    httpProxy: {
+        handler(request) {
+            if (new URL(request.url).pathname === "/v1/messages") {
+                return {
+                    response: {
+                        status: 200,
+                        headers: { "content-type": "text/event-stream" },
+                        body: scriptedAnthropicEvents,
+                    },
+                };
+            }
+        },
+    },
+});
+```
+
+The interceptor may return:
+
+- `response` to replace the provider response without contacting the target.
+- `request` to replace the URL, method, headers, or body before forwarding upstream.
+- `transformResponse` to inspect and optionally replace a forwarded upstream response.
+- `undefined` to passively forward and record the request and response unchanged.
+
+Plain HTTP requests expose their complete headers and bodies. Standard HTTPS proxying uses
+`CONNECT`, so passive capture can record the destination and connection result but not encrypted
+payloads. Use a controlled HTTP provider base URL, as above, when a test needs to inspect or replace
+the exact JSON request without installing a test certificate authority. Never route real credentials
+through a response-replacing gym.
+
+Some native clients tunnel even plain HTTP proxy traffic with `CONNECT`. To route a controlled
+provider endpoint directly to the interceptor in those tests, use `{{HTTP_PROXY_URL}}` in an
+environment value and exempt `host.docker.internal` from proxying:
+
+```ts
+environment: {
+    NO_PROXY: "host.docker.internal",
+    RIG_CODEX_BASE_URL: "{{HTTP_PROXY_URL}}/backend-api",
+}
+```
+
+`createGym` replaces the placeholder after the interceptor starts, before launching the container.
 
 ## Terminal interaction
 

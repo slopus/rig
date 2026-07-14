@@ -16,6 +16,7 @@ import {
 import { applyCodexImageDetailsToPayload } from "./applyCodexImageDetailsToPayload.js";
 import { classifyCodexErrorCode } from "./classifyCodexErrorCode.js";
 import { collectImageDetails } from "./collectImageDetails.js";
+import { CODEX_ULTRA_INSTRUCTIONS } from "./codexUltraInstructions.js";
 import {
     modelOpenaiGpt54,
     modelOpenaiGpt55,
@@ -35,6 +36,7 @@ function toPiCodexModelId(id: string): string {
 
 export interface CodexProviderOptions {
     apiKey?: string;
+    baseUrl?: string;
     resolveApiKey?: () => string | undefined;
     useLocalCodexAuth?: boolean;
     codexAuthPath?: string;
@@ -60,6 +62,11 @@ export function createCodexProvider(options: CodexProviderOptions = {}): Provide
             piModelById.set(piModelId, createPiCodexModel(model));
         }
     }
+    if (options.baseUrl !== undefined) {
+        for (const [modelId, model] of piModelById) {
+            piModelById.set(modelId, { ...model, baseUrl: options.baseUrl });
+        }
+    }
     const resolveApiKey = buildApiKeyResolver(options);
 
     return defineProvider({
@@ -71,10 +78,17 @@ export function createCodexProvider(options: CodexProviderOptions = {}): Provide
                 throw new Error(`Unknown codex model: ${model.id}`);
             }
 
+            const piContext = toPiContext(context);
+            if (streamOptions?.thinking === "ultra") {
+                piContext.systemPrompt = [piContext.systemPrompt, CODEX_ULTRA_INSTRUCTIONS]
+                    .filter((part): part is string => part !== undefined && part.length > 0)
+                    .join("\n\n");
+            }
+
             return wrapPiStream(
                 streamOpenAICodexResponses(
                     piModel,
-                    toPiContext(context),
+                    piContext,
                     toPiStreamOptions(
                         piModel,
                         streamOptions,

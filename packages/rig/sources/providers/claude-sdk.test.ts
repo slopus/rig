@@ -16,6 +16,7 @@ describe("Claude SDK provider", () => {
         const provider = createClaudeSdkProvider({
             agentContext: harness.context,
             pathToClaudeCodeExecutable: "/test/claude",
+            sessionId: "11111111-1111-4111-8111-111111111111",
             tools: [
                 defineTool({
                     name: "Read",
@@ -93,6 +94,7 @@ describe("Claude SDK provider", () => {
         expect(calls[0]?.options?.permissionMode).toBe("dontAsk");
         expect(calls[0]?.options?.pathToClaudeCodeExecutable).toBe("/test/claude");
         expect(calls[0]?.options?.persistSession).toBe(false);
+        expect(calls[0]?.options?.sessionId).toBe("11111111-1111-4111-8111-111111111111");
         expect(calls[0]?.options?.settingSources).toEqual([]);
         expect(calls[0]?.options?.strictMcpConfig).toBe(true);
         expect(calls[0]?.options?.mcpServers).toHaveProperty("rig");
@@ -492,21 +494,31 @@ describe("Claude SDK provider", () => {
             )
             .result();
         await provider
+            .stream(
+                modelAnthropicSonnet5,
+                { messages: [{ role: "user", content: "Use ultracode.", timestamp: 2 }] },
+                { thinking: "ultra" },
+            )
+            .result();
+        await provider
             .stream(modelAnthropicOpus48, {
-                messages: [{ role: "user", content: "Say ok.", timestamp: 2 }],
+                messages: [{ role: "user", content: "Say ok.", timestamp: 3 }],
             })
             .result();
         await provider
             .stream(modelAnthropicFable5, {
-                messages: [{ role: "user", content: "Say ok.", timestamp: 3 }],
+                messages: [{ role: "user", content: "Say ok.", timestamp: 4 }],
             })
             .result();
 
         expect(calls[0]?.options?.model).toBe("sonnet");
         expect(calls[0]?.options?.effort).toBe("xhigh");
         expect(calls[0]?.options?.thinking).toEqual({ type: "adaptive" });
-        expect(calls[1]?.options?.model).toBe("opus[1m]");
-        expect(calls[2]?.options?.model).toBe("claude-fable-5[1m]");
+        expect(calls[1]?.options?.model).toBe("sonnet");
+        expect(calls[1]?.options?.effort).toBe("xhigh");
+        expect(calls[1]?.options?.env?.CLAUDE_CODE_EFFORT_LEVEL).toBe("ultracode");
+        expect(calls[2]?.options?.model).toBe("opus[1m]");
+        expect(calls[3]?.options?.model).toBe("claude-fable-5[1m]");
     });
 
     it("resolves a result when callers do not consume stream events", async () => {

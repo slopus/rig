@@ -2,6 +2,7 @@ import type {
     GymInferenceRequest,
     GymInferenceResponse,
 } from "../../rig/sources/providers/gym-types.js";
+import type { HttpInterceptHandler } from "./InterceptingHttpProxy.js";
 
 export type GymMockResponse =
     | GymInferenceResponse
@@ -28,11 +29,15 @@ export interface GymOptions {
     cols?: number;
     dockerSocket?: boolean;
     entrypoint?: readonly [string, ...string[]];
+    environment?: Readonly<Record<string, string>>;
     files?: Readonly<Record<string, GymFixture>>;
     homeFiles?: Readonly<Record<string, GymFixture>>;
+    httpProxy?: true | { handler?: HttpInterceptHandler };
     image?: string;
-    inference: readonly GymMockResponse[] | GymInferenceHandler;
+    inference?: readonly GymMockResponse[] | GymInferenceHandler | undefined;
+    modelId?: string;
     permissionMode?: "auto" | "from_config" | "full_access" | "read_only" | "workspace_write";
+    providerId?: "claude-sdk" | "codex" | "gym";
     rows?: number;
     startupText?: string;
     timeoutMs?: number;

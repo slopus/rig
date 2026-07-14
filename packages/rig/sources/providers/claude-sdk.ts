@@ -51,6 +51,7 @@ export type ClaudeSdkQuery = typeof defaultClaudeSdkQuery;
 export interface ClaudeSdkProviderOptions {
     agentContext: AgentContext;
     pathToClaudeCodeExecutable?: string;
+    sessionId?: string;
     tools?: readonly AnyDefinedTool[];
     query?: ClaudeSdkQuery;
     now?: () => number;
@@ -82,6 +83,7 @@ export function createClaudeSdkProvider(options: ClaudeSdkProviderOptions) {
                 context,
                 model,
                 pathToClaudeCodeExecutable,
+                sessionId: options.sessionId,
                 streamOptions,
                 tools: activeTools,
             });
@@ -235,6 +237,7 @@ function toClaudeSdkOptions(options: {
     context: Context;
     model: Model;
     pathToClaudeCodeExecutable: string;
+    sessionId: string | undefined;
     streamOptions: StreamOptions | undefined;
     tools: readonly ProviderTool[];
 }): ClaudeSdkOptions {
@@ -263,6 +266,9 @@ function toClaudeSdkOptions(options: {
             ...process.env,
             CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: "1",
             CLAUDE_AGENT_SDK_MCP_NO_PREFIX: "1",
+            ...(options.streamOptions?.thinking === "ultra"
+                ? { CLAUDE_CODE_EFFORT_LEVEL: "ultracode" }
+                : {}),
         },
         extraArgs: {
             "disable-slash-commands": null,
@@ -270,6 +276,8 @@ function toClaudeSdkOptions(options: {
         includePartialMessages: true,
         maxTurns: 1,
         permissionMode: "dontAsk",
+        ...(options.sessionId === undefined ? {} : { sessionId: options.sessionId }),
+        // Rig persists the conversation. Claude only needs a stable live-session identity.
         persistSession: false,
         settingSources: [],
         skills: [],
@@ -527,6 +535,12 @@ function toClaudeSdkThinkingOptions(
     }
     if (thinking === "off") {
         return { thinking: { type: "disabled" } };
+    }
+    if (thinking === "ultra") {
+        return {
+            effort: "xhigh",
+            thinking: { type: "adaptive" },
+        };
     }
     if (isClaudeSdkEffortLevel(thinking)) {
         return {

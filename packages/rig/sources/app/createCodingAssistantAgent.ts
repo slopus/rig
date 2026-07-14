@@ -1,3 +1,5 @@
+import { createId } from "@paralleldrive/cuid2";
+
 import {
     Agent,
     createNodeAgentContext,
@@ -16,6 +18,7 @@ import type { Message } from "../agent/types.js";
 import { NativeProxessManager } from "../processes/index.js";
 import { createBedrockProvider } from "../providers/bedrock.js";
 import { createClaudeSdkProvider } from "../providers/claude-sdk.js";
+import { createClaudeSessionId } from "../providers/createClaudeSessionId.js";
 import { createCodexProvider, type CodexProviderOptions } from "../providers/codex.js";
 import { createGymProvider } from "../providers/createGymProvider.js";
 import { getBedrockModelRoute } from "../providers/getBedrockModelRoute.js";
@@ -56,6 +59,7 @@ export function createCodingAssistantAgent(
     options: CreateCodingAssistantAgentOptions,
 ): CodingAssistantRuntime {
     const processManager = options.processManager ?? new NativeProxessManager();
+    const agentId = options.agentId ?? createId();
     const workflowsEnabled = options.workflows !== undefined && options.workflowsEnabled !== false;
     const sharedContextOptions = {
         ...(options.goals !== undefined ? { goals: options.goals } : {}),
@@ -129,6 +133,7 @@ export function createCodingAssistantAgent(
             : providerId === "claude-sdk"
               ? createClaudeSdkProvider({
                     agentContext: context,
+                    sessionId: createClaudeSessionId(agentId),
                     tools,
                 })
               : providerId === "codex"
@@ -142,7 +147,7 @@ export function createCodingAssistantAgent(
         provider,
         modelId,
         context,
-        ...(options.agentId !== undefined ? { id: options.agentId } : {}),
+        id: agentId,
         instructions: options.instructions ?? createDefaultInstructions(runtimeCwd),
         ...(options.messages !== undefined ? { messages: options.messages } : {}),
         ...(options.contextMessages !== undefined
@@ -177,8 +182,15 @@ function createGymProviderFromEnvironment(env: NodeJS.ProcessEnv) {
 
 function toCodexProviderOptions(options: CreateCodingAssistantAgentOptions): CodexProviderOptions {
     const providerOptions: CodexProviderOptions = {};
+    const env = options.env ?? process.env;
     if (options.apiKey !== undefined) {
         providerOptions.apiKey = options.apiKey;
+    }
+    if (env.RIG_CODEX_BASE_URL !== undefined) {
+        providerOptions.baseUrl = env.RIG_CODEX_BASE_URL;
+    }
+    if (env.RIG_CODEX_TRANSPORT === "sse") {
+        providerOptions.transport = "sse";
     }
 
     return providerOptions;
