@@ -2,13 +2,15 @@ import { spawn } from "node:child_process";
 import { open } from "node:fs/promises";
 
 import {
-    getLocalServerPaths,
+    getEnvironmentLocalServerPaths,
     prepareLocalServerDirectory,
     readLocalServerToken,
     removeStaleSocket,
     writeLocalServerToken,
     type LocalServerPaths,
 } from "../server/index.js";
+import { daemonIdentitiesMatch, getDaemonIdentity } from "../daemon/index.js";
+import type { DaemonIdentity } from "../protocol/index.js";
 import { ProtocolHttpClient } from "./ProtocolHttpClient.js";
 import { loadDaemonSettings } from "../config/index.js";
 
@@ -19,7 +21,13 @@ export interface LocalProtocolServerConnection {
 }
 
 export interface EnsureLocalProtocolServerOptions {
+    confirmRestart?: (request: DaemonRestartRequest) => Promise<boolean>;
     onStatus?: (message: string) => void;
+}
+
+export interface DaemonRestartRequest {
+    currentIdentity: DaemonIdentity;
+    runningIdentity?: DaemonIdentity;
 }
 
 export async function ensureLocalProtocolServer(
@@ -27,6 +35,7 @@ export async function ensureLocalProtocolServer(
 ): Promise<LocalProtocolServerConnection> {
     const paths = getEnvironmentLocalServerPaths();
     const daemonSettings = await loadDaemonSettings();
+    const currentIdentity = getDaemonIdentity();
     await prepareLocalServerDirectory(paths.directory);
     const existingToken = await readTokenIfPresent(paths.tokenPath);
     if (existingToken !== undefined) {
@@ -35,28 +44,44 @@ export async function ensureLocalProtocolServer(
             token: existingToken,
         });
         const health = await readHealth(client);
-        if (health?.ready === true) {
+        const identityMatches =
+            health !== undefined && daemonIdentitiesMatch(currentIdentity, health.identity);
+        if (identityMatches) {
             if (health.durableGlobalEventQueue === daemonSettings.durableGlobalEventQueue) {
                 await waitForReady(client, options);
                 return { client, paths, token: existingToken };
             }
-            try {
-                const updated = await client.updateDaemonConfig({
-                    settings: {
-                        durableGlobalEventQueue: daemonSettings.durableGlobalEventQueue,
-                    },
-                });
-                if (
-                    updated.config.settings.durableGlobalEventQueue ===
-                    daemonSettings.durableGlobalEventQueue
-                ) {
-                    return { client, paths, token: existingToken };
+            if (health.ready) {
+                try {
+                    const updated = await client.updateDaemonConfig({
+                        settings: {
+                            durableGlobalEventQueue: daemonSettings.durableGlobalEventQueue,
+                        },
+                    });
+                    if (
+                        updated.config.settings.durableGlobalEventQueue ===
+                        daemonSettings.durableGlobalEventQueue
+                    ) {
+                        return { client, paths, token: existingToken };
+                    }
+                } catch {
+                    // Older daemons are restarted below when they cannot apply the setting live.
                 }
-            } catch {
-                // Older daemons are restarted below when they cannot apply the setting live.
             }
         }
-        if (health?.healthy === true) {
+        if (health !== undefined) {
+            if (!identityMatches) {
+                const request: DaemonRestartRequest = {
+                    currentIdentity,
+                    ...(health.identity === undefined ? {} : { runningIdentity: health.identity }),
+                };
+                const shouldRestart = (await options.confirmRestart?.(request)) ?? false;
+                if (!shouldRestart) {
+                    throw new Error(
+                        "The running daemon does not match this Rig CLI. Stop the running daemon, then try again.",
+                    );
+                }
+            }
             options.onStatus?.("Restarting local daemon.");
             await stopIncompatibleDaemon(client);
         }
@@ -69,15 +94,6 @@ export async function ensureLocalProtocolServer(
     const client = new ProtocolHttpClient({ socketPath: paths.socketPath, token });
     await waitForReady(client, options);
     return { client, paths, token };
-}
-
-function getEnvironmentLocalServerPaths(): LocalServerPaths {
-    const paths = getLocalServerPaths();
-    return {
-        ...paths,
-        socketPath: process.env.RIG_SERVER_SOCKET_PATH ?? paths.socketPath,
-        tokenPath: process.env.RIG_SERVER_TOKEN_PATH ?? paths.tokenPath,
-    };
 }
 
 export async function readTokenIfPresent(tokenPath: string): Promise<string | undefined> {

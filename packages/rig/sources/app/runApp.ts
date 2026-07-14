@@ -96,6 +96,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     const { history, localServer, modelCatalog, session } = await (async () => {
         try {
             const connection = await ensureLocalProtocolServer({
+                confirmRestart: (request) => startup.confirmDaemonRestart(request),
                 onStatus: (message) => {
                     startup.setStatus(message);
                 },

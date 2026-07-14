@@ -1,6 +1,8 @@
 export {
     ensureLocalProtocolServer,
     readTokenIfPresent,
+    type DaemonRestartRequest,
+    type EnsureLocalProtocolServerOptions,
     type LocalProtocolServerConnection,
 } from "./ensureLocalProtocolServer.js";
 export {

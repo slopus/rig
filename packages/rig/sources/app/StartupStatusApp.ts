@@ -1,7 +1,16 @@
 import { basename } from "node:path";
-import { truncateToWidth, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
+import {
+    truncateToWidth,
+    visibleWidth,
+    type Component,
+    type Focusable,
+    type TUI,
+} from "@earendil-works/pi-tui";
 
+import type { DaemonRestartRequest } from "../client/index.js";
+import { createSelectionPanel } from "./createSelectionPanel.js";
 import { formatActivityElapsedTime } from "./formatActivityElapsedTime.js";
+import { formatDaemonRestartMessage } from "./formatDaemonRestartMessage.js";
 import { renderActivityWave } from "./renderActivityWave.js";
 
 const RESET = "\x1b[0m";
@@ -19,13 +28,15 @@ export interface StartupStatusAppOptions {
     version: string;
 }
 
-export class StartupStatusApp implements Component {
+export class StartupStatusApp implements Component, Focusable {
     readonly #cwd: string;
     readonly #now: () => number;
     readonly #tui: TUI;
     readonly #version: string;
 
+    focused = false;
     #activityAnimationFrame = 0;
+    #selectionPanel: Component | undefined;
     #startedAtMs: number;
     #status = "Preparing local daemon.";
     #timer: ReturnType<typeof setInterval> | undefined;
@@ -42,7 +53,7 @@ export class StartupStatusApp implements Component {
 
     render(width: number): string[] {
         const safeWidth = Math.max(1, width);
-        return [
+        const lines = [
             ...this.#renderStartupBox(safeWidth, [
                 `${RIG_ORANGE}>_${RESET} ${BOLD}Rig${NOT_BOLD_OR_DIM} ${this.#version}`,
                 "Agentic coding CLI for local project work.",
@@ -53,6 +64,45 @@ export class StartupStatusApp implements Component {
             this.#renderStatusLine(safeWidth),
             "",
         ];
+        if (this.#selectionPanel !== undefined) {
+            lines.push(...this.#selectionPanel.render(safeWidth));
+        }
+        return lines;
+    }
+
+    confirmDaemonRestart(request: DaemonRestartRequest): Promise<boolean> {
+        this.setStatus("Waiting for restart confirmation.");
+        return new Promise((resolve) => {
+            const finish = (restart: boolean) => {
+                this.#selectionPanel = undefined;
+                this.#tui.requestRender();
+                resolve(restart);
+            };
+            this.#selectionPanel = createSelectionPanel({
+                items: [
+                    {
+                        description: "Stop the running daemon and continue with this CLI.",
+                        label: "Restart daemon",
+                        value: "restart",
+                    },
+                    {
+                        description: "Leave the running daemon unchanged.",
+                        label: "Exit Rig",
+                        value: "exit",
+                    },
+                ],
+                onCancel: () => finish(false),
+                onSelect: (item) => finish(item.value === "restart"),
+                subtitle: formatDaemonRestartMessage(request),
+                title: "Restart local daemon?",
+            });
+            this.#tui.requestRender();
+        });
+    }
+
+    handleInput(data: string): void {
+        this.#selectionPanel?.handleInput?.(data === "\x03" ? "\x1b" : data);
+        this.#tui.requestRender();
     }
 
     setStatus(status: string): void {
@@ -62,6 +112,7 @@ export class StartupStatusApp implements Component {
 
     start(): void {
         this.#tui.addChild(this);
+        this.#tui.setFocus(this);
         this.#timer = setInterval(() => {
             this.#activityAnimationFrame = (this.#activityAnimationFrame + 1) % 12;
             this.#tui.requestRender();

@@ -3,13 +3,15 @@ import {
     ProtocolHttpClient,
     readTokenIfPresent,
 } from "../client/index.js";
-import { getLocalServerPaths } from "../server/index.js";
+import { getEnvironmentLocalServerPaths } from "../server/index.js";
 
 export type DaemonCommand = "start" | "stop" | "status";
 
 export async function runDaemonCommand(command: DaemonCommand): Promise<void> {
     if (command === "start") {
-        const connection = await ensureLocalProtocolServer();
+        const connection = await ensureLocalProtocolServer({
+            confirmRestart: async () => true,
+        });
         console.log(`Daemon is running at ${connection.paths.socketPath}`);
         return;
     }
@@ -54,13 +56,4 @@ async function connectToExistingDaemon(): Promise<
     } catch {
         return undefined;
     }
-}
-
-function getEnvironmentLocalServerPaths(): ReturnType<typeof getLocalServerPaths> {
-    const paths = getLocalServerPaths();
-    return {
-        ...paths,
-        socketPath: process.env.RIG_SERVER_SOCKET_PATH ?? paths.socketPath,
-        tokenPath: process.env.RIG_SERVER_TOKEN_PATH ?? paths.tokenPath,
-    };
 }

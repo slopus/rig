@@ -10,6 +10,7 @@ describe("createSandboxFilesystemConfig", () => {
                 AWS_SHARED_CREDENTIALS_FILE: "/secrets/aws-credentials",
                 CLAUDE_CONFIG_DIR: "/secrets/claude",
                 CODEX_HOME: "/secrets/codex",
+                RIG_SERVER_DIRECTORY: "/workspace/.rig-dev",
                 RIG_SERVER_SOCKET_PATH: "/run/rig/custom-socket",
                 RIG_SERVER_TOKEN_PATH: "/run/rig/custom-token",
                 XDG_CONFIG_HOME: "/home/tester/custom-config",
@@ -36,12 +37,14 @@ describe("createSandboxFilesystemConfig", () => {
                 "/secrets/claude",
                 "/secrets/codex",
                 "/run/rig/custom-token",
+                "/workspace/.rig-dev",
                 "/temporary/rig-123",
                 "/temporary/rig-sandbox-policy",
             ]),
         );
         expect(config.denyWrite).toEqual([
             "/temporary/rig-123",
+            "/workspace/.rig-dev",
             "/run/rig/custom-socket",
             "/run/rig/custom-token",
             "/temporary/rig-sandbox-policy",

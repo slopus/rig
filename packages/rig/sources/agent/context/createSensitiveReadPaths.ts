@@ -57,6 +57,7 @@ export function createSensitiveReadPaths(
         environment.KUBECONFIG,
         environment.NETRC,
         environment.NPM_CONFIG_USERCONFIG,
+        environment.RIG_SERVER_DIRECTORY,
         environment.RIG_SERVER_SOCKET_PATH,
         environment.RIG_SERVER_TOKEN_PATH,
         ...(options.additionalPaths ?? []),

@@ -224,6 +224,7 @@ describe("createProtocolHttpServer", () => {
 
             expect(health).toMatchObject({
                 healthy: true,
+                identity: { version: expect.any(String) },
                 ready: true,
                 status: "ready",
             });

@@ -12,10 +12,18 @@ export interface LocalServerPaths {
     tokenPath: string;
 }
 
-export function getLocalServerPaths(uid = process.getuid?.() ?? 0): LocalServerPaths {
-    const directory = join(tmpdir(), `rig-${uid}`);
+export interface GetLocalServerPathsOptions {
+    databasePath?: string;
+    directory?: string;
+}
+
+export function getLocalServerPaths(
+    uid = process.getuid?.() ?? 0,
+    options: GetLocalServerPathsOptions = {},
+): LocalServerPaths {
+    const directory = options.directory ?? join(tmpdir(), `rig-${uid}`);
     return {
-        databasePath: getDefaultSessionDatabasePath(),
+        databasePath: options.databasePath ?? getDefaultSessionDatabasePath(),
         directory,
         logPath: join(directory, "server.log"),
         registryPath: join(directory, "server.json"),

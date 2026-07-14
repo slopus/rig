@@ -90,10 +90,27 @@ then adapt the useful parts to rig's simpler, curated experience.
 
 ```sh
 pnpm install
+```
+
+Start the development CLI in its own terminal:
+
+```sh
+pnpm dev
+```
+
+Run the one-shot validation commands separately:
+
+```sh
 pnpm run check
 pnpm test
 pnpm run build
 ```
+
+`pnpm dev` keeps its daemon socket, token, logs, registry, and session database in
+the current folder's ignored `.rig-dev` directory, so it does not reuse or replace
+the installed Rig daemon. The development CLI fingerprints its runtime source and
+asks before restarting an older workspace daemon after the source changes. The
+installed CLI performs the same check with the Rig package version.
 
 ### Authentication
 

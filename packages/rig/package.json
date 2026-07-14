@@ -25,7 +25,7 @@
     "scripts": {
         "build": "tsc -p tsconfig.build.json",
         "check": "tsc --noEmit",
-        "dev": "tsx sources/main.ts",
+        "dev": "tsx ../../scripts/dev.ts",
         "start": "node dist/main.js",
         "test": "vitest run",
         "test:live": "RIG_LIVE_TEST=1 vitest run -c vitest.live.config.ts",

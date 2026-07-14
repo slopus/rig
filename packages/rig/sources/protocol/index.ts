@@ -19,6 +19,7 @@ export type {
     CreateSessionRequest,
     CreateSessionResponse,
     DaemonConfig,
+    DaemonIdentity,
     EffortChangedEvent,
     FileSearchResult,
     ForkSessionResponse,

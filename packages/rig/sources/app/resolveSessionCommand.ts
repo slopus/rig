@@ -1,4 +1,5 @@
 import { ensureLocalProtocolServer } from "../client/index.js";
+import { confirmDaemonRestartInTerminal } from "./confirmDaemonRestartInTerminal.js";
 import { selectSession } from "./selectSession.js";
 import type { SessionCommandOptions } from "./parseSessionCommand.js";
 
@@ -8,6 +9,7 @@ export async function resolveSessionCommand(options: {
     selection: SessionCommandOptions;
 }): Promise<string> {
     const connection = await ensureLocalProtocolServer({
+        confirmRestart: confirmDaemonRestartInTerminal,
         onStatus: (message) => process.stderr.write(`${message}\n`),
     });
     let sessionId = options.selection.sessionId;

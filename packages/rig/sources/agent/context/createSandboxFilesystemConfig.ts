@@ -36,6 +36,7 @@ export async function createSandboxFilesystemConfig(options: {
     });
     const denyWrite = [
         controlDirectory,
+        environment.RIG_SERVER_DIRECTORY,
         environment.RIG_SERVER_SOCKET_PATH,
         environment.RIG_SERVER_TOKEN_PATH,
         options.sandboxConfigDirectory,

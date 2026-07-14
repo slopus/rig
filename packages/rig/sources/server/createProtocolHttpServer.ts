@@ -11,6 +11,7 @@ import type {
     CompactSessionResponse,
     CreateSessionRequest,
     CreateSessionResponse,
+    DaemonIdentity,
     ForkSessionResponse,
     GetDaemonConfigResponse,
     ListGlobalEventsResponse,
@@ -35,6 +36,7 @@ import type {
     UpdateDaemonConfigRequest,
     UpdateDaemonConfigResponse,
 } from "../protocol/index.js";
+import { getDaemonIdentity } from "../daemon/index.js";
 import { InMemorySessionStore } from "./InMemorySessionStore.js";
 import { createModelCatalog } from "./createModelCatalog.js";
 import { FileSearchService, type FileSearchServiceContract } from "./FileSearchService.js";
@@ -53,6 +55,7 @@ import type { DockerExecutionConfig } from "../execution/index.js";
 
 export interface ProtocolHttpServerOptions {
     defaultDocker?: DockerExecutionConfig;
+    identity?: DaemonIdentity;
     initialization?: Promise<ModelCatalog>;
     modelCatalog?: ModelCatalog;
     fileSearchService?: FileSearchServiceContract;
@@ -103,6 +106,7 @@ export function createProtocolHttpServer(options: ProtocolHttpServerOptions): Se
 interface InitializationState {
     catalog: ModelCatalog | undefined;
     errorMessage: string | undefined;
+    identity: DaemonIdentity;
     ready: boolean;
 }
 
@@ -538,6 +542,7 @@ function createInitializationState(options: ProtocolHttpServerOptions): Initiali
     const state: InitializationState = {
         catalog: options.modelCatalog,
         errorMessage: undefined,
+        identity: options.identity ?? getDaemonIdentity(),
         ready: options.initialization === undefined,
     };
     if (options.initialization !== undefined) {
@@ -565,6 +570,7 @@ function healthResponse(
             catalog: initialization.catalog,
             durableGlobalEventQueue,
             healthy: true,
+            identity: initialization.identity,
             ready: true,
             status: "ready",
         };
@@ -574,6 +580,7 @@ function healthResponse(
             durableGlobalEventQueue,
             errorMessage: initialization.errorMessage,
             healthy: false,
+            identity: initialization.identity,
             ready: false,
             status: "error",
         };
@@ -582,6 +589,7 @@ function healthResponse(
     return {
         durableGlobalEventQueue,
         healthy: true,
+        identity: initialization.identity,
         ready: false,
         status: "starting",
     };

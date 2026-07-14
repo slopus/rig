@@ -7,7 +7,7 @@
         "build:gym": "docker build --file packages/gym/Dockerfile --tag rig-gym:local .",
         "check": "pnpm run check:root && pnpm --recursive --filter './packages/**' run check && pnpm --filter @slopus/rig-gym-tests check",
         "check:root": "tsc --noEmit -p tsconfig.json",
-        "dev": "tsx packages/rig/sources/main.ts",
+        "dev": "tsx scripts/dev.ts",
         "format": "oxfmt --write .",
         "format:check": "oxfmt --check .",
         "lint": "oxlint .",

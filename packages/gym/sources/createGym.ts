@@ -67,6 +67,9 @@ export async function createGym(options: GymOptions): Promise<Gym> {
                     : ["--env", `RIG_PERMISSION_MODE=${options.permissionMode ?? "full_access"}`]),
                 "--env",
                 "RIG_PROVIDER=gym",
+                ...(options.entrypoint === undefined
+                    ? []
+                    : ["--entrypoint", options.entrypoint[0]]),
                 "--volume",
                 `${workspacePath}:/workspace`,
                 ...(options.dockerSocket === true
@@ -83,6 +86,7 @@ export async function createGym(options: GymOptions): Promise<Gym> {
                 "--workdir",
                 "/workspace",
                 imageId,
+                ...(options.entrypoint?.slice(1) ?? []),
                 ...(options.args ?? []),
             ],
             {

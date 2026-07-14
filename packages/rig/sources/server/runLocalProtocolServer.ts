@@ -2,7 +2,7 @@ import { chmod, open } from "node:fs/promises";
 
 import { createProtocolHttpServer } from "./createProtocolHttpServer.js";
 import { createModelCatalog } from "./createModelCatalog.js";
-import { getLocalServerPaths } from "./LocalServerPaths.js";
+import { getEnvironmentLocalServerPaths } from "./getEnvironmentLocalServerPaths.js";
 import { prepareLocalServerDirectory } from "./prepareLocalServerDirectory.js";
 import { PersistentSessionStore } from "./PersistentSessionStore.js";
 import { readLocalServerToken } from "./readLocalServerToken.js";
@@ -18,7 +18,7 @@ export interface RunLocalProtocolServerOptions {
 export async function runLocalProtocolServer(
     options: RunLocalProtocolServerOptions = {},
 ): Promise<void> {
-    const paths = getLocalServerPaths();
+    const paths = getEnvironmentLocalServerPaths();
     const socketPath = options.socketPath ?? paths.socketPath;
     const tokenPath = options.tokenPath ?? paths.tokenPath;
     await prepareLocalServerDirectory(paths.directory);

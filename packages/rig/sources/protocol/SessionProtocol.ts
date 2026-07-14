@@ -63,11 +63,17 @@ export interface ModelCatalog {
 
 export type ServerInitializationStatus = "starting" | "ready" | "error";
 
+export interface DaemonIdentity {
+    version: string;
+    developmentBuildId?: string;
+}
+
 export interface HealthResponse {
     catalog?: ModelCatalog;
     durableGlobalEventQueue: boolean;
     errorMessage?: string;
     healthy: boolean;
+    identity?: DaemonIdentity;
     ready: boolean;
     status: ServerInitializationStatus;
 }

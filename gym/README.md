@@ -218,6 +218,7 @@ interface GymOptions {
     args?: readonly string[];
     cols?: number;
     dockerSocket?: boolean;
+    entrypoint?: readonly [string, ...string[]];
     files?: Readonly<Record<string, GymFixture>>;
     homeFiles?: Readonly<Record<string, GymFixture>>;
     image?: string;
@@ -233,6 +234,7 @@ interface GymOptions {
 | `args`         | `[]`                     | Arguments passed to the built Rig CLI         |
 | `cols`         | `100`                    | Terminal width in cells                       |
 | `dockerSocket` | `false`                  | Exposes the daemon socket for Docker tests    |
+| `entrypoint`   | Image default            | Replaces the image entrypoint for setup cases |
 | `rows`         | `32`                     | Terminal height in cells                      |
 | `files`        | `{}`                     | Fixture tree mounted into `/workspace`        |
 | `homeFiles`    | `{}`                     | Trusted fixture tree mounted into `/home/rig` |
