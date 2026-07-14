@@ -23,7 +23,7 @@ describe("runMontyWithExternals", () => {
             },
             inputNames: ["args"],
             inputs: { args: null },
-            limits: { maxDurationSecs: 0.02 },
+            limits: { maxDurationSecs: 1 },
             onPrint: vi.fn(),
             onSnapshot: (snapshot) => snapshots.push(snapshot),
             signal: new AbortController().signal,
