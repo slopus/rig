@@ -34,6 +34,8 @@ describe("createSelectionPanel", () => {
         expect(rendered.every((line) => visibleWidth(line) === 32)).toBe(true);
         expect(text).toContain("auto-denied.txt? · 1");
         expect(text).toContain("of 1");
+        expect(rendered.every((line) => line.startsWith("\x1b[48;5;235m\x1b[39m"))).toBe(true);
+        expect(rendered.join("\n")).not.toContain("\x1b[48;5;236m");
     });
 
     it("removes terminal controls from every user-visible field", () => {

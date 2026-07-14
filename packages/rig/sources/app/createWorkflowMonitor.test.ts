@@ -1,3 +1,4 @@
+/* eslint-disable no-control-regex -- Tests intentionally strip terminal ANSI controls. */
 import { describe, expect, it, vi } from "vitest";
 
 import type { SubagentSummary } from "../protocol/index.js";
@@ -19,6 +20,10 @@ describe("createWorkflowMonitor", () => {
 
         expect(render(monitor)).toContain("1 active · Updates live");
         expect(render(monitor)).toContain("Live monitor  Running · 1 agent · Inspect");
+        expect(monitor.render(100).every((line) => line.startsWith("\x1b[48;5;235m\x1b[39m"))).toBe(
+            true,
+        );
+        expect(monitor.render(100).join("\n")).not.toContain("\x1b[48;5;236m");
 
         monitor.handleInput?.("\r");
         expect(render(monitor)).toContain("Inspect one monitored target");
@@ -106,10 +111,7 @@ describe("createWorkflowMonitor", () => {
 });
 
 function render(component: ReturnType<typeof createWorkflowMonitor>): string {
-    return component
-        .render(100)
-        .join("\n")
-        .replaceAll(/\x1b\[[0-9;]*m/gu, "");
+    return component.render(100).join("\n").replaceAll(new RegExp("\\x1b\\[[0-9;]*m", "gu"), "");
 }
 
 function runningWorkflow(): WorkflowRun {

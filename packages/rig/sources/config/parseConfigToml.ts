@@ -4,6 +4,7 @@ import type {
     PartialConfigDefaults,
     PartialConfigFeatures,
     PartialConfigSettings,
+    PartialConfigTheme,
     PartialRigConfig,
 } from "./types.js";
 import type { McpServerConfig } from "../mcp/types.js";
@@ -14,6 +15,7 @@ export function parseConfigToml(source: string): PartialRigConfig {
     const defaults: PartialConfigDefaults = {};
     const features: PartialConfigFeatures = {};
     const settings: PartialConfigSettings = {};
+    const theme: PartialConfigTheme = {};
     const table = parse(source);
     const docker = readDockerConfig(table.docker);
     const defaultsTable = table.defaults;
@@ -43,6 +45,22 @@ export function parseConfigToml(source: string): PartialRigConfig {
         if (permissionMode !== undefined) defaults.permissionMode = permissionMode;
     }
 
+    const themeTable = table.theme;
+    if (isTomlTable(themeTable)) {
+        for (const role of [
+            "accent",
+            "brand",
+            "error",
+            "primary",
+            "secondary",
+            "success",
+            "warning",
+        ] as const) {
+            const value = readString(themeTable, role);
+            if (value !== undefined) theme[role] = value;
+        }
+    }
+
     const settingsTable = table.settings;
     if (isTomlTable(settingsTable)) {
         const durableGlobalEventQueue = readBoolean(settingsTable, "durable_global_event_queue");
@@ -70,6 +88,7 @@ export function parseConfigToml(source: string): PartialRigConfig {
         ...(Object.keys(features).length > 0 ? { features } : {}),
         ...(mcpServers !== undefined ? { mcpServers } : {}),
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
+        ...(Object.keys(theme).length > 0 ? { theme } : {}),
     };
 }
 

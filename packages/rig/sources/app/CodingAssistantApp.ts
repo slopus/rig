@@ -11,7 +11,6 @@ import {
     wrapTextWithAnsi,
     type AutocompleteItem,
     type Component,
-    type EditorTheme,
     type Focusable,
     type TUI,
 } from "@earendil-works/pi-tui";
@@ -48,8 +47,10 @@ import type {
     CodingAssistantModelChoice,
 } from "./CodingAssistantAgentBackend.js";
 import { createActiveWorkItems } from "./createActiveWorkItems.js";
+import { createEditorTheme } from "./createEditorTheme.js";
 import { createSelectionPanel } from "./createSelectionPanel.js";
 import { createWorkflowMonitor } from "./createWorkflowMonitor.js";
+import { DEFAULT_TERMINAL_THEME } from "./defaultTerminalTheme.js";
 import { createSlashCommands, type SlashCommandItem } from "./createSlashCommands.js";
 import { describeModelChoice } from "./describeModelChoice.js";
 import { describeReasoningLevel } from "./describeReasoningLevel.js";
@@ -74,25 +75,14 @@ import { renderAgentMarkdown } from "./renderAgentMarkdown.js";
 import { sanitizeTerminalText } from "./sanitizeTerminalText.js";
 import { upsertSubagentSummary } from "./upsertSubagentSummary.js";
 import { applyWorkflowRunUpdate } from "./applyWorkflowRunUpdate.js";
+import type { TerminalTheme } from "./TerminalTheme.js";
 
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
 const DIM = "\x1b[2m";
 const NOT_BOLD_OR_DIM = "\x1b[22m";
-const GREEN = "\x1b[32m";
-const CYAN = "\x1b[36m";
-const YELLOW = "\x1b[33m";
-const RED = "\x1b[31m";
-const RIG_ORANGE = "\x1b[38;5;202m";
 const CURSOR_BG = "\x1b[48;5;244m";
 const CURSOR_FG = "\x1b[38;5;232m";
-const SURFACE_BG = "\x1b[48;5;236m";
-const SURFACE_FG = "\x1b[38;5;252m";
-const INPUT_FG = "\x1b[38;5;255m";
-const SURFACE_MUTED_FG = "\x1b[38;5;245m";
-const FOOTER_MODEL_FG = "\x1b[38;5;252m";
-const FOOTER_CWD_FG = "\x1b[38;5;245m";
-const FOOTER_QUEUED_FG = "\x1b[38;5;246m";
 const INPUT_PLACEHOLDER = "Ask Rig to do anything";
 const INPUT_PROMPT = "› ";
 const INPUT_LINE_INDENT = "  ";
@@ -113,17 +103,6 @@ const IMAGE_PLACEHOLDER_REGEX = /\[Image #(\d+) [A-Z0-9]+\]/gu;
 const IMAGE_CHIP_BG = "\x1b[48;5;240m";
 const IMAGE_CHIP_FG = "\x1b[38;5;255m";
 const FILE_MENTION_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-
-const EDITOR_THEME: EditorTheme = {
-    borderColor: (text) => text,
-    selectList: {
-        selectedPrefix: (text) => text,
-        selectedText: (text) => `${RIG_ORANGE}${text}${RESET}${INPUT_FG}`,
-        description: (text) => `${DIM}${SURFACE_MUTED_FG}${text}${RESET}${INPUT_FG}`,
-        scrollInfo: (text) => `${DIM}${SURFACE_MUTED_FG}${text}${RESET}${INPUT_FG}`,
-        noMatch: (text) => `${SURFACE_MUTED_FG}${text}${RESET}${INPUT_FG}`,
-    },
-};
 
 const MAX_TRANSCRIPT_ENTRIES = 500;
 
@@ -158,6 +137,7 @@ export interface CodingAssistantAppOptions {
     showReasoning?: boolean;
     showUsage?: boolean;
     version?: string;
+    theme?: TerminalTheme;
 }
 
 function addUsage(left: Usage, right: Usage): Usage {
@@ -259,6 +239,7 @@ export class CodingAssistantApp implements Component, Focusable {
         options?: ReadClipboardImageOptions,
     ) => Promise<ClipboardImage | undefined>;
     readonly #tui: TUI;
+    readonly #theme: TerminalTheme;
     readonly #version: string;
     readonly #exitPromise: Promise<void>;
 
@@ -351,8 +332,9 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#workflowsEnabled = options.workflowsEnabled ?? true;
         this.#slashCommands = createSlashCommands({ workflowsEnabled: this.#workflowsEnabled });
         this.#tui = options.tui;
+        this.#theme = options.theme ?? DEFAULT_TERMINAL_THEME;
         this.#version = options.version ?? "0.0.0";
-        this.#editor = new Editor(this.#tui, EDITOR_THEME, { paddingX: 0 });
+        this.#editor = new Editor(this.#tui, createEditorTheme(this.#theme), { paddingX: 0 });
         this.#fileMentionAutocomplete =
             options.searchFiles === undefined
                 ? undefined
@@ -536,6 +518,7 @@ export class CodingAssistantApp implements Component, Focusable {
             if (event.data.stopReason === "aborted") {
                 this.#appendAbortNotice();
             }
+            this.#discardPendingToolCallEntries();
             this.#running = false;
             this.#modelLocked = this.#pendingPrompts.length > 0;
             this.#statusText =
@@ -554,6 +537,7 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         if (event.type === "run_error") {
+            this.#discardPendingToolCallEntries();
             this.#running = false;
             this.#modelLocked = this.#pendingPrompts.length > 0;
             this.#statusText = "Error";
@@ -1417,6 +1401,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #openWorkflowMonitor(initialRunId?: string): void {
         this.#showSelectionPanel(
             createWorkflowMonitor({
+                theme: this.#theme,
                 getSubagents: () => this.#subagents,
                 getWorkflows: () => this.#workflows,
                 ...(initialRunId === undefined ? {} : { initialRunId }),
@@ -1595,6 +1580,7 @@ export class CodingAssistantApp implements Component, Focusable {
                     this.#abortController = undefined;
                 }
                 this.#running = false;
+                this.#discardPendingToolCallEntries();
                 this.#stopActivityAnimation();
                 this.#streamEntryId = undefined;
                 this.#thinkingEntryIdsByContentIndex.clear();
@@ -1635,6 +1621,7 @@ export class CodingAssistantApp implements Component, Focusable {
         }));
         this.#showSelectionPanel(
             createSelectionPanel({
+                theme: this.#theme,
                 items,
                 onCancel: () => this.#closeSelectionPanel(),
                 onSelect: (item) => {
@@ -1694,6 +1681,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#abortController = undefined;
         this.#running = false;
         this.#statusText = "Idle";
+        this.#discardPendingToolCallEntries();
         this.#streamEntryId = undefined;
         this.#thinkingEntryIdsByContentIndex.clear();
         this.#toolCallEntryIdsByContentIndex.clear();
@@ -2112,13 +2100,31 @@ export class CodingAssistantApp implements Component, Focusable {
     #clearEntries(): void {
         this.#entries = [];
         this.#transcriptStartIndex = 0;
+        this.#streamedToolCallEntries.clear();
         this.#stoppedToolCallIds.clear();
+    }
+
+    #discardPendingToolCallEntries(): void {
+        let removedBeforeStart = 0;
+        this.#entries = this.#entries.filter((entry, index) => {
+            const pending =
+                this.#streamedToolCallEntries.has(entry) &&
+                entry.title === PENDING_TOOL_CALL_TITLE &&
+                entry.text === PENDING_TOOL_CALL_TITLE;
+            if (pending && index < this.#transcriptStartIndex) removedBeforeStart += 1;
+            return !pending;
+        });
+        this.#transcriptStartIndex = Math.max(
+            0,
+            Math.min(this.#transcriptStartIndex - removedBeforeStart, this.#entries.length),
+        );
+        this.#streamedToolCallEntries.clear();
     }
 
     #renderHeader(width: number): string[] {
         return [
             ...this.#renderStartupBox(width, [
-                `${RIG_ORANGE}>_${RESET} ${BOLD}Rig${NOT_BOLD_OR_DIM} ${this.#version}`,
+                `${this.#theme.brand}>_${RESET} ${BOLD}Rig${NOT_BOLD_OR_DIM} ${this.#version}`,
                 "Agentic coding CLI for local project work.",
                 "Keeps sessions in a private local daemon.",
                 `Directory: ${this.#directoryName()}`,
@@ -2151,8 +2157,10 @@ export class CodingAssistantApp implements Component, Focusable {
     #renderTranscriptEntries(entries: readonly AppTranscriptEntry[], width: number): string[] {
         const lines: string[] = [];
         for (const entry of entries) {
+            const entryLines = this.#renderEntry(entry, width);
+            if (entryLines.length === 0) continue;
             if (lines.length > 0) lines.push("");
-            lines.push(...this.#renderEntry(entry, width));
+            lines.push(...entryLines);
         }
         return lines;
     }
@@ -2206,14 +2214,24 @@ export class CodingAssistantApp implements Component, Focusable {
         }
         if (entry.role === "error") {
             return entry.detail === undefined
-                ? this.#renderNoticeEntry(entry.title ?? "Error", entry.text, width, RED)
+                ? this.#renderNoticeEntry(
+                      entry.title ?? "Error",
+                      entry.text,
+                      width,
+                      this.#theme.error,
+                  )
                 : this.#renderToolEntry(entry, width, true);
         }
         if (entry.role === "event") {
-            return this.#renderNoticeEntry(entry.title ?? "event", entry.text, width, YELLOW);
+            return this.#renderNoticeEntry(
+                entry.title ?? "event",
+                entry.text,
+                width,
+                this.#theme.warning,
+            );
         }
 
-        return this.#renderNoticeEntry("system", entry.text, width, SURFACE_MUTED_FG);
+        return this.#renderNoticeEntry("system", entry.text, width, this.#theme.secondary);
     }
 
     #renderFooter(
@@ -2225,17 +2243,18 @@ export class CodingAssistantApp implements Component, Focusable {
             return this.#renderAutocomplete(width, suggestions, selectedIndex);
         }
 
-        const parts = [`${FOOTER_MODEL_FG}${this.#modelWithReasoningDisplayName()}${RESET}`];
-        parts.push(`${FOOTER_CWD_FG}${this.#cwdDisplayName()}${RESET}`);
+        const parts = [`${this.#theme.warning}${this.#modelWithReasoningDisplayName()}${RESET}`];
+        parts.push(`${this.#theme.success}${this.#cwdDisplayName()}${RESET}`);
+        parts.push(`${this.#theme.secondary}main [default]${RESET}`);
         if (this.#pendingPrompts.length > 0) {
-            parts.push(`${FOOTER_QUEUED_FG}queued ${this.#pendingPrompts.length}${RESET}`);
+            parts.push(`${this.#theme.secondary}queued ${this.#pendingPrompts.length}${RESET}`);
         }
-        const permissionMode = this.#agent.permissionMode;
-        const permissionColor = permissionMode === "full_access" ? YELLOW : FOOTER_QUEUED_FG;
-        parts.push(`${permissionColor}${humanizePermissionMode(permissionMode)}${RESET}`);
-        if (this.#showUsage) parts.push(`${FOOTER_CWD_FG}${this.#usageFooter()}${RESET}`);
+        parts.push(
+            `${this.#theme.secondary}${humanizePermissionMode(this.#agent.permissionMode).toLowerCase()}${RESET}`,
+        );
+        if (this.#showUsage) parts.push(`${this.#theme.secondary}${this.#usageFooter()}${RESET}`);
 
-        const line = `${" ".repeat(visibleWidth(INPUT_PROMPT))}${parts.join(`${DIM} • ${RESET}`)}`;
+        const line = `${" ".repeat(visibleWidth(INPUT_PROMPT))}${parts.join(`${DIM} · ${RESET}`)}`;
         return [this.#fitLine(line, width)];
     }
 
@@ -2249,7 +2268,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
     #renderActiveWorkList(width: number): string[] {
         const items = this.#activeWorkItems();
-        return items.map((item) => renderActiveWorkItem(item, width));
+        return items.map((item) => renderActiveWorkItem(item, width, this.#theme));
     }
 
     #usageFooter(): string {
@@ -2313,8 +2332,8 @@ export class CodingAssistantApp implements Component, Focusable {
                 false,
             );
             const line = isSelected
-                ? `${RIG_ORANGE}${marker}${label}${description}${RESET}`
-                : `${marker}${label}${DIM}${SURFACE_MUTED_FG}${description}${RESET}`;
+                ? `${this.#theme.brand}${marker}${label}${description}${RESET}`
+                : `${marker}${label}${DIM}${this.#theme.secondary}${description}${RESET}`;
             return this.#fitLine(line, rowWidth);
         });
     }
@@ -2329,6 +2348,7 @@ export class CodingAssistantApp implements Component, Focusable {
         const selectedValue = encodeModelChoice(selectedProviderId, selectedModelId);
         const choices = this.#modelChoices();
         const panel = createSelectionPanel({
+            theme: this.#theme,
             title: "Choose Model",
             subtitle: this.#modelLocked
                 ? "Wait for the active response to finish"
@@ -2391,6 +2411,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 ? currentEffort
                 : defaultEffort;
         const panel = createSelectionPanel({
+            theme: this.#theme,
             title: "Choose Reasoning",
             subtitle: model.name,
             selectedValue: selectedEffort,
@@ -2439,6 +2460,7 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         const panel = createSelectionPanel({
+            theme: this.#theme,
             title: "Configure",
             subtitle: "App settings",
             items: [
@@ -2492,6 +2514,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
     #openPermissionsMenu(): void {
         const panel = createSelectionPanel({
+            theme: this.#theme,
             title: "Choose Permissions",
             subtitle: "Applies to this session and its subagents",
             selectedValue: this.#agent.permissionMode,
@@ -2599,6 +2622,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
         this.#showSelectionPanel(
             createSelectionPanel({
+                theme: this.#theme,
                 title: question.header,
                 subtitle: `${question.question} · ${active.questionIndex + 1} of ${active.request.questions.length}`,
                 items,
@@ -2919,7 +2943,7 @@ export class CodingAssistantApp implements Component, Focusable {
         return text.replace(
             IMAGE_PLACEHOLDER_REGEX,
             (placeholder) =>
-                `${IMAGE_CHIP_BG}${IMAGE_CHIP_FG}${placeholder}${SURFACE_BG}${INPUT_FG}`,
+                `${IMAGE_CHIP_BG}${IMAGE_CHIP_FG}${placeholder}${this.#theme.inputBackground}${this.#theme.primary}`,
         );
     }
 
@@ -2977,6 +3001,7 @@ export class CodingAssistantApp implements Component, Focusable {
             text: entry.text,
             width: contentWidth,
             cwd: this.#cwd,
+            theme: this.#theme,
         });
         const indent = " ".repeat(prefixWidth);
         return renderedMarkdown.map((line, index) =>
@@ -2992,6 +3017,7 @@ export class CodingAssistantApp implements Component, Focusable {
             text: entry.text,
             width: contentWidth,
             cwd: this.#cwd,
+            theme: this.#theme,
         });
         const indent = " ".repeat(prefixWidth);
         return renderedMarkdown.map((line, index) =>
@@ -3005,6 +3031,7 @@ export class CodingAssistantApp implements Component, Focusable {
             entry.title === PENDING_TOOL_CALL_TITLE &&
             entry.text === PENDING_TOOL_CALL_TITLE
         ) {
+            if (this.#shouldRenderActivityAsLastMessage()) return [];
             return [this.#fitLine(`${DIM}• ${PENDING_TOOL_CALL_TITLE}${RESET}`, width)];
         }
 
@@ -3019,13 +3046,15 @@ export class CodingAssistantApp implements Component, Focusable {
               : awaitingApproval
                 ? "Awaiting approval"
                 : this.#toolVerb(toolName, active);
-        const dot = stopped || isError ? RED : awaitingApproval ? YELLOW : GREEN;
+        const dot =
+            stopped || isError
+                ? this.#theme.error
+                : awaitingApproval
+                  ? this.#theme.warning
+                  : this.#theme.success;
         const callText = this.#singleLine(entry.text);
-        const titleSuffix =
-            callText.length > 0 && callText !== toolName
-                ? ` ${CYAN}${callText}${RESET}`
-                : ` ${CYAN}${toolName}${RESET}`;
-        const title = `${dot}•${RESET} ${RIG_ORANGE}${BOLD}${verb}${NOT_BOLD_OR_DIM}${titleSuffix}`;
+        const displayText = callText.length > 0 && callText !== toolName ? callText : toolName;
+        const title = `${dot}•${RESET} ${this.#theme.brand}${BOLD}${verb}${NOT_BOLD_OR_DIM}${this.#theme.primary} ${displayText}${RESET}`;
         const lines = [this.#fitLine(title, width)];
         if (entry.permissionReview !== undefined) {
             const reviewPrefix = `  ${DIM}${entry.detail === undefined ? "└" : "├"}${RESET} ${DIM}`;
@@ -3079,31 +3108,34 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#freeformUserInput === undefined ? INPUT_PLACEHOLDER : "Type another answer";
         const marker = this.#focused ? CURSOR_MARKER : "";
         if (!this.#focused || !this.#cursorVisible) {
-            return `${this.#inputPrompt()}${marker}${SURFACE_MUTED_FG}${placeholder}${INPUT_FG}`;
+            return `${this.#inputPrompt()}${marker}${this.#theme.secondary}${placeholder}${this.#theme.primary}`;
         }
 
         const firstCharacter = placeholder[0] ?? " ";
         const rest = placeholder.slice(firstCharacter.length);
-        return `${this.#inputPrompt()}${marker}${CURSOR_BG}${CURSOR_FG}${firstCharacter}${RESET}${SURFACE_MUTED_FG}${rest}${INPUT_FG}`;
+        return `${this.#inputPrompt()}${marker}${CURSOR_BG}${CURSOR_FG}${firstCharacter}${RESET}${this.#theme.secondary}${rest}${this.#theme.primary}`;
     }
 
     #surfaceLine(line: string, width: number): string {
-        return `${SURFACE_BG}${SURFACE_FG}${this.#fitAndPadLine(line, width)}${RESET}`;
+        return `${this.#theme.inputBackground}${this.#theme.primary}${this.#fitAndPadLine(line, width)}${RESET}`;
     }
 
     #inputSurfaceLine(line: string, width: number): string {
         const softened = this.#softenFakeCursor(line);
-        return `${SURFACE_BG}${INPUT_FG}${this.#fitAndPadLine(this.#restoreInputSurface(softened), width)}${RESET}`;
+        return `${this.#theme.inputBackground}${this.#theme.primary}${this.#fitAndPadLine(this.#restoreInputSurface(softened), width)}${RESET}`;
     }
 
     #restoreInputSurface(line: string): string {
-        return line.replaceAll(RESET, `${RESET}${SURFACE_BG}${INPUT_FG}`);
+        return line.replaceAll(
+            RESET,
+            `${RESET}${this.#theme.inputBackground}${this.#theme.primary}`,
+        );
     }
 
     #softenFakeCursor(line: string): string {
         return line.replace(
             /\x1b\[7m([\s\S]*?)\x1b\[(?:27|0)m/gu,
-            `${CURSOR_BG}${CURSOR_FG}$1${SURFACE_BG}${INPUT_FG}`,
+            `${CURSOR_BG}${CURSOR_FG}$1${this.#theme.inputBackground}${this.#theme.primary}`,
         );
     }
 
@@ -3168,11 +3200,11 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #renderActivityLine(label: string, width: number): string[] {
-        const prefix = `${RIG_ORANGE}•${RESET} `;
+        const prefix = `${DIM}◦${RESET} `;
         const frame = this.#activityAnimationFrame;
         const elapsed = this.#activityElapsedText();
         const elapsedText = elapsed ?? "0s";
-        const elapsedSuffix = ` ${DIM}${SURFACE_MUTED_FG}(${elapsedText} • Esc to interrupt)${RESET}`;
+        const elapsedSuffix = ` ${DIM}${this.#theme.secondary}(${elapsedText} • esc to interrupt)${RESET}`;
 
         return [
             this.#fitLine(`${prefix}${renderActivityWave(label, frame)}${elapsedSuffix}`, width),
@@ -3198,7 +3230,7 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #inputPrompt(): string {
-        return `${RIG_ORANGE}${BOLD}›${NOT_BOLD_OR_DIM}${INPUT_FG} `;
+        return `${this.#theme.brand}${BOLD}›${NOT_BOLD_OR_DIM}${this.#theme.primary} `;
     }
 
     #handleReasoningShortcut(data: string): boolean {
@@ -3466,14 +3498,14 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #modelDisplayName(): string {
-        return this.#agent.model.name;
+        return (this.#agent.model.id.split("/").at(-1) ?? this.#agent.model.id).toLowerCase();
     }
 
     #modelWithReasoningDisplayName(): string {
         const effort = this.#agent.snapshot().effort ?? this.#agent.model.defaultThinkingLevel;
         return effort === undefined
             ? this.#modelDisplayName()
-            : `${this.#modelDisplayName()} ${humanizeReasoningLevel(effort)}`;
+            : `${this.#modelDisplayName()} ${effort.toLowerCase()}`;
     }
 
     #cwdDisplayName(): string {

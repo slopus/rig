@@ -371,12 +371,14 @@ interface GymInferenceResponse {
     errorMessage?: string;
     responseModel?: string;
     stopReason?: StopReason;
+    toolCallDeltaDelayMs?: number;
     usage?: Usage;
 }
 ```
 
 - `content` may contain text, thinking, or tool-call blocks accepted by Rig's provider types.
 - `delayMs` delays the response inside the container-side provider and respects abort signals. Use it for interruption and concurrency scenarios.
+- `toolCallDeltaDelayMs` pauses after `toolcall_start` and before the arguments delta. Use it to exercise the live streamed-tool-call UI deterministically.
 - `stopReason` defaults to `toolUse` when any content block is a tool call, otherwise `stop`.
 - `errorMessage` populates the assistant message error field.
 - `responseModel` simulates a provider reporting a different concrete model.

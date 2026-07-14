@@ -14,4 +14,13 @@ export const DEFAULT_RIG_CONFIG: RigConfig = {
         showReasoning: false,
         showUsage: false,
     },
+    theme: {
+        accent: "cyan",
+        brand: "ansi:202",
+        error: "red",
+        primary: "default",
+        secondary: "dim",
+        success: "green",
+        warning: "yellow",
+    },
 };

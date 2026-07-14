@@ -12,5 +12,6 @@ export interface GymInferenceResponse {
     errorMessage?: string;
     responseModel?: string;
     stopReason?: StopReason;
+    toolCallDeltaDelayMs?: number;
     usage?: Usage;
 }

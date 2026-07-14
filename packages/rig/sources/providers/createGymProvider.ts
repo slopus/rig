@@ -82,7 +82,13 @@ export function createGymProvider(options: CreateGymProviderOptions) {
                 for (const block of reply.content) {
                     const contentIndex = message.content.length;
                     message.content = [...message.content, block];
-                    yield* eventsForBlock(contentIndex, message, block);
+                    yield* eventsForBlock(
+                        contentIndex,
+                        message,
+                        block,
+                        reply.toolCallDeltaDelayMs,
+                        streamOptions,
+                    );
                 }
 
                 if (stopReason === "error" || stopReason === "aborted") {
@@ -111,6 +117,8 @@ async function* eventsForBlock(
     contentIndex: number,
     message: AssistantMessage,
     block: AssistantMessage["content"][number],
+    toolCallDeltaDelayMs: number | undefined,
+    streamOptions: StreamOptions,
 ): AsyncGenerator<AssistantMessageEvent> {
     if (block.type === "text") {
         yield { type: "text_start", contentIndex, partial: message };
@@ -130,6 +138,9 @@ async function* eventsForBlock(
         return;
     }
     yield { type: "toolcall_start", contentIndex, partial: message };
+    if (toolCallDeltaDelayMs !== undefined) {
+        await delay(toolCallDeltaDelayMs, streamOptions);
+    }
     yield {
         type: "toolcall_delta",
         contentIndex,

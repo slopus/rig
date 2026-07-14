@@ -7,6 +7,7 @@ import type { PartialRigConfig } from "./types.js";
 export async function writeRuntimeConfig(path: string, config: PartialRigConfig): Promise<void> {
     const defaults = config.defaults;
     const settings = config.settings;
+    const theme = config.theme;
     const document: {
         defaults?: {
             effort?: string;
@@ -15,6 +16,7 @@ export async function writeRuntimeConfig(path: string, config: PartialRigConfig)
             provider?: string;
             permission_mode?: string;
         };
+        theme?: Record<string, string>;
         settings?: {
             durable_global_event_queue?: boolean;
             show_reasoning?: boolean;
@@ -50,6 +52,10 @@ export async function writeRuntimeConfig(path: string, config: PartialRigConfig)
             document.settings.show_reasoning = settings.showReasoning;
         }
         if (settings.showUsage !== undefined) document.settings.show_usage = settings.showUsage;
+    }
+
+    if (theme !== undefined) {
+        document.theme = { ...theme };
     }
 
     await mkdir(dirname(path), { recursive: true });

@@ -296,6 +296,29 @@ permission_mode = "workspace_write"
 terminal session. Accepted values are `workspace_write`, `read_only`, and
 `full_access`, and `auto`.
 
+### Terminal theme
+
+Rig follows Codex terminal color semantics by default: primary text uses the
+terminal foreground, secondary text is dimmed, links and inline code are cyan,
+and status colors use the terminal's ANSI palette. Rig action labels keep the
+orange brand accent, while command text uses the normal terminal foreground.
+
+Override semantic roles in global or project-local `rig.toml`:
+
+```toml
+[theme]
+primary = "default"
+secondary = "dim"
+accent = "cyan"
+brand = "ansi:202"
+success = "green"
+warning = "yellow"
+error = "red"
+```
+
+Each role accepts `default`, `dim`, an ANSI color name such as `bright_cyan`, a
+palette index such as `ansi:202`, or a true-color value such as `#D97706`.
+
 ### Persistent goals
 
 Use `/goal` followed by an objective to start long-running work that may need

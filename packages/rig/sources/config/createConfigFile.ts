@@ -33,6 +33,7 @@ export async function createConfigFile(
             features: {
                 workflows: config.features.workflows,
             },
+            theme: config.theme,
             ...(config.docker === undefined
                 ? {}
                 : {

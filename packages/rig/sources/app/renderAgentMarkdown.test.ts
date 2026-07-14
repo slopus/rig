@@ -14,6 +14,8 @@ describe("renderAgentMarkdown", () => {
         const rendered = stripAnsiAndLinks(raw);
 
         expect(raw).toContain("\x1b[1m");
+        expect(raw).toContain("\x1b[39m");
+        expect(raw).not.toContain("\x1b[38;5;252m");
         expect(raw).not.toContain("\x1b[48;5;236m");
         expect(rendered).toContain("Plan");
         expect(rendered).toContain("- Build");
@@ -21,6 +23,17 @@ describe("renderAgentMarkdown", () => {
         expect(rendered).not.toContain("Build  agent");
         expect(rendered).toContain("agent");
         expect(rendered).toContain("const value = 1;");
+    });
+
+    it("does not leak dim code-fence styling into code or following prose", () => {
+        const raw = renderAgentMarkdown({
+            text: "```ts\nconst value = 1;\n```\n\nRendered normally.",
+            width: 64,
+            cwd: "/workspace",
+        }).join("\n");
+
+        expect(isDimAtText(raw, "const value = 1;")).toBe(false);
+        expect(isDimAtText(raw, "Rendered normally.")).toBe(false);
     });
 
     it("renders explicit markdown links as terminal hyperlinks", () => {
@@ -35,6 +48,7 @@ describe("renderAgentMarkdown", () => {
 
             expect(raw).toContain("file:///workspace/sources/app/CodingAssistantApp.ts#L12");
             expect(raw).toContain("https://example.com/docs");
+            expect(raw).toContain("\x1b[36m\x1b[4m\x1b[36mthe app");
             expect(rendered).toContain("the app");
         } finally {
             resetCapabilitiesCache();
@@ -109,4 +123,28 @@ function stripAnsiAndLinks(text: string): string {
 
 function visibleLength(text: string): number {
     return [...stripAnsiAndLinks(text)].length;
+}
+
+function isDimAtText(text: string, needle: string): boolean {
+    const needleIndex = text.indexOf(needle);
+    expect(needleIndex).toBeGreaterThanOrEqual(0);
+
+    let dim = false;
+    for (const match of text.slice(0, needleIndex).matchAll(/\x1b\[([0-9;]*)m/g)) {
+        const parameters = (match[1] ?? "0").split(";").map(Number);
+        for (let index = 0; index < parameters.length; index += 1) {
+            const parameter = parameters[index];
+            if ((parameter === 38 || parameter === 48) && parameters[index + 1] === 2) {
+                index += 4;
+                continue;
+            }
+            if ((parameter === 38 || parameter === 48) && parameters[index + 1] === 5) {
+                index += 2;
+                continue;
+            }
+            if (parameter === 0 || parameter === 22) dim = false;
+            if (parameter === 2) dim = true;
+        }
+    }
+    return dim;
 }

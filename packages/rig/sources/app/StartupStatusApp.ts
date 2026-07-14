@@ -12,13 +12,13 @@ import { createSelectionPanel } from "./createSelectionPanel.js";
 import { formatActivityElapsedTime } from "./formatActivityElapsedTime.js";
 import { formatDaemonRestartMessage } from "./formatDaemonRestartMessage.js";
 import { renderActivityWave } from "./renderActivityWave.js";
+import { DEFAULT_TERMINAL_THEME } from "./defaultTerminalTheme.js";
+import type { TerminalTheme } from "./TerminalTheme.js";
 
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
 const DIM = "\x1b[2m";
 const NOT_BOLD_OR_DIM = "\x1b[22m";
-const RIG_ORANGE = "\x1b[38;5;202m";
-const SURFACE_MUTED_FG = "\x1b[38;5;245m";
 const ACTIVITY_ANIMATION_MS = 120;
 
 export interface StartupStatusAppOptions {
@@ -26,6 +26,7 @@ export interface StartupStatusAppOptions {
     now?: () => number;
     tui: TUI;
     version: string;
+    theme?: TerminalTheme;
 }
 
 export class StartupStatusApp implements Component, Focusable {
@@ -33,6 +34,7 @@ export class StartupStatusApp implements Component, Focusable {
     readonly #now: () => number;
     readonly #tui: TUI;
     readonly #version: string;
+    readonly #theme: TerminalTheme;
 
     focused = false;
     #activityAnimationFrame = 0;
@@ -47,6 +49,7 @@ export class StartupStatusApp implements Component, Focusable {
         this.#startedAtMs = this.#now();
         this.#tui = options.tui;
         this.#version = options.version;
+        this.#theme = options.theme ?? DEFAULT_TERMINAL_THEME;
     }
 
     invalidate(): void {}
@@ -55,7 +58,7 @@ export class StartupStatusApp implements Component, Focusable {
         const safeWidth = Math.max(1, width);
         const lines = [
             ...this.#renderStartupBox(safeWidth, [
-                `${RIG_ORANGE}>_${RESET} ${BOLD}Rig${NOT_BOLD_OR_DIM} ${this.#version}`,
+                `${this.#theme.brand}>_${RESET} ${BOLD}Rig${NOT_BOLD_OR_DIM} ${this.#version}`,
                 "Agentic coding CLI for local project work.",
                 "Keeps sessions in a private local daemon.",
                 `Directory: ${this.#directoryName()}`,
@@ -79,6 +82,7 @@ export class StartupStatusApp implements Component, Focusable {
                 resolve(restart);
             };
             this.#selectionPanel = createSelectionPanel({
+                theme: this.#theme,
                 items: [
                     {
                         description: "Stop the running daemon and continue with this CLI.",
@@ -160,9 +164,9 @@ export class StartupStatusApp implements Component, Focusable {
     #renderStatusLine(width: number): string {
         const elapsed = formatActivityElapsedTime(this.#now() - this.#startedAtMs);
         const elapsedSuffix =
-            elapsed === undefined ? "" : ` ${DIM}${SURFACE_MUTED_FG}(${elapsed})${RESET}`;
+            elapsed === undefined ? "" : ` ${DIM}${this.#theme.secondary}(${elapsed})${RESET}`;
         return this.#fitLine(
-            `${RIG_ORANGE}•${RESET} ${renderActivityWave(this.#status, this.#activityAnimationFrame)}${elapsedSuffix}`,
+            `${this.#theme.brand}•${RESET} ${renderActivityWave(this.#status, this.#activityAnimationFrame)}${elapsedSuffix}`,
             width,
         );
     }

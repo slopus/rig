@@ -38,12 +38,25 @@ export interface PartialConfigFeatures {
     workflows?: boolean;
 }
 
+export interface ConfigTheme {
+    accent: string;
+    brand: string;
+    error: string;
+    primary: string;
+    secondary: string;
+    success: string;
+    warning: string;
+}
+
+export type PartialConfigTheme = Partial<ConfigTheme>;
+
 export interface RigConfig {
     docker?: DockerExecutionConfig;
     defaults: ConfigDefaults;
     features: ConfigFeatures;
     mcpServers: Readonly<Record<string, McpServerConfig>>;
     settings: ConfigSettings;
+    theme: ConfigTheme;
 }
 
 export interface PartialRigConfig {
@@ -52,6 +65,7 @@ export interface PartialRigConfig {
     features?: PartialConfigFeatures;
     mcpServers?: Readonly<Record<string, McpServerConfig>>;
     settings?: PartialConfigSettings;
+    theme?: PartialConfigTheme;
 }
 
 export interface ConfigPaths {

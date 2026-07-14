@@ -19,6 +19,7 @@ import { type CreateCodingAssistantAgentOptions } from "./createCodingAssistantA
 import { createStopOnceHandler } from "./createStopOnceHandler.js";
 import { ensureSessionCanResume } from "./ensureSessionCanResume.js";
 import { readPackageVersion } from "./readPackageVersion.js";
+import { resolveTerminalTheme } from "./resolveTerminalTheme.js";
 import { ScrollbackPreservingTerminal } from "./ScrollbackPreservingTerminal.js";
 import { ScrollbackPreservingTUI } from "./ScrollbackPreservingTUI.js";
 import { StartupStatusApp } from "./StartupStatusApp.js";
@@ -80,6 +81,8 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     let durableGlobalEventQueue = loadedConfig.config.settings.durableGlobalEventQueue;
     let showReasoning = options.showReasoning ?? loadedConfig.config.settings.showReasoning;
     let showUsage = options.showUsage ?? loadedConfig.config.settings.showUsage;
+    const startupTheme = resolveTerminalTheme(loadedConfig.config.theme);
+    const runtimeTheme = loadedConfig.sources.runtime.values.theme;
 
     // Keep the terminal in TUI mode while the daemon starts so startup work is visible.
     const terminal = new ScrollbackPreservingTerminal();
@@ -87,11 +90,13 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     const tui = new ScrollbackPreservingTUI(terminal, false);
     const startup = new StartupStatusApp({
         cwd,
+        theme: startupTheme,
         tui,
         version: readPackageVersion(),
     });
     startup.start();
     terminal.write("\x1b[?1004h");
+    const terminalBackground = tui.queryTerminalBackgroundColor({ timeoutMs: 250 });
 
     const { history, localServer, modelCatalog, session } = await (async () => {
         try {
@@ -131,6 +136,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         }
     })();
     const processManager = new NativeProxessManager();
+    const theme = resolveTerminalTheme(loadedConfig.config.theme, await terminalBackground);
     const sessionCwd = session.session.cwd;
     if (session.session.title !== undefined) {
         terminal.setTitle(`Rig - ${sanitizeTerminalTitle(session.session.title)}`);
@@ -201,6 +207,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
                     showReasoning,
                     showUsage,
                 },
+                ...(runtimeTheme === undefined ? {} : { theme: runtimeTheme }),
             }),
         onSettingsChange: async (settings) => {
             durableGlobalEventQueue = settings.durableGlobalEventQueue;
@@ -214,6 +221,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
                     permissionMode: agent.permissionMode,
                 },
                 settings,
+                ...(runtimeTheme === undefined ? {} : { theme: runtimeTheme }),
             });
             await localServer.client.updateDaemonConfig({
                 settings: { durableGlobalEventQueue },
@@ -234,6 +242,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         durableGlobalEventQueue,
         showReasoning,
         showUsage,
+        theme,
         tui,
         version: readPackageVersion(),
     });

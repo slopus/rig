@@ -20,11 +20,13 @@ export type {
     ConfigPaths,
     ConfigSettings,
     ConfigSource,
+    ConfigTheme,
     LoadedConfig,
     LoadConfigOptions,
     RigConfig,
     PartialConfigDefaults,
     PartialConfigFeatures,
     PartialConfigSettings,
+    PartialConfigTheme,
     PartialRigConfig,
 } from "./types.js";

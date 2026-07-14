@@ -66,24 +66,26 @@ describe("CodingAssistantApp", () => {
         expect(rendered).toContain("╰");
         expect(rendered).not.toContain("Tools:");
         expect(rendered).not.toContain("cwd:");
-        expect(raw).toContain("\x1b[48;5;236m");
-        expect(raw).toContain("\x1b[38;5;202m\x1b[1m›\x1b[22m\x1b[38;5;255m");
-        expect(raw).toContain("\x1b[38;5;252mGPT Test");
-        expect(raw).toContain("\x1b[38;5;245m/workspace");
+        expect(raw).toContain("\x1b[48;5;235m");
+        expect(raw).not.toContain("\x1b[48;5;236m");
+        expect(raw).toContain("\x1b[38;5;202m\x1b[1m›\x1b[22m\x1b[39m");
+        expect(raw).toContain("\x1b[33mgpt-test off");
+        expect(raw).toContain("\x1b[32m/workspace");
         expect(rendered).toContain("› Ask Rig to do anything");
         expect(rendered).not.toContain("›  Ask Rig to do anything");
-        expect(rendered).toContain("GPT Test");
-        expect(rendered).toContain("GPT Test Off");
+        expect(rendered).toContain("gpt-test off");
         expect(rendered).toContain("/workspace");
-        expect(rendered).toContain("Full access");
+        expect(rendered).toContain("main [default]");
+        expect(rendered).toContain("full access");
+        expect(rendered).toContain("gpt-test off · /workspace · main [default] · full access");
         expect(rendered).not.toContain("full_access");
         expect(rendered).not.toContain("reasoning off");
         expect(rendered).not.toContain("/clear /abort /quit");
 
         app.handleInput("h");
         const typedInput = app.render(80).join("\n");
-        expect(typedInput).toContain("\x1b[38;5;255m");
-        expect(typedInput).toContain("\x1b[38;5;202m\x1b[1m›\x1b[22m\x1b[38;5;255m");
+        expect(typedInput).toContain("\x1b[39m");
+        expect(typedInput).toContain("\x1b[38;5;202m\x1b[1m›\x1b[22m\x1b[39m");
         expect(stripAnsi(typedInput)).toContain("› h");
 
         const rawLines = app.render(80);
@@ -91,13 +93,13 @@ describe("CodingAssistantApp", () => {
         expect(rawLines.at(-1)).toBe("");
         expect(rawLines.at(-2)).toBe("");
         const inputLineIndex = strippedLines.findIndex((line) => line.includes("› h"));
-        const footerLineIndex = strippedLines.findIndex((line) => line.startsWith("  GPT Test"));
+        const footerLineIndex = strippedLines.findIndex((line) => line.startsWith("  gpt-test"));
         expect(inputLineIndex).toBeGreaterThan(0);
         expect(footerLineIndex).toBe(inputLineIndex + 3);
-        expect(rawLines[inputLineIndex - 1]).toContain("\x1b[48;5;236m");
-        expect(rawLines[inputLineIndex]).toContain("\x1b[48;5;236m");
-        expect(rawLines[inputLineIndex]).toContain("\x1b[38;5;255m");
-        expect(rawLines[inputLineIndex + 1]).toContain("\x1b[48;5;236m");
+        expect(rawLines[inputLineIndex - 1]).toContain("\x1b[48;5;235m");
+        expect(rawLines[inputLineIndex]).toContain("\x1b[48;5;235m");
+        expect(rawLines[inputLineIndex]).toContain("\x1b[39m");
+        expect(rawLines[inputLineIndex + 1]).toContain("\x1b[48;5;235m");
         expect(rawLines[inputLineIndex + 2]).toBe("");
     });
 
@@ -209,7 +211,7 @@ describe("CodingAssistantApp", () => {
         );
     });
 
-    it("renders footer model and cwd with neutral distinct colors", () => {
+    it("renders the lower-case Codex footer with distinct model and cwd colors", () => {
         const codexModel = defineModel({
             id: "openai/gpt-test",
             name: "GPT Test",
@@ -238,9 +240,11 @@ describe("CodingAssistantApp", () => {
         });
 
         const codexRaw = codexApp.render(80).join("\n");
-        expect(codexRaw).toContain("\x1b[38;5;252mGPT Test");
-        expect(codexRaw).toContain("\x1b[38;5;245m/workspace");
-        expect(codexRaw).not.toContain("\x1b[36mGPT Test");
+        expect(codexRaw).toContain("\x1b[33mgpt-test off");
+        expect(codexRaw).toContain("\x1b[32m/workspace");
+        expect(stripAnsi(codexRaw)).toContain(
+            "gpt-test off · /workspace · main [default] · full access",
+        );
 
         const claudeModel = defineModel({
             id: "claude-sonnet-test",
@@ -270,9 +274,8 @@ describe("CodingAssistantApp", () => {
         });
 
         const claudeRaw = claudeApp.render(80).join("\n");
-        expect(claudeRaw).toContain("\x1b[38;5;252mClaude Sonnet");
-        expect(claudeRaw).toContain("\x1b[38;5;245m/workspace");
-        expect(claudeRaw).not.toContain("\x1b[38;2;215;119;87mClaude Sonnet");
+        expect(claudeRaw).toContain("\x1b[33mclaude-sonnet-test off");
+        expect(claudeRaw).toContain("\x1b[32m/workspace");
     });
 
     it("uses the model id without vendor as the displayed model name", () => {
@@ -306,7 +309,7 @@ describe("CodingAssistantApp", () => {
 
         const rendered = stripAnsi(app.render(80).join("\n"));
         expect(rendered).not.toContain("Model: GPT-5.5");
-        expect(rendered).toContain("GPT-5.5 Off • /workspace");
+        expect(rendered).toContain("gpt-5.5 off · /workspace");
         expect(rendered).not.toContain("gpt-5-5");
         expect(rendered).not.toContain("reasoning off");
     });
@@ -340,11 +343,11 @@ describe("CodingAssistantApp", () => {
             tui: fakeTui(),
         });
 
-        expect(stripAnsi(app.render(80).join("\n"))).toContain("GPT Test Low");
+        expect(stripAnsi(app.render(80).join("\n"))).toContain("gpt-test low");
 
         app.handleInput("\x1b.");
         expect(agent.snapshot().effort).toBe("medium");
-        expect(stripAnsi(app.render(80).join("\n"))).toContain("GPT Test Medium");
+        expect(stripAnsi(app.render(80).join("\n"))).toContain("gpt-test medium");
 
         app.handleInput("\x1b,");
         expect(agent.snapshot().effort).toBe("low");
@@ -409,7 +412,7 @@ describe("CodingAssistantApp", () => {
             stripAnsi(line).includes("→ GPT Small"),
         );
         expect(modelMenu).toContain("Choose Model");
-        expect(modelMenuTitle).toContain("\x1b[48;5;236m");
+        expect(modelMenuTitle).toContain("\x1b[48;5;235m");
         expect(stripAnsi(modelMenuTitle ?? "")).toContain("Choose Model");
         expect(stripAnsi(modelMenuTitle ?? "")).not.toContain("›");
         expect(stripAnsi(modelMenuTitle ?? "")).not.toContain("│");
@@ -445,7 +448,7 @@ describe("CodingAssistantApp", () => {
         expect(defaultModelChanges).toEqual([
             { modelId: proModel.id, providerId: "codex", effort: "high" },
         ]);
-        expect(rendered).toContain("GPT Pro High");
+        expect(rendered).toContain("gpt-pro high");
         expect(rendered).toContain("Model changed to GPT Pro with High reasoning.");
         expect(rendered).toContain("Ask Rig to do anything");
     });
@@ -719,7 +722,7 @@ describe("CodingAssistantApp", () => {
         const rawLines = app.render(80);
         const rendered = stripAnsi(rawLines.join("\n"));
         const commandLine = rawLines.find((line) => stripAnsi(line).includes("/model"));
-        expect(commandLine).not.toContain("\x1b[48;5;236m");
+        expect(commandLine).not.toContain("\x1b[48;5;235m");
         expect(commandLine).toContain("\x1b[38;5;202m");
         expect(commandLine).not.toContain("\x1b[1m");
         expect(rendered).toContain("/model");
@@ -1202,7 +1205,7 @@ describe("CodingAssistantApp", () => {
         );
         expect(mentionLine).toBeDefined();
         expect(mentionLine).toContain("\x1b[38;5;202m");
-        expect(mentionLine).not.toContain("\x1b[48;5;236m");
+        expect(mentionLine).not.toContain("\x1b[48;5;235m");
         expect(stripAnsi(mentionLine ?? "")).not.toContain("@CodingAssistantApp.ts");
         expect(stripAnsi(mentionLine ?? "")).toContain(
             "packages/rig/sources/app/CodingAssistantApp.ts",
@@ -1984,7 +1987,7 @@ describe("CodingAssistantApp", () => {
         app.handleInput("\x1b[D");
 
         const inputLine = app.render(80).find((line) => stripAnsi(line).includes("› ab"));
-        expect(inputLine).toContain("\x1b[48;5;244m\x1b[38;5;232mb\x1b[48;5;236m\x1b[38;5;255m");
+        expect(inputLine).toContain("\x1b[48;5;244m\x1b[38;5;232mb\x1b[48;5;235m\x1b[39m");
     });
 
     it("inserts bracketed paste into the composer", () => {
@@ -2313,9 +2316,9 @@ describe("CodingAssistantApp", () => {
         const renderedLines = rawLines.map(stripAnsi);
         const inputLineIndex = renderedLines.findIndex((line) => line.includes("› h"));
         expect(inputLineIndex).toBeGreaterThan(0);
-        expect(rawLines[inputLineIndex - 1]).toContain("\x1b[48;5;236m");
-        expect(rawLines[inputLineIndex]).toContain("\x1b[38;5;255m");
-        expect(rawLines[inputLineIndex + 1]).toContain("\x1b[48;5;236m");
+        expect(rawLines[inputLineIndex - 1]).toContain("\x1b[48;5;235m");
+        expect(rawLines[inputLineIndex]).toContain("\x1b[39m");
+        expect(rawLines[inputLineIndex + 1]).toContain("\x1b[48;5;235m");
     });
 
     it("clears input on the first Ctrl+C and exits on the next press", async () => {
@@ -2654,7 +2657,7 @@ describe("CodingAssistantApp", () => {
         expect(rendered).toContain("• hello from agent");
         const composerLines = app
             .render(80)
-            .filter((line) => line.includes("\x1b[48;5;236m") && line.includes("\x1b[38;5;255m"));
+            .filter((line) => line.includes("\x1b[48;5;235m") && line.includes("\x1b[39m"));
         expect(composerLines.length).toBeGreaterThanOrEqual(1);
     });
 
@@ -2762,7 +2765,10 @@ describe("CodingAssistantApp", () => {
 
         const raw = app.render(80).join("\n");
         const rendered = stripAnsi(raw);
-        expect(raw).toContain("\x1b[38;5;202m\x1b[1mRan");
+        expect(raw).toContain(
+            "\x1b[38;5;202m\x1b[1mRan\x1b[22m\x1b[39m printf 'line one\\nline two\\n'",
+        );
+        expect(raw).not.toContain("\x1b[38;5;202mprintf 'line one");
         expect(rendered).toContain("• Ran printf 'line one\\nline two\\n' (Shell: /bin/zsh)");
         expect(rendered).toContain("└ line one (+1 lines)");
         const resultLines = rendered.split("\n").filter((line) => line.trimStart().startsWith("└"));
@@ -3158,7 +3164,8 @@ describe("CodingAssistantApp", () => {
 
         const renderedWhileToolCallStreams = stripAnsi(app.render(80).join("\n"));
         expect(renderedWhileToolCallStreams).toContain("• I will inspect files.");
-        expect(renderedWhileToolCallStreams).toContain("• Working");
+        expect(renderedWhileToolCallStreams).toContain("◦ Working");
+        expect(renderedWhileToolCallStreams.match(/◦ Working/gu)).toHaveLength(1);
         expect(renderedWhileToolCallStreams).not.toContain("printf ok");
         expect(renderedWhileToolCallStreams).not.toContain("Ran");
         expect(renderedWhileToolCallStreams).not.toContain("Used Working");
@@ -3169,8 +3176,48 @@ describe("CodingAssistantApp", () => {
         const renderedAfterToolCall = stripAnsi(app.render(80).join("\n"));
         expect(renderedAfterToolCall).toContain("• Ran printf ok");
         expect(renderedAfterToolCall).toContain("└ ok");
-        expect(renderedAfterToolCall).not.toContain("• Working");
+        expect(renderedAfterToolCall).not.toContain("◦ Working");
         expect(renderedAfterToolCall.match(/Ran printf ok/gu)).toHaveLength(1);
+    });
+
+    it("removes an incomplete Working placeholder when a streamed tool call is interrupted", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const gate = createToolCallStartStreamGate();
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream: () => gate.stream(),
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        submit(app, "status");
+        await gate.startedToolCall;
+        app.handleInput("\x1b");
+
+        const interrupted = stripAnsi(app.render(80).join("\n"));
+        expect(interrupted).toContain("Session interrupted");
+        expect(interrupted).not.toContain("Working");
+        expect(interrupted).not.toContain("printf ok");
+
+        gate.release();
+        await app.waitForIdle();
     });
 
     it("sanitizes terminal controls from shell progress and results", async () => {
@@ -3353,7 +3400,8 @@ describe("CodingAssistantApp", () => {
         expect(renderedDuringSecondTurn).toContain(
             "────────────────────────────────────────────────────────────────────────────────",
         );
-        expect(renderedDuringSecondTurn).toContain("• Working");
+        expect(renderedDuringSecondTurn).toContain("◦ Working");
+        expect(renderedDuringSecondTurn.match(/◦ Working/gu)).toHaveLength(1);
         expect(renderedDuringSecondTurn).not.toContain("• after tools");
 
         gate.release();
@@ -3398,14 +3446,14 @@ describe("CodingAssistantApp", () => {
 
         const rawWhileThinking = app.render(80);
         const thinkingLine =
-            rawWhileThinking.find((line) => stripAnsi(line).includes("• Thinking")) ?? "";
+            rawWhileThinking.find((line) => stripAnsi(line).includes("◦ Thinking")) ?? "";
         const renderedWhileThinking = stripAnsi(rawWhileThinking.join("\n"));
-        expect(renderedWhileThinking).toContain("• Thinking (1m 5s • Esc to interrupt)");
-        expect(renderedWhileThinking).toContain("GPT Test High");
+        expect(renderedWhileThinking).toContain("◦ Thinking (1m 5s • esc to interrupt)");
+        expect(renderedWhileThinking).toContain("gpt-test high");
         expect(renderedWhileThinking).not.toContain("Idle |");
         expect(thinkingLine).toContain("\x1b[38;5;255m");
         expect(thinkingLine).toContain("\x1b[38;5;244m");
-        expect(thinkingLine).toContain("\x1b[2m\x1b[38;5;245m(1m 5s • Esc to interrupt)");
+        expect(thinkingLine).toContain("\x1b[2m\x1b[2m\x1b[39m(1m 5s • esc to interrupt)");
         expect(thinkingLine).not.toContain("\x1b[38;5;255m(");
         expect(thinkingLine).not.toContain("\x1b[38;5;244m(");
 
@@ -3843,7 +3891,7 @@ describe("CodingAssistantApp", () => {
         await gate.startedText;
 
         const renderedAfterTextStart = stripAnsi(app.render(80).join("\n"));
-        expect(renderedAfterTextStart).toContain("• Working");
+        expect(renderedAfterTextStart).toContain("◦ Working");
         expect(renderedAfterTextStart).not.toContain("• \n");
 
         gate.release();
@@ -3851,7 +3899,7 @@ describe("CodingAssistantApp", () => {
 
         const renderedAfterDelta = stripAnsi(app.render(80).join("\n"));
         expect(renderedAfterDelta).toContain("• done");
-        expect(renderedAfterDelta).not.toContain("• Working");
+        expect(renderedAfterDelta).not.toContain("◦ Working");
     });
 
     it("commits stable transcript rows before a width-change redraw", async () => {

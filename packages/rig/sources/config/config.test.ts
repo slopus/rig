@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createConfigFile } from "./createConfigFile.js";
+import { DEFAULT_RIG_CONFIG } from "./defaultConfig.js";
 import { createProjectConfigSecurityNotice } from "./createProjectConfigSecurityNotice.js";
 import { loadConfig } from "./loadConfig.js";
 import { parseConfigToml } from "./parseConfigToml.js";
@@ -12,6 +13,12 @@ import { writeRuntimeConfigDefaults } from "./writeRuntimeConfigDefaults.js";
 import { writeDaemonSettings } from "./writeDaemonSettings.js";
 
 describe("config", () => {
+    it("parses a standalone theme table", () => {
+        expect(parseConfigToml('[theme]\nprimary = "#123456"\n')).toEqual({
+            theme: { primary: "#123456" },
+        });
+    });
+
     it("parses supported defaults with a TOML parser", () => {
         expect(
             parseConfigToml(`
@@ -26,6 +33,11 @@ permission_mode = "auto"
 [settings]
 durable_global_event_queue = true
 show_reasoning = false
+
+[theme]
+primary = "#202124"
+secondary = "bright_black"
+brand = "ansi:202"
 
 [features]
 workflows = false
@@ -61,6 +73,11 @@ mounts = [
             settings: {
                 durableGlobalEventQueue: true,
                 showReasoning: false,
+            },
+            theme: {
+                brand: "ansi:202",
+                primary: "#202124",
+                secondary: "bright_black",
             },
             features: {
                 workflows: false,
@@ -195,6 +212,7 @@ effort = "minimal"
                     workflows: false,
                 },
                 mcpServers: {},
+                theme: DEFAULT_RIG_CONFIG.theme,
             });
             await writeRuntimeConfigDefaults(runtimePath, {
                 modelId: "openai/gpt-5.5",
@@ -211,6 +229,7 @@ effort = "minimal"
                     showReasoning: false,
                     showUsage: false,
                 },
+                theme: DEFAULT_RIG_CONFIG.theme,
             });
 
             expect(await readFile(configPath, "utf8")).toBe(
@@ -229,6 +248,15 @@ effort = "minimal"
                     "[features]",
                     "workflows = false",
                     "",
+                    "[theme]",
+                    'accent = "cyan"',
+                    'brand = "ansi:202"',
+                    'error = "red"',
+                    'primary = "default"',
+                    'secondary = "dim"',
+                    'success = "green"',
+                    'warning = "yellow"',
+                    "",
                 ].join("\n"),
             );
             expect(await readFile(runtimePath, "utf8")).toBe(
@@ -242,6 +270,15 @@ effort = "minimal"
                     "[settings]",
                     "show_reasoning = false",
                     "show_usage = false",
+                    "",
+                    "[theme]",
+                    'accent = "cyan"',
+                    'brand = "ansi:202"',
+                    'error = "red"',
+                    'primary = "default"',
+                    'secondary = "dim"',
+                    'success = "green"',
+                    'warning = "yellow"',
                     "",
                 ].join("\n"),
             );

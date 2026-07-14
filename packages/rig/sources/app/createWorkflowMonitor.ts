@@ -12,17 +12,12 @@ import { humanizeWorkflowName, serializeWorkflowValue } from "../workflows/index
 import { formatActivityElapsedTime } from "./formatActivityElapsedTime.js";
 import { humanizeWorkflowStatus } from "./humanizeWorkflowStatus.js";
 import { sanitizeTerminalText } from "./sanitizeTerminalText.js";
+import { DEFAULT_TERMINAL_THEME } from "./defaultTerminalTheme.js";
+import type { TerminalTheme } from "./TerminalTheme.js";
 
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
 const DIM = "\x1b[2m";
-const ORANGE = "\x1b[38;5;202m";
-const GREEN = "\x1b[32m";
-const RED = "\x1b[31m";
-const YELLOW = "\x1b[33m";
-const SURFACE_BG = "\x1b[48;5;236m";
-const INPUT_FG = "\x1b[38;5;255m";
-const MUTED = "\x1b[38;5;245m";
 const MAX_LIST_ITEMS = 8;
 const MAX_DETAIL_LOGS = 6;
 const MAX_DETAIL_RESULT_LINES = 8;
@@ -30,13 +25,6 @@ const MAX_DETAIL_TEXT_CHARS = 4_000;
 const MAX_DETAIL_LOG_CHARS = 500;
 const MAX_DETAIL_ACTIONS = 8;
 const MAX_INSPECTION_LINES = 14;
-const WORKFLOW_STATUS_COLORS = {
-    completed: GREEN,
-    error: RED,
-    running: ORANGE,
-    stopped: YELLOW,
-} as const;
-
 export interface CreateWorkflowMonitorOptions {
     getSubagents(): readonly SubagentSummary[];
     getWorkflows(): readonly WorkflowRun[];
@@ -45,6 +33,7 @@ export interface CreateWorkflowMonitorOptions {
     onCancel(): void;
     onRequestRender?(): void;
     onStop(runId: string): void | Promise<void>;
+    theme?: TerminalTheme;
 }
 
 export function createWorkflowMonitor(options: CreateWorkflowMonitorOptions): Component {
@@ -58,6 +47,7 @@ class WorkflowMonitor implements Component {
     readonly #onCancel: () => void;
     readonly #onRequestRender: (() => void) | undefined;
     readonly #onStop: (runId: string) => void | Promise<void>;
+    readonly #theme: TerminalTheme;
 
     #detailRunId: string | undefined;
     #detailSelectionIndex = 0;
@@ -74,6 +64,7 @@ class WorkflowMonitor implements Component {
         this.#onCancel = options.onCancel;
         this.#onRequestRender = options.onRequestRender;
         this.#onStop = options.onStop;
+        this.#theme = options.theme ?? DEFAULT_TERMINAL_THEME;
     }
 
     invalidate(): void {}
@@ -165,12 +156,14 @@ class WorkflowMonitor implements Component {
         const running = workflows.filter((workflow) => workflow.status === "running").length;
         const lines = [
             "",
-            `  ${ORANGE}${BOLD}Workflows${RESET}${SURFACE_BG}${INPUT_FG}`,
-            `  ${MUTED}${running === 0 ? "No active workflows" : `${running} active`} · Updates live${RESET}${SURFACE_BG}${INPUT_FG}`,
+            `  ${this.#theme.brand}${BOLD}Workflows${RESET}${this.#theme.inputBackground}${this.#theme.primary}`,
+            `  ${this.#theme.secondary}${running === 0 ? "No active workflows" : `${running} active`} · Updates live${RESET}${this.#theme.inputBackground}${this.#theme.primary}`,
             "",
         ];
         if (workflows.length === 0) {
-            lines.push(`  ${MUTED}No workflows have been started in this session.${RESET}`);
+            lines.push(
+                `  ${this.#theme.secondary}No workflows have been started in this session.${RESET}`,
+            );
         } else {
             this.#selectedIndex = Math.min(this.#selectedIndex, workflows.length - 1);
             const start = Math.max(
@@ -195,12 +188,16 @@ class WorkflowMonitor implements Component {
                 const content = `${marker}${label}  ${humanizeWorkflowStatus(workflow.status)} · ${agents}${phase}`;
                 lines.push(
                     selected
-                        ? `  ${ORANGE}${truncateToWidth(content, Math.max(1, width - 2))}${RESET}`
+                        ? `  ${this.#theme.brand}${truncateToWidth(content, Math.max(1, width - 2))}${RESET}`
                         : `  ${truncateToWidth(content, Math.max(1, width - 2))}`,
                 );
             }
         }
-        lines.push("", `  ${DIM}${MUTED}Use ↑/↓ to move, Enter to open, Esc to close.${RESET}`, "");
+        lines.push(
+            "",
+            `  ${DIM}${this.#theme.secondary}Use ↑/↓ to move, Enter to open, Esc to close.${RESET}`,
+            "",
+        );
         return lines;
     }
 
@@ -211,8 +208,8 @@ class WorkflowMonitor implements Component {
         const agents = `${workflow.agentCount} agent${workflow.agentCount === 1 ? "" : "s"}`;
         const lines = [
             "",
-            `  ${ORANGE}${BOLD}${sanitizeTerminalText(humanizeWorkflowName(workflow.name))}${RESET}${SURFACE_BG}${INPUT_FG}`,
-            `  ${WORKFLOW_STATUS_COLORS[workflow.status]}${humanizeWorkflowStatus(workflow.status)}${RESET}${SURFACE_BG}${INPUT_FG} ${MUTED}· ${agents} · ${elapsed}${RESET}`,
+            `  ${this.#theme.brand}${BOLD}${sanitizeTerminalText(humanizeWorkflowName(workflow.name))}${RESET}${this.#theme.inputBackground}${this.#theme.primary}`,
+            `  ${this.#statusColor(workflow.status)}${humanizeWorkflowStatus(workflow.status)}${RESET}${this.#theme.inputBackground}${this.#theme.primary} ${this.#theme.secondary}· ${agents} · ${elapsed}${RESET}`,
             "",
             ...wrapTextWithAnsi(
                 sanitizeTerminalText(workflow.description.slice(0, MAX_DETAIL_TEXT_CHARS)),
@@ -222,7 +219,7 @@ class WorkflowMonitor implements Component {
         if (workflow.phase !== undefined) {
             lines.push(
                 "",
-                `  ${MUTED}${workflow.status === "running" ? "Current phase" : "Last phase"}${RESET}`,
+                `  ${this.#theme.secondary}${workflow.status === "running" ? "Current phase" : "Last phase"}${RESET}`,
                 `  ${sanitizeTerminalText(workflow.phase.slice(0, MAX_DETAIL_LOG_CHARS))}`,
             );
         }
@@ -232,7 +229,7 @@ class WorkflowMonitor implements Component {
         if (logs.length > 0) {
             lines.push(
                 "",
-                `  ${MUTED}Progress${RESET}`,
+                `  ${this.#theme.secondary}Progress${RESET}`,
                 ...logs.flatMap((log) =>
                     wrapTextWithAnsi(
                         `• ${sanitizeTerminalText(log.slice(0, MAX_DETAIL_LOG_CHARS))}`,
@@ -251,7 +248,7 @@ class WorkflowMonitor implements Component {
                 .slice(0, MAX_DETAIL_RESULT_LINES);
             lines.push(
                 "",
-                `  ${MUTED}${workflow.error === undefined ? "Result" : "Error"}${RESET}`,
+                `  ${this.#theme.secondary}${workflow.error === undefined ? "Result" : "Error"}${RESET}`,
                 ...resultLines.map((line) => `  ${line}`),
             );
         }
@@ -274,7 +271,7 @@ class WorkflowMonitor implements Component {
                 actions.length - MAX_DETAIL_ACTIONS,
             ),
         );
-        lines.push("", `  ${MUTED}Inspect${RESET}`);
+        lines.push("", `  ${this.#theme.secondary}Inspect${RESET}`);
         for (const [offset, action] of actions
             .slice(actionStart, actionStart + MAX_DETAIL_ACTIONS)
             .entries()) {
@@ -282,13 +279,13 @@ class WorkflowMonitor implements Component {
             const content = `${selected ? "→ " : "  "}${action.label}`;
             lines.push(
                 selected
-                    ? `  ${ORANGE}${truncateToWidth(content, contentWidth)}${RESET}`
+                    ? `  ${this.#theme.brand}${truncateToWidth(content, contentWidth)}${RESET}`
                     : `  ${truncateToWidth(content, contentWidth)}`,
             );
         }
         lines.push(
             "",
-            `  ${DIM}${MUTED}Use ↑/↓ to move · Enter to open · ${workflow.status === "running" ? "S to stop · " : ""}Esc to return.${RESET}`,
+            `  ${DIM}${this.#theme.secondary}Use ↑/↓ to move · Enter to open · ${workflow.status === "running" ? "S to stop · " : ""}Esc to return.${RESET}`,
             "",
         );
         return lines;
@@ -300,14 +297,14 @@ class WorkflowMonitor implements Component {
         const content = source.split("\n").flatMap((line, index) => {
             const prefix = `${String(index + 1).padStart(4)}  `;
             const wrapped = wrapTextWithAnsi(
-                `${MUTED}${prefix}${RESET}${sanitizeTerminalText(line)}`,
+                `${this.#theme.secondary}${prefix}${RESET}${sanitizeTerminalText(line)}`,
                 contentWidth,
             );
-            return wrapped.length === 0 ? [`${MUTED}${prefix}${RESET}`] : wrapped;
+            return wrapped.length === 0 ? [`${this.#theme.secondary}${prefix}${RESET}`] : wrapped;
         });
         return this.#renderInspection({
             content,
-            color: ORANGE,
+            color: this.#theme.brand,
             kind: "Workflow code",
             title: humanizeWorkflowName(workflow.name),
             width,
@@ -326,10 +323,10 @@ class WorkflowMonitor implements Component {
         const prompt = agent.prompt ?? "The incoming prompt is not available.";
         const latestText = agent.latestText ?? "No text response yet.";
         const content = [
-            `${MUTED}Incoming prompt${RESET}`,
+            `${this.#theme.secondary}Incoming prompt${RESET}`,
             ...wrapTextWithAnsi(sanitizeTerminalText(prompt), contentWidth),
             "",
-            `${MUTED}Latest message${RESET}`,
+            `${this.#theme.secondary}Latest message${RESET}`,
             ...wrapTextWithAnsi(sanitizeTerminalText(latestText), contentWidth),
         ];
         return this.#renderInspection({
@@ -362,14 +359,14 @@ class WorkflowMonitor implements Component {
                 : ` · Lines ${this.#inspectionScrollOffset + 1}-${this.#inspectionScrollOffset + visible.length} of ${options.content.length}`;
         return [
             "",
-            `  ${options.color}${BOLD}${sanitizeTerminalText(options.kind)}${RESET}${SURFACE_BG}${INPUT_FG} ${sanitizeTerminalText(options.title)}`,
+            `  ${options.color}${BOLD}${sanitizeTerminalText(options.kind)}${RESET}${this.#theme.inputBackground}${this.#theme.primary} ${sanitizeTerminalText(options.title)}`,
             ...(options.status === undefined
                 ? []
-                : [`  ${MUTED}${sanitizeTerminalText(options.status)}${RESET}`]),
+                : [`  ${this.#theme.secondary}${sanitizeTerminalText(options.status)}${RESET}`]),
             "",
             ...visible.map((line) => `  ${line}`),
             "",
-            `  ${DIM}${MUTED}${options.content.length > MAX_INSPECTION_LINES ? "Use ↑/↓ to scroll" : "All content visible"}${scrollStatus} · Esc to return.${RESET}`,
+            `  ${DIM}${this.#theme.secondary}${options.content.length > MAX_INSPECTION_LINES ? "Use ↑/↓ to scroll" : "All content visible"}${scrollStatus} · Esc to return.${RESET}`,
             "",
         ];
     }
@@ -385,6 +382,13 @@ class WorkflowMonitor implements Component {
             });
     }
 
+    #statusColor(status: WorkflowRun["status"]): string {
+        if (status === "completed") return this.#theme.success;
+        if (status === "error") return this.#theme.error;
+        if (status === "running") return this.#theme.brand;
+        return this.#theme.warning;
+    }
+
     #stop(runId: string): void {
         if (this.#stoppingRunId !== undefined) return;
         this.#stoppingRunId = runId;
@@ -395,10 +399,13 @@ class WorkflowMonitor implements Component {
     }
 
     #surfaceLine(content: string, width: number): string {
-        const restored = content.replaceAll(RESET, `${RESET}${SURFACE_BG}${INPUT_FG}`);
+        const restored = content.replaceAll(
+            RESET,
+            `${RESET}${this.#theme.inputBackground}${this.#theme.primary}`,
+        );
         const fitted = truncateToWidth(restored, width, "", true);
         const padding = " ".repeat(Math.max(0, width - visibleWidth(fitted)));
-        return `${SURFACE_BG}${INPUT_FG}${fitted}${padding}${RESET}`;
+        return `${this.#theme.inputBackground}${this.#theme.primary}${fitted}${padding}${RESET}`;
     }
 }
 
