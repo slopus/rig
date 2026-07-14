@@ -528,12 +528,22 @@ async function handleRequest(
     }
 
     if (request.method === "GET" && route.name === "events") {
-        const events = session.events.since(url.searchParams.get("after") ?? undefined);
+        const after = url.searchParams.get("after") ?? undefined;
+        const events = session.events.since(after);
         if (events === undefined) {
             sendJson(response, 409, { error: "Event cursor not found" });
             return;
         }
-        sendJson(response, 200, { events });
+        sendJson(response, 200, {
+            events:
+                after === undefined
+                    ? events.filter(
+                          (event) =>
+                              event.type !== "agent_event" ||
+                              event.data.event.type === "context_compacted",
+                      )
+                    : events,
+        });
         return;
     }
 

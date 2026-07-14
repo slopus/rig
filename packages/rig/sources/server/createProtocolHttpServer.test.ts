@@ -489,6 +489,62 @@ describe("createProtocolHttpServer", () => {
         }
     });
 
+    it("omits transient agent deltas from initial history but preserves cursor catch-up", async () => {
+        const { client, close, store } = await startServer();
+        try {
+            const created = await client.createSession({ cwd: "/tmp/rig-protocol-test" });
+            const session = store.get(created.session.id);
+            expect(session).toBeDefined();
+            const createEventId = createEventIdFactory({ now: () => 1_700_000_000_000 });
+            const cursor = sessionResetEvent(created.session.id, createEventId());
+            const transient: SessionEvent = {
+                createdAt: 1_700_000_000_001,
+                data: {
+                    event: { iteration: 0, type: "inference_iteration_start" },
+                    runId: "run-1",
+                },
+                id: createEventId(),
+                sessionId: created.session.id,
+                type: "agent_event",
+            };
+            const compaction: SessionEvent = {
+                createdAt: 1_700_000_000_002,
+                data: {
+                    event: {
+                        compactedMessageCount: 8,
+                        estimatedTokensAfter: 600,
+                        estimatedTokensBefore: 4_200,
+                        reason: "threshold",
+                        type: "context_compacted",
+                    },
+                    runId: "run-1",
+                },
+                id: createEventId(),
+                sessionId: created.session.id,
+                type: "agent_event",
+            };
+            const durable = sessionResetEvent(created.session.id, createEventId());
+            session?.events.append(cursor);
+            session?.events.append(transient);
+            session?.events.append(compaction);
+            session?.events.append(durable);
+
+            const initial = await client.getEvents(created.session.id);
+            const catchup = await client.getEvents(created.session.id, cursor.id);
+
+            expect(initial.events.map((event) => event.id)).not.toContain(transient.id);
+            expect(initial.events.map((event) => event.id)).toContain(compaction.id);
+            expect(initial.events.map((event) => event.id)).toContain(durable.id);
+            expect(catchup.events.map((event) => event.id)).toEqual([
+                transient.id,
+                compaction.id,
+                durable.id,
+            ]);
+        } finally {
+            await close();
+        }
+    });
+
     it("serves session summaries", async () => {
         const { client, close } = await startServer();
         try {
