@@ -57,6 +57,7 @@ export function createModelCatalog(options: CreateModelCatalogOptions = {}): Mod
         providers: providers.map((provider) => ({
             providerId: provider.id,
             models: provider.models,
+            ...(provider.serviceTiers === undefined ? {} : { serviceTiers: provider.serviceTiers }),
         })),
     };
 }

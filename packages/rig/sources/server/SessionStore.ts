@@ -1,6 +1,7 @@
 import type {
     ChangeEffortRequest,
     ChangeModelRequest,
+    ChangeServiceTierRequest,
     CreateSessionRequest,
     SubagentSummary,
     SessionSummary,
@@ -10,6 +11,10 @@ import type { InMemorySession } from "./InMemorySession.js";
 export interface SessionStore {
     changeEffort(sessionId: string, request: ChangeEffortRequest): InMemorySession | undefined;
     changeModel(sessionId: string, request: ChangeModelRequest): InMemorySession | undefined;
+    changeServiceTier(
+        sessionId: string,
+        request: ChangeServiceTierRequest,
+    ): InMemorySession | undefined;
     create(request: CreateSessionRequest): InMemorySession;
     fork(sessionId: string): InMemorySession | undefined;
     get(sessionId: string): InMemorySession | undefined;

@@ -263,6 +263,30 @@ describe("createProtocolHttpServer", () => {
         }
     });
 
+    it("changes the service tier through a dedicated endpoint", async () => {
+        const { client, close } = await startServer();
+        try {
+            const created = await client.createSession({
+                cwd: "/tmp/rig-protocol-test",
+                modelId: modelOpenaiGpt55.id,
+            });
+
+            const changed = await client.changeServiceTier(created.session.id, {
+                serviceTier: "fast",
+            });
+            const events = await client.getEvents(created.session.id, created.session.lastEventId);
+
+            expect(changed.session.serviceTier).toBe("fast");
+            expect(changed.session.snapshot.serviceTier).toBe("fast");
+            expect(events.events.at(-1)).toMatchObject({
+                data: { serviceTier: "fast" },
+                type: "service_tier_changed",
+            });
+        } finally {
+            await close();
+        }
+    });
+
     it("changes session permissions through a dedicated endpoint", async () => {
         const { client, close } = await startServer();
         try {

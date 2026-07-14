@@ -13,6 +13,38 @@ afterEach(() => {
 });
 
 describe("codex provider", () => {
+    it("advertises fast inference and maps it to the Responses priority tier", async () => {
+        let requestBody: unknown;
+        vi.stubGlobal(
+            "fetch",
+            vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+                requestBody = parseRequestBody(init);
+                return new Response("data: [DONE]\n\n", {
+                    status: 200,
+                    headers: { "content-type": "text/event-stream" },
+                });
+            }),
+        );
+
+        const provider = createCodexProvider({
+            apiKey: "e30.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC10ZXN0In19.x",
+            transport: "sse",
+        });
+        const stream = provider.stream(modelOpenaiGpt56Sol, emptyContext(), {
+            serviceTier: "fast",
+        });
+
+        for await (const _event of stream) {
+            // Draining the stream makes the provider build and send its request.
+        }
+
+        expect(provider.serviceTiers).toEqual(["fast"]);
+        expect(requestBody).toMatchObject({
+            model: "gpt-5.6-sol",
+            service_tier: "priority",
+        });
+    });
+
     it.each([
         { name: "PNG", mediaType: "image/png", base64: validPng32Base64 },
         { name: "JPEG", mediaType: "image/jpeg", base64: validJpeg32Base64 },

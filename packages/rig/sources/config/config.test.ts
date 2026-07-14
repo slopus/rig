@@ -29,6 +29,7 @@ provider = "bedrock"
 effort = 'high'
 instructions = "Be direct."
 permission_mode = "auto"
+service_tier = "fast"
 
 [settings]
 durable_global_event_queue = true
@@ -69,6 +70,7 @@ mounts = [
                 effort: "high",
                 instructions: "Be direct.",
                 permissionMode: "auto",
+                serviceTier: "fast",
             },
             settings: {
                 durableGlobalEventQueue: true,
@@ -83,6 +85,38 @@ mounts = [
                 workflows: false,
             },
         });
+    });
+
+    it("persists fast mode and lets runtime defaults turn it off", async () => {
+        const root = await mkdtemp(join(tmpdir(), "rig-config-"));
+        try {
+            const configHome = join(root, "config-home");
+            const cwd = join(root, "repo");
+            const globalPath = join(configHome, "rig", "config.toml");
+            const runtimePath = join(configHome, "rig", "runtime.toml");
+            await mkdir(join(configHome, "rig"), { recursive: true });
+            await mkdir(cwd, { recursive: true });
+            await writeFile(globalPath, '[defaults]\nservice_tier = "fast"\n', "utf8");
+
+            const environment = { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv;
+            expect((await loadConfig({ cwd, env: environment })).config.defaults.serviceTier).toBe(
+                "fast",
+            );
+
+            await writeRuntimeConfig(runtimePath, { defaults: { serviceTier: null } });
+            expect(await readFile(runtimePath, "utf8")).toContain('service_tier = "default"');
+            expect(
+                (await loadConfig({ cwd, env: environment })).config.defaults.serviceTier,
+            ).toBeUndefined();
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
+    it("rejects unknown service tiers", () => {
+        expect(() => parseConfigToml('[defaults]\nservice_tier = "turbo"\n')).toThrow(
+            'defaults.service_tier must be "fast" or "default".',
+        );
     });
 
     it("applies project preferences without allowing project permission escalation", async () => {

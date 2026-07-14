@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createPermissionContext } from "../permissions/index.js";
 import { defineModel } from "../providers/types.js";
-import type { ProtocolSession, SessionEvent } from "../protocol/index.js";
+import type { ModelCatalog, ProtocolSession, SessionEvent } from "../protocol/index.js";
 import { createJustBashToolHarness } from "../tools/testing/createJustBashToolHarness.js";
 import type { ProtocolHttpClient } from "./ProtocolHttpClient.js";
 import { RemoteAgent } from "./RemoteAgent.js";
@@ -206,6 +206,383 @@ describe("RemoteAgent", () => {
         });
         expect(agent.canChangeModel).toBe(true);
     });
+
+    it("updates the selected service tier through the remote protocol", async () => {
+        const model = defineModel({
+            id: "openai/test",
+            name: "Test model",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const session = protocolSession(model);
+        const fastSession = {
+            ...session,
+            serviceTier: "fast" as const,
+            snapshot: { ...session.snapshot, serviceTier: "fast" as const },
+        };
+        const changeServiceTier = vi.fn(async (_sessionId, request) => ({
+            session: request.serviceTier === "fast" ? fastSession : session,
+        }));
+        const agent = new RemoteAgent({
+            client: { changeServiceTier } as unknown as ProtocolHttpClient,
+            context: createJustBashToolHarness().context,
+            modelCatalog: {
+                defaultModelId: model.id,
+                defaultProviderId: "codex",
+                models: [model],
+                providers: [{ models: [model], providerId: "codex", serviceTiers: ["fast"] }],
+            },
+            session,
+        });
+
+        expect(agent.provider.serviceTiers).toEqual(["fast"]);
+        agent.setServiceTier("fast");
+
+        expect(agent.snapshot().serviceTier).toBe("fast");
+        await vi.waitFor(() =>
+            expect(changeServiceTier).toHaveBeenCalledWith(session.id, {
+                serviceTier: "fast",
+            }),
+        );
+        await vi.waitFor(() => expect(agent.snapshot().serviceTier).toBe("fast"));
+
+        agent.setServiceTier(undefined);
+        expect(agent.snapshot().serviceTier).toBeUndefined();
+        await vi.waitFor(() => expect(changeServiceTier).toHaveBeenLastCalledWith(session.id, {}));
+        await vi.waitFor(() => expect(agent.snapshot().serviceTier).toBeUndefined());
+    });
+
+    it("serializes rapid service-tier changes and ignores stale events", async () => {
+        const model = defineModel({
+            id: "openai/test",
+            name: "Test model",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const session = protocolSession(model);
+        const fastSession: ProtocolSession = {
+            ...session,
+            serviceTier: "fast",
+            snapshot: { ...session.snapshot, serviceTier: "fast" },
+        };
+        let resolveFast!: (value: { session: ProtocolSession }) => void;
+        let resolveOff!: (value: { session: ProtocolSession }) => void;
+        const fastResponse = new Promise<{ session: ProtocolSession }>((resolve) => {
+            resolveFast = resolve;
+        });
+        const offResponse = new Promise<{ session: ProtocolSession }>((resolve) => {
+            resolveOff = resolve;
+        });
+        const changeServiceTier = vi.fn((_sessionId: string, request: { serviceTier?: "fast" }) =>
+            request.serviceTier === "fast" ? fastResponse : offResponse,
+        );
+        const agent = new RemoteAgent({
+            client: { changeServiceTier } as unknown as ProtocolHttpClient,
+            context: createJustBashToolHarness().context,
+            modelCatalog: {
+                defaultModelId: model.id,
+                defaultProviderId: "codex",
+                models: [model],
+                providers: [{ models: [model], providerId: "codex", serviceTiers: ["fast"] }],
+            },
+            session,
+        });
+
+        const enable = agent.setServiceTier("fast");
+        const disable = agent.setServiceTier(undefined);
+
+        expect(agent.snapshot().serviceTier).toBeUndefined();
+        expect(agent.confirmedServiceTier).toBeUndefined();
+        await vi.waitFor(() => expect(changeServiceTier).toHaveBeenCalledTimes(1));
+        expect(changeServiceTier).toHaveBeenNthCalledWith(1, session.id, {
+            serviceTier: "fast",
+        });
+        agent.applySessionEvent({
+            createdAt: 1,
+            data: { serviceTier: "fast", snapshot: fastSession.snapshot },
+            id: "event-fast",
+            sessionId: session.id,
+            type: "service_tier_changed",
+        });
+        expect(agent.snapshot().serviceTier).toBeUndefined();
+        expect(agent.confirmedServiceTier).toBe("fast");
+
+        resolveFast({ session: fastSession });
+        await enable;
+        await vi.waitFor(() => expect(changeServiceTier).toHaveBeenCalledTimes(2));
+        expect(changeServiceTier).toHaveBeenNthCalledWith(2, session.id, {});
+        expect(agent.snapshot().serviceTier).toBeUndefined();
+
+        resolveOff({ session });
+        await disable;
+        expect(agent.snapshot().serviceTier).toBeUndefined();
+        expect(agent.confirmedServiceTier).toBeUndefined();
+    });
+
+    it("rolls back a rejected service-tier change and keeps the queue usable", async () => {
+        const model = defineModel({
+            id: "openai/test",
+            name: "Test model",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const session = protocolSession(model);
+        const fastSession: ProtocolSession = {
+            ...session,
+            serviceTier: "fast",
+            snapshot: { ...session.snapshot, serviceTier: "fast" },
+        };
+        const changeServiceTier = vi
+            .fn()
+            .mockRejectedValueOnce(new Error("daemon unavailable"))
+            .mockResolvedValueOnce({ session: fastSession });
+        const agent = new RemoteAgent({
+            client: { changeServiceTier } as unknown as ProtocolHttpClient,
+            context: createJustBashToolHarness().context,
+            modelCatalog: {
+                defaultModelId: model.id,
+                defaultProviderId: "codex",
+                models: [model],
+                providers: [{ models: [model], providerId: "codex", serviceTiers: ["fast"] }],
+            },
+            session,
+        });
+
+        const rejected = agent.setServiceTier("fast");
+        expect(agent.snapshot().serviceTier).toBe("fast");
+        expect(agent.confirmedServiceTier).toBeUndefined();
+        await expect(rejected).rejects.toThrow("daemon unavailable");
+        expect(agent.snapshot().serviceTier).toBeUndefined();
+        expect(agent.confirmedServiceTier).toBeUndefined();
+
+        await expect(agent.setServiceTier("fast")).resolves.toBeUndefined();
+        expect(agent.snapshot().serviceTier).toBe("fast");
+        expect(changeServiceTier).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps pending fast intent separate from authoritative session events", async () => {
+        const model = defineModel({
+            id: "openai/test",
+            name: "Test model",
+            thinkingLevels: ["off", "high"],
+            defaultThinkingLevel: "off",
+        });
+        const session = protocolSession(model);
+        let rejectChange!: (reason: Error) => void;
+        const response = new Promise<never>((_resolve, reject) => {
+            rejectChange = reject;
+        });
+        const changeServiceTier = vi.fn(() => response);
+        const agent = new RemoteAgent({
+            client: { changeServiceTier } as unknown as ProtocolHttpClient,
+            context: createJustBashToolHarness().context,
+            modelCatalog: {
+                defaultModelId: model.id,
+                defaultProviderId: "codex",
+                models: [model],
+                providers: [{ models: [model], providerId: "codex", serviceTiers: ["fast"] }],
+            },
+            session,
+        });
+
+        const pending = agent.setServiceTier("fast");
+        await vi.waitFor(() => expect(changeServiceTier).toHaveBeenCalledOnce());
+        const authoritativeSnapshot = { ...session.snapshot, effort: "high" };
+        agent.applySessionEvent({
+            createdAt: 1,
+            data: { effort: "high", modelId: model.id, snapshot: authoritativeSnapshot },
+            id: "event-effort",
+            sessionId: session.id,
+            type: "effort_changed",
+        });
+        expect(agent.snapshot().serviceTier).toBe("fast");
+        expect(agent.confirmedServiceTier).toBeUndefined();
+
+        agent.applySessionEvent({
+            createdAt: 2,
+            data: { snapshot: authoritativeSnapshot },
+            id: "event-reset",
+            sessionId: session.id,
+            type: "session_reset",
+        });
+        expect(agent.snapshot().serviceTier).toBe("fast");
+        expect(agent.confirmedServiceTier).toBeUndefined();
+        agent.applySessionEvent({
+            createdAt: 3,
+            data: { messageId: "message-1", snapshot: authoritativeSnapshot },
+            id: "event-rewound",
+            sessionId: session.id,
+            type: "session_rewound",
+        });
+        expect(agent.snapshot().serviceTier).toBe("fast");
+        expect(agent.confirmedServiceTier).toBeUndefined();
+
+        rejectChange(new Error("fast rejected"));
+        await expect(pending).rejects.toThrow("fast rejected");
+        expect(agent.snapshot().serviceTier).toBeUndefined();
+        expect(agent.confirmedServiceTier).toBeUndefined();
+    });
+
+    it("restores the original model when rapid queued model changes both fail", async () => {
+        const { firstModel, modelCatalog, secondModel, session, thirdModel } =
+            remoteModelChangeFixture();
+        const changeModel = vi
+            .fn()
+            .mockRejectedValueOnce(new Error("second rejected"))
+            .mockRejectedValueOnce(new Error("third rejected"));
+        const agent = new RemoteAgent({
+            client: { changeModel } as unknown as ProtocolHttpClient,
+            context: createJustBashToolHarness().context,
+            modelCatalog,
+            session,
+        });
+
+        const secondChange = agent.setModel(secondModel.id, "off", "codex");
+        const thirdChange = agent.setModel(thirdModel.id, "off", "codex");
+        const secondResult = expect(secondChange).rejects.toThrow("second rejected");
+        const thirdResult = expect(thirdChange).rejects.toThrow("third rejected");
+
+        expect(agent.model.id).toBe(thirdModel.id);
+        await secondResult;
+        await thirdResult;
+        expect(agent.model.id).toBe(firstModel.id);
+        expect(agent.snapshot().modelId).toBe(firstModel.id);
+    });
+
+    it("restores the last confirmed model when a later queued change fails", async () => {
+        const { modelCatalog, secondModel, session, thirdModel } = remoteModelChangeFixture();
+        const secondSession: ProtocolSession = {
+            ...session,
+            modelId: secondModel.id,
+            snapshot: { ...session.snapshot, modelId: secondModel.id },
+        };
+        const changeModel = vi
+            .fn()
+            .mockResolvedValueOnce({ session: secondSession })
+            .mockRejectedValueOnce(new Error("third rejected"));
+        const agent = new RemoteAgent({
+            client: { changeModel } as unknown as ProtocolHttpClient,
+            context: createJustBashToolHarness().context,
+            modelCatalog,
+            session,
+        });
+
+        const secondChange = agent.setModel(secondModel.id, "off", "codex");
+        const thirdChange = agent.setModel(thirdModel.id, "off", "codex");
+        const secondResult = expect(secondChange).resolves.toBeUndefined();
+        const thirdResult = expect(thirdChange).rejects.toThrow("third rejected");
+
+        expect(agent.model.id).toBe(thirdModel.id);
+        await secondResult;
+        await thirdResult;
+        expect(agent.model.id).toBe(secondModel.id);
+        expect(agent.snapshot().modelId).toBe(secondModel.id);
+    });
+
+    it("clears fast mode immediately when changing to an unsupported provider", async () => {
+        const codexModel = defineModel({
+            id: "openai/test",
+            name: "Codex test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const claudeModel = defineModel({
+            id: "anthropic/test",
+            name: "Claude test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const baseSession = protocolSession(codexModel);
+        const session = {
+            ...baseSession,
+            serviceTier: "fast" as const,
+            snapshot: { ...baseSession.snapshot, serviceTier: "fast" as const },
+        };
+        const changeModel = vi.fn(() => new Promise<never>(() => undefined));
+        const agent = new RemoteAgent({
+            client: { changeModel } as unknown as ProtocolHttpClient,
+            context: createJustBashToolHarness().context,
+            modelCatalog: {
+                defaultModelId: codexModel.id,
+                defaultProviderId: "codex",
+                models: [codexModel, claudeModel],
+                providers: [
+                    {
+                        models: [codexModel],
+                        providerId: "codex",
+                        serviceTiers: ["fast"],
+                    },
+                    { models: [claudeModel], providerId: "claude-sdk" },
+                ],
+            },
+            session,
+        });
+
+        agent.setModel(claudeModel.id, "off", "claude-sdk");
+
+        expect(agent.snapshot()).toMatchObject({
+            modelId: claudeModel.id,
+            providerId: "claude-sdk",
+        });
+        expect(agent.snapshot().serviceTier).toBeUndefined();
+        await vi.waitFor(() =>
+            expect(changeModel).toHaveBeenCalledWith(session.id, {
+                effort: "off",
+                modelId: claudeModel.id,
+                providerId: "claude-sdk",
+            }),
+        );
+    });
+
+    it("restores fast mode when an unsupported-provider change is rejected", async () => {
+        const codexModel = defineModel({
+            id: "openai/test",
+            name: "Codex test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const claudeModel = defineModel({
+            id: "anthropic/test",
+            name: "Claude test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const baseSession = protocolSession(codexModel);
+        const session: ProtocolSession = {
+            ...baseSession,
+            serviceTier: "fast",
+            snapshot: { ...baseSession.snapshot, serviceTier: "fast" },
+        };
+        const changeModel = vi.fn().mockRejectedValue(new Error("model change failed"));
+        const agent = new RemoteAgent({
+            client: { changeModel } as unknown as ProtocolHttpClient,
+            context: createJustBashToolHarness().context,
+            modelCatalog: {
+                defaultModelId: codexModel.id,
+                defaultProviderId: "codex",
+                models: [codexModel, claudeModel],
+                providers: [
+                    {
+                        models: [codexModel],
+                        providerId: "codex",
+                        serviceTiers: ["fast"],
+                    },
+                    { models: [claudeModel], providerId: "claude-sdk" },
+                ],
+            },
+            session,
+        });
+
+        const change = agent.setModel(claudeModel.id, "off", "claude-sdk");
+        expect(change).toBeDefined();
+        expect(agent.provider.id).toBe("claude-sdk");
+        expect(agent.snapshot().serviceTier).toBeUndefined();
+
+        await expect(change).rejects.toThrow("model change failed");
+        expect(agent.provider.id).toBe("codex");
+        expect(agent.model.id).toBe(codexModel.id);
+        expect(agent.snapshot().serviceTier).toBe("fast");
+    });
 });
 
 function protocolSession(model: ReturnType<typeof defineModel>): ProtocolSession {
@@ -233,6 +610,47 @@ function protocolSession(model: ReturnType<typeof defineModel>): ProtocolSession
         },
         status: "idle",
         titleStatus: "idle",
+    };
+}
+
+function remoteModelChangeFixture(): {
+    firstModel: ReturnType<typeof defineModel>;
+    modelCatalog: ModelCatalog;
+    secondModel: ReturnType<typeof defineModel>;
+    session: ProtocolSession;
+    thirdModel: ReturnType<typeof defineModel>;
+} {
+    const firstModel = defineModel({
+        id: "openai/first",
+        name: "First",
+        thinkingLevels: ["off"],
+        defaultThinkingLevel: "off",
+    });
+    const secondModel = defineModel({
+        id: "openai/second",
+        name: "Second",
+        thinkingLevels: ["off"],
+        defaultThinkingLevel: "off",
+    });
+    const thirdModel = defineModel({
+        id: "openai/third",
+        name: "Third",
+        thinkingLevels: ["off"],
+        defaultThinkingLevel: "off",
+    });
+    const models = [firstModel, secondModel, thirdModel];
+    const session = { ...protocolSession(firstModel), models };
+    return {
+        firstModel,
+        modelCatalog: {
+            defaultModelId: firstModel.id,
+            defaultProviderId: "codex",
+            models,
+            providers: [{ models, providerId: "codex", serviceTiers: ["fast"] }],
+        },
+        secondModel,
+        session,
+        thirdModel,
     };
 }
 

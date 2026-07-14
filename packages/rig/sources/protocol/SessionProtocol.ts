@@ -5,7 +5,7 @@ import type {
     ContentBlock,
 } from "../agent/index.js";
 import type { Message, UserMessage } from "../agent/types.js";
-import type { Model, StopReason } from "../providers/types.js";
+import type { Model, ServiceTier, StopReason } from "../providers/types.js";
 import type { PermissionMode } from "../permissions/index.js";
 import type { UserInputRequest, UserInputResponse } from "../user-input/index.js";
 import type { McpServerSummary } from "../mcp/index.js";
@@ -52,6 +52,7 @@ export interface SessionInterruption {
 export interface ProviderModelCatalog {
     providerId: string;
     models: readonly Model[];
+    serviceTiers?: readonly ServiceTier[];
 }
 
 export interface ModelCatalog {
@@ -108,6 +109,7 @@ export interface ProtocolSession {
     permissionMode: PermissionMode;
     modelId: string;
     effort?: string;
+    serviceTier?: ServiceTier;
     environment?: SessionExecutionEnvironment;
     modelLocked: boolean;
     models: readonly Model[];
@@ -150,6 +152,7 @@ export interface SessionSummary {
     modelId: string;
     permissionMode: PermissionMode;
     effort?: string;
+    serviceTier?: ServiceTier;
     environment?: SessionExecutionEnvironment;
     status: SessionStatus;
     title?: string;
@@ -165,6 +168,7 @@ export interface CreateSessionRequest {
     apiKey?: string;
     cwd: string;
     effort?: string;
+    serviceTier?: ServiceTier;
     instructions?: string;
     modelId?: string;
     providerId?: string;
@@ -279,6 +283,10 @@ export interface ChangeEffortRequest {
     effort?: string;
 }
 
+export interface ChangeServiceTierRequest {
+    serviceTier?: ServiceTier;
+}
+
 export interface AbortRunResponse {
     aborted: boolean;
     eventId?: EventId;
@@ -299,6 +307,7 @@ export type SessionEvent =
     | SessionTitleChangedEvent
     | ModelChangedEvent
     | EffortChangedEvent
+    | ServiceTierChangedEvent
     | PermissionModeChangedEvent
     | UserInputRequestedEvent
     | UserInputResolvedEvent
@@ -404,6 +413,14 @@ export type EffortChangedEvent = BaseSessionEvent<
     {
         effort?: string;
         modelId: string;
+        snapshot: AgentSnapshot;
+    }
+>;
+
+export type ServiceTierChangedEvent = BaseSessionEvent<
+    "service_tier_changed",
+    {
+        serviceTier: ServiceTier | null;
         snapshot: AgentSnapshot;
     }
 >;

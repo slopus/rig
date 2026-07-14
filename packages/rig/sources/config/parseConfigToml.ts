@@ -43,6 +43,13 @@ export function parseConfigToml(source: string): PartialRigConfig {
 
         const permissionMode = readPermissionMode(defaultsTable, "permission_mode");
         if (permissionMode !== undefined) defaults.permissionMode = permissionMode;
+
+        const serviceTier = readString(defaultsTable, "service_tier");
+        if (serviceTier === "fast") defaults.serviceTier = serviceTier;
+        else if (serviceTier === "default") defaults.serviceTier = null;
+        else if (serviceTier !== undefined) {
+            throw new Error('defaults.service_tier must be "fast" or "default".');
+        }
     }
 
     const themeTable = table.theme;

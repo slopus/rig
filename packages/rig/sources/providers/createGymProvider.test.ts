@@ -29,6 +29,7 @@ describe("createGymProvider", () => {
                 endpoint: `http://127.0.0.1:${address.port}`,
                 token: "secret",
             });
+            expect(provider.serviceTiers).toEqual(["fast"]);
             const stream = provider.stream(
                 gymModel,
                 { messages: [{ content: "Hi", role: "user", timestamp: 1 }] },

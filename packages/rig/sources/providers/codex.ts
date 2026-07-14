@@ -72,6 +72,7 @@ export function createCodexProvider(options: CodexProviderOptions = {}): Provide
     return defineProvider({
         id: "codex",
         models: codexModels,
+        serviceTiers: ["fast"],
         stream(model, context, streamOptions) {
             const piModel = piModelById.get(toPiCodexModelId(model.id));
             if (!piModel) {
@@ -172,6 +173,7 @@ function toPiStreamOptions(
     const piOptions: OpenAICodexResponsesOptions = {
         ...(options?.signal !== undefined ? { signal: options.signal } : {}),
         ...(options?.sessionId !== undefined ? { sessionId: options.sessionId } : {}),
+        ...(options?.serviceTier === "fast" ? { serviceTier: "priority" as const } : {}),
         ...(apiKey !== undefined ? { apiKey } : {}),
         ...(transport !== undefined ? { transport } : {}),
         ...(imageDetails.includes("original")

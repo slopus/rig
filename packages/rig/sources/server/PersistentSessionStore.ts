@@ -6,6 +6,7 @@ import { createEventIdFactory } from "../protocol/index.js";
 import type {
     ChangeEffortRequest,
     ChangeModelRequest,
+    ChangeServiceTierRequest,
     CreateSessionRequest,
     ModelCatalog,
     SessionEvent,
@@ -100,6 +101,16 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         }
 
         session.changeEffort(request);
+        return session;
+    }
+
+    changeServiceTier(
+        sessionId: string,
+        request: ChangeServiceTierRequest,
+    ): InMemorySession | undefined {
+        const session = this.get(sessionId);
+        if (session === undefined) return undefined;
+        session.changeServiceTier(request);
         return session;
     }
 
@@ -247,6 +258,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     model_id,
                     permission_mode,
                     effort,
+                    service_tier,
                     status,
                     title,
                     title_status,
@@ -268,6 +280,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
 
         return rows.map((row) => {
             const effort = readOptionalString(row, "effort");
+            const serviceTier = readOptionalString(row, "service_tier");
             const title = readOptionalString(row, "title");
             const titleError = readOptionalString(row, "title_error");
             const lastMessageAt = readOptionalNumber(row, "last_message_at_ms");
@@ -285,6 +298,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                         : (JSON.parse(dockerJson) as DockerExecutionConfig),
                 ),
                 ...(effort !== undefined ? { effort } : {}),
+                ...(serviceTier === "fast" ? { serviceTier } : {}),
                 status: readString(row, "status") as SessionSummary["status"],
                 titleStatus: readString(row, "title_status") as SessionTitleStatus,
                 createdAt: readNumber(row, "created_at_ms"),
@@ -413,6 +427,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     provider_id,
                     model_id,
                     effort,
+                    service_tier,
                     instructions,
                     status,
                     active_run_id,
@@ -434,7 +449,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     created_at_ms,
                     updated_at_ms
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     agent_id = excluded.agent_id,
                     session_kind = excluded.session_kind,
@@ -449,6 +464,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     provider_id = excluded.provider_id,
                     model_id = excluded.model_id,
                     effort = excluded.effort,
+                    service_tier = excluded.service_tier,
                     instructions = excluded.instructions,
                     status = excluded.status,
                     active_run_id = excluded.active_run_id,
@@ -485,6 +501,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 state.providerId,
                 state.modelId,
                 state.effort ?? null,
+                state.serviceTier ?? null,
                 state.instructions ?? null,
                 state.status,
                 state.activeRunId ?? null,
@@ -603,6 +620,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 provider_id TEXT NOT NULL,
                 model_id TEXT NOT NULL,
                 effort TEXT,
+                service_tier TEXT,
                 instructions TEXT,
                 status TEXT NOT NULL,
                 active_run_id TEXT,
@@ -677,6 +695,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         this.#ensureSessionColumn("task_name", "TEXT");
         this.#ensureSessionColumn("description", "TEXT");
         this.#ensureSessionColumn("context_messages_json", "TEXT");
+        this.#ensureSessionColumn("service_tier", "TEXT");
         this.#ensureSessionColumn("permission_mode", "TEXT NOT NULL DEFAULT 'workspace_write'");
         this.#ensureSessionColumn("tasks_json", "TEXT NOT NULL DEFAULT '[]'");
         this.#ensureSessionColumn("workflows_json", "TEXT NOT NULL DEFAULT '[]'");
@@ -770,6 +789,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         }
 
         const effort = readOptionalString(row, "effort");
+        const serviceTier = readOptionalString(row, "service_tier");
         const dockerJson = readOptionalString(row, "docker_json");
         const instructions = readOptionalString(row, "instructions");
         const interruptionJson = readOptionalString(row, "interruption_json");
@@ -806,6 +826,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 ? { contextMessages: JSON.parse(contextMessagesJson) as Message[] }
                 : {}),
             ...(effort !== undefined ? { effort } : {}),
+            ...(serviceTier === "fast" ? { serviceTier } : {}),
             id,
             ...(instructions !== undefined ? { instructions } : {}),
             ...(goalJson !== undefined ? { goal: JSON.parse(goalJson) as SessionGoal } : {}),
@@ -837,6 +858,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             cwd: restore.cwd,
             ...(restore.docker === undefined ? {} : { docker: restore.docker }),
             ...(restore.effort !== undefined ? { effort: restore.effort } : {}),
+            ...(restore.serviceTier !== undefined ? { serviceTier: restore.serviceTier } : {}),
             ...(restore.instructions !== undefined ? { instructions: restore.instructions } : {}),
             modelId,
             providerId: restore.providerId,

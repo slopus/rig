@@ -1,6 +1,7 @@
 import type { PermissionMode } from "../permissions/index.js";
 import type { McpServerConfig } from "../mcp/types.js";
 import type { DockerExecutionConfig } from "../execution/index.js";
+import type { ServiceTier } from "../providers/types.js";
 
 export interface ConfigDefaults {
     effort?: string;
@@ -8,6 +9,7 @@ export interface ConfigDefaults {
     modelId: string;
     providerId?: string;
     permissionMode: PermissionMode;
+    serviceTier?: ServiceTier;
 }
 
 export interface PartialConfigDefaults {
@@ -16,6 +18,7 @@ export interface PartialConfigDefaults {
     modelId?: string;
     providerId?: string;
     permissionMode?: PermissionMode;
+    serviceTier?: ServiceTier | null;
 }
 
 export interface ConfigSettings {

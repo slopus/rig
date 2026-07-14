@@ -9,6 +9,7 @@ import type { TSchema } from "@sinclair/typebox";
 
 export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
 export type ProviderErrorCode = "invalid_image_request";
+export type ServiceTier = "fast";
 
 /** Plain text content block. */
 export interface TextContent {
@@ -117,6 +118,7 @@ export interface Model<TThinkingLevel extends string = string> {
 export interface StreamOptions<TThinkingLevel extends string = string> {
     signal?: AbortSignal;
     sessionId?: string;
+    serviceTier?: ServiceTier;
     thinking?: TThinkingLevel;
 }
 
@@ -152,6 +154,7 @@ export interface InferenceStream extends AsyncIterable<AssistantMessageEvent> {
 export interface Provider {
     readonly id: string;
     readonly models: readonly Model[];
+    readonly serviceTiers?: readonly ServiceTier[];
     stream<TThinkingLevel extends string>(
         model: Model<TThinkingLevel>,
         context: Context,
@@ -188,6 +191,7 @@ export function defineModel<const TThinkingLevel extends string>(model: {
 export function defineProvider(provider: {
     id: string;
     models: readonly Model[];
+    serviceTiers?: readonly ServiceTier[];
     stream<TThinkingLevel extends string>(
         model: Model<TThinkingLevel>,
         context: Context,

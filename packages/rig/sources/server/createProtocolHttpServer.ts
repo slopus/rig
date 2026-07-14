@@ -7,6 +7,7 @@ import type {
     ChangeEffortRequest,
     ChangeModelRequest,
     ChangePermissionModeRequest,
+    ChangeServiceTierRequest,
     ChangeSessionGoalStatusRequest,
     CompactSessionResponse,
     CreateSessionRequest,
@@ -441,6 +442,12 @@ async function handleRequest(
         return;
     }
 
+    if (request.method === "PATCH" && route.name === "service-tier") {
+        const body = await readJson<ChangeServiceTierRequest>(request);
+        sendJson(response, 200, { session: session.changeServiceTier(body) });
+        return;
+    }
+
     if (request.method === "PATCH" && route.name === "model") {
         const body = await readJson<ChangeModelRequest>(request);
         sendJson(response, 200, { session: session.changeModel(body) });
@@ -657,6 +664,7 @@ function matchRoute(pathname: string):
               | "permissions"
               | "reset"
               | "rewind"
+              | "service-tier"
               | "session"
               | "stream"
               | "steer"
@@ -715,6 +723,7 @@ function matchRoute(pathname: string):
     if (parts[2] === "permissions") return { name: "permissions", sessionId };
     if (parts[2] === "reset") return { name: "reset", sessionId };
     if (parts[2] === "rewind") return { name: "rewind", sessionId };
+    if (parts[2] === "service-tier") return { name: "service-tier", sessionId };
     if (parts[2] === "stream") return { name: "stream", sessionId };
     if (parts[2] === "steer") return { name: "steer", sessionId };
     if (parts[2] === "subagents") return { name: "subagents", sessionId };
@@ -730,7 +739,8 @@ function isSessionMutation(routeName: string, method: string | undefined): boole
         (method === "POST" && routeName === "workflow-stop") ||
         (["DELETE", "PATCH", "POST"].includes(method ?? "") && routeName === "goal") ||
         (method === "POST" && routeName === "user-input") ||
-        (method === "PATCH" && ["effort", "model", "permissions"].includes(routeName))
+        (method === "PATCH" &&
+            ["effort", "model", "permissions", "service-tier"].includes(routeName))
     );
 }
 

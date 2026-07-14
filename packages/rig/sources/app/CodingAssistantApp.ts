@@ -28,7 +28,7 @@ import {
 import type { BashSessionActivity } from "../agent/context/BashContext.js";
 import { parseSkillFrontmatter } from "../agent/skills/parseSkillFrontmatter.js";
 import type { NativeProxessManager } from "../processes/index.js";
-import type { Usage } from "../providers/types.js";
+import type { ServiceTier, Usage } from "../providers/types.js";
 import type {
     FileSearchResult,
     EventId,
@@ -103,6 +103,8 @@ const IMAGE_PLACEHOLDER_REGEX = /\[Image #(\d+) [A-Z0-9]+\]/gu;
 const IMAGE_CHIP_BG = "\x1b[48;5;240m";
 const IMAGE_CHIP_FG = "\x1b[38;5;255m";
 const FILE_MENTION_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+const FAST_MODE_ON_MESSAGE = "Fast mode is on. Fast inference uses 2× plan usage.";
+const FAST_MODE_OFF_MESSAGE = "Fast mode is off.";
 
 const MAX_TRANSCRIPT_ENTRIES = 500;
 
@@ -178,6 +180,7 @@ export interface DefaultModelPreference {
     effort: string;
     modelId: string;
     providerId: string;
+    serviceTier: ServiceTier | null;
 }
 
 export interface AppSettings {
@@ -612,6 +615,18 @@ export class CodingAssistantApp implements Component, Focusable {
                 role: "event",
                 title: "reasoning",
                 text: `Reasoning changed to ${humanizeReasoningLevel(event.data.effort ?? "off")}.`,
+            });
+            return;
+        }
+
+        if (event.type === "service_tier_changed") {
+            this.#appendEntry({
+                role: "event",
+                title: "fast",
+                text:
+                    event.data.serviceTier === "fast"
+                        ? FAST_MODE_ON_MESSAGE
+                        : FAST_MODE_OFF_MESSAGE,
             });
             return;
         }
@@ -1174,6 +1189,11 @@ export class CodingAssistantApp implements Component, Focusable {
             return true;
         }
 
+        if (prompt === "/fast" || prompt.startsWith("/fast ")) {
+            this.#handleFastCommand(prompt);
+            return true;
+        }
+
         if (prompt === "/configure") {
             this.#openConfigureMenu();
             return true;
@@ -1249,6 +1269,75 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         return false;
+    }
+
+    #handleFastCommand(prompt: string): void {
+        if (!this.#supportsFastInference()) {
+            this.#appendEntry({
+                role: "error",
+                text: `Fast inference is not available with ${this.#agent.model.name}.`,
+            });
+            return;
+        }
+
+        const argument = prompt.slice("/fast".length).trim().toLowerCase();
+        const fastEnabled = this.#agent.snapshot().serviceTier === "fast";
+        if (argument === "status") {
+            this.#appendEntry({
+                role: "event",
+                title: "fast",
+                text: fastEnabled ? "Fast mode is on." : FAST_MODE_OFF_MESSAGE,
+            });
+            return;
+        }
+
+        let serviceTier: ServiceTier | undefined;
+        if (argument.length === 0) {
+            serviceTier = fastEnabled ? undefined : "fast";
+        } else if (argument === "on") {
+            serviceTier = "fast";
+        } else if (argument !== "off") {
+            this.#appendEntry({ role: "error", text: "Usage: /fast [on|off|status]" });
+            return;
+        }
+
+        const completeChange = () => {
+            const effort = this.#agent.snapshot().effort ?? this.#agent.model.defaultThinkingLevel;
+            this.#persistDefaultModel(
+                this.#agent.model.id,
+                effort,
+                this.#agent.provider.id,
+                this.#agent.confirmedServiceTier ?? null,
+            );
+            if (!this.#sessionBacked) {
+                this.#appendEntry({
+                    role: "event",
+                    title: "fast",
+                    text: serviceTier === "fast" ? FAST_MODE_ON_MESSAGE : FAST_MODE_OFF_MESSAGE,
+                });
+            }
+            this.#requestRender();
+        };
+        try {
+            const change = this.#agent.setServiceTier(serviceTier);
+            if (change === undefined) {
+                completeChange();
+                return;
+            }
+            void change.then(completeChange).catch((error: unknown) => {
+                this.#appendEntry({
+                    role: "error",
+                    text: `Could not turn fast mode ${serviceTier === "fast" ? "on" : "off"}: ${this.#formatError(error)}`,
+                });
+                this.#requestRender();
+            });
+        } catch (error) {
+            this.#appendEntry({
+                role: "error",
+                text: `Could not turn fast mode ${serviceTier === "fast" ? "on" : "off"}: ${this.#formatError(error)}`,
+            });
+            this.#requestRender();
+        }
     }
 
     async #handleGoalCommand(prompt: string): Promise<void> {
@@ -2434,13 +2523,39 @@ export class CodingAssistantApp implements Component, Focusable {
                         });
                     }
                 } else {
-                    this.#agent.setModel(model.id, item.value, providerId);
-                    this.#persistDefaultModel(model.id, item.value, providerId);
-                    if (!this.#sessionBacked) {
+                    const completeChange = () => {
+                        this.#persistDefaultModel(
+                            model.id,
+                            item.value,
+                            providerId,
+                            this.#agent.confirmedServiceTier ?? null,
+                        );
+                        if (!this.#sessionBacked) {
+                            this.#appendEntry({
+                                role: "event",
+                                title: "model",
+                                text: `Model changed to ${model.name} with ${humanizeReasoningLevel(item.value)} reasoning.`,
+                            });
+                        }
+                        this.#requestRender();
+                    };
+                    try {
+                        const change = this.#agent.setModel(model.id, item.value, providerId);
+                        if (change === undefined) {
+                            completeChange();
+                        } else {
+                            void change.then(completeChange).catch((error: unknown) => {
+                                this.#appendEntry({
+                                    role: "error",
+                                    text: `Could not change to ${model.name}: ${this.#formatError(error)}`,
+                                });
+                                this.#requestRender();
+                            });
+                        }
+                    } catch (error) {
                         this.#appendEntry({
-                            role: "event",
-                            title: "model",
-                            text: `Model changed to ${model.name} with ${humanizeReasoningLevel(item.value)} reasoning.`,
+                            role: "error",
+                            text: `Could not change to ${model.name}: ${this.#formatError(error)}`,
                         });
                     }
                 }
@@ -3254,6 +3369,7 @@ export class CodingAssistantApp implements Component, Focusable {
         modelId: string,
         effort: string,
         providerId: string = this.#agent.provider.id,
+        serviceTier: ServiceTier | null = this.#agent.confirmedServiceTier ?? null,
     ): void {
         if (this.#onDefaultModelChange === undefined) {
             return;
@@ -3264,6 +3380,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 modelId,
                 providerId,
                 effort,
+                serviceTier,
             }),
         ).catch(() => {
             if (this.#stopped || this.#exiting) {
@@ -3410,11 +3527,15 @@ export class CodingAssistantApp implements Component, Focusable {
             void this.#refreshSkillCommands();
         }
 
-        const suggestions = [...this.#slashCommands, ...this.#skillCommands].filter(
-            (command) =>
+        const suggestions = [...this.#slashCommands, ...this.#skillCommands].filter((command) => {
+            if (command.value === "fast" && !this.#supportsFastInference()) {
+                return false;
+            }
+            return (
                 command.value.toLowerCase().startsWith(query) ||
-                command.aliases.some((alias) => alias.toLowerCase().startsWith(query)),
-        );
+                command.aliases.some((alias) => alias.toLowerCase().startsWith(query))
+            );
+        });
         if (this.#slashCommandSelectionIndex >= suggestions.length) {
             this.#slashCommandSelectionIndex = 0;
         }
@@ -3502,10 +3623,17 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #modelWithReasoningDisplayName(): string {
-        const effort = this.#agent.snapshot().effort ?? this.#agent.model.defaultThinkingLevel;
-        return effort === undefined
-            ? this.#modelDisplayName()
-            : `${this.#modelDisplayName()} ${effort.toLowerCase()}`;
+        const snapshot = this.#agent.snapshot();
+        const effort = snapshot.effort ?? this.#agent.model.defaultThinkingLevel;
+        const label =
+            effort === undefined
+                ? this.#modelDisplayName()
+                : `${this.#modelDisplayName()} ${effort.toLowerCase()}`;
+        return snapshot.serviceTier === "fast" ? `${label} fast` : label;
+    }
+
+    #supportsFastInference(): boolean {
+        return this.#agent.provider.serviceTiers?.includes("fast") === true;
     }
 
     #cwdDisplayName(): string {

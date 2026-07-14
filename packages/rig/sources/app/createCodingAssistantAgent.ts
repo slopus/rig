@@ -23,6 +23,7 @@ import { createCodexProvider, type CodexProviderOptions } from "../providers/cod
 import { createGymProvider } from "../providers/createGymProvider.js";
 import { getBedrockModelRoute } from "../providers/getBedrockModelRoute.js";
 import { modelOpenaiGpt56Sol } from "../providers/models.js";
+import type { ServiceTier } from "../providers/types.js";
 import { claudeCodeTools, claudeCollaborationTools } from "../tools/claude/index.js";
 import { codexCollaborationTools, codexTools } from "../tools/codex/index.js";
 import { piTools } from "../tools/pi/index.js";
@@ -47,6 +48,7 @@ export interface CreateCodingAssistantAgentOptions {
     providerId?: string;
     processManager?: NativeProxessManager;
     permissionMode?: PermissionMode;
+    serviceTier?: ServiceTier;
     subagents?: SubagentContext;
     tasks?: TaskContext;
     userInput?: UserInputContext;
@@ -158,6 +160,9 @@ export function createCodingAssistantAgent(
     };
     if (options.effort !== undefined) {
         agentOptions.effort = options.effort;
+    }
+    if (options.serviceTier !== undefined) {
+        agentOptions.serviceTier = options.serviceTier;
     }
 
     return {

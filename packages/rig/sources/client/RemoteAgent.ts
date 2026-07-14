@@ -12,7 +12,13 @@ import type {
     CodingAssistantModelChoice,
 } from "../app/CodingAssistantAgentBackend.js";
 import type { ModelCatalog, ProtocolSession, SessionEvent } from "../protocol/index.js";
-import { defineProvider, type Model, type Provider, type StopReason } from "../providers/types.js";
+import {
+    defineProvider,
+    type Model,
+    type Provider,
+    type ServiceTier,
+    type StopReason,
+} from "../providers/types.js";
 import type { PermissionMode } from "../permissions/index.js";
 import type { GoalStatus, SessionGoal } from "../goals/index.js";
 import { ProtocolHttpClient } from "./ProtocolHttpClient.js";
@@ -34,6 +40,16 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
     #models: readonly Model[];
     #providerId: string;
     #session: ProtocolSession;
+    #configurationChangeQueue: Promise<void> = Promise.resolve();
+    #modelChangeVersion = 0;
+    #confirmedEffort: string | undefined;
+    #confirmedModelId: string;
+    #confirmedModels: readonly Model[];
+    #confirmedProviderId: string;
+    #confirmedServiceTier: ServiceTier | undefined;
+    #serviceTierChangeCount = 0;
+    #serviceTierIntent: ServiceTier | undefined;
+    #serviceTierIntentVersion = 0;
 
     constructor(options: RemoteAgentOptions) {
         this.#client = options.client;
@@ -44,6 +60,12 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         this.#modelId = options.session.modelId;
         this.#models = options.session.models;
         this.#providerId = options.session.providerId;
+        this.#confirmedEffort = options.session.effort ?? options.session.snapshot.effort;
+        this.#confirmedModelId = options.session.modelId;
+        this.#confirmedModels = options.session.models;
+        this.#confirmedProviderId = options.session.providerId;
+        this.#confirmedServiceTier = sessionServiceTier(options.session);
+        this.#serviceTierIntent = this.#confirmedServiceTier;
     }
 
     async steer(
@@ -62,10 +84,18 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         return !this.#session.modelLocked;
     }
 
+    get confirmedServiceTier(): ServiceTier | undefined {
+        return this.#confirmedServiceTier;
+    }
+
     get provider(): Provider {
+        const serviceTiers = this.#modelCatalog?.providers.find(
+            (provider) => provider.providerId === this.#providerId,
+        )?.serviceTiers;
         return defineProvider({
             id: this.#providerId,
             models: this.#models,
+            ...(serviceTiers === undefined ? {} : { serviceTiers }),
             stream() {
                 throw new Error("RemoteAgent does not expose provider streaming locally.");
             },
@@ -246,7 +276,11 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         });
     }
 
-    setModel(modelId: string, effort: string | undefined, providerId?: string): void {
+    setModel(
+        modelId: string,
+        effort: string | undefined,
+        providerId?: string,
+    ): void | Promise<void> {
         const nextProviderId = providerId ?? this.#providerId;
         if (
             !this.canChangeModel &&
@@ -256,38 +290,84 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
             return;
         }
 
-        const nextModels =
-            this.#modelCatalog?.providers.find((provider) => provider.providerId === nextProviderId)
-                ?.models ?? this.#models;
+        const nextProvider = this.#modelCatalog?.providers.find(
+            (provider) => provider.providerId === nextProviderId,
+        );
+        const nextModels = nextProvider?.models ?? this.#models;
         if (!nextModels.some((model) => model.id === modelId)) {
             throw new Error(`Unknown remote model '${modelId}' for provider '${nextProviderId}'.`);
         }
 
+        const version = ++this.#modelChangeVersion;
         this.#modelId = modelId;
         this.#models = nextModels;
         this.#providerId = nextProviderId;
+        const currentServiceTier = this.#session.serviceTier ?? this.#session.snapshot.serviceTier;
+        const keepServiceTier =
+            currentServiceTier === undefined ||
+            nextProvider?.serviceTiers?.includes(currentServiceTier) === true;
+        const { serviceTier: _sessionServiceTier, ...sessionWithoutServiceTier } = this.#session;
+        const { serviceTier: _snapshotServiceTier, ...snapshotWithoutServiceTier } =
+            this.#session.snapshot;
         this.#session = {
-            ...this.#session,
+            ...(keepServiceTier ? this.#session : sessionWithoutServiceTier),
             ...(effort !== undefined ? { effort } : {}),
             modelId,
             models: nextModels,
             providerId: nextProviderId,
             snapshot: {
-                ...this.#session.snapshot,
+                ...(keepServiceTier ? this.#session.snapshot : snapshotWithoutServiceTier),
                 ...(effort !== undefined ? { effort } : {}),
                 modelId,
                 providerId: nextProviderId,
             },
         };
-        void this.#client
-            .changeModel(this.#session.id, {
-                ...(effort !== undefined ? { effort } : {}),
-                modelId,
-                providerId: nextProviderId,
-            })
-            .then((response) => {
-                this.#replaceSession(response.session);
-            });
+        const operation = this.#enqueueConfigurationChange(async () => {
+            try {
+                const response = await this.#client.changeModel(this.#session.id, {
+                    ...(effort !== undefined ? { effort } : {}),
+                    modelId,
+                    providerId: nextProviderId,
+                });
+                this.#recordConfirmedSession(response.session);
+                if (version === this.#modelChangeVersion) {
+                    this.#replaceSession(response.session);
+                }
+            } catch (error) {
+                if (version === this.#modelChangeVersion) {
+                    this.#restoreConfirmedModelSelection();
+                }
+                throw error;
+            }
+        });
+        return operation;
+    }
+
+    setServiceTier(serviceTier: ServiceTier | undefined): Promise<void> {
+        const version = ++this.#serviceTierIntentVersion;
+        this.#serviceTierIntent = serviceTier;
+        this.#serviceTierChangeCount += 1;
+        this.#setLocalServiceTier(serviceTier);
+        const request = serviceTier === undefined ? {} : { serviceTier };
+        return this.#enqueueConfigurationChange(async () => {
+            try {
+                const response = await this.#client.changeServiceTier(this.#session.id, request);
+                this.#confirmedServiceTier = sessionServiceTier(response.session);
+                if (version === this.#serviceTierIntentVersion) {
+                    this.#replaceSession(response.session);
+                }
+            } catch (error) {
+                if (version === this.#serviceTierIntentVersion) {
+                    this.#setLocalServiceTier(this.#confirmedServiceTier);
+                }
+                throw error;
+            } finally {
+                this.#serviceTierChangeCount -= 1;
+                if (this.#serviceTierChangeCount === 0) {
+                    this.#serviceTierIntent = this.#confirmedServiceTier;
+                }
+            }
+        });
     }
 
     async setPermissionMode(permissionMode: PermissionMode): Promise<void> {
@@ -368,9 +448,9 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
             this.#session = {
                 ...this.#session,
                 modelLocked: false,
-                snapshot: event.data.snapshot,
                 status: "idle",
             };
+            this.#applyAuthoritativeSnapshot(event.data.snapshot);
             return;
         }
 
@@ -378,9 +458,9 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
             this.#session = {
                 ...this.#session,
                 modelLocked: false,
-                snapshot: event.data.snapshot,
                 status: "idle",
             };
+            this.#applyAuthoritativeSnapshot(event.data.snapshot);
             return;
         }
 
@@ -398,8 +478,23 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
                 modelId: event.data.modelId,
                 models: this.#models,
                 providerId: event.data.snapshot.providerId,
+            };
+            this.#applyAuthoritativeSnapshot(event.data.snapshot);
+            return;
+        }
+
+        if (event.type === "service_tier_changed") {
+            const { serviceTier: _serviceTier, ...session } = this.#session;
+            this.#session = {
+                ...session,
+                ...(event.data.serviceTier === null ? {} : { serviceTier: event.data.serviceTier }),
                 snapshot: event.data.snapshot,
             };
+            this.#confirmedServiceTier =
+                event.data.serviceTier === null ? undefined : event.data.serviceTier;
+            if (this.#serviceTierChangeCount > 0) {
+                this.#setLocalServiceTier(this.#serviceTierIntent);
+            }
             return;
         }
 
@@ -457,12 +552,84 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
     }
 
     #replaceSession(session: ProtocolSession): void {
+        this.#recordConfirmedSession(session);
         this.#session = session;
+        if (this.#serviceTierChangeCount > 0) {
+            this.#setLocalServiceTier(this.#serviceTierIntent);
+        }
         this.context.permissions?.setMode(session.permissionMode);
         this.#modelId = session.modelId;
         this.#models = session.models;
         this.#providerId = session.providerId;
     }
+
+    #enqueueConfigurationChange(change: () => Promise<void>): Promise<void> {
+        const operation = this.#configurationChangeQueue.then(change);
+        this.#configurationChangeQueue = operation.catch(() => undefined);
+        return operation;
+    }
+
+    #applyAuthoritativeSnapshot(snapshot: AgentSnapshot): void {
+        const { serviceTier: _serviceTier, ...session } = this.#session;
+        this.#session = {
+            ...session,
+            ...(snapshot.serviceTier === undefined ? {} : { serviceTier: snapshot.serviceTier }),
+            snapshot,
+        };
+        this.#recordConfirmedSession(this.#session);
+        if (this.#serviceTierChangeCount > 0) {
+            this.#setLocalServiceTier(this.#serviceTierIntent);
+        }
+    }
+
+    #recordConfirmedSession(session: ProtocolSession): void {
+        this.#confirmedEffort = session.effort ?? session.snapshot.effort;
+        this.#confirmedModelId = session.modelId;
+        this.#confirmedModels = session.models;
+        this.#confirmedProviderId = session.providerId;
+        this.#confirmedServiceTier = sessionServiceTier(session);
+    }
+
+    #restoreConfirmedModelSelection(): void {
+        this.#modelId = this.#confirmedModelId;
+        this.#models = this.#confirmedModels;
+        this.#providerId = this.#confirmedProviderId;
+        const { effort: _sessionEffort, ...session } = this.#session;
+        const { effort: _snapshotEffort, ...snapshot } = this.#session.snapshot;
+        this.#session = {
+            ...session,
+            ...(this.#confirmedEffort === undefined ? {} : { effort: this.#confirmedEffort }),
+            modelId: this.#confirmedModelId,
+            models: this.#confirmedModels,
+            providerId: this.#confirmedProviderId,
+            snapshot: {
+                ...snapshot,
+                ...(this.#confirmedEffort === undefined ? {} : { effort: this.#confirmedEffort }),
+                modelId: this.#confirmedModelId,
+                providerId: this.#confirmedProviderId,
+            },
+        };
+        this.#setLocalServiceTier(
+            this.#serviceTierChangeCount > 0 ? this.#serviceTierIntent : this.#confirmedServiceTier,
+        );
+    }
+
+    #setLocalServiceTier(serviceTier: ServiceTier | undefined): void {
+        const { serviceTier: _sessionServiceTier, ...session } = this.#session;
+        const { serviceTier: _snapshotServiceTier, ...snapshot } = this.#session.snapshot;
+        this.#session = {
+            ...session,
+            ...(serviceTier === undefined ? {} : { serviceTier }),
+            snapshot: {
+                ...snapshot,
+                ...(serviceTier === undefined ? {} : { serviceTier }),
+            },
+        };
+    }
+}
+
+function sessionServiceTier(session: ProtocolSession): ServiceTier | undefined {
+    return session.serviceTier ?? session.snapshot.serviceTier;
 }
 
 function appendUniqueMessage(

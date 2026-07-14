@@ -1,7 +1,7 @@
 import { estimateMessagesTokens } from "./estimateMessagesTokens.js";
 import { requestCompactionSummary } from "./requestCompactionSummary.js";
 import type { Message, UserMessage } from "../types.js";
-import type { Model, Provider } from "../../providers/types.js";
+import type { Model, Provider, ServiceTier } from "../../providers/types.js";
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 const AUTO_COMPACT_FRACTION = 0.85;
@@ -26,6 +26,7 @@ export async function compactConversation(options: {
     force: boolean;
     preserveLatestUserMessage: boolean;
     signal?: AbortSignal;
+    serviceTier?: ServiceTier;
 }): Promise<CompactConversationResult> {
     const estimatedTokensBefore = estimateMessagesTokens(options.messages);
     const contextWindow = options.model.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
@@ -54,6 +55,7 @@ export async function compactConversation(options: {
         model: options.model,
         messages: messagesToCompact,
         now: options.now,
+        ...(options.serviceTier !== undefined ? { serviceTier: options.serviceTier } : {}),
         ...(options.signal !== undefined ? { signal: options.signal } : {}),
     });
     const summaryMessage: UserMessage = {

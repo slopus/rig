@@ -15,6 +15,7 @@ export async function writeRuntimeConfig(path: string, config: PartialRigConfig)
             model?: string;
             provider?: string;
             permission_mode?: string;
+            service_tier?: string;
         };
         theme?: Record<string, string>;
         settings?: {
@@ -40,6 +41,9 @@ export async function writeRuntimeConfig(path: string, config: PartialRigConfig)
         }
         if (defaults.permissionMode !== undefined) {
             document.defaults.permission_mode = defaults.permissionMode;
+        }
+        if (defaults.serviceTier !== undefined) {
+            document.defaults.service_tier = defaults.serviceTier ?? "default";
         }
     }
 

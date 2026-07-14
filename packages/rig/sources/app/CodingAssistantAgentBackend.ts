@@ -7,7 +7,7 @@ import type {
     ContentBlock,
     UserMessage,
 } from "../agent/index.js";
-import type { Model, Provider } from "../providers/types.js";
+import type { Model, Provider, ServiceTier } from "../providers/types.js";
 import type { PermissionMode } from "../permissions/index.js";
 import type { GoalStatus, SessionGoal } from "../goals/index.js";
 import type { AbortRunResponse } from "../protocol/index.js";
@@ -19,6 +19,7 @@ export interface CodingAssistantModelChoice {
 
 export interface CodingAssistantAgentBackend {
     readonly canChangeModel: boolean;
+    readonly confirmedServiceTier: ServiceTier | undefined;
     readonly context: AgentContext;
     readonly id: string;
     readonly provider: Provider;
@@ -38,7 +39,12 @@ export interface CodingAssistantAgentBackend {
     ): Promise<AgentRunResult>;
     steer(content: string | readonly ContentBlock[], options?: AgentRunOptions): Promise<void>;
     setEffort(effort: string | undefined): void;
-    setModel(modelId: string, effort: string | undefined, providerId?: string): void;
+    setModel(
+        modelId: string,
+        effort: string | undefined,
+        providerId?: string,
+    ): void | Promise<void>;
+    setServiceTier(serviceTier: ServiceTier | undefined): void | Promise<void>;
     setPermissionMode(mode: PermissionMode): void | Promise<void>;
     setGoal?(objective: string): Promise<void>;
     snapshot(): AgentSnapshot;

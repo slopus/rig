@@ -25,6 +25,11 @@ export function mergeConfigValues(base: RigConfig, ...configs: PartialRigConfig[
         if (config.defaults?.permissionMode !== undefined) {
             defaults.permissionMode = config.defaults.permissionMode;
         }
+        if (config.defaults?.serviceTier === null) {
+            delete defaults.serviceTier;
+        } else if (config.defaults?.serviceTier !== undefined) {
+            defaults.serviceTier = config.defaults.serviceTier;
+        }
         if (config.settings?.showReasoning !== undefined) {
             settings.showReasoning = config.settings.showReasoning;
         }

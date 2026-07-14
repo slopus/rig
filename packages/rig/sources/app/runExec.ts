@@ -7,7 +7,7 @@ import {
 } from "../config/index.js";
 import { createProjectMcpSecurityNotice, loadMcpServerConfigEntries } from "../mcp/index.js";
 import type { CreateSessionRequest, ProtocolSession, SessionEvent } from "../protocol/index.js";
-import type { StopReason } from "../providers/types.js";
+import type { ServiceTier, StopReason } from "../providers/types.js";
 import type { PermissionMode } from "../permissions/index.js";
 import type { ExecCommandOptions } from "./parseExecCommand.js";
 import { readExecPrompt } from "./readExecPrompt.js";
@@ -177,6 +177,7 @@ async function openSession(
         modelId: string;
         permissionMode: PermissionMode;
         providerId?: string;
+        serviceTier?: ServiceTier;
     },
     workflowsEnabled: boolean,
     docker: DockerExecutionConfig | null | undefined,
@@ -206,10 +207,12 @@ async function openSession(
     const providerId = options.providerId ?? environment.RIG_PROVIDER ?? defaults.providerId;
     const effort = options.effort ?? environment.RIG_EFFORT ?? defaults.effort;
     const instructions = defaults.instructions;
+    const serviceTier = defaults.serviceTier;
     const apiKey = environment.OPENAI_API_KEY;
     if (providerId !== undefined) request.providerId = providerId;
     if (effort !== undefined) request.effort = effort;
     if (instructions !== undefined) request.instructions = instructions;
+    if (serviceTier !== undefined) request.serviceTier = serviceTier;
     if (apiKey !== undefined) request.apiKey = apiKey;
     return (await client.createSession(request)).session;
 }

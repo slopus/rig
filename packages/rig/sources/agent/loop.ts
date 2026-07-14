@@ -27,6 +27,7 @@ import type {
     Message as ProviderMessage,
     Model,
     Provider,
+    ServiceTier,
     StopReason,
     StreamOptions,
     Tool as ProviderTool,
@@ -48,6 +49,7 @@ export interface RunAgentLoopOptions {
     provider: Provider;
     modelId: string;
     effort?: string;
+    serviceTier?: ServiceTier;
     tools: readonly AnyDefinedTool[];
     instructions?: string;
     messages: readonly Message[];
@@ -535,6 +537,7 @@ function toStreamOptions(options: RunAgentLoopOptions): StreamOptions {
     return {
         ...(options.signal !== undefined ? { signal: options.signal } : {}),
         ...(options.sessionId !== undefined ? { sessionId: options.sessionId } : {}),
+        ...(options.serviceTier !== undefined ? { serviceTier: options.serviceTier } : {}),
         ...(options.effort !== undefined ? { thinking: options.effort } : {}),
     };
 }

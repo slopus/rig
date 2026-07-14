@@ -6,6 +6,7 @@ import type {
     ChangeEffortRequest,
     ChangeModelRequest,
     ChangePermissionModeRequest,
+    ChangeServiceTierRequest,
     ChangeSessionGoalStatusRequest,
     CompactSessionResponse,
     CreateSessionRequest,
@@ -118,6 +119,17 @@ export class ProtocolHttpClient {
         return this.#requestJson(
             "PATCH",
             `/sessions/${encodeURIComponent(sessionId)}/permissions`,
+            request,
+        );
+    }
+
+    changeServiceTier(
+        sessionId: string,
+        request: ChangeServiceTierRequest,
+    ): Promise<{ session: ProtocolSession }> {
+        return this.#requestJson(
+            "PATCH",
+            `/sessions/${encodeURIComponent(sessionId)}/service-tier`,
             request,
         );
     }

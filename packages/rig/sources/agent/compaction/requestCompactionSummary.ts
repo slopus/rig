@@ -1,7 +1,7 @@
 import { formatMessagesForCompaction } from "./formatMessagesForCompaction.js";
 import { resolveCompactionThinking } from "./resolveCompactionThinking.js";
 import type { Message } from "../types.js";
-import type { Model, Provider, StreamOptions } from "../../providers/types.js";
+import type { Model, Provider, ServiceTier, StreamOptions } from "../../providers/types.js";
 
 const COMPACTION_SYSTEM_PROMPT = `Create a detailed continuation brief for a coding agent that will continue this conversation without access to the original history.
 
@@ -12,10 +12,12 @@ export async function requestCompactionSummary(options: {
     model: Model;
     messages: readonly Message[];
     signal?: AbortSignal;
+    serviceTier?: ServiceTier;
     now: () => number;
 }): Promise<string> {
     const streamOptions: StreamOptions = {
         thinking: resolveCompactionThinking(options.model),
+        ...(options.serviceTier !== undefined ? { serviceTier: options.serviceTier } : {}),
     };
     if (options.signal !== undefined) streamOptions.signal = options.signal;
 

@@ -12,6 +12,7 @@ import {
     type AssistantMessage,
     type Context,
     type InferenceStream,
+    type StreamOptions,
     type Usage,
 } from "../providers/types.js";
 
@@ -195,6 +196,56 @@ describe("Agent", () => {
         expect(agent.model.id).toBe(proModel.id);
         expect(agent.snapshot().modelId).toBe(proModel.id);
         expect(agent.snapshot().effort).toBe("high");
+    });
+
+    it("sends the selected service tier and preserves it across model changes", async () => {
+        const firstModel = defineModel({
+            id: "openai/gpt-first",
+            name: "GPT First",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const secondModel = defineModel({
+            id: "openai/gpt-second",
+            name: "GPT Second",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const streamOptions: (StreamOptions | undefined)[] = [];
+        const provider = defineProvider({
+            id: "codex",
+            models: [firstModel, secondModel],
+            serviceTiers: ["fast"],
+            stream(model, _context, options) {
+                streamOptions.push(options);
+                return streamFor({
+                    role: "assistant",
+                    content: [{ type: "text", text: "done" }],
+                    api: "test",
+                    provider: "codex",
+                    model: model.id,
+                    usage: zeroUsage(),
+                    stopReason: "stop",
+                    timestamp: 1,
+                });
+            },
+        });
+        const agent = new Agent({
+            provider,
+            modelId: firstModel.id,
+            context: createJustBashToolHarness().context,
+            serviceTier: "fast",
+            printToConsole: false,
+        });
+
+        agent.setModel(secondModel.id, undefined);
+        await agent.send("Use fast inference.");
+
+        expect(agent.snapshot().serviceTier).toBe("fast");
+        expect(streamOptions).toMatchObject([{ serviceTier: "fast" }]);
+
+        agent.setServiceTier(undefined);
+        expect(agent.snapshot().serviceTier).toBeUndefined();
     });
 
     it("automatically compacts model context while preserving the visible transcript", async () => {
@@ -520,14 +571,19 @@ describe("Agent", () => {
             defaultThinkingLevel: "high",
         });
         const compactionThinking: (string | undefined)[] = [];
+        const compactionServiceTiers: (string | undefined)[] = [];
         const provider = defineProvider({
             id: "codex",
             models: [model],
+            serviceTiers: ["fast"],
             stream(_model, context, options) {
                 const isCompaction = context.systemPrompt?.startsWith(
                     "Create a detailed continuation brief",
                 );
-                if (isCompaction) compactionThinking.push(options?.thinking);
+                if (isCompaction) {
+                    compactionThinking.push(options?.thinking);
+                    compactionServiceTiers.push(options?.serviceTier);
+                }
                 return streamFor({
                     role: "assistant",
                     content: [{ type: "text", text: isCompaction ? "Brief." : "done" }],
@@ -545,6 +601,7 @@ describe("Agent", () => {
             provider,
             modelId: model.id,
             context: harness.context,
+            serviceTier: "fast",
             printToConsole: false,
         });
         await agent.send("Do the work.");
@@ -565,6 +622,7 @@ describe("Agent", () => {
             },
         ]);
         expect(compactionThinking).toEqual(["low"]);
+        expect(compactionServiceTiers).toEqual(["fast"]);
     });
 
     it("resets transcript and queued messages", async () => {

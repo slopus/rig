@@ -28,6 +28,7 @@ import type {
     ChangeEffortRequest,
     ChangeModelRequest,
     ChangePermissionModeRequest,
+    ChangeServiceTierRequest,
     CreateSessionRequest,
     EventId,
     ModelCatalog,
@@ -44,7 +45,7 @@ import type {
     SubmitMessageResponse,
     SteerMessageResponse,
 } from "../protocol/index.js";
-import type { Model, StopReason } from "../providers/types.js";
+import type { Model, ServiceTier, StopReason } from "../providers/types.js";
 import type { UserInputRequest, UserInputResponse } from "../user-input/index.js";
 import {
     humanizeWorkflowName,
@@ -109,6 +110,7 @@ export interface PersistedSessionState {
     docker?: DockerExecutionConfig;
     contextMessages?: readonly Message[];
     effort?: string;
+    serviceTier?: ServiceTier;
     id: string;
     instructions?: string;
     goal?: SessionGoal;
@@ -216,6 +218,7 @@ export class InMemorySession {
     #contextMessages: Message[] | undefined;
     #draining: Promise<void> | undefined;
     #effort: string | undefined;
+    #serviceTier: ServiceTier | undefined;
     #goal: SessionGoal | undefined;
     #instructions: string | undefined;
     #interruption: SessionInterruption | undefined;
@@ -305,6 +308,15 @@ export class InMemorySession {
             selection.model.thinkingLevels.includes(requestedEffort)
                 ? requestedEffort
                 : selection.model.defaultThinkingLevel;
+        const requestedServiceTier = options.restore?.serviceTier ?? options.request.serviceTier;
+        if (
+            requestedServiceTier !== undefined &&
+            !this.#providerSupportsServiceTier(selection.providerId, requestedServiceTier)
+        ) {
+            this.#serviceTier = undefined;
+        } else {
+            this.#serviceTier = requestedServiceTier;
+        }
         this.#instructions = options.restore?.instructions ?? options.request.instructions;
         this.#goal = options.restore?.goal === undefined ? undefined : { ...options.restore.goal };
         this.#contextMessages =
@@ -463,6 +475,12 @@ export class InMemorySession {
         this.#modelId = model.id;
         this.#providerId = providerId;
         this.#effort = request.effort ?? model.defaultThinkingLevel;
+        if (
+            this.#serviceTier !== undefined &&
+            !this.#providerSupportsServiceTier(providerId, this.#serviceTier)
+        ) {
+            this.#serviceTier = undefined;
+        }
         this.#models = this.#modelsForProvider(providerId);
         this.#interruption = undefined;
         this.#append("model_changed", {
@@ -525,6 +543,25 @@ export class InMemorySession {
         this.#append("effort_changed", {
             effort,
             modelId: this.#modelId,
+            snapshot: this.#agentSnapshot(),
+        });
+        return this.snapshot();
+    }
+
+    changeServiceTier(request: ChangeServiceTierRequest): ProtocolSession {
+        const serviceTier = request.serviceTier;
+        if (
+            serviceTier !== undefined &&
+            !this.#providerSupportsServiceTier(this.#providerId, serviceTier)
+        ) {
+            throw new Error(`Provider '${this.#providerId}' does not support fast inference.`);
+        }
+
+        this.#serviceTier = serviceTier;
+        this.#runtime?.agent.setServiceTier(serviceTier);
+        this.#interruption = undefined;
+        this.#append("service_tier_changed", {
+            serviceTier: serviceTier ?? null,
             snapshot: this.#agentSnapshot(),
         });
         return this.snapshot();
@@ -1149,6 +1186,7 @@ export class InMemorySession {
         return {
             cwd: this.#request.cwd,
             ...(this.#effort !== undefined ? { effort: this.#effort } : {}),
+            ...(this.#serviceTier !== undefined ? { serviceTier: this.#serviceTier } : {}),
             ...(this.#instructions !== undefined ? { instructions: this.#instructions } : {}),
             modelId: this.#modelId,
             ...(this.#request.apiKey !== undefined ? { apiKey: this.#request.apiKey } : {}),
@@ -1184,6 +1222,7 @@ export class InMemorySession {
             workflows: this.listWorkflows(),
             ...(this.#goal !== undefined ? { goal: { ...this.#goal } } : {}),
             ...(snapshot.effort !== undefined ? { effort: snapshot.effort } : {}),
+            ...(snapshot.serviceTier !== undefined ? { serviceTier: snapshot.serviceTier } : {}),
             ...(this.#title !== undefined ? { title: this.#title } : {}),
             ...(this.#titleError !== undefined ? { titleError: this.#titleError } : {}),
             ...(this.#interruption !== undefined ? { interruption: this.#interruption } : {}),
@@ -1200,6 +1239,7 @@ export class InMemorySession {
             permissionMode: this.#permissionMode,
             modelId: this.#modelId,
             ...(this.#effort !== undefined ? { effort: this.#effort } : {}),
+            ...(this.#serviceTier !== undefined ? { serviceTier: this.#serviceTier } : {}),
             status: this.#status,
             titleStatus: this.#titleStatus,
             createdAt: this.events.firstCreatedAt() ?? this.#now(),
@@ -1228,6 +1268,7 @@ export class InMemorySession {
             ...(this.#request.docker === undefined ? {} : { docker: this.#request.docker }),
             ...(contextMessages !== undefined ? { contextMessages: [...contextMessages] } : {}),
             ...(this.#effort !== undefined ? { effort: this.#effort } : {}),
+            ...(this.#serviceTier !== undefined ? { serviceTier: this.#serviceTier } : {}),
             id: this.id,
             ...(this.#instructions !== undefined ? { instructions: this.#instructions } : {}),
             ...(this.#goal !== undefined ? { goal: { ...this.#goal } } : {}),
@@ -1458,6 +1499,7 @@ export class InMemorySession {
             queue: runtimeSnapshot?.queue ?? [],
             tools: this.#tools,
             ...(this.#effort !== undefined ? { effort: this.#effort } : {}),
+            ...(this.#serviceTier !== undefined ? { serviceTier: this.#serviceTier } : {}),
             ...((runtimeSnapshot?.contextMessages ?? this.#contextMessages) !== undefined
                 ? {
                       contextMessages: [
@@ -1737,6 +1779,7 @@ export class InMemorySession {
             options.contextMessages = this.#contextMessages;
         }
         if (this.#effort !== undefined) options.effort = this.#effort;
+        if (this.#serviceTier !== undefined) options.serviceTier = this.#serviceTier;
         if (this.#instructions !== undefined) options.instructions = this.#instructions;
         if (this.#request.apiKey !== undefined) options.apiKey = this.#request.apiKey;
         if (this.#request.docker !== undefined) options.docker = this.#request.docker;
@@ -1771,6 +1814,7 @@ export class InMemorySession {
         this.#providerId = runtime.provider.id;
         this.#modelId = snapshot.modelId;
         this.#effort = snapshot.effort;
+        this.#serviceTier = snapshot.serviceTier;
         this.#instructions = snapshot.instructions;
         this.#models = this.#modelsForProvider(this.#providerId);
         this.#tools = snapshot.tools;
@@ -1865,6 +1909,14 @@ export class InMemorySession {
         return (
             this.#modelCatalog.providers.find((provider) => provider.providerId === providerId)
                 ?.models ?? []
+        );
+    }
+
+    #providerSupportsServiceTier(providerId: string, serviceTier: ServiceTier): boolean {
+        return (
+            this.#modelCatalog.providers
+                .find((provider) => provider.providerId === providerId)
+                ?.serviceTiers?.includes(serviceTier) === true
         );
     }
 

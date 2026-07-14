@@ -13,6 +13,13 @@ describe("createModelCatalog", () => {
         const catalog = createModelCatalog({ env: {} });
 
         expect(catalog.providers.map((provider) => provider.providerId)).not.toContain("bedrock");
+        expect(
+            catalog.providers.find((provider) => provider.providerId === "codex")?.serviceTiers,
+        ).toEqual(["fast"]);
+        expect(
+            catalog.providers.find((provider) => provider.providerId === "claude-sdk")
+                ?.serviceTiers,
+        ).toBeUndefined();
     });
 
     it("enables Amazon Bedrock when its bearer token is present", () => {
@@ -32,6 +39,7 @@ describe("createModelCatalog", () => {
         expect(bedrock?.models).toContain(modelOpenaiGpt55);
         expect(bedrock?.models).toContain(modelMoonshotKimiK25);
         expect(bedrock?.models).toContain(modelZaiGlm5);
+        expect(bedrock?.serviceTiers).toBeUndefined();
         expect(catalog.models.filter((model) => model.id === modelOpenaiGpt55.id)).toEqual([
             modelOpenaiGpt55,
         ]);

@@ -16,6 +16,7 @@ import { resolveDockerExecutionConfig } from "../execution/index.js";
 import type { DockerExecutionConfig } from "../execution/index.js";
 import { CodingAssistantApp } from "./CodingAssistantApp.js";
 import { type CreateCodingAssistantAgentOptions } from "./createCodingAssistantAgent.js";
+import { createSerialTaskQueue } from "./createSerialTaskQueue.js";
 import { createStopOnceHandler } from "./createStopOnceHandler.js";
 import { ensureSessionCanResume } from "./ensureSessionCanResume.js";
 import { readPackageVersion } from "./readPackageVersion.js";
@@ -60,6 +61,9 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     if (loadedConfig.config.defaults.effort !== undefined) {
         agentOptions.effort = loadedConfig.config.defaults.effort;
     }
+    if (loadedConfig.config.defaults.serviceTier !== undefined) {
+        agentOptions.serviceTier = loadedConfig.config.defaults.serviceTier;
+    }
     if (loadedConfig.config.defaults.instructions !== undefined) {
         agentOptions.instructions = loadedConfig.config.defaults.instructions;
     }
@@ -81,6 +85,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     let durableGlobalEventQueue = loadedConfig.config.settings.durableGlobalEventQueue;
     let showReasoning = options.showReasoning ?? loadedConfig.config.settings.showReasoning;
     let showUsage = options.showUsage ?? loadedConfig.config.settings.showUsage;
+    const enqueueRuntimeConfigWrite = createSerialTaskQueue();
     const startupTheme = resolveTerminalTheme(loadedConfig.config.theme);
     const runtimeTheme = loadedConfig.sources.runtime.values.theme;
 
@@ -195,34 +200,40 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         workflowsEnabled: session.session.workflowsEnabled !== false,
         modelLocked: session.session.modelLocked,
         onDefaultModelChange: (preference) =>
-            writeRuntimeConfig(loadedConfig.paths.runtime, {
-                defaults: {
-                    modelId: preference.modelId,
-                    providerId: preference.providerId,
-                    effort: preference.effort,
-                    permissionMode: agent.permissionMode,
-                },
-                settings: {
-                    durableGlobalEventQueue,
-                    showReasoning,
-                    showUsage,
-                },
-                ...(runtimeTheme === undefined ? {} : { theme: runtimeTheme }),
-            }),
+            enqueueRuntimeConfigWrite(() =>
+                writeRuntimeConfig(loadedConfig.paths.runtime, {
+                    defaults: {
+                        modelId: preference.modelId,
+                        providerId: preference.providerId,
+                        effort: preference.effort,
+                        permissionMode: agent.permissionMode,
+                        serviceTier: preference.serviceTier,
+                    },
+                    settings: {
+                        durableGlobalEventQueue,
+                        showReasoning,
+                        showUsage,
+                    },
+                    ...(runtimeTheme === undefined ? {} : { theme: runtimeTheme }),
+                }),
+            ),
         onSettingsChange: async (settings) => {
             durableGlobalEventQueue = settings.durableGlobalEventQueue;
             showReasoning = settings.showReasoning;
             showUsage = settings.showUsage;
-            await writeRuntimeConfig(loadedConfig.paths.runtime, {
-                defaults: {
-                    modelId: agent.model.id,
-                    providerId: agent.provider.id,
-                    effort: agent.snapshot().effort ?? agent.model.defaultThinkingLevel,
-                    permissionMode: agent.permissionMode,
-                },
-                settings,
-                ...(runtimeTheme === undefined ? {} : { theme: runtimeTheme }),
-            });
+            await enqueueRuntimeConfigWrite(() =>
+                writeRuntimeConfig(loadedConfig.paths.runtime, {
+                    defaults: {
+                        modelId: agent.model.id,
+                        providerId: agent.provider.id,
+                        effort: agent.snapshot().effort ?? agent.model.defaultThinkingLevel,
+                        permissionMode: agent.permissionMode,
+                        serviceTier: agent.confirmedServiceTier ?? null,
+                    },
+                    settings,
+                    ...(runtimeTheme === undefined ? {} : { theme: runtimeTheme }),
+                }),
+            );
             await localServer.client.updateDaemonConfig({
                 settings: { durableGlobalEventQueue },
             });

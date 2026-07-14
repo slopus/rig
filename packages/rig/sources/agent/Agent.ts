@@ -9,7 +9,7 @@ import { runAgentLoop, type AgentLoopEvent, type AgentLoopResult } from "./loop.
 import { printAgentMessageToConsole, type AgentConsole } from "./printAgentMessageToConsole.js";
 import { selectToolsForModel } from "./selectToolsForModel.js";
 import type { AnyDefinedTool, ContentBlock, Message, SystemMessage, UserMessage } from "./types.js";
-import type { Model, Provider } from "../providers/types.js";
+import type { Model, Provider, ServiceTier } from "../providers/types.js";
 import type { PermissionMode } from "../permissions/index.js";
 
 export type AgentStatus = "idle" | "running" | "aborted";
@@ -24,6 +24,7 @@ export interface AgentSnapshot {
     providerId: string;
     modelId: string;
     effort?: string;
+    serviceTier?: ServiceTier;
     status: AgentStatus;
     instructions?: string;
     messages: readonly Message[];
@@ -40,6 +41,7 @@ export interface AgentOptions {
     context: AgentContext;
     id?: string;
     effort?: string;
+    serviceTier?: ServiceTier;
     messages?: readonly Message[];
     contextMessages?: readonly Message[];
     instructions?: string;
@@ -78,6 +80,7 @@ export class Agent {
 
     #model: Model;
     #effort: string | undefined;
+    #serviceTier: ServiceTier | undefined;
     #instructions: string | undefined;
     #tools: readonly AnyDefinedTool[];
     #usesExplicitTools: boolean;
@@ -103,6 +106,7 @@ export class Agent {
         this.#model = this.#findModel(options.modelId);
         this.context = options.context;
         this.#effort = options.effort ?? this.#model.defaultThinkingLevel;
+        this.#serviceTier = this.#validateServiceTier(options.serviceTier);
         this.#instructions = options.instructions;
         this.#usesExplicitTools = options.tools !== undefined;
         this.#tools =
@@ -153,12 +157,20 @@ export class Agent {
         );
     }
 
+    get confirmedServiceTier(): ServiceTier | undefined {
+        return this.#serviceTier;
+    }
+
     setInstructions(instructions: string | undefined): void {
         this.#instructions = instructions;
     }
 
     setEffort(effort: string | undefined): void {
         this.#effort = effort;
+    }
+
+    setServiceTier(serviceTier: ServiceTier | undefined): void {
+        this.#serviceTier = this.#validateServiceTier(serviceTier);
     }
 
     setModel(modelId: string, effort: string | undefined): void {
@@ -350,6 +362,7 @@ export class Agent {
                 loopOptions.contextMessages = this.#contextMessages;
             }
             if (this.#effort !== undefined) loopOptions.effort = this.#effort;
+            if (this.#serviceTier !== undefined) loopOptions.serviceTier = this.#serviceTier;
             if (this.#instructions !== undefined) loopOptions.instructions = this.#instructions;
             if (options.signal !== undefined) loopOptions.signal = options.signal;
 
@@ -396,6 +409,7 @@ export class Agent {
             queue: [...this.#queue],
             tools: this.#tools.map((tool) => tool.name),
             ...(this.#effort !== undefined ? { effort: this.#effort } : {}),
+            ...(this.#serviceTier !== undefined ? { serviceTier: this.#serviceTier } : {}),
             ...(this.#contextMessages !== undefined
                 ? { contextMessages: [...this.#contextMessages] }
                 : {}),
@@ -410,6 +424,12 @@ export class Agent {
             throw new Error(`Unknown model '${modelId}' for provider '${this.provider.id}'`);
         }
         return model;
+    }
+
+    #validateServiceTier(serviceTier: ServiceTier | undefined): ServiceTier | undefined {
+        if (serviceTier === undefined) return undefined;
+        if (this.provider.serviceTiers?.includes(serviceTier) === true) return serviceTier;
+        throw new Error(`Provider '${this.provider.id}' does not support fast inference.`);
     }
 
     #drainQueueToTranscript(): void {
@@ -467,6 +487,7 @@ export class Agent {
             ...(options.reportedTokens === undefined
                 ? {}
                 : { reportedTokens: options.reportedTokens }),
+            ...(this.#serviceTier !== undefined ? { serviceTier: this.#serviceTier } : {}),
             ...(options.signal !== undefined ? { signal: options.signal } : {}),
         });
     }

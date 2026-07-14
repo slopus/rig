@@ -24,6 +24,9 @@ export async function createConfigFile(
                 ...(config.defaults.instructions !== undefined
                     ? { instructions: config.defaults.instructions }
                     : {}),
+                ...(config.defaults.serviceTier !== undefined
+                    ? { service_tier: config.defaults.serviceTier }
+                    : {}),
             },
             settings: {
                 durable_global_event_queue: config.settings.durableGlobalEventQueue,

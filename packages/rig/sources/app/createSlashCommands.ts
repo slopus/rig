@@ -21,6 +21,12 @@ export function createSlashCommands(
             aliases: ["ford", "reasoning"],
         },
         {
+            value: "fast",
+            label: "/fast",
+            description: "Toggle fastest inference at 2× plan usage.",
+            aliases: [],
+        },
+        {
             value: "configure",
             label: "/configure",
             description: "Configure app settings.",

@@ -296,6 +296,20 @@ permission_mode = "workspace_write"
 terminal session. Accepted values are `workspace_write`, `read_only`, and
 `full_access`, and `auto`.
 
+### Fast mode
+
+Use `/fast` to turn the Codex fast inference tier on or off. The footer adds
+`fast` while it is active, and Rig sends the priority service tier on normal
+turns and compaction requests. Fast inference uses twice the plan usage.
+
+The toggle is offered only by providers that advertise support, and its value
+is saved as the default for new sessions. It can also be configured directly:
+
+```toml
+[defaults]
+service_tier = "fast" # Use "default" to explicitly turn it off.
+```
+
 ### Terminal theme
 
 Rig follows Codex terminal color semantics by default: primary text uses the

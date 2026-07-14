@@ -266,6 +266,77 @@ describe("InMemorySession", () => {
         });
     });
 
+    it("keeps fast inference across Codex model changes and rejects unsupported providers", () => {
+        const firstCodexModel = defineModel({
+            defaultThinkingLevel: "off",
+            id: "openai/first",
+            name: "First Codex model",
+            thinkingLevels: ["off"],
+        });
+        const secondCodexModel = defineModel({
+            defaultThinkingLevel: "off",
+            id: "openai/second",
+            name: "Second Codex model",
+            thinkingLevels: ["off"],
+        });
+        const claudeModel = defineModel({
+            defaultThinkingLevel: "off",
+            id: "anthropic/test",
+            name: "Claude model",
+            thinkingLevels: ["off"],
+        });
+        const catalog: ModelCatalog = {
+            defaultModelId: firstCodexModel.id,
+            defaultProviderId: "codex",
+            models: [firstCodexModel, secondCodexModel, claudeModel],
+            providers: [
+                {
+                    providerId: "codex",
+                    models: [firstCodexModel, secondCodexModel],
+                    serviceTiers: ["fast"],
+                },
+                { providerId: "claude-sdk", models: [claudeModel] },
+            ],
+        };
+        const store = new InMemorySessionStore({ modelCatalog: catalog });
+        const session = store.create({
+            cwd: "/tmp/rig-session-test",
+            modelId: firstCodexModel.id,
+            providerId: "codex",
+            serviceTier: "fast",
+        });
+
+        session.changeModel({ modelId: secondCodexModel.id, providerId: "codex" });
+
+        expect(session.snapshot()).toMatchObject({
+            modelId: secondCodexModel.id,
+            providerId: "codex",
+            serviceTier: "fast",
+            snapshot: { serviceTier: "fast" },
+        });
+        expect(session.state().serviceTier).toBe("fast");
+
+        session.changeServiceTier({});
+        expect(session.snapshot().serviceTier).toBeUndefined();
+        expect(session.events.since(undefined)?.at(-1)).toMatchObject({
+            data: { serviceTier: null },
+            type: "service_tier_changed",
+        });
+
+        session.changeModel({ modelId: claudeModel.id, providerId: "claude-sdk" });
+        expect(() => session.changeServiceTier({ serviceTier: "fast" })).toThrow(
+            "does not support fast inference",
+        );
+
+        const unsupportedDefault = store.create({
+            cwd: "/tmp/rig-session-test",
+            modelId: claudeModel.id,
+            providerId: "claude-sdk",
+            serviceTier: "fast",
+        });
+        expect(unsupportedDefault.snapshot().serviceTier).toBeUndefined();
+    });
+
     it("falls back when the configured model is no longer available", () => {
         const availableModel = defineModel({
             defaultThinkingLevel: "medium",

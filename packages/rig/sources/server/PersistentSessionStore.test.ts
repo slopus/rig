@@ -1,11 +1,13 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 
 import { describe, expect, it } from "vitest";
 
 import type { UserMessage } from "../agent/types.js";
 import type { ModelCatalog } from "../protocol/index.js";
+import type { GymInferenceRequest } from "../providers/gym-types.js";
 import { defineModel } from "../providers/types.js";
 import type { PersistedQueuedRun, PersistedSessionState } from "./InMemorySession.js";
 import { PersistentSessionStore } from "./PersistentSessionStore.js";
@@ -270,6 +272,15 @@ describe("PersistentSessionStore", () => {
                 expect(receivedAgentCalls).toEqual([
                     { output: "cached", signature: "cached-signature" },
                 ]);
+                const notificationRun = restored?.events
+                    .since(undefined)
+                    ?.findLast((event) => event.type === "run_started");
+                if (notificationRun?.type !== "run_started") {
+                    throw new Error("Expected the completed workflow notification to start a run.");
+                }
+                await restored?.abort();
+                await restored?.waitForRun(notificationRun.data.runId);
+                await new Promise((resolve) => setImmediate(resolve));
             } finally {
                 restoredStore.close();
             }
@@ -358,6 +369,206 @@ describe("PersistentSessionStore", () => {
                 restoredStore.close();
             }
         } finally {
+            await cleanup();
+        }
+    });
+
+    it("persists the selected service tier in session details and summaries", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        try {
+            const store = new PersistentSessionStore({ databasePath });
+            const state = sessionState({ serviceTier: "fast" });
+            store.saveSession(state);
+            store.close();
+
+            const restoredStore = new PersistentSessionStore({ databasePath });
+            try {
+                expect(restoredStore.get(state.id)?.snapshot()).toMatchObject({
+                    serviceTier: "fast",
+                    snapshot: { serviceTier: "fast" },
+                });
+                expect(restoredStore.list().at(0)?.serviceTier).toBe("fast");
+            } finally {
+                restoredStore.close();
+            }
+        } finally {
+            await cleanup();
+        }
+    });
+
+    it("migrates legacy session databases without a service tier column", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        const catalog = testModelCatalog();
+        try {
+            const store = new PersistentSessionStore({ databasePath, modelCatalog: catalog });
+            const state = sessionState({
+                modelId: catalog.defaultModelId,
+                models: catalog.models,
+                title: "Legacy session",
+                titleStatus: "ready",
+            });
+            store.saveSession(state);
+            store.close();
+
+            const legacyDatabase = new DatabaseSync(databasePath);
+            try {
+                legacyDatabase.exec("ALTER TABLE sessions DROP COLUMN service_tier");
+                expect(
+                    legacyDatabase
+                        .prepare("PRAGMA table_info(sessions)")
+                        .all()
+                        .some((column) => column.name === "service_tier"),
+                ).toBe(false);
+            } finally {
+                legacyDatabase.close();
+            }
+
+            const restoredStore = new PersistentSessionStore({
+                databasePath,
+                modelCatalog: catalog,
+            });
+            try {
+                expect(restoredStore.get(state.id)?.snapshot()).toMatchObject({
+                    cwd: state.cwd,
+                    id: state.id,
+                    modelId: state.modelId,
+                    providerId: state.providerId,
+                    title: "Legacy session",
+                });
+
+                const migratedDatabase = new DatabaseSync(databasePath);
+                try {
+                    const serviceTierColumn = migratedDatabase
+                        .prepare("PRAGMA table_info(sessions)")
+                        .all()
+                        .find((column) => column.name === "service_tier");
+                    expect(serviceTierColumn).toMatchObject({
+                        name: "service_tier",
+                        notnull: 0,
+                        type: "TEXT",
+                    });
+                    expect(
+                        migratedDatabase
+                            .prepare("SELECT service_tier FROM sessions WHERE id = ?")
+                            .get(state.id),
+                    ).toEqual({ service_tier: null });
+                } finally {
+                    migratedDatabase.close();
+                }
+            } finally {
+                restoredStore.close();
+            }
+        } finally {
+            await cleanup();
+        }
+    });
+
+    it("restores fast inference into the runtime and persists disabling it", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        const model = defineModel({
+            defaultThinkingLevel: "off",
+            id: "openai/gym",
+            name: "Gym",
+            thinkingLevels: ["off"],
+        });
+        const catalog: ModelCatalog = {
+            defaultModelId: model.id,
+            defaultProviderId: "gym",
+            models: [model],
+            providers: [{ providerId: "gym", models: [model], serviceTiers: ["fast"] }],
+        };
+        const inferenceRequests: GymInferenceRequest[] = [];
+        const originalFetch = globalThis.fetch;
+        const originalInferenceUrl = process.env.RIG_GYM_INFERENCE_URL;
+        let openStore: PersistentSessionStore | undefined;
+        try {
+            process.env.RIG_GYM_INFERENCE_URL = "http://gym.test/inference";
+            globalThis.fetch = async (_input, init) => {
+                if (typeof init?.body !== "string") {
+                    throw new Error("Expected a serialized gym inference request.");
+                }
+                inferenceRequests.push(JSON.parse(init.body) as GymInferenceRequest);
+                return new Response(
+                    JSON.stringify({
+                        content: [{ text: "Done.", type: "text" }],
+                        stopReason: "stop",
+                    }),
+                    { headers: { "content-type": "application/json" }, status: 200 },
+                );
+            };
+
+            openStore = new PersistentSessionStore({ databasePath, modelCatalog: catalog });
+            const created = openStore.create({
+                cwd: "/tmp/rig-fast-persistence-test",
+                modelId: model.id,
+                providerId: "gym",
+                serviceTier: "fast",
+            });
+            openStore.saveSession({
+                ...created.state(),
+                title: "Fast persistence",
+                titleStatus: "ready",
+            });
+            const sessionId = created.id;
+            openStore.close();
+            openStore = undefined;
+
+            openStore = new PersistentSessionStore({ databasePath, modelCatalog: catalog });
+            const fastSession = openStore.get(sessionId);
+            expect(fastSession?.snapshot()).toMatchObject({
+                serviceTier: "fast",
+                snapshot: { serviceTier: "fast" },
+            });
+            const fastRun = fastSession?.submit({ text: "Use fast inference." });
+            expect(fastRun).toBeDefined();
+            if (fastRun === undefined || fastSession === undefined) {
+                throw new Error("Expected the restored fast session.");
+            }
+            await expect(fastSession.waitForRun(fastRun.runId)).resolves.toEqual({
+                status: "completed",
+            });
+            await new Promise((resolve) => setImmediate(resolve));
+            expect(inferenceRequests).toHaveLength(1);
+            expect(inferenceRequests[0]?.options.serviceTier).toBe("fast");
+
+            fastSession.changeServiceTier({});
+            expect(fastSession.snapshot().serviceTier).toBeUndefined();
+            openStore.close();
+            openStore = undefined;
+
+            const disabledDatabase = new DatabaseSync(databasePath);
+            try {
+                expect(
+                    disabledDatabase
+                        .prepare("SELECT service_tier FROM sessions WHERE id = ?")
+                        .get(sessionId),
+                ).toEqual({ service_tier: null });
+            } finally {
+                disabledDatabase.close();
+            }
+
+            openStore = new PersistentSessionStore({ databasePath, modelCatalog: catalog });
+            const normalSession = openStore.get(sessionId);
+            expect(normalSession?.snapshot().serviceTier).toBeUndefined();
+            const normalRun = normalSession?.submit({ text: "Use normal inference." });
+            expect(normalRun).toBeDefined();
+            if (normalRun === undefined || normalSession === undefined) {
+                throw new Error("Expected the restored normal session.");
+            }
+            await expect(normalSession.waitForRun(normalRun.runId)).resolves.toEqual({
+                status: "completed",
+            });
+            await new Promise((resolve) => setImmediate(resolve));
+            expect(inferenceRequests).toHaveLength(2);
+            expect(inferenceRequests[1]?.options.serviceTier).toBeUndefined();
+        } finally {
+            openStore?.close();
+            globalThis.fetch = originalFetch;
+            if (originalInferenceUrl === undefined) {
+                delete process.env.RIG_GYM_INFERENCE_URL;
+            } else {
+                process.env.RIG_GYM_INFERENCE_URL = originalInferenceUrl;
+            }
             await cleanup();
         }
     });

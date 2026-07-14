@@ -2,6 +2,7 @@ import { createEventIdFactory } from "../protocol/index.js";
 import type {
     ChangeEffortRequest,
     ChangeModelRequest,
+    ChangeServiceTierRequest,
     CreateSessionRequest,
     ModelCatalog,
     SessionAgentMetadata,
@@ -50,6 +51,16 @@ export class InMemorySessionStore implements SessionStore {
         }
 
         session.changeEffort(request);
+        return session;
+    }
+
+    changeServiceTier(
+        sessionId: string,
+        request: ChangeServiceTierRequest,
+    ): InMemorySession | undefined {
+        const session = this.get(sessionId);
+        if (session === undefined) return undefined;
+        session.changeServiceTier(request);
         return session;
     }
 

@@ -28,6 +28,7 @@ export function createGymProvider(options: CreateGymProviderOptions) {
     return defineProvider({
         id: "gym",
         models: [gymModel],
+        serviceTiers: ["fast"],
         stream(model, context, streamOptions = {}) {
             return createInferenceStream(async function* () {
                 const response = await request(options.endpoint, {

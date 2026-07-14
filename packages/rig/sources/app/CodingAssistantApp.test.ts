@@ -19,6 +19,7 @@ import {
     type Usage,
 } from "../providers/types.js";
 import { CodingAssistantApp } from "./CodingAssistantApp.js";
+import { createSerialTaskQueue } from "./createSerialTaskQueue.js";
 
 describe("CodingAssistantApp", () => {
     it("renders the startup frame and Codex-style empty composer", () => {
@@ -324,6 +325,7 @@ describe("CodingAssistantApp", () => {
         const provider = defineProvider({
             id: "codex",
             models: [model],
+            serviceTiers: ["fast"],
             stream() {
                 return streamText("unused");
             },
@@ -334,10 +336,20 @@ describe("CodingAssistantApp", () => {
             modelId: model.id,
             context: harness.context,
             printToConsole: false,
+            serviceTier: "fast",
         });
+        const defaultModelChanges: Array<{
+            effort: string;
+            modelId: string;
+            providerId: string;
+            serviceTier: "fast" | null;
+        }> = [];
         const app = new CodingAssistantApp({
             agent,
             cwd: harness.context.fs.cwd,
+            onDefaultModelChange: (preference) => {
+                defaultModelChanges.push(preference);
+            },
             processManager: new NativeProxessManager(),
             showReasoning: true,
             tui: fakeTui(),
@@ -357,6 +369,13 @@ describe("CodingAssistantApp", () => {
 
         app.handleInput("\x1b[1;2B");
         expect(agent.snapshot().effort).toBe("low");
+        expect(defaultModelChanges).toHaveLength(4);
+        expect(defaultModelChanges.at(-1)).toEqual({
+            effort: "low",
+            modelId: model.id,
+            providerId: "codex",
+            serviceTier: "fast",
+        });
     });
 
     it("replaces the composer with a two-step model and reasoning menu", () => {
@@ -375,6 +394,7 @@ describe("CodingAssistantApp", () => {
         const provider = defineProvider({
             id: "codex",
             models: [smallModel, proModel],
+            serviceTiers: ["fast"],
             stream() {
                 return streamText("unused");
             },
@@ -385,11 +405,13 @@ describe("CodingAssistantApp", () => {
             modelId: smallModel.id,
             context: harness.context,
             printToConsole: false,
+            serviceTier: "fast",
         });
         const defaultModelChanges: Array<{
             effort: string;
             modelId: string;
             providerId: string;
+            serviceTier: "fast" | null;
         }> = [];
         const app = new CodingAssistantApp({
             agent,
@@ -446,14 +468,19 @@ describe("CodingAssistantApp", () => {
         expect(agent.model.id).toBe(proModel.id);
         expect(agent.snapshot().effort).toBe("high");
         expect(defaultModelChanges).toEqual([
-            { modelId: proModel.id, providerId: "codex", effort: "high" },
+            {
+                modelId: proModel.id,
+                providerId: "codex",
+                effort: "high",
+                serviceTier: "fast",
+            },
         ]);
         expect(rendered).toContain("gpt-pro high");
         expect(rendered).toContain("Model changed to GPT Pro with High reasoning.");
         expect(rendered).toContain("Ask Rig to do anything");
     });
 
-    it("shows Bedrock-only models and sends their provider from the TUI picker", () => {
+    it("shows Bedrock-only models and sends their provider from the TUI picker", async () => {
         const gpt = defineModel({
             id: "openai/gpt-test",
             name: "GPT Test",
@@ -543,13 +570,221 @@ describe("CodingAssistantApp", () => {
         app.handleInput("\r");
         app.handleInput("\r");
 
-        expect(changeModel).toHaveBeenCalledWith("session-1", {
-            effort: "off",
-            modelId: kimi.id,
-            providerId: "bedrock",
-        });
-        expect(agent.provider.id).toBe("bedrock");
+        await vi.waitFor(() =>
+            expect(changeModel).toHaveBeenCalledWith("session-1", {
+                effort: "off",
+                modelId: kimi.id,
+                providerId: "bedrock",
+            }),
+        );
+        await vi.waitFor(() => expect(agent.provider.id).toBe("bedrock"));
         expect(agent.model.id).toBe(kimi.id);
+    });
+
+    it("rolls back a rejected provider change without persisting cleared fast mode", async () => {
+        const codexModel = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const claudeModel = defineModel({
+            id: "anthropic/claude-test",
+            name: "Claude Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const catalog: ModelCatalog = {
+            defaultModelId: codexModel.id,
+            defaultProviderId: "codex",
+            models: [codexModel, claudeModel],
+            providers: [
+                { providerId: "codex", models: [codexModel], serviceTiers: ["fast"] },
+                { providerId: "claude-sdk", models: [claudeModel] },
+            ],
+        };
+        const snapshot = {
+            id: "agent-1",
+            messages: [],
+            modelId: codexModel.id,
+            providerId: "codex",
+            queue: [],
+            serviceTier: "fast" as const,
+            status: "idle" as const,
+            tools: [],
+        };
+        const session: ProtocolSession = {
+            agent: { depth: 0, rootSessionId: "session-1", type: "primary" },
+            agentId: snapshot.id,
+            cwd: "/workspace",
+            id: "session-1",
+            modelId: codexModel.id,
+            modelLocked: false,
+            models: [codexModel],
+            permissionMode: "workspace_write",
+            mcpServers: [],
+            pendingUserInputs: [],
+            providerId: "codex",
+            serviceTier: "fast",
+            snapshot,
+            status: "idle",
+            tasks: [],
+            titleStatus: "idle",
+        };
+        const changeModel = vi.fn().mockRejectedValue(new Error("provider unavailable"));
+        const agent = new RemoteAgent({
+            client: { changeModel } as unknown as ProtocolHttpClient,
+            context: createJustBashToolHarness().context,
+            modelCatalog: catalog,
+            session,
+        });
+        const defaultModelChanges: Array<{
+            effort: string;
+            modelId: string;
+            providerId: string;
+            serviceTier: "fast" | null;
+        }> = [];
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: "/workspace",
+            onDefaultModelChange: (preference) => {
+                defaultModelChanges.push(preference);
+            },
+            processManager: new NativeProxessManager(),
+            sessionBacked: true,
+            tui: fakeTui(),
+        });
+
+        submit(app, "/model");
+        app.handleInput("\x1b[B");
+        app.handleInput("\r");
+        app.handleInput("\r");
+
+        expect(agent.provider.id).toBe("claude-sdk");
+        expect(agent.snapshot().serviceTier).toBeUndefined();
+        await vi.waitFor(() =>
+            expect(stripAnsi(app.render(100).join("\n"))).toContain(
+                "Could not change to Claude Test: provider unavailable",
+            ),
+        );
+        expect(agent.provider.id).toBe("codex");
+        expect(agent.snapshot().serviceTier).toBe("fast");
+        expect(defaultModelChanges).toEqual([]);
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("gpt-test off fast ·");
+    });
+
+    it("does not persist a rejected fast tier through a later model change", async () => {
+        const firstModel = defineModel({
+            id: "openai/gpt-first",
+            name: "GPT First",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const secondModel = defineModel({
+            id: "openai/gpt-second",
+            name: "GPT Second",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const catalog: ModelCatalog = {
+            defaultModelId: firstModel.id,
+            defaultProviderId: "codex",
+            models: [firstModel, secondModel],
+            providers: [
+                {
+                    providerId: "codex",
+                    models: [firstModel, secondModel],
+                    serviceTiers: ["fast"],
+                },
+            ],
+        };
+        const snapshot = {
+            id: "agent-1",
+            messages: [],
+            modelId: firstModel.id,
+            providerId: "codex",
+            queue: [],
+            status: "idle" as const,
+            tools: [],
+        };
+        const session: ProtocolSession = {
+            agent: { depth: 0, rootSessionId: "session-1", type: "primary" },
+            agentId: snapshot.id,
+            cwd: "/workspace",
+            id: "session-1",
+            modelId: firstModel.id,
+            modelLocked: false,
+            models: [firstModel, secondModel],
+            permissionMode: "workspace_write",
+            mcpServers: [],
+            pendingUserInputs: [],
+            providerId: "codex",
+            snapshot,
+            status: "idle",
+            tasks: [],
+            titleStatus: "idle",
+        };
+        const changedSession: ProtocolSession = {
+            ...session,
+            modelId: secondModel.id,
+            snapshot: { ...snapshot, modelId: secondModel.id },
+        };
+        let resolveModelChange!: (value: { session: ProtocolSession }) => void;
+        const modelChange = new Promise<{ session: ProtocolSession }>((resolve) => {
+            resolveModelChange = resolve;
+        });
+        const changeModel = vi.fn(() => modelChange);
+        const changeServiceTier = vi.fn().mockRejectedValue(new Error("fast unavailable"));
+        const agent = new RemoteAgent({
+            client: { changeModel, changeServiceTier } as unknown as ProtocolHttpClient,
+            context: createJustBashToolHarness().context,
+            modelCatalog: catalog,
+            session,
+        });
+        const defaultModelChanges: Array<{
+            effort: string;
+            modelId: string;
+            providerId: string;
+            serviceTier: "fast" | null;
+        }> = [];
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: "/workspace",
+            onDefaultModelChange: (preference) => {
+                defaultModelChanges.push(preference);
+            },
+            processManager: new NativeProxessManager(),
+            sessionBacked: true,
+            tui: fakeTui(),
+        });
+
+        submit(app, "/fast on");
+        submit(app, "/model");
+        app.handleInput("\x1b[B");
+        app.handleInput("\r");
+        app.handleInput("\r");
+
+        expect(agent.model.id).toBe(secondModel.id);
+        expect(agent.snapshot().serviceTier).toBe("fast");
+        await vi.waitFor(() => expect(changeModel).toHaveBeenCalledOnce());
+        expect(agent.snapshot().serviceTier).toBeUndefined();
+        resolveModelChange({ session: changedSession });
+        await vi.waitFor(() =>
+            expect(stripAnsi(app.render(100).join("\n"))).toContain(
+                "Could not turn fast mode on: fast unavailable",
+            ),
+        );
+        await vi.waitFor(() => expect(defaultModelChanges).toHaveLength(1));
+        expect(agent.model.id).toBe(secondModel.id);
+        expect(agent.snapshot().serviceTier).toBeUndefined();
+        expect(defaultModelChanges).toEqual([
+            {
+                effort: "off",
+                modelId: secondModel.id,
+                providerId: "codex",
+                serviceTier: null,
+            },
+        ]);
     });
 
     it("keeps model choices visible but locked during an active response", () => {
@@ -648,6 +883,337 @@ describe("CodingAssistantApp", () => {
         expect(agent.model.id).toBe(model.id);
         expect(agent.snapshot().effort).toBe("high");
         expect(rendered).toContain("Reasoning changed to High.");
+    });
+
+    it("toggles supported fast inference and shows it in the footer", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["ultra"],
+            defaultThinkingLevel: "ultra",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            serviceTiers: ["fast"],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        const defaultModelChanges: Array<{
+            effort: string;
+            modelId: string;
+            providerId: string;
+            serviceTier: "fast" | null;
+        }> = [];
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            onDefaultModelChange: (preference) => {
+                defaultModelChanges.push(preference);
+            },
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        submit(app, "/fast");
+
+        expect(agent.snapshot().serviceTier).toBe("fast");
+        let rendered = stripAnsi(app.render(100).join("\n"));
+        expect(rendered).toContain("Fast mode is on. Fast inference uses 2× plan usage.");
+        expect(rendered).toContain(
+            "gpt-test ultra fast · /workspace · main [default] · full access",
+        );
+
+        submit(app, "/fast status");
+        rendered = stripAnsi(app.render(100).join("\n"));
+        expect(rendered).toContain("Fast mode is on.");
+
+        submit(app, "/fast off");
+
+        expect(agent.snapshot().serviceTier).toBeUndefined();
+        rendered = stripAnsi(app.render(100).join("\n"));
+        expect(rendered).toContain("Fast mode is off.");
+        expect(rendered).toContain("gpt-test ultra · /workspace · main [default] · full access");
+        expect(rendered).not.toContain("gpt-test ultra fast ·");
+        submit(app, "/fast turbo");
+        rendered = stripAnsi(app.render(100).join("\n"));
+        expect(rendered).toContain("Usage: /fast [on|off|status]");
+        expect(defaultModelChanges).toEqual([
+            {
+                effort: "ultra",
+                modelId: model.id,
+                providerId: "codex",
+                serviceTier: "fast",
+            },
+            {
+                effort: "ultra",
+                modelId: model.id,
+                providerId: "codex",
+                serviceTier: null,
+            },
+        ]);
+    });
+
+    it("keeps rapid fast config writes ordered with the final toggle", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["ultra"],
+            defaultThinkingLevel: "ultra",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            serviceTiers: ["fast"],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        const enqueueWrite = createSerialTaskQueue();
+        const writes: Array<"fast" | null> = [];
+        let releaseFirstWrite!: () => void;
+        const firstWriteGate = new Promise<void>((resolve) => {
+            releaseFirstWrite = resolve;
+        });
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            onDefaultModelChange: (preference) =>
+                enqueueWrite(async () => {
+                    if (preference.serviceTier === "fast") {
+                        await firstWriteGate;
+                    }
+                    writes.push(preference.serviceTier);
+                }),
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        submit(app, "/fast on");
+        submit(app, "/fast off");
+
+        expect(agent.snapshot().serviceTier).toBeUndefined();
+        expect(stripAnsi(app.render(100).join("\n"))).not.toContain("gpt-test ultra fast ·");
+        releaseFirstWrite();
+        await vi.waitFor(() => expect(writes).toEqual(["fast", null]));
+    });
+
+    it("rolls back a rejected fast change without persisting it", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["ultra"],
+            defaultThinkingLevel: "ultra",
+        });
+        const snapshot = {
+            id: "agent-1",
+            messages: [],
+            modelId: model.id,
+            providerId: "codex",
+            queue: [],
+            status: "idle" as const,
+            tools: [],
+        };
+        const session: ProtocolSession = {
+            agent: { depth: 0, rootSessionId: "session-1", type: "primary" },
+            agentId: snapshot.id,
+            cwd: "/workspace",
+            id: "session-1",
+            modelId: model.id,
+            modelLocked: false,
+            models: [model],
+            permissionMode: "workspace_write",
+            mcpServers: [],
+            pendingUserInputs: [],
+            providerId: "codex",
+            snapshot,
+            status: "idle",
+            tasks: [],
+            titleStatus: "idle",
+        };
+        const changeServiceTier = vi.fn().mockRejectedValue(new Error("daemon unavailable"));
+        const agent = new RemoteAgent({
+            client: { changeServiceTier } as unknown as ProtocolHttpClient,
+            context: createJustBashToolHarness().context,
+            modelCatalog: {
+                defaultModelId: model.id,
+                defaultProviderId: "codex",
+                models: [model],
+                providers: [{ models: [model], providerId: "codex", serviceTiers: ["fast"] }],
+            },
+            session,
+        });
+        const defaultModelChanges: Array<{
+            effort: string;
+            modelId: string;
+            providerId: string;
+            serviceTier: "fast" | null;
+        }> = [];
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: "/workspace",
+            onDefaultModelChange: (preference) => {
+                defaultModelChanges.push(preference);
+            },
+            processManager: new NativeProxessManager(),
+            sessionBacked: true,
+            tui: fakeTui(),
+        });
+
+        submit(app, "/fast on");
+        expect(agent.snapshot().serviceTier).toBe("fast");
+
+        await vi.waitFor(() =>
+            expect(stripAnsi(app.render(100).join("\n"))).toContain(
+                "Could not turn fast mode on: daemon unavailable",
+            ),
+        );
+        expect(agent.snapshot().serviceTier).toBeUndefined();
+        expect(defaultModelChanges).toEqual([]);
+        expect(stripAnsi(app.render(100).join("\n"))).not.toContain("gpt-test ultra fast ·");
+    });
+
+    it("only offers fast inference for providers that support it", async () => {
+        const model = defineModel({
+            id: "claude-test",
+            name: "Claude Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const stream = vi.fn();
+        const provider = defineProvider({
+            id: "anthropic",
+            models: [model],
+            stream() {
+                stream();
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        submit(app, "/fast on");
+
+        expect(agent.snapshot().serviceTier).toBeUndefined();
+        expect(stream).not.toHaveBeenCalled();
+        expect(stripAnsi(app.render(100).join("\n"))).toContain(
+            "Fast inference is not available with Claude Test.",
+        );
+
+        app.focused = true;
+        app.handleInput("/f");
+        await delay(30);
+        expect(stripAnsi(app.render(100).join("\n"))).not.toContain("/fast");
+    });
+
+    it("offers the fast command with a clear plan-usage description", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            serviceTiers: ["fast"],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        app.focused = true;
+        app.handleInput("/f");
+        await delay(30);
+
+        const rendered = stripAnsi(app.render(100).join("\n"));
+        expect(rendered).toContain("/fast");
+        expect(rendered).toContain("Toggle fastest inference at 2× plan usage.");
+    });
+
+    it("renders service-tier changes received from a session", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            serviceTiers: ["fast"],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            sessionBacked: true,
+            tui: fakeTui(),
+        });
+        agent.setServiceTier("fast");
+
+        app.applySessionEvent({
+            createdAt: 1,
+            data: {
+                serviceTier: "fast",
+                snapshot: agent.snapshot(),
+            },
+            id: "event-fast",
+            sessionId: "session-1",
+            type: "service_tier_changed",
+        });
+
+        const rendered = stripAnsi(app.render(100).join("\n"));
+        expect(rendered).toContain("Fast mode is on. Fast inference uses 2× plan usage.");
+        expect(rendered).toContain("gpt-test off fast · /workspace");
     });
 
     it("opens the model menu with Alt+M", () => {
