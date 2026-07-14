@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { statSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -68,10 +69,21 @@ export async function createGym(options: GymOptions): Promise<Gym> {
                 "RIG_PROVIDER=gym",
                 "--volume",
                 `${workspacePath}:/workspace`,
+                ...(options.dockerSocket === true
+                    ? [
+                          "--group-add",
+                          "0",
+                          "--group-add",
+                          String(statSync("/var/run/docker.sock").gid),
+                          "--volume",
+                          "/var/run/docker.sock:/var/run/docker.sock",
+                      ]
+                    : []),
                 ...(homePath === undefined ? [] : ["--volume", `${homePath}:/home/rig`]),
                 "--workdir",
                 "/workspace",
                 imageId,
+                ...(options.args ?? []),
             ],
             {
                 cols,

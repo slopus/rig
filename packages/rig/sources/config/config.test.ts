@@ -27,8 +27,28 @@ show_reasoning = false
 
 [features]
 workflows = false
+
+[docker]
+image = "node:24-bookworm"
+workdir = "/workspace"
+socket_path = "/tmp/docker.sock"
+env = { NODE_ENV = "development" }
+mounts = [
+    { source = ".", target = "/workspace" },
+    { source = "/tmp/cache", target = "/cache", read_only = true },
+]
 `),
         ).toEqual({
+            docker: {
+                image: "node:24-bookworm",
+                workingDirectory: "/workspace",
+                socketPath: "/tmp/docker.sock",
+                environment: { NODE_ENV: "development" },
+                mounts: [
+                    { source: ".", target: "/workspace" },
+                    { source: "/tmp/cache", target: "/cache", readOnly: true },
+                ],
+            },
             defaults: {
                 modelId: "openai/gpt-5.4",
                 providerId: "bedrock",
@@ -66,6 +86,9 @@ permission_mode = "read_only"
 show_reasoning = false
 [features]
 workflows = false
+[docker]
+container = "trusted-development-container"
+workdir = "/repo"
 `,
                 "utf8",
             );
@@ -83,6 +106,8 @@ show_reasoning = true
 show_usage = true
 [features]
 workflows = true
+[docker]
+image = "attacker/image"
 `,
                 "utf8",
             );
@@ -113,8 +138,12 @@ effort = "minimal"
                 showUsage: true,
             });
             expect(loaded.config.features.workflows).toBe(true);
+            expect(loaded.config.docker).toEqual({
+                container: "trusted-development-container",
+                workingDirectory: "/repo",
+            });
             expect(createProjectConfigSecurityNotice(loaded.sources.local.values)).toBe(
-                "This project's rig.toml requested a permission mode. Rig applied the other project preferences but kept your user-level permission choice.",
+                "This project's rig.toml requested a permission mode and Docker environment. Rig applied the other project preferences but kept execution settings under your machine-level control.",
             );
 
             const emptyCwd = join(root, "empty-repo");

@@ -1,6 +1,7 @@
 import {
     Agent,
     createNodeAgentContext,
+    createDockerAgentContext,
     type AgentOptions,
     type AnyDefinedTool,
     type GoalContext,
@@ -9,6 +10,7 @@ import {
     type TaskContext,
     type UserInputContext,
 } from "../agent/index.js";
+import type { DockerExecutionConfig } from "../execution/index.js";
 import type { WorkflowContext } from "../workflows/index.js";
 import type { Message } from "../agent/types.js";
 import { NativeProxessManager } from "../processes/index.js";
@@ -28,12 +30,14 @@ import { createDefaultInstructions } from "./createDefaultInstructions.js";
 
 export interface CreateCodingAssistantAgentOptions {
     cwd: string;
+    docker?: DockerExecutionConfig;
     agentId?: string;
     apiKey?: string;
     effort?: string;
     env?: NodeJS.ProcessEnv;
     goals?: GoalContext;
     instructions?: string;
+    local?: boolean;
     messages?: readonly Message[];
     contextMessages?: readonly Message[];
     modelId?: string;
@@ -45,6 +49,7 @@ export interface CreateCodingAssistantAgentOptions {
     userInput?: UserInputContext;
     workflows?: WorkflowContext;
     workflowsEnabled?: boolean;
+    sessionId?: string;
 }
 
 export function createCodingAssistantAgent(
@@ -52,15 +57,26 @@ export function createCodingAssistantAgent(
 ): CodingAssistantRuntime {
     const processManager = options.processManager ?? new NativeProxessManager();
     const workflowsEnabled = options.workflows !== undefined && options.workflowsEnabled !== false;
-    const context = createNodeAgentContext({
-        cwd: options.cwd,
+    const sharedContextOptions = {
         ...(options.goals !== undefined ? { goals: options.goals } : {}),
-        processManager,
         ...(options.permissionMode !== undefined ? { permissionMode: options.permissionMode } : {}),
         ...(options.tasks !== undefined ? { tasks: options.tasks } : {}),
         ...(options.userInput !== undefined ? { userInput: options.userInput } : {}),
         ...(workflowsEnabled ? { workflows: options.workflows } : {}),
-    });
+    };
+    const context =
+        options.docker === undefined
+            ? createNodeAgentContext({
+                  ...sharedContextOptions,
+                  cwd: options.cwd,
+                  processManager,
+              })
+            : createDockerAgentContext({
+                  ...sharedContextOptions,
+                  docker: options.docker,
+                  sessionId: options.sessionId ?? options.agentId ?? "standalone",
+              });
+    const runtimeCwd = context.fs.cwd;
     if (options.subagents !== undefined) {
         context.subagents = options.subagents;
     }
@@ -127,7 +143,7 @@ export function createCodingAssistantAgent(
         modelId,
         context,
         ...(options.agentId !== undefined ? { id: options.agentId } : {}),
-        instructions: options.instructions ?? createDefaultInstructions(options.cwd),
+        instructions: options.instructions ?? createDefaultInstructions(runtimeCwd),
         ...(options.messages !== undefined ? { messages: options.messages } : {}),
         ...(options.contextMessages !== undefined
             ? { contextMessages: options.contextMessages }
@@ -142,7 +158,7 @@ export function createCodingAssistantAgent(
     return {
         agent: new Agent(agentOptions),
         context,
-        cwd: options.cwd,
+        cwd: runtimeCwd,
         processManager,
         provider,
     };

@@ -1,5 +1,6 @@
 import type { PermissionMode } from "../permissions/index.js";
 import type { McpServerConfig } from "../mcp/types.js";
+import type { DockerExecutionConfig } from "../execution/index.js";
 
 export interface ConfigDefaults {
     effort?: string;
@@ -36,6 +37,7 @@ export interface PartialConfigFeatures {
 }
 
 export interface RigConfig {
+    docker?: DockerExecutionConfig;
     defaults: ConfigDefaults;
     features: ConfigFeatures;
     mcpServers: Readonly<Record<string, McpServerConfig>>;
@@ -43,6 +45,7 @@ export interface RigConfig {
 }
 
 export interface PartialRigConfig {
+    docker?: DockerExecutionConfig;
     defaults?: PartialConfigDefaults;
     features?: PartialConfigFeatures;
     mcpServers?: Readonly<Record<string, McpServerConfig>>;

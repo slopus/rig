@@ -13,8 +13,60 @@ import { PersistentSessionStore } from "./PersistentSessionStore.js";
 import type { SessionStore } from "./SessionStore.js";
 import { createProtocolHttpServer } from "./createProtocolHttpServer.js";
 import type { FileSearchServiceContract } from "./FileSearchService.js";
+import type { DockerExecutionConfig } from "../execution/index.js";
 
 describe("createProtocolHttpServer", () => {
+    it("uses Docker defaults unless the new session chooses another environment", async () => {
+        const defaultDocker: DockerExecutionConfig = {
+            image: "default:local",
+            mounts: [{ source: ".", target: "/workspace" }],
+            workingDirectory: "/workspace",
+        };
+        const { client, close, store } = await startServer({ defaultDocker });
+        try {
+            const configured = await client.createSession({ cwd: "/tmp/default-project" });
+            const explicit = await client.createSession({
+                cwd: "/tmp/explicit-project",
+                docker: { container: "already-running", workingDirectory: "/repo" },
+            });
+            const local = await client.createSession({
+                cwd: "/tmp/local-project",
+                local: true,
+            });
+
+            expect(store.get(configured.session.id)?.requestForSubagent().docker).toEqual({
+                image: "default:local",
+                mounts: [{ source: "/tmp/default-project", target: "/workspace" }],
+                name: `rig-${configured.session.id}`,
+                workingDirectory: "/workspace",
+            });
+            expect(store.get(explicit.session.id)?.requestForSubagent().docker).toEqual({
+                container: "already-running",
+                workingDirectory: "/repo",
+            });
+            expect(store.get(local.session.id)?.requestForSubagent().docker).toBeUndefined();
+        } finally {
+            await close();
+        }
+    });
+
+    it("rejects malformed Docker session settings before creating a session", async () => {
+        const { client, close } = await startServer();
+        try {
+            await expect(
+                client.createSession({
+                    cwd: "/tmp/invalid-docker-project",
+                    docker: {
+                        image: "project:local",
+                        workingDirectory: "relative/path",
+                    },
+                }),
+            ).rejects.toThrow("absolute container path");
+        } finally {
+            await close();
+        }
+    });
+
     it("requires bearer auth", async () => {
         const { close, socketPath } = await startServer();
         try {
@@ -451,6 +503,7 @@ describe("createProtocolHttpServer", () => {
 
 async function startServer(
     options: {
+        defaultDocker?: DockerExecutionConfig;
         fileSearchService?: FileSearchServiceContract;
         onShutdown?: () => void;
         store?: SessionStore;
@@ -465,6 +518,7 @@ async function startServer(
     const socketPath = join(directory, "server.sock");
     const store = options.store ?? new InMemorySessionStore();
     const server = createProtocolHttpServer({
+        ...(options.defaultDocker === undefined ? {} : { defaultDocker: options.defaultDocker }),
         ...(options.fileSearchService !== undefined
             ? { fileSearchService: options.fileSearchService }
             : {}),

@@ -7,11 +7,9 @@ RUN corepack enable
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json tsconfig.base.json ./
 COPY packages/rig/package.json packages/rig/package.json
-COPY packages/web/package.json packages/web/package.json
 RUN pnpm install --frozen-lockfile
 
 COPY packages/rig packages/rig
-COPY packages/web packages/web
 RUN pnpm --filter @slopus/rig build
 RUN pnpm --filter @slopus/rig deploy --prod --legacy /prod/rig
 

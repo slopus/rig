@@ -1173,12 +1173,12 @@ describe("CodingAssistantApp", () => {
         });
         const searchFiles = vi.fn(async () => [
             {
-                fileName: "ChatComposer.tsx",
-                path: "packages/web/sources/components/chat/ChatComposer.tsx",
+                fileName: "CodingAssistantApp.ts",
+                path: "packages/rig/sources/app/CodingAssistantApp.ts",
             },
             {
-                fileName: "ChatPanel.tsx",
-                path: "packages/web/sources/components/ChatPanel.tsx",
+                fileName: "createCodingAssistantAgent.ts",
+                path: "packages/rig/sources/app/createCodingAssistantAgent.ts",
             },
         ]);
         const app = new CodingAssistantApp({
@@ -1190,37 +1190,39 @@ describe("CodingAssistantApp", () => {
         });
 
         app.focused = true;
-        for (const character of "Review @chat") {
+        for (const character of "Review @coding") {
             app.handleInput(character);
         }
         await delay(160);
 
-        expect(searchFiles).toHaveBeenLastCalledWith("chat");
+        expect(searchFiles).toHaveBeenLastCalledWith("coding");
         const rawLines = app.render(100);
-        const mentionLine = rawLines.find((line) => stripAnsi(line).includes("ChatComposer.tsx"));
+        const mentionLine = rawLines.find((line) =>
+            stripAnsi(line).includes("CodingAssistantApp.ts"),
+        );
         expect(mentionLine).toBeDefined();
         expect(mentionLine).toContain("\x1b[38;5;202m");
         expect(mentionLine).not.toContain("\x1b[48;5;236m");
-        expect(stripAnsi(mentionLine ?? "")).not.toContain("@ChatComposer.tsx");
+        expect(stripAnsi(mentionLine ?? "")).not.toContain("@CodingAssistantApp.ts");
         expect(stripAnsi(mentionLine ?? "")).toContain(
-            "packages/web/sources/components/chat/ChatComposer.tsx",
+            "packages/rig/sources/app/CodingAssistantApp.ts",
         );
 
         app.handleInput("x");
         const renderedWhileSearching = stripAnsi(app.render(100).join("\n"));
-        expect(renderedWhileSearching).toContain("Review @chatx");
-        expect(renderedWhileSearching).toContain("ChatComposer.tsx");
+        expect(renderedWhileSearching).toContain("Review @codingx");
+        expect(renderedWhileSearching).toContain("CodingAssistantApp.ts");
 
         await delay(160);
         app.handleInput("\x1b");
         app.handleInput("y");
-        expect(stripAnsi(app.render(100).join("\n"))).toContain("Review @chatxy");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("Review @codingxy");
 
         await delay(160);
         app.handleInput("\x1b[B");
         app.handleInput("\t");
         expect(stripAnsi(app.render(100).join("\n"))).toContain(
-            "Review @packages/web/sources/components/ChatPanel.tsx ",
+            "Review @packages/rig/sources/app/createCodingAssistantAgent.ts ",
         );
     });
 

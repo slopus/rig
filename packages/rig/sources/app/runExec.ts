@@ -1,12 +1,18 @@
 import { findLastAgentResponseText } from "../agent/findLastAgentResponseText.js";
 import { ensureLocalProtocolServer } from "../client/index.js";
-import { createProjectConfigSecurityNotice, loadConfig } from "../config/index.js";
+import {
+    createProjectConfigSecurityNotice,
+    createProjectConfigSecurityNoticeTitle,
+    loadConfig,
+} from "../config/index.js";
 import { createProjectMcpSecurityNotice, loadMcpServerConfigEntries } from "../mcp/index.js";
 import type { CreateSessionRequest, ProtocolSession, SessionEvent } from "../protocol/index.js";
 import type { StopReason } from "../providers/types.js";
 import type { PermissionMode } from "../permissions/index.js";
 import type { ExecCommandOptions } from "./parseExecCommand.js";
 import { readExecPrompt } from "./readExecPrompt.js";
+import type { DockerExecutionConfig } from "../execution/index.js";
+import { resolveDockerExecutionConfig } from "../execution/index.js";
 
 export async function runExec(
     options: ExecCommandOptions,
@@ -37,12 +43,15 @@ async function run(options: ExecCommandOptions, environment: NodeJS.ProcessEnv):
     );
     const projectMcpNotice = createProjectMcpSecurityNotice(mcpConfigEntries);
     if (projectConfigNotice !== undefined) {
+        const projectConfigNoticeTitle = createProjectConfigSecurityNoticeTitle(
+            loadedConfig.sources.local.values,
+        );
         if (options.outputFormat === "stream-json") {
             process.stdout.write(
-                `${JSON.stringify({ message: projectConfigNotice, title: "Project permission ignored", type: "warning" })}\n`,
+                `${JSON.stringify({ message: projectConfigNotice, title: projectConfigNoticeTitle, type: "warning" })}\n`,
             );
         } else {
-            process.stderr.write(`Project permission ignored: ${projectConfigNotice}\n`);
+            process.stderr.write(`${projectConfigNoticeTitle}: ${projectConfigNotice}\n`);
         }
     }
     if (projectMcpNotice !== undefined) {
@@ -65,6 +74,7 @@ async function run(options: ExecCommandOptions, environment: NodeJS.ProcessEnv):
         cwd,
         loadedConfig.config.defaults,
         loadedConfig.config.features.workflows,
+        options.docker === undefined ? loadedConfig.config.docker : options.docker,
         connection.client,
         environment,
     );
@@ -169,6 +179,7 @@ async function openSession(
         providerId?: string;
     },
     workflowsEnabled: boolean,
+    docker: DockerExecutionConfig | null | undefined,
     client: Awaited<ReturnType<typeof ensureLocalProtocolServer>>["client"],
     environment: NodeJS.ProcessEnv,
 ): Promise<ProtocolSession> {
@@ -187,6 +198,10 @@ async function openSession(
         modelId: options.modelId ?? environment.RIG_MODEL ?? defaults.modelId,
         permissionMode: options.permissionMode ?? defaults.permissionMode,
         workflowsEnabled,
+        ...(docker === null ? { local: true } : {}),
+        ...(docker === undefined || docker === null
+            ? {}
+            : { docker: resolveDockerExecutionConfig(docker, cwd) }),
     };
     const providerId = options.providerId ?? environment.RIG_PROVIDER ?? defaults.providerId;
     const effort = options.effort ?? environment.RIG_EFFORT ?? defaults.effort;

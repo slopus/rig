@@ -31,6 +31,8 @@ import { AgentSessionManager } from "./AgentSessionManager.js";
 import { createModelCatalog } from "./createModelCatalog.js";
 import type { SessionStore } from "./SessionStore.js";
 import type { McpToolProvider } from "../mcp/index.js";
+import type { DockerExecutionConfig } from "../execution/index.js";
+import { summarizeDockerExecution } from "../execution/index.js";
 
 export interface PersistentSessionStoreOptions {
     databasePath: string;
@@ -219,6 +221,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 SELECT
                     id,
                     cwd,
+                    docker_json,
                     provider_id,
                     model_id,
                     permission_mode,
@@ -248,12 +251,18 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             const titleError = readOptionalString(row, "title_error");
             const lastMessageAt = readOptionalNumber(row, "last_message_at_ms");
             const interruptionJson = readOptionalString(row, "interruption_json");
+            const dockerJson = readOptionalString(row, "docker_json");
             return {
                 id: readString(row, "id"),
                 cwd: readString(row, "cwd"),
                 providerId: readString(row, "provider_id"),
                 modelId: readString(row, "model_id"),
                 permissionMode: parsePermissionMode(readString(row, "permission_mode")),
+                environment: summarizeDockerExecution(
+                    dockerJson === undefined
+                        ? undefined
+                        : (JSON.parse(dockerJson) as DockerExecutionConfig),
+                ),
                 ...(effort !== undefined ? { effort } : {}),
                 status: readString(row, "status") as SessionSummary["status"],
                 titleStatus: readString(row, "title_status") as SessionTitleStatus,
@@ -379,6 +388,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     task_name,
                     description,
                     cwd,
+                    docker_json,
                     provider_id,
                     model_id,
                     effort,
@@ -403,7 +413,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     created_at_ms,
                     updated_at_ms
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     agent_id = excluded.agent_id,
                     session_kind = excluded.session_kind,
@@ -414,6 +424,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     task_name = excluded.task_name,
                     description = excluded.description,
                     cwd = excluded.cwd,
+                    docker_json = excluded.docker_json,
                     provider_id = excluded.provider_id,
                     model_id = excluded.model_id,
                     effort = excluded.effort,
@@ -449,6 +460,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 state.agent.taskName ?? null,
                 state.agent.description ?? null,
                 state.cwd,
+                state.docker === undefined ? null : JSON.stringify(state.docker),
                 state.providerId,
                 state.modelId,
                 state.effort ?? null,
@@ -563,6 +575,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 task_name TEXT,
                 description TEXT,
                 cwd TEXT NOT NULL,
+                docker_json TEXT,
                 provider_id TEXT NOT NULL,
                 model_id TEXT NOT NULL,
                 effort TEXT,
@@ -628,6 +641,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             );
         `);
         this.#ensureSessionColumn("title", "TEXT");
+        this.#ensureSessionColumn("docker_json", "TEXT");
         this.#ensureSessionColumn("title_status", "TEXT NOT NULL DEFAULT 'idle'");
         this.#ensureSessionColumn("title_error", "TEXT");
         this.#ensureSessionColumn("last_message_at_ms", "INTEGER");
@@ -732,6 +746,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         }
 
         const effort = readOptionalString(row, "effort");
+        const dockerJson = readOptionalString(row, "docker_json");
         const instructions = readOptionalString(row, "instructions");
         const interruptionJson = readOptionalString(row, "interruption_json");
         const lastMessageAt = readOptionalNumber(row, "last_message_at_ms");
@@ -760,6 +775,9 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             agent,
             agentId: readString(row, "agent_id"),
             cwd: readString(row, "cwd"),
+            ...(dockerJson !== undefined
+                ? { docker: JSON.parse(dockerJson) as DockerExecutionConfig }
+                : {}),
             ...(contextMessagesJson !== undefined
                 ? { contextMessages: JSON.parse(contextMessagesJson) as Message[] }
                 : {}),
@@ -793,6 +811,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
 
         const request: CreateSessionRequest = {
             cwd: restore.cwd,
+            ...(restore.docker === undefined ? {} : { docker: restore.docker }),
             ...(restore.effort !== undefined ? { effort: restore.effort } : {}),
             ...(restore.instructions !== undefined ? { instructions: restore.instructions } : {}),
             modelId,

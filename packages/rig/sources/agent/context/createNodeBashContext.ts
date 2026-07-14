@@ -103,6 +103,13 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
         activeSessionCount,
         activeSessions,
         cwd: options.cwd,
+        async killAllSessions() {
+            const active = [...sessions.values()].filter((session) => session.result === undefined);
+            await Promise.all(
+                active.map((session) => session.process.kill("SIGTERM", { forceAfterMs: 500 })),
+            );
+            return active.length;
+        },
         async killSession(sessionId) {
             const session = sessions.get(sessionId);
             if (session === undefined) return undefined;

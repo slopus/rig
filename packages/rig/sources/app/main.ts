@@ -2,20 +2,14 @@ import { runDaemonCommand, type DaemonCommand } from "./runDaemonCommand.js";
 import { runApp, type RunAppOptions } from "./runApp.js";
 import { runMonit } from "./runMonit.js";
 import { runExec } from "./runExec.js";
-import { runWebCommand } from "./runWebCommand.js";
-import { runWebServer } from "./web/runWebServer.js";
 import { parsePermissionMode } from "../permissions/index.js";
 import { runLocalProtocolServer } from "../server/index.js";
 import { parseExecCommand } from "./parseExecCommand.js";
 import { parseSessionCommand } from "./parseSessionCommand.js";
 import { resolveSessionCommand } from "./resolveSessionCommand.js";
+import { parseSessionEnvironmentOptions } from "./parseSessionEnvironmentOptions.js";
 
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
-    if (argv.includes("--web-server")) {
-        await runWebServer();
-        return;
-    }
-
     if (argv.includes("--server")) {
         await runLocalProtocolServer({
             ...(process.env.RIG_SERVER_SOCKET_PATH !== undefined
@@ -28,15 +22,26 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         return;
     }
 
+    const parsedEnvironment = parseSessionEnvironmentOptions(argv);
+    argv = parsedEnvironment.remaining;
     const options: RunAppOptions = {
         cwd: process.cwd(),
+        ...(parsedEnvironment.docker === undefined ? {} : { docker: parsedEnvironment.docker }),
     };
     const [command, ...commandArgs] = argv;
     if (command === "exec") {
-        await runExec(parseExecCommand(commandArgs));
+        await runExec({
+            ...parseExecCommand(commandArgs),
+            ...(parsedEnvironment.docker === undefined ? {} : { docker: parsedEnvironment.docker }),
+        });
         return;
     }
     if (command === "resume" || command === "fork") {
+        if (parsedEnvironment.docker !== undefined) {
+            throw new Error(
+                "A resumed or forked session keeps its existing execution environment.",
+            );
+        }
         options.resumeSessionId = await resolveSessionCommand({
             command,
             cwd: options.cwd ?? process.cwd(),
@@ -55,11 +60,6 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         await runMonit();
         return;
     }
-    if (command === "web") {
-        await runWebCommand();
-        return;
-    }
-
     if (process.env.OPENAI_API_KEY !== undefined) {
         options.apiKey = process.env.OPENAI_API_KEY;
     }

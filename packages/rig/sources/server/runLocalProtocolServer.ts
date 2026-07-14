@@ -8,6 +8,7 @@ import { PersistentSessionStore } from "./PersistentSessionStore.js";
 import { readLocalServerToken } from "./readLocalServerToken.js";
 import { removeStaleSocket } from "./removeStaleSocket.js";
 import { McpClientManager } from "../mcp/index.js";
+import { loadConfig } from "../config/index.js";
 
 export interface RunLocalProtocolServerOptions {
     socketPath?: string;
@@ -24,6 +25,7 @@ export async function runLocalProtocolServer(
     const token = await readLocalServerToken(tokenPath);
     await removeStaleSocket(socketPath);
 
+    const loadedConfig = await loadConfig({ cwd: process.cwd() });
     const modelCatalog = createModelCatalog({ cwd: process.cwd() });
     const mcpToolProvider = new McpClientManager();
     const store = new PersistentSessionStore({
@@ -33,6 +35,9 @@ export async function runLocalProtocolServer(
     });
     let stopServer: (() => void) | undefined;
     const server = createProtocolHttpServer({
+        ...(loadedConfig.config.docker === undefined
+            ? {}
+            : { defaultDocker: loadedConfig.config.docker }),
         modelCatalog,
         onShutdown: () => stopServer?.(),
         store,

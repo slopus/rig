@@ -36,8 +36,11 @@ import type { SessionEventLog } from "./SessionEventLog.js";
 import type { SessionStore } from "./SessionStore.js";
 import { isPermissionMode } from "../permissions/index.js";
 import { isGoalStatus } from "../goals/index.js";
+import { resolveDockerExecutionConfig, validateDockerExecutionConfig } from "../execution/index.js";
+import type { DockerExecutionConfig } from "../execution/index.js";
 
 export interface ProtocolHttpServerOptions {
+    defaultDocker?: DockerExecutionConfig;
     initialization?: Promise<ModelCatalog>;
     modelCatalog?: ModelCatalog;
     fileSearchService?: FileSearchServiceContract;
@@ -65,6 +68,7 @@ export function createProtocolHttpServer(options: ProtocolHttpServerOptions): Se
             fileSearchService,
             options.token,
             options.onShutdown,
+            options.defaultDocker,
         ).catch((error: unknown) => {
             sendJson(response, 500, {
                 error: error instanceof Error ? error.message : String(error),
@@ -89,6 +93,7 @@ async function handleRequest(
     fileSearchService: FileSearchServiceContract,
     token: string,
     onShutdown: (() => void) | undefined,
+    defaultDocker: DockerExecutionConfig | undefined,
 ): Promise<void> {
     if (!isAuthorized(request, token)) {
         sendJson(response, 401, { error: "Unauthorized" });
@@ -131,7 +136,28 @@ async function handleRequest(
             });
             return;
         }
-        const session = store.create(body);
+        const { local, ...sessionRequest } = body;
+        if (local === true && body.docker !== undefined) {
+            sendJson(response, 400, {
+                error: "Choose either local execution or a Docker environment, not both.",
+            });
+            return;
+        }
+        const configuredDocker =
+            local === true || body.docker !== undefined ? undefined : defaultDocker;
+        const docker = body.docker ?? configuredDocker;
+        if (docker !== undefined) {
+            try {
+                validateDockerExecutionConfig(docker);
+            } catch (error) {
+                sendJson(response, 400, {
+                    error: error instanceof Error ? error.message : String(error),
+                });
+                return;
+            }
+            sessionRequest.docker = resolveDockerExecutionConfig(docker, body.cwd);
+        }
+        const session = store.create(sessionRequest);
         sendJson<CreateSessionResponse>(response, 201, { session: session.snapshot() });
         return;
     }

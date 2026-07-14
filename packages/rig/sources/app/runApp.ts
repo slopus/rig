@@ -4,6 +4,7 @@ import { createNodeAgentContext } from "../agent/index.js";
 import { ensureLocalProtocolServer, RemoteAgent } from "../client/index.js";
 import {
     createProjectConfigSecurityNotice,
+    createProjectConfigSecurityNoticeTitle,
     loadConfig,
     writeRuntimeConfig,
 } from "../config/index.js";
@@ -11,6 +12,8 @@ import { createProjectMcpSecurityNotice, loadMcpServerConfigEntries } from "../m
 import { NativeProxessManager } from "../processes/index.js";
 import type { PermissionMode } from "../permissions/index.js";
 import type { SessionEvent } from "../protocol/index.js";
+import { resolveDockerExecutionConfig } from "../execution/index.js";
+import type { DockerExecutionConfig } from "../execution/index.js";
 import { CodingAssistantApp } from "./CodingAssistantApp.js";
 import { type CreateCodingAssistantAgentOptions } from "./createCodingAssistantAgent.js";
 import { createStopOnceHandler } from "./createStopOnceHandler.js";
@@ -31,6 +34,7 @@ export interface RunAppOptions {
     resumeSessionId?: string;
     showReasoning?: boolean;
     showUsage?: boolean;
+    docker?: DockerExecutionConfig | null;
 }
 
 export async function runApp(options: RunAppOptions = {}): Promise<void> {
@@ -57,6 +61,15 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     }
     if (loadedConfig.config.defaults.instructions !== undefined) {
         agentOptions.instructions = loadedConfig.config.defaults.instructions;
+    }
+    if (loadedConfig.config.docker !== undefined) {
+        agentOptions.docker = resolveDockerExecutionConfig(loadedConfig.config.docker, cwd);
+    }
+    if (options.docker === null) {
+        delete agentOptions.docker;
+        agentOptions.local = true;
+    } else if (options.docker !== undefined) {
+        agentOptions.docker = resolveDockerExecutionConfig(options.docker, cwd);
     }
     if (options.apiKey !== undefined) agentOptions.apiKey = options.apiKey;
     if (options.effort !== undefined) agentOptions.effort = options.effort;
@@ -151,7 +164,14 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
                   initialNotices: [
                       ...(projectConfigNotice === undefined
                           ? []
-                          : [{ text: projectConfigNotice, title: "Project permission ignored" }]),
+                          : [
+                                {
+                                    text: projectConfigNotice,
+                                    title: createProjectConfigSecurityNoticeTitle(
+                                        loadedConfig.sources.local.values,
+                                    ),
+                                },
+                            ]),
                       ...(projectMcpNotice === undefined
                           ? []
                           : [{ text: projectMcpNotice, title: "Project MCP needs trust" }]),

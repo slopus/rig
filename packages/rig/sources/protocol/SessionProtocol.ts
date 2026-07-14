@@ -13,10 +13,20 @@ import type { SessionTask } from "../tasks/index.js";
 import type { WorkflowRun, WorkflowRunUpdate } from "../workflows/index.js";
 import type { ChangeGoalStatusRequest, CreateGoalRequest, SessionGoal } from "../goals/index.js";
 import type { EventId } from "./EventId.js";
+import type { DockerExecutionConfig } from "../execution/index.js";
 
 export type SessionStatus = "idle" | "queued" | "running" | "completed" | "aborted" | "error";
 
 export type SessionTitleStatus = "idle" | "generating" | "ready" | "error";
+
+export type SessionExecutionEnvironment =
+    | { type: "local" }
+    | {
+          kind: "container" | "image";
+          reference: string;
+          type: "docker";
+          workingDirectory: string;
+      };
 
 export type SessionInterruptionReason = "crash" | "shutdown";
 
@@ -73,6 +83,7 @@ export interface ProtocolSession {
     permissionMode: PermissionMode;
     modelId: string;
     effort?: string;
+    environment?: SessionExecutionEnvironment;
     modelLocked: boolean;
     models: readonly Model[];
     status: SessionStatus;
@@ -114,6 +125,7 @@ export interface SessionSummary {
     modelId: string;
     permissionMode: PermissionMode;
     effort?: string;
+    environment?: SessionExecutionEnvironment;
     status: SessionStatus;
     title?: string;
     titleError?: string;
@@ -133,6 +145,8 @@ export interface CreateSessionRequest {
     providerId?: string;
     permissionMode?: PermissionMode;
     workflowsEnabled?: boolean;
+    docker?: DockerExecutionConfig;
+    local?: boolean;
 }
 
 export interface ChangePermissionModeRequest {

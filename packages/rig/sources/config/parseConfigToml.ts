@@ -8,12 +8,14 @@ import type {
 } from "./types.js";
 import type { McpServerConfig } from "../mcp/types.js";
 import { isPermissionMode, type PermissionMode } from "../permissions/index.js";
+import type { DockerExecutionConfig, DockerMountConfig } from "../execution/index.js";
 
 export function parseConfigToml(source: string): PartialRigConfig {
     const defaults: PartialConfigDefaults = {};
     const features: PartialConfigFeatures = {};
     const settings: PartialConfigSettings = {};
     const table = parse(source);
+    const docker = readDockerConfig(table.docker);
     const defaultsTable = table.defaults;
 
     if (isTomlTable(defaultsTable)) {
@@ -59,11 +61,68 @@ export function parseConfigToml(source: string): PartialRigConfig {
     }
 
     return {
+        ...(docker !== undefined ? { docker } : {}),
         ...(Object.keys(defaults).length > 0 ? { defaults } : {}),
         ...(Object.keys(features).length > 0 ? { features } : {}),
         ...(mcpServers !== undefined ? { mcpServers } : {}),
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
     };
+}
+
+function readDockerConfig(value: TomlValue | undefined): DockerExecutionConfig | undefined {
+    if (value === undefined) return undefined;
+    if (!isTomlTable(value)) throw new Error("docker must be a TOML table.");
+
+    const container = readString(value, "container");
+    const image = readString(value, "image");
+    if ((container === undefined) === (image === undefined)) {
+        throw new Error('docker must configure exactly one of "container" or "image".');
+    }
+    const workingDirectory = readString(value, "workdir") ?? "/workspace";
+    if (!workingDirectory.startsWith("/")) {
+        throw new Error("docker.workdir must be an absolute container path.");
+    }
+    const mounts = readDockerMounts(value.mounts);
+    const environment = readOptionalStringRecord(value, "env", "environment").environment;
+    const name = readString(value, "name");
+    if (
+        container !== undefined &&
+        (environment !== undefined || mounts !== undefined || name !== undefined)
+    ) {
+        throw new Error("docker env, mounts, and name can only be used when docker.image is set.");
+    }
+    return {
+        ...(container === undefined ? {} : { container }),
+        ...(environment === undefined ? {} : { environment }),
+        ...(image === undefined ? {} : { image }),
+        ...(mounts === undefined ? {} : { mounts }),
+        ...(name === undefined ? {} : { name }),
+        ...readOptionalString(value, "socket_path", "socketPath"),
+        workingDirectory,
+    };
+}
+
+function readDockerMounts(value: TomlValue | undefined): readonly DockerMountConfig[] | undefined {
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value)) throw new Error("docker.mounts must be an array of tables.");
+    return value.map((entry, index) => {
+        if (!isTomlTable(entry)) {
+            throw new Error(`docker.mounts[${index}] must be a TOML table.`);
+        }
+        const source = readString(entry, "source");
+        const target = readString(entry, "target");
+        if (source === undefined || target === undefined) {
+            throw new Error(`docker.mounts[${index}] requires string source and target values.`);
+        }
+        if (!target.startsWith("/")) {
+            throw new Error(`docker.mounts[${index}].target must be an absolute container path.`);
+        }
+        const readOnly = entry.read_only;
+        if (readOnly !== undefined && typeof readOnly !== "boolean") {
+            throw new Error(`docker.mounts[${index}].read_only must be a boolean.`);
+        }
+        return { source, target, ...(readOnly === undefined ? {} : { readOnly }) };
+    });
 }
 
 function readMcpServers(value: TomlValue | undefined): Record<string, McpServerConfig> | undefined {

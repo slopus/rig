@@ -5,12 +5,9 @@
     "scripts": {
         "build": "pnpm --filter @slopus/rig build",
         "build:gym": "docker build --file packages/gym/Dockerfile --tag rig-gym:local .",
-        "build:web": "pnpm --filter @slopus/rig-web build",
         "check": "pnpm run check:root && pnpm --recursive --filter './packages/**' run check && pnpm --filter @slopus/rig-gym-tests check",
         "check:root": "tsc --noEmit -p tsconfig.json",
-        "check:web": "pnpm --filter @slopus/rig-web check",
         "dev": "tsx packages/rig/sources/main.ts",
-        "dev:web": "pnpm --filter @slopus/rig-web dev",
         "format": "oxfmt --write .",
         "format:check": "oxfmt --check .",
         "lint": "oxlint .",
@@ -20,8 +17,7 @@
         "test": "pnpm --recursive --filter './packages/**' run test",
         "test:gym": "pnpm --filter @slopus/rig-gym-tests test",
         "test:live": "pnpm --filter @slopus/rig test:live",
-        "test:watch": "pnpm --filter @slopus/rig test:watch",
-        "web": "node packages/rig/dist/main.js web"
+        "test:watch": "pnpm --filter @slopus/rig test:watch"
     },
     "devDependencies": {
         "@types/node": "^24.0.10",

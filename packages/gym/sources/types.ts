@@ -24,7 +24,9 @@ export type GymFixture =
       };
 
 export interface GymOptions {
+    args?: readonly string[];
     cols?: number;
+    dockerSocket?: boolean;
     files?: Readonly<Record<string, GymFixture>>;
     homeFiles?: Readonly<Record<string, GymFixture>>;
     image?: string;

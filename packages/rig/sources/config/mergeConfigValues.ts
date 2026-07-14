@@ -1,12 +1,14 @@
 import type { RigConfig, PartialRigConfig } from "./types.js";
 
 export function mergeConfigValues(base: RigConfig, ...configs: PartialRigConfig[]): RigConfig {
+    let docker = base.docker;
     const defaults = { ...base.defaults };
     const features = { ...base.features };
     const mcpServers = { ...base.mcpServers };
     const settings = { ...base.settings };
 
     for (const config of configs) {
+        if (config.docker !== undefined) docker = config.docker;
         if (config.defaults?.modelId !== undefined) {
             defaults.modelId = config.defaults.modelId;
         }
@@ -35,5 +37,11 @@ export function mergeConfigValues(base: RigConfig, ...configs: PartialRigConfig[
         }
     }
 
-    return { defaults, features, mcpServers, settings };
+    return {
+        defaults,
+        features,
+        mcpServers,
+        settings,
+        ...(docker === undefined ? {} : { docker }),
+    };
 }

@@ -26,10 +26,11 @@ rig stays close to pi and to upstream vendor behavior, but adds a curated defaul
 - Per-model and per-vendor prompt/tool optimizations, so different inference providers can work well without forcing users into one stack.
 - Provider-aligned background subagents with persistent transcripts and follow-up turns.
 - Provider-aligned task planning with Codex `update_plan` and Claude's persistent task tools.
-- Structured user questions with provider-aligned tools and terminal or web answer controls.
+- Structured user questions with provider-aligned tools and terminal answer controls.
 - MCP servers over stdio, streamable HTTP, or legacy SSE, configured from Codex and Rig TOML files.
 - Background subagents with completion notifications and follow-up turns.
 - Managed shell sessions for long-running commands and interactive input.
+- Docker-backed sessions that keep agent filesystem and command execution inside a container.
 - Auto mode for hands-off execution when a project allows it.
 - Persistent goals that continue across agent turns until they are completed, paused, or blocked.
 - Findings-first local code review with `/review` for current workspace changes.
@@ -61,7 +62,7 @@ feature exposed by Codex and Claude Code. It intentionally does not implement:
 - Vim or other modal terminal editing modes. The terminal input experience stays simple and conventional.
 - Jupyter notebook parsing or editing. Export notebooks to a plain-text format before asking Rig to read them.
 - Persistent command allow/deny history. Auto mode reviews each sensitive action against the current user request instead of maintaining a legacy command execution policy.
-- Dedicated IDE integrations. Rig is a standalone terminal and browser experience, not an extension or bridge for VS Code, JetBrains, or other editors.
+- Dedicated IDE integrations. Rig is a standalone terminal experience, not an extension or bridge for VS Code, JetBrains, or other editors.
 - A separate Rig login flow. Rig uses credentials managed by the system Codex and Claude Code installations.
 - Claude Code's extended skill runtime. Rig follows Codex skill discovery and instruction semantics without hooks, model overrides, or executable skill metadata.
 - Niche parity features whose main value is matching a rarely used upstream flag, command, protocol, or edge case. New parity work should solve a common user need and fit rig's simpler product model.
@@ -74,10 +75,9 @@ When a project needs different behavior, configure it locally. When a machine ch
 
 ## Development
 
-This is a pnpm TypeScript monorepo with two workspace packages:
+This is a pnpm TypeScript workspace:
 
 - `packages/rig` contains the published `@slopus/rig` CLI, agent runtime, and local daemon. Its entry point is `packages/rig/sources/main.ts`.
-- `packages/web` contains the private React browser client that ships with the CLI.
 
 Shared TypeScript and code-quality configuration, repository scripts, and release
 orchestration live at the workspace root. The root commands below run the relevant
@@ -94,18 +94,6 @@ pnpm run check
 pnpm test
 pnpm run build
 ```
-
-The build also compiles the Vite-powered browser client from `packages/web` into
-`packages/rig/dist/web`, where it is included in the published CLI package.
-After building, start it with:
-
-```sh
-pnpm run web
-```
-
-The `web` command starts or reuses the local daemon, serves the SPA, proxies `/api/*`
-to the daemon socket, and routes the app through Portless at
-`https://web.rig.localhost`.
 
 ### Authentication
 
@@ -156,14 +144,78 @@ rig fork --last
 rig fork SESSION_ID
 ```
 
-The model and provider can be changed between responses from the terminal or web
-model picker. They remain temporarily unavailable while a response is running.
+The model and provider can be changed between responses from the terminal. They
+remain temporarily unavailable while a response is running.
+
+### Docker-backed sessions
+
+Use the session options below to connect to a running Docker container or create
+one from a local Docker image:
+
+```sh
+rig --docker-container my-development-container --docker-workdir /workspace
+
+rig --docker-image my-project-dev:local \
+  --docker-workdir /workspace \
+  --docker-env NODE_ENV=development \
+  --docker-mount .:/workspace
+```
+
+The same options work with `rig exec`. Use `--docker-socket`, `--docker-name`,
+and repeated `--docker-env` or `--docker-mount` options for additional settings.
+Use `--local` to override a configured Docker default for one new session.
+
+Set a machine-level `[docker]` table in `~/.config/rig/config.toml` when Docker
+should be preselected by default. A session-level selection overrides this
+default. Rig talks to the daemon over its Unix socket; the Docker CLI does not
+need to be installed in the agent environment.
+
+Connect to a container that is already running:
+
+```toml
+[docker]
+container = "my-development-container"
+workdir = "/workspace"
+```
+
+Or create a session container from a local image tag or image hash:
+
+```toml
+[docker]
+image = "my-project-dev:local"
+workdir = "/workspace"
+env = { NODE_ENV = "development", API_BASE_URL = "http://host.docker.internal:3000" }
+mounts = [
+  { source = ".", target = "/workspace" },
+  { source = "/Users/me/.cache/my-project", target = "/cache", read_only = true },
+]
+```
+
+Relative mount sources are resolved from the host directory where Rig starts.
+Mount sources beginning with `~` are not expanded; use an absolute path for home
+directories. Set `socket_path` when the daemon is not available at
+`/var/run/docker.sock`, and set `name` when a stable custom container name is
+useful.
+
+Image-backed containers are created lazily when the session receives its first
+message. Rig uses a stable session-derived name by default, so the container
+filesystem remains available after the daemon restarts or the session is resumed.
+Only images already present in the daemon are used; Rig does not pull images
+implicitly. Images and connected containers must provide `/bin/sh`, `readlink`,
+and common POSIX file utilities. Direct file reads are limited to 32 MB; shell
+commands can process larger files without loading them into the daemon. Managed
+containers are intentionally left in place until you remove them with Docker.
+
+Docker configuration is accepted only from machine-level and runtime config.
+A repository's `rig.toml` cannot select an image, daemon socket, environment, or
+host mounts. Permission modes continue to guard direct file tools, while the
+container and its explicitly configured mounts form the execution boundary for
+shell commands.
 
 When a session is idle, press Escape in the terminal to choose an earlier user
-message, or use the rewind action beside a user message in the browser. The
-selected message and everything after it are removed from session history, and
-its text returns to the composer for editing. Rewind never changes files in the
-working directory; image attachments must be added again.
+message. The selected message and everything after it are removed from session
+history, and its text returns to the composer for editing. Rewind never changes
+files in the working directory; image attachments must be added again.
 
 ### Amazon Bedrock
 
@@ -182,8 +234,7 @@ pnpm dev
 
 `RIG_PROVIDER` chooses the inference provider independently from `RIG_MODEL`,
 so the same canonical GPT or Claude model can be routed through Bedrock, Codex, or
-the Claude SDK without changing its model ID. The web model picker exposes each
-available provider/model combination explicitly.
+the Claude SDK without changing its model ID.
 
 The curated Claude, Kimi, and GLM models use the native Bedrock Runtime endpoint.
 GPT-5.4 and GPT-5.5 use Bedrock Mantle's OpenAI Responses endpoint through the
@@ -194,16 +245,6 @@ visibility is limited by AWS's regional availability; for example, Kimi K2.5 is
 currently offered only in `us-east-1`, `us-east-2`, and `us-west-2`. Restart an
 already-running daemon after changing these environment variables.
 
-For web UI development with Vite hot reload, run the daemon and frontend separately:
-
-```sh
-pnpm dev daemon start
-pnpm dev:web
-```
-
-Open the Vite URL printed by `pnpm dev:web`, usually `http://127.0.0.1:5173`.
-The Vite dev server proxies `/api/*` to the local daemon socket.
-
 ### Permission modes
 
 New sessions start in **Workspace write** mode. File tools can edit the working
@@ -211,8 +252,8 @@ directory, while shell writes outside it and shell network access are blocked.
 Git metadata and temporary files remain writable so normal development commands
 continue to work.
 
-Use `/permissions` in the terminal or the Permissions control in the web
-inspector to switch the current session and its subagents between:
+Use `/permissions` in the terminal to switch the current session and its
+subagents between:
 
 - **Auto** — run routine workspace work immediately and review risky actions automatically, asking only when needed.
 - **Workspace write** — write in the working directory with shell network access blocked.
@@ -249,8 +290,7 @@ to continue, and `/goal clear` to remove it.
 Models receive `get_goal`, `create_goal`, and `update_goal` tools. A model can
 mark the goal complete after verifying the full objective, or blocked when it
 cannot make meaningful progress without user input or an external change.
-Goals survive daemon restarts and are available from both the terminal and web
-session inspector.
+Goals survive daemon restarts and remain available when sessions resume.
 
 ### Code review
 
@@ -258,14 +298,14 @@ Use `/review` to inspect current staged, unstaged, and untracked changes without
 modifying them. Add a focus after the command when useful, such as
 `/review focus on concurrency`. Reviews lead with actionable findings ordered
 by severity and include file references, concrete impact, and remaining test
-gaps. The command works in terminal and web-backed sessions.
+gaps. The command works in terminal sessions.
 
 ### Task tracking
 
 Claude sessions use the current `TaskCreate`, `TaskGet`, `TaskUpdate`, and
 `TaskList` tools. Tasks, dependencies, and progress survive daemon restarts and
-are shared with the session's subagents. Use `/tasks` in the terminal or the
-Tasks section in the web inspector to see the current list.
+are shared with the session's subagents. Use `/tasks` in the terminal to see the
+current list.
 
 ### Background subagents
 
@@ -274,8 +314,8 @@ Claude sessions can set `run_in_background` on the `Agent` tool and use
 `followup_task`, `wait_agent`, `list_agents`, and
 `interrupt_agent`. Each child keeps its own persisted conversation, reports a
 completion notification to its parent, and can receive more work without losing
-context. Use `/agents` in the terminal or Delegated work in the web inspector to
-see current status and open a child transcript.
+context. Use `/agents` in the terminal to see current status and open a child
+transcript.
 
 Team/swarm coordination, remote agents, and automatic worktree isolation are
 intentionally outside this core workflow.
@@ -331,8 +371,8 @@ oauth_client_secret_env_var = "MCP_CLIENT_SECRET"
 oauth_scopes = ["tools.read", "tools.call"]
 ```
 
-Use `/mcp` in the terminal or the MCP servers section in the web inspector to
-check connection failures, capabilities, and discovered tool counts. MCP tools,
+Use `/mcp` in the terminal to check connection failures, capabilities, and
+discovered tool counts. MCP tools,
 resources, resource templates, prompts, pagination, form elicitation, bearer
 authentication, and OAuth client credentials are supported. Live
 `list_mcp_tools` and `call_mcp_tool` access lets a session use tools added after

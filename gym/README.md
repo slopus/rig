@@ -215,7 +215,9 @@ Cleanup must run when assertions fail. Leaked containers, servers, or fixture di
 
 ```ts
 interface GymOptions {
+    args?: readonly string[];
     cols?: number;
+    dockerSocket?: boolean;
     files?: Readonly<Record<string, GymFixture>>;
     homeFiles?: Readonly<Record<string, GymFixture>>;
     image?: string;
@@ -226,16 +228,18 @@ interface GymOptions {
 }
 ```
 
-| Option        | Default                  | Purpose                                       |
-| ------------- | ------------------------ | --------------------------------------------- |
-| `cols`        | `100`                    | Terminal width in cells                       |
-| `rows`        | `32`                     | Terminal height in cells                      |
-| `files`       | `{}`                     | Fixture tree mounted into `/workspace`        |
-| `homeFiles`   | `{}`                     | Trusted fixture tree mounted into `/home/rig` |
-| `image`       | `rig-gym:local`          | Docker image tag to build or run              |
-| `inference`   | Required                 | Ordered responses or a request handler        |
-| `startupText` | `Ask Rig to do anything` | Visible text that marks startup as complete   |
-| `timeoutMs`   | `20_000`                 | Maximum startup wait for the composer         |
+| Option         | Default                  | Purpose                                       |
+| -------------- | ------------------------ | --------------------------------------------- |
+| `args`         | `[]`                     | Arguments passed to the built Rig CLI         |
+| `cols`         | `100`                    | Terminal width in cells                       |
+| `dockerSocket` | `false`                  | Exposes the daemon socket for Docker tests    |
+| `rows`         | `32`                     | Terminal height in cells                      |
+| `files`        | `{}`                     | Fixture tree mounted into `/workspace`        |
+| `homeFiles`    | `{}`                     | Trusted fixture tree mounted into `/home/rig` |
+| `image`        | `rig-gym:local`          | Docker image tag to build or run              |
+| `inference`    | Required                 | Ordered responses or a request handler        |
+| `startupText`  | `Ask Rig to do anything` | Visible text that marks startup as complete   |
+| `timeoutMs`    | `20_000`                 | Maximum startup wait for the composer         |
 
 Set `startupText` to a stable visible fragment only when a deliberately narrow startup viewport
 truncates the default placeholder.

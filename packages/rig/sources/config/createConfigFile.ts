@@ -32,6 +32,37 @@ export async function createConfigFile(
             features: {
                 workflows: config.features.workflows,
             },
+            ...(config.docker === undefined
+                ? {}
+                : {
+                      docker: {
+                          ...(config.docker.container === undefined
+                              ? {}
+                              : { container: config.docker.container }),
+                          ...(config.docker.image === undefined
+                              ? {}
+                              : { image: config.docker.image }),
+                          workdir: config.docker.workingDirectory,
+                          ...(config.docker.name === undefined ? {} : { name: config.docker.name }),
+                          ...(config.docker.socketPath === undefined
+                              ? {}
+                              : { socket_path: config.docker.socketPath }),
+                          ...(config.docker.environment === undefined
+                              ? {}
+                              : { env: config.docker.environment }),
+                          ...(config.docker.mounts === undefined
+                              ? {}
+                              : {
+                                    mounts: config.docker.mounts.map((mount) => ({
+                                        source: mount.source,
+                                        target: mount.target,
+                                        ...(mount.readOnly === undefined
+                                            ? {}
+                                            : { read_only: mount.readOnly }),
+                                    })),
+                                }),
+                      },
+                  }),
             ...(Object.keys(config.mcpServers).length > 0
                 ? { mcp_servers: serializeMcpServers(config.mcpServers) }
                 : {}),

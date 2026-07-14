@@ -11,6 +11,41 @@ import type { PersistedQueuedRun, PersistedSessionState } from "./InMemorySessio
 import { PersistentSessionStore } from "./PersistentSessionStore.js";
 
 describe("PersistentSessionStore", () => {
+    it("keeps Docker execution settings across daemon restarts", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        try {
+            const store = new PersistentSessionStore({ databasePath });
+            const session = store.create({
+                cwd: "/host/project",
+                docker: {
+                    environment: { PROJECT_MODE: "test" },
+                    image: "local/image:tag",
+                    mounts: [{ source: "/host/project", target: "/workspace" }],
+                    workingDirectory: "/workspace",
+                },
+            });
+            expect(store.fork(session.id)?.requestForSubagent().docker?.name).toBe(
+                `rig-${session.id}`,
+            );
+            store.close();
+
+            const restoredStore = new PersistentSessionStore({ databasePath });
+            try {
+                expect(restoredStore.get(session.id)?.requestForSubagent().docker).toEqual({
+                    environment: { PROJECT_MODE: "test" },
+                    image: "local/image:tag",
+                    mounts: [{ source: "/host/project", target: "/workspace" }],
+                    name: `rig-${session.id}`,
+                    workingDirectory: "/workspace",
+                });
+            } finally {
+                restoredStore.close();
+            }
+        } finally {
+            await cleanup();
+        }
+    });
+
     it("restores persisted session state and messages without creating a runtime", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         try {

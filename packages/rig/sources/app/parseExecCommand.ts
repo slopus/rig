@@ -1,6 +1,8 @@
 import { parsePermissionMode, type PermissionMode } from "../permissions/index.js";
+import type { DockerExecutionConfig } from "../execution/index.js";
 
 export interface ExecCommandOptions {
+    docker?: DockerExecutionConfig | null;
     effort?: string;
     fork: boolean;
     last: boolean;

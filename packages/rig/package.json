@@ -23,15 +23,13 @@
         "access": "public"
     },
     "scripts": {
-        "build": "tsc -p tsconfig.build.json && pnpm run build:web",
-        "build:web": "pnpm --filter @slopus/rig-web build",
+        "build": "tsc -p tsconfig.build.json",
         "check": "tsc --noEmit",
         "dev": "tsx sources/main.ts",
         "start": "node dist/main.js",
         "test": "vitest run",
         "test:live": "RIG_LIVE_TEST=1 vitest run -c vitest.live.config.ts",
-        "test:watch": "vitest",
-        "web": "node dist/main.js web"
+        "test:watch": "vitest"
     },
     "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.3.201",
@@ -45,17 +43,20 @@
         "@paralleldrive/cuid2": "^3.3.0",
         "@pydantic/monty": "0.0.18",
         "@sinclair/typebox": "^0.34.49",
+        "dockerode": "^5.0.1",
         "lru-cache": "^11.5.2",
         "openai": "6.46.0",
-        "portless": "^0.15.1",
         "sharp": "^0.35.3",
         "smol-toml": "^1.7.0",
+        "tar-stream": "^3.2.0",
         "turndown": "^7.2.4",
         "yaml": "^2.9.0",
         "zod": "^4.4.3"
     },
     "devDependencies": {
+        "@types/dockerode": "^4.0.1",
         "@types/node": "^24.0.10",
+        "@types/tar-stream": "^3.1.4",
         "@types/turndown": "^5.0.6",
         "just-bash": "^3.0.2",
         "tsx": "^4.23.0",

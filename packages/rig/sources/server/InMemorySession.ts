@@ -82,6 +82,8 @@ import { getProviderIdForModel } from "./getProviderIdForModel.js";
 import { resolveInitialModelSelection } from "./resolveInitialModelSelection.js";
 import { SessionEventLog } from "./SessionEventLog.js";
 import type { AgentSessionManager } from "./AgentSessionManager.js";
+import type { DockerExecutionConfig } from "../execution/index.js";
+import { summarizeDockerExecution } from "../execution/index.js";
 
 export interface PersistedSessionMessage {
     isPartial: boolean;
@@ -104,6 +106,7 @@ export interface PersistedSessionState {
     agent: SessionAgentMetadata;
     agentId: string;
     cwd: string;
+    docker?: DockerExecutionConfig;
     contextMessages?: readonly Message[];
     effort?: string;
     id: string;
@@ -254,7 +257,12 @@ export class InMemorySession {
         this.#mcpToolProvider = options.mcpToolProvider;
         this.#modelCatalog = options.modelCatalog;
         this.#persistence = options.persistence;
-        this.#request = { ...options.request };
+        this.#request = {
+            ...options.request,
+            ...(options.request.docker === undefined
+                ? {}
+                : { docker: { ...options.request.docker } }),
+        };
         this.#workflowsEnabled =
             options.restore?.workflowsEnabled ?? options.request.workflowsEnabled ?? true;
         this.id = options.restore?.id ?? createId();
@@ -264,6 +272,12 @@ export class InMemorySession {
                 rootSessionId: this.id,
                 type: "primary",
             };
+        if (this.#request.docker?.image !== undefined && this.#request.docker.name === undefined) {
+            this.#request.docker = {
+                ...this.#request.docker,
+                name: `rig-${this.#agentMetadata.rootSessionId}`,
+            };
+        }
         this.#agentId = options.restore?.agentId ?? createId();
         const requestedModelId =
             options.restore?.modelId ??
@@ -371,13 +385,13 @@ export class InMemorySession {
 
     async abort(): Promise<{ aborted: boolean; eventId?: EventId; stoppedProcesses?: number }> {
         const runId = this.#activeRun?.runId;
-        const runningProcesses = this.#runtime?.processManager.activeCount() ?? 0;
+        const runningProcesses = this.#activeProcessCount();
         if (this.#activeRun === undefined && this.#queue.length === 0 && runningProcesses === 0) {
             return { aborted: false };
         }
 
         if (this.#activeRun === undefined && this.#queue.length === 0) {
-            await this.#runtime?.processManager.killAll({ forceAfterMs: 500 });
+            await this.#killRuntimeProcesses();
             return { aborted: false, stoppedProcesses: runningProcesses };
         }
 
@@ -389,7 +403,7 @@ export class InMemorySession {
         this.#pauseActiveGoal();
         this.#activeRun?.controller.abort();
         this.#restoredActiveRunId = undefined;
-        await this.#runtime?.processManager.killAll({ forceAfterMs: 500 });
+        await this.#killRuntimeProcesses();
         const event = this.#append("abort_requested", runId !== undefined ? { runId } : {});
         for (const queuedRunId of queuedRunIds) {
             this.#append("run_error", {
@@ -440,7 +454,7 @@ export class InMemorySession {
         }
 
         this.#syncContextMessages();
-        void this.#runtime?.processManager.killAll({ forceAfterMs: 500 });
+        void this.#killRuntimeProcesses();
         this.#runtime = undefined;
         this.#mcpLoaded = false;
         this.#mcpServers = [];
@@ -525,9 +539,9 @@ export class InMemorySession {
             await this.#agentManager?.changeSubagentPermissionModes(this.id, permissionMode);
         }
         const runtime = this.#runtime;
-        const running = runtime?.processManager.activeCount() ?? 0;
+        const running = this.#activeProcessCount();
         if (running > 0 && isPermissionReduction(this.#permissionMode, permissionMode)) {
-            await runtime?.processManager.killAll({ forceAfterMs: 500 });
+            await this.#killRuntimeProcesses();
             const runId = this.#activeRun?.runId ?? this.#lastSessionRunId ?? "background";
             this.#append("agent_event", {
                 event: { type: "background_processes_stopped", count: running },
@@ -605,7 +619,7 @@ export class InMemorySession {
             this.#discardQueuedGoalRuns();
             if (this.#activeRun?.kind === "goal") {
                 this.#activeRun.controller.abort();
-                void this.#runtime?.processManager.killAll({ forceAfterMs: 500 });
+                void this.#killRuntimeProcesses();
             }
         }
         return { ...this.#goal };
@@ -621,7 +635,7 @@ export class InMemorySession {
         this.#discardQueuedGoalRuns();
         if (this.#activeRun?.kind === "goal") {
             this.#activeRun.controller.abort();
-            void this.#runtime?.processManager.killAll({ forceAfterMs: 500 });
+            void this.#killRuntimeProcesses();
         }
         this.#append("goal_changed", { goal: null });
         return true;
@@ -1008,7 +1022,7 @@ export class InMemorySession {
         this.#interruption = interruption;
         this.#status = "error";
         this.#activeRun?.controller.abort();
-        void this.#runtime?.processManager.killAll({ forceAfterMs: 500 });
+        void this.#killRuntimeProcesses();
         this.#activeRun = undefined;
         this.#restoredActiveRunId = undefined;
         this.#activePartial = undefined;
@@ -1080,7 +1094,7 @@ export class InMemorySession {
             throw new Error("The selected user message is no longer available.");
         }
 
-        void this.#runtime?.processManager.killAll({ forceAfterMs: 500 });
+        void this.#killRuntimeProcesses();
         this.#runtime = undefined;
         this.#mcpLoaded = false;
         this.#mcpServers = [];
@@ -1140,6 +1154,7 @@ export class InMemorySession {
             ...(this.#request.apiKey !== undefined ? { apiKey: this.#request.apiKey } : {}),
             permissionMode: this.#permissionMode,
             workflowsEnabled: this.#workflowsEnabled,
+            ...(this.#request.docker === undefined ? {} : { docker: this.#request.docker }),
         };
     }
 
@@ -1150,6 +1165,7 @@ export class InMemorySession {
             id: this.id,
             agentId: this.#agentId,
             cwd: this.#request.cwd,
+            environment: summarizeDockerExecution(this.#request.docker),
             providerId: this.#providerId,
             permissionMode: this.#permissionMode,
             modelId: this.#modelId,
@@ -1179,6 +1195,7 @@ export class InMemorySession {
         return {
             id: this.id,
             cwd: this.#request.cwd,
+            environment: summarizeDockerExecution(this.#request.docker),
             providerId: this.#providerId,
             permissionMode: this.#permissionMode,
             modelId: this.#modelId,
@@ -1208,6 +1225,7 @@ export class InMemorySession {
             agent: this.agentMetadata(),
             agentId: this.#agentId,
             cwd: this.#request.cwd,
+            ...(this.#request.docker === undefined ? {} : { docker: this.#request.docker }),
             ...(contextMessages !== undefined ? { contextMessages: [...contextMessages] } : {}),
             ...(this.#effort !== undefined ? { effort: this.#effort } : {}),
             id: this.id,
@@ -1689,6 +1707,7 @@ export class InMemorySession {
                 request: (request, requestOptions) =>
                     this.requestUserInput(request, requestOptions),
             },
+            sessionId: this.#agentMetadata.rootSessionId,
             tasks: {
                 create: (request) => this.#taskSession().createTask(request),
                 get: (taskId) => this.#taskSession().getTask(taskId),
@@ -1720,6 +1739,7 @@ export class InMemorySession {
         if (this.#effort !== undefined) options.effort = this.#effort;
         if (this.#instructions !== undefined) options.instructions = this.#instructions;
         if (this.#request.apiKey !== undefined) options.apiKey = this.#request.apiKey;
+        if (this.#request.docker !== undefined) options.docker = this.#request.docker;
         const agentManager = this.#agentManager;
         if (agentManager !== undefined) {
             options.subagents = {
@@ -1760,6 +1780,21 @@ export class InMemorySession {
 
     #taskSession(): InMemorySession {
         return this.#agentManager?.taskSession(this.id) ?? this;
+    }
+
+    #activeProcessCount(): number {
+        const runtime = this.#runtime;
+        const nativeProcesses = runtime?.processManager.activeCount() ?? 0;
+        return this.#request.docker === undefined
+            ? nativeProcesses
+            : nativeProcesses + (runtime?.context.bash.activeSessionCount?.() ?? 0);
+    }
+
+    async #killRuntimeProcesses(): Promise<void> {
+        const runtime = this.#runtime;
+        if (runtime === undefined) return;
+        await runtime.processManager.killAll({ forceAfterMs: 500 });
+        if (this.#request.docker !== undefined) await runtime.context.bash.killAllSessions?.();
     }
 
     async #drainQueue(): Promise<void> {
