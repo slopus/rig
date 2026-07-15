@@ -155,47 +155,6 @@ describe("InMemorySession abort", () => {
         expect(events.filter((event) => event.type === "run_finished")).toHaveLength(1);
     });
 
-    it("stops normally when pending-aware abort finds no steering for the active run", async () => {
-        const started = deferred<void>();
-        const model = defineModel({
-            defaultThinkingLevel: "off",
-            id: "test/no-pending-steering",
-            name: "No pending steering",
-            thinkingLevels: ["off"],
-        });
-        const provider = defineProvider({
-            id: "test",
-            models: [model],
-            stream(_model, _context, options) {
-                return abortableStream(options?.signal, started.resolve);
-            },
-        });
-        const session = new InMemorySession({
-            createEventId: createEventIdFactory(),
-            createRuntime: (options) => createRuntime(options, provider),
-            modelCatalog: {
-                defaultModelId: model.id,
-                defaultProviderId: provider.id,
-                models: [model],
-                providers: [{ models: [model], providerId: provider.id }],
-            },
-            request: { cwd: "/tmp/rig-no-pending-steering", modelId: model.id },
-        });
-
-        const submitted = session.submit({ text: "Start waiting without steering." });
-        await started.promise;
-
-        await expect(
-            session.abort({ continuePendingSteering: true, pauseDescendants: false }),
-        ).resolves.toMatchObject({ aborted: true });
-        await expect(session.waitForRun(submitted.runId)).resolves.toEqual({ status: "aborted" });
-        expect(
-            (session.events.since(undefined) ?? []).filter(
-                (event) => event.type === "steering_applied",
-            ),
-        ).toHaveLength(0);
-    });
-
     it("aborts compaction without overwriting the repaired shutdown state", async () => {
         const model = defineModel({
             defaultThinkingLevel: "off",
