@@ -16,7 +16,7 @@ afterEach(async () => {
 
 describe("repeated background terminal polling", () => {
     it("uses only the live activity tail while polling", async () => {
-        const command = "sleep 3; printf 'POLLING_COMPLETE\\n'";
+        const command = "read -r _ < .poll-release; rm .poll-release; printf 'POLLING_COMPLETE\\n'";
         const secondPollReady = deferred<void>();
         const startSecondPoll = deferred<void>();
         const finalPollReady = deferred<void>();
@@ -62,6 +62,7 @@ describe("repeated background terminal polling", () => {
             rows: 28,
         });
         running.add(gym);
+        await gym.runInContainer("mkfifo", [".poll-release"]);
 
         gym.terminal.type("Wait for the background terminal to finish.");
         gym.terminal.press("enter");
@@ -109,6 +110,7 @@ describe("repeated background terminal polling", () => {
         ).toBe(userRow);
         expect(rowContaining(secondWaitSettled.rows, "Ask Rig to do anything")).toBe(composerRow);
 
+        await gym.runInContainer("sh", ["-c", "printf 'release\\n' > .poll-release"]);
         startFinalPoll.resolve();
         const completed = await gym.terminal.waitUntil(
             (snapshot) =>

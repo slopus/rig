@@ -130,7 +130,7 @@ This file tracks known defects, verified coverage gaps, and concrete follow-up w
     - PNG defaults differ from the foreground/background advertised by the Ghostty helper.
     - Add direct renderer unit coverage; normal Gym runs currently exercise screenshots only when an environment variable is set.
 
-- [ ] Replace remaining timing-sensitive Gym scenarios with deferred gates.
+- [x] Replace remaining timing-sensitive Gym scenarios with deferred gates.
     - Permission timing should not require observing the exact string `(2s · esc to interrupt)`.
     - Automatic compaction should not rely on a three-second response delay to queue a prompt.
     - Background polling should not rely on a three-second shell lifetime while later phases are manually gated.
