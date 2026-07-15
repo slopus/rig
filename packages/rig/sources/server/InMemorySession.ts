@@ -438,7 +438,7 @@ export class InMemorySession {
             }
         } else {
             this.#continueGoalIfIdle();
-            this.#restartMetadataSettlement();
+            if (!this.isSubagent()) this.#restartMetadataSettlement();
         }
     }
 

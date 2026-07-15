@@ -829,6 +829,50 @@ describe("PersistentSessionStore", () => {
         }
     });
 
+    it("restores a parent metadata boundary with a persisted child without recursion", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        try {
+            const store = new PersistentSessionStore({ databasePath });
+            store.saveSession(sessionState());
+            store.saveSession(
+                sessionState({
+                    agent: {
+                        depth: 1,
+                        description: "Inspect the resume boundary",
+                        parentSessionId: "session-1",
+                        rootSessionId: "session-1",
+                        type: "subagent",
+                    },
+                    agentId: "agent-2",
+                    id: "subagent-1",
+                    status: "completed",
+                }),
+            );
+            store.get("session-1")?.markInterrupted({
+                interruptedAt: 1_700_000_000_000,
+                message: "The parent was interrupted before restart.",
+                reason: "shutdown",
+                runId: "parent-run-1",
+            });
+            store.close();
+
+            const restoredStore = new PersistentSessionStore({ databasePath });
+            try {
+                expect(restoredStore.get("session-1")?.snapshot()).toMatchObject({
+                    id: "session-1",
+                    interruption: { runId: "parent-run-1" },
+                });
+                expect(restoredStore.get("subagent-1")?.agentMetadata()).toMatchObject({
+                    parentSessionId: "session-1",
+                });
+            } finally {
+                restoredStore.close();
+            }
+        } finally {
+            await cleanup();
+        }
+    });
+
     it("updates partial messages in place while streaming", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         try {
