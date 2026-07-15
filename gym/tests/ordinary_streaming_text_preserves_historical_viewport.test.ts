@@ -23,7 +23,12 @@ describe("ordinary streaming text while reading history", () => {
             "This is ordinary prose arriving a few characters at a time. It contains no table.",
             "",
             ...Array.from({ length: 96 }, (_, index) => {
-                const marker = index === 47 ? " ORDINARY_STREAM_MIDDLE" : "";
+                const marker =
+                    index === 47
+                        ? " ORDINARY_STREAM_MIDDLE"
+                        : index === 70
+                          ? " ORDINARY_STREAM_LATE"
+                          : "";
                 return `- Ordinary bullet ${String(index).padStart(3, "0")} remains plain flowing text.${marker}`;
             }),
             "",
@@ -98,6 +103,7 @@ describe("ordinary streaming text while reading history", () => {
         assertHistoricalAnchor(afterHostCopy, anchor);
 
         const middleOutput = waitForTerminalOutput(gym, "ORDINARY_STREAM_MIDDLE", 30_000);
+        const lateOutput = waitForTerminalOutput(gym, "ORDINARY_STREAM_LATE", 30_000);
         const finalOutput = waitForTerminalOutput(gym, "ORDINARY_STREAM_END", 30_000);
         const output: string[] = [];
         const stopOutputCapture = gym.terminal.onOutput((data) => output.push(data));
@@ -126,6 +132,33 @@ describe("ordinary streaming text while reading history", () => {
         const anchoredAgain = await gym.terminal.snapshot();
         expect(anchoredAgain.rows).toEqual(anchor.rows);
         expect(anchoredAgain.text).toBe(anchor.text);
+        expect(anchoredAgain.scroll.bottomDepartureCount).toBe(anchor.bottomDepartureCount + 1);
+        expect(anchoredAgain.scroll.topArrivalCount).toBe(anchor.topArrivalCount + 1);
+        const secondAnchor = historicalAnchor(anchoredAgain);
+
+        await lateOutput;
+        const lateWhileAnchored = await gym.terminal.snapshot();
+        assertHistoricalAnchor(lateWhileAnchored, secondAnchor);
+
+        gym.terminal.scrollToBottom();
+        await gym.terminal.waitUntil(
+            (snapshot) =>
+                snapshot.text.includes("ORDINARY_STREAM_LATE") &&
+                snapshot.text.includes("esc to interrupt") &&
+                !snapshot.text.includes("ORDINARY_STREAM_END") &&
+                snapshot.scroll.atBottom,
+            "the later live tail during the second streaming cycle",
+            30_000,
+        );
+        gym.terminal.scrollToTop();
+        gym.terminal.scrollBy(anchor.offset);
+        const anchoredThird = await gym.terminal.snapshot();
+        expect(anchoredThird.rows).toEqual(anchor.rows);
+        expect(anchoredThird.text).toBe(anchor.text);
+        expect(anchoredThird.scroll.bottomDepartureCount).toBe(
+            secondAnchor.bottomDepartureCount + 1,
+        );
+        expect(anchoredThird.scroll.topArrivalCount).toBe(secondAnchor.topArrivalCount + 1);
 
         await finalOutput;
         const afterStream = await gym.terminal.snapshot();
@@ -191,9 +224,11 @@ describe("ordinary streaming text while reading history", () => {
 });
 
 interface HistoricalAnchor {
+    bottomDepartureCount: number;
     offset: number;
     rows: readonly string[];
     text: string;
+    topArrivalCount: number;
     totalRows: number;
 }
 
@@ -214,9 +249,11 @@ function historicalAnchor(
     snapshot: Awaited<ReturnType<Gym["terminal"]["snapshot"]>>,
 ): HistoricalAnchor {
     return {
+        bottomDepartureCount: snapshot.scroll.bottomDepartureCount,
         offset: snapshot.scroll.offset,
         rows: snapshot.rows,
         text: snapshot.text,
+        topArrivalCount: snapshot.scroll.topArrivalCount,
         totalRows: snapshot.scroll.totalRows,
     };
 }
@@ -228,6 +265,8 @@ function assertHistoricalAnchor(
     expect(snapshot.scroll.atTop).toBe(false);
     expect(snapshot.scroll.atBottom).toBe(false);
     expect(snapshot.scroll.offset).toBe(anchor.offset);
+    expect(snapshot.scroll.bottomDepartureCount).toBe(anchor.bottomDepartureCount);
+    expect(snapshot.scroll.topArrivalCount).toBe(anchor.topArrivalCount);
     expect(snapshot.rows).toEqual(anchor.rows);
     expect(snapshot.text).toBe(anchor.text);
 }
