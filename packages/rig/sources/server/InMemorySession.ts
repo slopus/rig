@@ -467,13 +467,6 @@ export class InMemorySession {
             options.continuePendingSteering === true &&
             runId !== undefined &&
             [...this.#pendingSteeringMessages.values()].some((pending) => pending.runId === runId);
-        if (
-            options.continuePendingSteering === true &&
-            runId !== undefined &&
-            !shouldContinuePendingSteering
-        ) {
-            return { aborted: false, continued: true };
-        }
         let continuation: PendingSteeringContinuation | undefined;
         if (shouldContinuePendingSteering && runId !== undefined) {
             continuation = this.#pendingSteeringContinuations.get(runId);

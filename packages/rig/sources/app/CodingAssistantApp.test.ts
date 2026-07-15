@@ -330,6 +330,133 @@ describe("CodingAssistantApp", () => {
         expect(rendered).not.toContain("Session interrupted");
     });
 
+    it("stops the active run when only an earlier run has stale pending steering", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const abort = vi.fn(async () => ({ aborted: true }));
+        const app = new CodingAssistantApp({
+            agent: Object.assign(
+                new Agent({
+                    provider,
+                    modelId: model.id,
+                    context: harness.context,
+                    printToConsole: false,
+                }),
+                { abort },
+            ),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            sessionBacked: true,
+            tui: fakeTui(),
+        });
+        app.applySessionEvent({
+            createdAt: 1,
+            data: { runId: "old-run" },
+            id: "old-started",
+            sessionId: "session-1",
+            type: "run_started",
+        });
+        app.applySessionEvent({
+            createdAt: 2,
+            data: {
+                delivery: "steer",
+                displayText: "Stale direction",
+                message: {
+                    blocks: [{ text: "Stale direction", type: "text" }],
+                    id: "stale-steer",
+                    role: "user",
+                },
+                runId: "old-run",
+            },
+            id: "old-steer",
+            sessionId: "session-1",
+            type: "message_submitted",
+        });
+        app.applySessionEvent({
+            createdAt: 3,
+            data: {
+                agentRunId: "old-agent-run",
+                modelLocked: true,
+                runId: "old-run",
+                stopReason: "aborted",
+            },
+            id: "old-finished",
+            sessionId: "session-1",
+            type: "run_finished",
+        });
+        app.applySessionEvent({
+            createdAt: 4,
+            data: { runId: "current-run" },
+            id: "current-started",
+            sessionId: "session-1",
+            type: "run_started",
+        });
+
+        app.handleInput("\x1b");
+
+        await vi.waitFor(() => expect(abort).toHaveBeenCalledOnce());
+        expect(abort).toHaveBeenCalledWith();
+    });
+
+    it("interrupts a running session before an open selection panel handles Escape", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const abort = vi.fn(async () => ({ aborted: true }));
+        const app = new CodingAssistantApp({
+            agent: Object.assign(
+                new Agent({
+                    provider,
+                    modelId: model.id,
+                    context: harness.context,
+                    printToConsole: false,
+                }),
+                { abort },
+            ),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            sessionBacked: true,
+            tui: fakeTui(),
+        });
+        app.applySessionEvent({
+            createdAt: 1,
+            data: { runId: "run-1" },
+            id: "run-started",
+            sessionId: "session-1",
+            type: "run_started",
+        });
+        app.handleInput("\x1bm");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("Choose Model");
+
+        app.handleInput("\x1b");
+
+        await vi.waitFor(() => expect(abort).toHaveBeenCalledOnce());
+        expect(abort).toHaveBeenCalledWith();
+    });
+
     it("treats both rapid Escapes as stop actions while running without pending steering", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
@@ -595,6 +722,44 @@ describe("CodingAssistantApp", () => {
         app.handleInput("\x1b");
         app.handleInput("\x1b");
         expect(stripAnsi(app.render(100).join("\n"))).toContain("› Keep after closing overlay");
+        app.handleInput("\x1b");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› Ask Rig to do anything");
+    });
+
+    it("resets the composer Escape chain when terminal focus changes", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            now: () => 100,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        app.handleInput("Keep across terminal focus");
+        app.handleInput("\x1b");
+        app.handleInput("\x1b[O");
+        app.handleInput("\x1b[I");
+        app.handleInput("\x1b");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› Keep across terminal focus");
         app.handleInput("\x1b");
         expect(stripAnsi(app.render(100).join("\n"))).toContain("› Ask Rig to do anything");
     });

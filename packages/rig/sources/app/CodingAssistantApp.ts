@@ -226,6 +226,7 @@ interface PendingPrompt {
 interface PendingSteeringMessage {
     displayText: string;
     id: string;
+    runId: string;
 }
 
 interface PastedImage {
@@ -303,6 +304,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #freeformUserInput: FreeformUserInput | undefined;
     #pendingPrompts: PendingPrompt[] = [];
     #pendingSteeringMessages: PendingSteeringMessage[] = [];
+    #activeSessionRunId: string | undefined;
     #sendingPendingSteering = false;
     #lastEscapeAtMs: number | undefined;
     #compacting = false;
@@ -549,6 +551,7 @@ export class CodingAssistantApp implements Component, Focusable {
                     this.#pendingSteeringMessages.push({
                         displayText: event.data.displayText,
                         id: event.data.message.id,
+                        runId: event.data.runId,
                     });
                 }
                 this.#requestRender();
@@ -578,6 +581,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (event.type === "run_started") {
             this.#usageRequestVersion += 1;
             this.#abortNotified = false;
+            this.#activeSessionRunId = event.data.runId;
             this.#setRunning(true);
             this.#statusText = "Running";
             this.#activityStartedAtMs = this.#lastUserInputAtMs ?? this.#now();
@@ -705,6 +709,9 @@ export class CodingAssistantApp implements Component, Focusable {
                 this.#workSegmentStartedAtMs = undefined;
             }
             this.#discardPendingToolCallEntries();
+            if (this.#activeSessionRunId === event.data.runId) {
+                this.#activeSessionRunId = undefined;
+            }
             this.#setRunning(false);
             this.#modelLocked = this.#pendingPrompts.length > 0;
             this.#statusText =
@@ -728,6 +735,9 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#deferredTurnSeparator = false;
             this.#workSegmentStartedAtMs = undefined;
             this.#discardPendingToolCallEntries();
+            if (this.#activeSessionRunId === event.data.runId) {
+                this.#activeSessionRunId = undefined;
+            }
             this.#setRunning(false);
             this.#modelLocked = this.#pendingPrompts.length > 0;
             this.#statusText = "Error";
@@ -745,6 +755,8 @@ export class CodingAssistantApp implements Component, Focusable {
         if (event.type === "session_reset") {
             this.#usageRequestVersion += 1;
             this.#lastEscapeAtMs = undefined;
+            this.#activeSessionRunId = undefined;
+            this.#setRunning(false);
             this.#clearEntries();
             this.#pendingSteeringMessages = [];
             this.#modelLocked = false;
@@ -775,6 +787,8 @@ export class CodingAssistantApp implements Component, Focusable {
         if (event.type === "session_rewound") {
             this.#usageRequestVersion += 1;
             this.#lastEscapeAtMs = undefined;
+            this.#activeSessionRunId = undefined;
+            this.#setRunning(false);
             this.#pendingSteeringMessages = [];
             const targetIndex = this.#entries.findIndex(
                 (entry) => entry.id === event.data.messageId,
@@ -865,6 +879,7 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         if (data === TERMINAL_FOCUS_IN || data === TERMINAL_FOCUS_OUT) {
+            this.#lastEscapeAtMs = undefined;
             this.#setTerminalFocused(data === TERMINAL_FOCUS_IN);
             return;
         }
@@ -872,6 +887,12 @@ export class CodingAssistantApp implements Component, Focusable {
         const escapePressed = matchesKey(data, "escape");
         if (!escapePressed) this.#lastEscapeAtMs = undefined;
         this.#onUserActivity?.();
+
+        if (escapePressed && this.#running) {
+            this.#handleEscape();
+            this.#requestRender();
+            return;
+        }
 
         if (this.#selectionPanel !== undefined) {
             if (matchesKey(data, "ctrl+c") || data === "\x03") {
@@ -1988,7 +2009,9 @@ export class CodingAssistantApp implements Component, Focusable {
         if (this.#running) {
             this.#lastEscapeAtMs = undefined;
             if (
-                this.#pendingSteeringMessages.length > 0 &&
+                this.#pendingSteeringMessages.some(
+                    (pending) => pending.runId === this.#activeSessionRunId,
+                ) &&
                 this.#sessionBacked &&
                 this.#agent.abort !== undefined
             ) {
