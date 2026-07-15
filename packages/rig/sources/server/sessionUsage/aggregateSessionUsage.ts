@@ -105,14 +105,13 @@ export function aggregateSessionUsage(
                 ...earlierGroup,
                 usage: addUsage(earlierGroup.usage, message.usage),
             };
-            currentContext = undefined;
             continue;
         }
 
         const providerId = message.providerId as string;
         const requestedModelId = message.requestedModelId as string;
         const modelId = message.responseModel ?? requestedModelId;
-        const groupKey = JSON.stringify([providerId, requestedModelId, message.responseModel]);
+        const groupKey = JSON.stringify([providerId, modelId]);
         let groupIndex = attributedGroupIndexes.get(groupKey);
         if (groupIndex === undefined) {
             const group: AttributedSessionUsageGroup = {

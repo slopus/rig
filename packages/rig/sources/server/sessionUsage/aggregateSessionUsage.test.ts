@@ -5,7 +5,7 @@ import type { Usage } from "../../providers/types.js";
 import { aggregateSessionUsage } from "./aggregateSessionUsage.js";
 
 describe("aggregateSessionUsage", () => {
-    it("groups attributed inference usage by provider, requested model, and response model", () => {
+    it("groups attributed inference usage by provider and display model", () => {
         const result = aggregateSessionUsage(
             [
                 inference("event-1", usage(10), {
@@ -15,7 +15,7 @@ describe("aggregateSessionUsage", () => {
                 }),
                 inference("event-2", usage(20), {
                     providerId: "codex",
-                    requestedModelId: "openai/gpt-5.6",
+                    requestedModelId: "openai/gpt-5.6-fast",
                     responseModel: "gpt-5.6-2026-07-01",
                 }),
                 inference("event-3", usage(7), {
@@ -66,6 +66,19 @@ describe("aggregateSessionUsage", () => {
     });
 
     it("only counts usage after the latest session reset", () => {
+        expect(
+            aggregateSessionUsage(
+                [
+                    inference("before-reset", usage(10), {
+                        providerId: "codex",
+                        requestedModelId: "openai/old",
+                    }),
+                    reset("reset-only", "codex", "openai/gpt-5.6"),
+                ],
+                primary,
+            ).currentContext,
+        ).toBeUndefined();
+
         const result = aggregateSessionUsage(
             [
                 inference("before", usage(100), {
@@ -88,8 +101,8 @@ describe("aggregateSessionUsage", () => {
 
         expect(result.groups).toHaveLength(1);
         expect(result.groups[0]).toMatchObject({
+            modelId: "openai/gpt-5.6",
             providerId: "codex",
-            requestedModelId: "openai/gpt-5.6",
             usage: { input: 3, totalTokens: 30 },
         });
     });
@@ -125,6 +138,10 @@ describe("aggregateSessionUsage", () => {
     it("keeps incomplete legacy attribution in an explicit unavailable bucket", () => {
         const result = aggregateSessionUsage(
             [
+                inference("attributed", usage(4), {
+                    providerId: "codex",
+                    requestedModelId: "openai/gpt-5.6",
+                }),
                 inference("legacy", usage(8)),
                 inference("partial-attribution", usage(2), { providerId: "codex" }),
             ],
@@ -132,6 +149,12 @@ describe("aggregateSessionUsage", () => {
         );
 
         expect(result.groups).toEqual([
+            expect.objectContaining({
+                kind: "attributed",
+                modelId: "openai/gpt-5.6",
+                providerId: "codex",
+                usage: usage(4),
+            }),
             {
                 kind: "earlier",
                 label: "Earlier usage",
@@ -142,7 +165,12 @@ describe("aggregateSessionUsage", () => {
                 usage: usage(10),
             },
         ]);
-        expect(result.currentContext).toBeUndefined();
+        expect(result.currentContext).toMatchObject({
+            approximate: false,
+            modelId: "openai/gpt-5.6",
+            providerId: "codex",
+            totalTokens: 40,
+        });
     });
 
     it("tracks exact inference context and approximate compaction context for the active model", () => {
