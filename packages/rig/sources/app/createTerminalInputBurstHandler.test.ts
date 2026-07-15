@@ -52,4 +52,14 @@ describe("createTerminalInputBurstHandler", () => {
 
         expect(received).toEqual(["\x1b", "\x1b"]);
     });
+
+    it("forwards separately delivered Escape presses without buffering", () => {
+        const received: string[] = [];
+        const handler = createTerminalInputBurstHandler((data) => received.push(data));
+
+        handler.handle("\x1b");
+        handler.handle("\x1b");
+
+        expect(received).toEqual(["\x1b", "\x1b"]);
+    });
 });

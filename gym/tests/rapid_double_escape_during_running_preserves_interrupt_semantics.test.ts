@@ -89,7 +89,8 @@ describe("rapid double Escape while inference is running", () => {
         gym.terminal.type(draft);
         await waitForComposer(gym, draft);
 
-        gym.terminal.write("\x1b\x1b");
+        gym.terminal.press("escape");
+        gym.terminal.press("escape");
 
         const stopped = await gym.terminal.waitUntil(
             (snapshot) =>

@@ -34,6 +34,21 @@ describe("double Escape in the composer", () => {
         gym.terminal.press("up");
         await waitForComposer(gym, draft);
     }, 60_000);
+
+    it("splits one raw coalesced Escape chunk into the same two idle presses", async () => {
+        const draft = "Recover this raw-chunk draft.";
+        const gym = await createGym({ inference: [] });
+        running.add(gym);
+
+        gym.terminal.type(draft);
+        await waitForComposer(gym, draft);
+        gym.terminal.write("\x1b\x1b");
+
+        await waitForComposer(gym, "Ask Rig to do anything");
+        gym.terminal.press("up");
+        await waitForComposer(gym, draft);
+        expect(agentRequests(gym)).toHaveLength(0);
+    }, 60_000);
 });
 
 function agentRequests(gym: Gym) {
