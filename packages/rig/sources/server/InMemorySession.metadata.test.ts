@@ -19,6 +19,7 @@ import {
 } from "../providers/types.js";
 import { AgentSessionManager } from "./AgentSessionManager.js";
 import { InMemorySession } from "./InMemorySession.js";
+import { TrackedTaskDrain } from "./TrackedTaskDrain.js";
 
 afterEach(() => {
     vi.useRealTimers();
@@ -195,6 +196,63 @@ describe("InMemorySession metadata settlement", () => {
         expect(harness.metadataContexts).toHaveLength(1);
     });
 
+    it("tracks the delayed settlement until shutdown cancels it", async () => {
+        vi.useFakeTimers();
+        const taskDrain = new TrackedTaskDrain();
+        const harness = createHarness({ taskDrain });
+        const foreground = harness.session.submit({ text: "Cancel delayed metadata on shutdown." });
+        await harness.session.waitForRun(foreground.runId);
+        await vi.advanceTimersByTimeAsync(0);
+
+        let drained = false;
+        const draining = taskDrain.drain().then(() => {
+            drained = true;
+        });
+        await Promise.resolve();
+        expect(drained).toBe(false);
+
+        await harness.session.beginShutdown();
+        await draining;
+        expect(harness.metadataContexts).toHaveLength(0);
+    });
+
+    it("awaits an aborted metadata generation continuation during shutdown", async () => {
+        vi.useFakeTimers();
+        const taskDrain = new TrackedTaskDrain();
+        let releaseAfterAbort: (() => void) | undefined;
+        const afterAbort = new Promise<void>((resolve) => {
+            releaseAfterAbort = resolve;
+        });
+        let observedAbort = false;
+        const harness = createHarness({
+            afterMetadataAbort: afterAbort,
+            onMetadataAbort: () => {
+                observedAbort = true;
+            },
+            taskDrain,
+        });
+        const foreground = harness.session.submit({ text: "Abort in-flight metadata safely." });
+        await harness.session.waitForRun(foreground.runId);
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(harness.metadataContexts).toHaveLength(1);
+
+        taskDrain.beginClose();
+        const shuttingDown = harness.session.beginShutdown();
+        const draining = taskDrain.drain();
+        await vi.waitFor(() => expect(observedAbort).toBe(true));
+        let drained = false;
+        void draining.then(() => {
+            drained = true;
+        });
+        await Promise.resolve();
+        expect(drained).toBe(false);
+
+        releaseAfterAbort?.();
+        await shuttingDown;
+        await draining;
+        expect(harness.session.snapshot().titleStatus).toBe("idle");
+    });
+
     it("requires subagents, workflows, and managed background terminals to become idle", async () => {
         vi.useFakeTimers();
         const harness = createHarness({ activeSubagent: true });
@@ -245,8 +303,11 @@ describe("InMemorySession metadata settlement", () => {
 function createHarness(
     options: {
         activeSubagent?: boolean;
+        afterMetadataAbort?: Promise<void>;
         compaction?: Promise<void>;
+        onMetadataAbort?: () => void;
         staleMetadata?: Promise<void>;
+        taskDrain?: TrackedTaskDrain;
     } = {},
 ) {
     const model = defineModel({
@@ -268,6 +329,19 @@ function createHarness(
                 if (streamOptions.signal !== undefined) metadataSignals.push(streamOptions.signal);
                 metadataResponses += 1;
                 return createInferenceStream(async function* () {
+                    if (options.afterMetadataAbort !== undefined) {
+                        await new Promise<void>((resolve) => {
+                            const signal = streamOptions.signal;
+                            if (signal?.aborted === true) {
+                                resolve();
+                                return;
+                            }
+                            signal?.addEventListener("abort", () => resolve(), { once: true });
+                        });
+                        options.onMetadataAbort?.();
+                        await options.afterMetadataAbort;
+                        throw new Error("Metadata generation was cancelled.");
+                    }
                     if (metadataResponses === 1 && options.staleMetadata !== undefined) {
                         await options.staleMetadata;
                     }
@@ -318,6 +392,7 @@ function createHarness(
             get: (sessionId) => (sessionId === child.id ? child : root),
             listByRoot: () => [child],
         },
+        ...(options.taskDrain === undefined ? {} : { taskDrain: options.taskDrain }),
     });
     let backgroundCount = 0;
     let backgroundListener: ((count: number) => void) | undefined;
@@ -347,6 +422,7 @@ function createHarness(
         },
         modelCatalog: catalog,
         request: { cwd: "/tmp/rig-metadata-test", modelId: model.id, providerId: provider.id },
+        ...(options.taskDrain === undefined ? {} : { taskDrain: options.taskDrain }),
     });
     return {
         metadataContexts,

@@ -147,7 +147,9 @@ describe("InMemorySession abort", () => {
                 ? message.content.flatMap((block) => (block.type === "text" ? [block.text] : []))
                 : [],
         );
-        expect(continuedUserText?.filter((text) => text === "Apply this pending direction.")).toHaveLength(1);
+        expect(
+            continuedUserText?.filter((text) => text === "Apply this pending direction."),
+        ).toHaveLength(1);
         const events = session.events.since(undefined) ?? [];
         expect(events.filter((event) => event.type === "steering_applied")).toHaveLength(1);
         expect(events.filter((event) => event.type === "run_finished")).toHaveLength(1);
@@ -170,7 +172,7 @@ describe("InMemorySession abort", () => {
             models: [model],
             stream: (_model, _context, options) => {
                 streamCount += 1;
-                if (streamCount <= 2) return responseStream("Earlier answer");
+                if (streamCount === 1) return responseStream("Earlier answer");
                 compactStartedResolve?.();
                 return abortedStream(options?.signal);
             },

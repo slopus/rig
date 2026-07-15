@@ -248,6 +248,7 @@ export class InMemorySession {
     #lastSessionRunId: string | undefined;
     #latestMetadataBoundaryRunId: string | undefined;
     #metadataController: AbortController | undefined;
+    #metadataDelayCancel: (() => void) | undefined;
     #metadataRevision = 0;
     #metadataRunId: string | undefined;
     #metadataTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1244,6 +1245,7 @@ export class InMemorySession {
     beginShutdown(): Promise<void> {
         if (this.#shutdownCleanup !== undefined) return this.#shutdownCleanup;
         this.#closing = true;
+        this.#clearMetadataSettlement();
         for (const workflow of this.#workflowRuns.values()) {
             if (workflow.state.status === "running") this.stopWorkflow(workflow.state.runId);
         }
@@ -2310,8 +2312,8 @@ export class InMemorySession {
 
     #clearMetadataSettlement(): void {
         this.#metadataRevision += 1;
-        if (this.#metadataTimer !== undefined) clearTimeout(this.#metadataTimer);
-        this.#metadataTimer = undefined;
+        this.#metadataDelayCancel?.();
+        this.#metadataDelayCancel = undefined;
         this.#metadataController?.abort();
         this.#metadataController = undefined;
         if (this.#titleStatus === "generating") {
@@ -2333,6 +2335,7 @@ export class InMemorySession {
 
     #restartMetadataSettlement(): void {
         this.#clearMetadataSettlement();
+        if (this.#closing || this.#taskDrain?.closing === true) return;
         if (this.isSubagent()) {
             this.#agentManager?.recordDescendantSettlementActivity(
                 this.#agentMetadata.rootSessionId,
@@ -2348,11 +2351,40 @@ export class InMemorySession {
         }
 
         const revision = this.#metadataRevision;
-        this.#metadataTimer = setTimeout(() => {
-            this.#metadataTimer = undefined;
-            void this.#settleMetadata(revision);
-        }, SESSION_SETTLEMENT_DELAY_MS);
-        this.#metadataTimer.unref?.();
+        const waitAndSettle = () => this.#waitAndSettleMetadata(revision);
+        const settlement = this.#taskDrain?.run(waitAndSettle) ?? waitAndSettle();
+        void settlement.catch(() => undefined);
+    }
+
+    async #waitAndSettleMetadata(revision: number): Promise<void> {
+        if (revision !== this.#metadataRevision || this.#closing) return;
+        await new Promise<void>((resolve) => {
+            if (revision !== this.#metadataRevision || this.#closing) {
+                resolve();
+                return;
+            }
+
+            let settled = false;
+            const finish = () => {
+                if (settled) return;
+                settled = true;
+                if (this.#metadataTimer === timer) this.#metadataTimer = undefined;
+                if (this.#metadataDelayCancel === cancel) {
+                    this.#metadataDelayCancel = undefined;
+                }
+                resolve();
+            };
+            const timer = setTimeout(finish, SESSION_SETTLEMENT_DELAY_MS);
+            const cancel = () => {
+                clearTimeout(timer);
+                finish();
+            };
+            this.#metadataTimer = timer;
+            this.#metadataDelayCancel = cancel;
+            timer.unref?.();
+        });
+        if (revision !== this.#metadataRevision || this.#closing) return;
+        await this.#settleMetadata(revision);
     }
 
     #isMetadataSettlementIdle(): boolean {
