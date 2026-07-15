@@ -80,6 +80,9 @@ without making you rebuild the setup for every model, machine, or repository.
 - **Open and local.** Rig is MIT licensed, runs beside your code, and keeps its
   execution boundaries visible.
 
+And the name? We asked GPT-5.6 Sol for something short and easy to type on a
+keyboard. It suggested **Rig**.
+
 ## How it works
 
 Rig is not a thin command alias and it does not pretend every model is the same.
