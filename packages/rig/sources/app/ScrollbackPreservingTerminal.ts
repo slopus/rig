@@ -33,6 +33,7 @@ export class ScrollbackPreservingTerminal extends ProcessTerminal {
                     this.#trace.recordResize("settled", this.#dimensions());
                     onResize();
                 }, RESIZE_SETTLE_MS);
+                onResize();
             },
         );
     }

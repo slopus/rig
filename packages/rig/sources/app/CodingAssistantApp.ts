@@ -340,6 +340,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #imagePasteInFlight: Promise<void> | undefined;
     #nextPastedImageId = 1;
     #runToken = 0;
+    #terminalResizeTranscriptEntries: AppTranscriptEntry[] | undefined;
     #running = false;
     #activeToolCallIds = new Set<string>();
     #awaitingApprovalToolCallIds = new Set<string>();
@@ -1205,6 +1206,32 @@ export class CodingAssistantApp implements Component, Focusable {
     render(width: number): string[] {
         const safeWidth = Math.max(1, width);
         const header = this.#showHeaderInFrame ? this.#renderHeader(safeWidth) : [];
+        const transcript = this.#renderTranscript(safeWidth);
+        if (this.#exiting) return [...header, ...transcript];
+        return [...header, ...transcript, ...this.#renderLiveTail(safeWidth)];
+    }
+
+    beginTerminalResize(): void {
+        if (this.#terminalResizeTranscriptEntries !== undefined) return;
+        this.#terminalResizeTranscriptEntries = this.#visibleTranscriptEntries().map((entry) => ({
+            ...entry,
+            ...(entry.fileDiffs === undefined ? {} : { fileDiffs: [...entry.fileDiffs] }),
+            ...(entry.noticeChildren === undefined
+                ? {}
+                : { noticeChildren: [...entry.noticeChildren] }),
+        }));
+    }
+
+    endTerminalResize(): void {
+        this.#terminalResizeTranscriptEntries = undefined;
+    }
+
+    resizeLiveTailLineCount(width: number): number {
+        return this.#exiting ? 0 : this.#renderLiveTail(Math.max(1, width)).length;
+    }
+
+    #renderLiveTail(width: number): string[] {
+        const safeWidth = Math.max(1, width);
         const slashCommandSuggestions = this.#slashCommandSuggestions();
         const fileMentionSnapshot =
             slashCommandSuggestions.length === 0 ? this.#fileMentionSnapshot() : undefined;
@@ -1232,13 +1259,7 @@ export class CodingAssistantApp implements Component, Focusable {
         const queuedPrompts =
             this.#selectionPanel === undefined ? this.#renderQueuedPrompts(safeWidth) : [];
 
-        if (this.#exiting) {
-            return [...header, ...this.#renderTranscript(safeWidth)];
-        }
-
         return [
-            ...header,
-            ...this.#renderTranscript(safeWidth),
             "",
             ...activeWork,
             ...(activeWork.length > 0 ? [""] : []),
@@ -2859,12 +2880,7 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #renderTranscript(width: number): string[] {
-        const sourceEntries = this.#entries
-            .slice(this.#transcriptStartIndex)
-            .filter((entry) => !this.#activeToolCallIds.has(entry.id));
-        const entries = this.#showReasoning
-            ? sourceEntries
-            : sourceEntries.filter((entry) => entry.role !== "thinking");
+        const entries = this.#terminalResizeTranscriptEntries ?? this.#visibleTranscriptEntries();
         const lines = this.#renderTranscriptEntries(entries, width);
 
         const activityLabel = this.#activityLabel();
@@ -2876,6 +2892,15 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         return lines;
+    }
+
+    #visibleTranscriptEntries(): AppTranscriptEntry[] {
+        const sourceEntries = this.#entries
+            .slice(this.#transcriptStartIndex)
+            .filter((entry) => !this.#activeToolCallIds.has(entry.id));
+        return this.#showReasoning
+            ? [...sourceEntries]
+            : sourceEntries.filter((entry) => entry.role !== "thinking");
     }
 
     #renderTranscriptEntries(entries: readonly AppTranscriptEntry[], width: number): string[] {

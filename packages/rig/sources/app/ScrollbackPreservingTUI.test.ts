@@ -20,12 +20,23 @@ describe("ScrollbackPreservingTUI", () => {
         tui.stop();
     });
 
-    it("replays source-rendered history once at the new width", async () => {
+    it("adopts native history reflow and redraws only the live tail at the new width", async () => {
         const terminal = new RecordingTerminal(20, 5);
         const tui = new ScrollbackPreservingTUI(terminal, false);
-        const component: Component = {
+        const component = {
             invalidate: () => {},
-            render: (width) => ["history 1", "history 2", `input at ${width}`],
+            render: (width: number) => [
+                "history 1",
+                "history 2",
+                "history 3",
+                "history 4",
+                "history 5",
+                "history 6",
+                "history 7",
+                "history 8",
+                `input at ${width}`,
+            ],
+            resizeLiveTailLineCount: () => 1,
         };
         tui.addChild(component);
         tui.start();
@@ -36,9 +47,10 @@ describe("ScrollbackPreservingTUI", () => {
         await renderCycle();
 
         const output = terminal.output.join("");
-        expect(output.match(/history 1/gu)).toHaveLength(2);
+        expect(output.match(/history 1/gu)).toHaveLength(1);
         expect(output).toContain("input at 30");
-        expect(output).toContain("\x1b[3J");
+        expect(output).not.toContain("\x1b[3J");
+        expect(output).not.toContain("\x1b[2J");
         tui.stop();
     });
 });
