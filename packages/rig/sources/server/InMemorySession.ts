@@ -2582,13 +2582,13 @@ export class InMemorySession {
                     this.#pendingSteeringContinuations.delete(queued.runId);
                 }
 
-                this.#appendRunFinished(queued.runId, result);
                 await this.#observeProviderQuota(
                     runtime.provider,
                     queued.runId,
                     quotaObservationId,
                     "after",
                 );
+                this.#appendRunFinished(queued.runId, result);
                 if (result.stopReason !== "aborted" && result.stopReason !== "error") {
                     this.#continueGoalIfIdle();
                 }
@@ -2608,11 +2608,6 @@ export class InMemorySession {
             if (this.#activeRun?.runId === queued.runId) {
                 this.#activeRun = undefined;
             }
-            this.#append("run_error", {
-                errorMessage: error instanceof Error ? error.message : String(error),
-                modelLocked: this.#modelLocked(),
-                runId: queued.runId,
-            });
             if (runtime !== undefined) {
                 await this.#observeProviderQuota(
                     runtime.provider,
@@ -2621,6 +2616,11 @@ export class InMemorySession {
                     "after",
                 );
             }
+            this.#append("run_error", {
+                errorMessage: error instanceof Error ? error.message : String(error),
+                modelLocked: this.#modelLocked(),
+                runId: queued.runId,
+            });
             this.#latestMetadataBoundaryRunId = queued.runId;
             this.#restartMetadataSettlement();
             if (this.isSubagent()) this.#agentManager?.recordChanged(this);
