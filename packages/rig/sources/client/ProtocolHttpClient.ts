@@ -386,6 +386,17 @@ export class ProtocolHttpClient {
         options: WatchSessionEventsOptions,
     ): Promise<EventId | undefined> {
         return new Promise<EventId | undefined>((resolve, reject) => {
+            let application = Promise.resolve();
+            let cursor = after;
+            let terminalScheduled = false;
+            const settle = (error?: unknown) => {
+                if (terminalScheduled) return;
+                terminalScheduled = true;
+                void application.then(
+                    () => (error === undefined ? resolve(cursor) : reject(error)),
+                    reject,
+                );
+            };
             const requestPath =
                 after === undefined
                     ? `/sessions/${encodeURIComponent(options.sessionId)}/stream`
@@ -407,19 +418,10 @@ export class ProtocolHttpClient {
                         return;
                     }
 
-                    let cursor = after;
                     let buffer = "";
-                    let application = Promise.resolve();
-                    let settled = false;
-                    const fail = (error: unknown) => {
-                        if (settled) return;
-                        settled = true;
-                        response.destroy();
-                        reject(error);
-                    };
                     response.setEncoding("utf8");
                     response.on("data", (chunk: string) => {
-                        if (settled) return;
+                        if (terminalScheduled) return;
                         buffer += chunk;
                         for (;;) {
                             const boundary = buffer.indexOf("\n\n");
@@ -436,25 +438,22 @@ export class ProtocolHttpClient {
                                 await options.onEvent(event);
                                 cursor = event.id;
                             });
-                            void application.catch(fail);
+                            void application.catch((error: unknown) => {
+                                response.destroy();
+                                settle(error);
+                            });
                         }
                     });
-                    response.on("end", () => {
-                        void application.then(() => {
-                            if (settled) return;
-                            settled = true;
-                            resolve(cursor);
-                        }, fail);
-                    });
-                    response.on("error", fail);
+                    response.on("end", () => settle());
+                    response.on("error", settle);
                 },
             );
             const abort = () => {
+                settle();
                 request.destroy();
-                resolve(after);
             };
             options.signal?.addEventListener("abort", abort, { once: true });
-            request.on("error", reject);
+            request.on("error", settle);
             request.end();
         });
     }

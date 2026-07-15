@@ -134,8 +134,9 @@ describe("ProtocolHttpClient", () => {
     it("serializes async event application and reconnects after the last successful apply", async () => {
         const directory = await mkdtemp(join(tmpdir(), "rig-client-test-"));
         const socketPath = join(directory, "server.sock");
-        const first = sessionResetEvent("018bcfe5-6800-7001-8000-000000000001");
-        const second = sessionResetEvent("018bcfe5-6800-7002-8000-000000000002");
+        const prior = sessionResetEvent("018bcfe5-6800-7001-8000-000000000001");
+        const first = sessionResetEvent("018bcfe5-6800-7002-8000-000000000002");
+        const second = sessionResetEvent("018bcfe5-6800-7003-8000-000000000003");
         const requestedAfterValues: Array<string | null> = [];
         let streamRequests = 0;
         const server = createServer((request, response) => {
@@ -144,10 +145,12 @@ describe("ProtocolHttpClient", () => {
             streamRequests += 1;
             response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8" });
             if (streamRequests === 1) {
+                writeSseEvent(response, prior);
                 writeSseEvent(response, first);
                 writeSseEvent(response, second);
                 return;
             }
+            writeSseEvent(response, first);
             writeSseEvent(response, second);
         });
 
@@ -157,15 +160,17 @@ describe("ProtocolHttpClient", () => {
             const controller = new AbortController();
             const firstGate = deferred<void>();
             const applied: string[] = [];
-            let failSecondOnce = true;
+            const attempted: string[] = [];
+            let failFirstOnce = true;
 
             const watching = client.watchSessionEvents({
                 sessionId: "session-1",
                 signal: controller.signal,
                 async onEvent(event) {
-                    if (event.id === first.id) await firstGate.promise;
-                    if (event.id === second.id && failSecondOnce) {
-                        failSecondOnce = false;
+                    attempted.push(event.id);
+                    if (event.id === first.id && failFirstOnce) {
+                        await firstGate.promise;
+                        failFirstOnce = false;
                         throw new Error("simulated apply failure");
                     }
                     applied.push(event.id);
@@ -174,12 +179,14 @@ describe("ProtocolHttpClient", () => {
             });
 
             await vi.waitFor(() => expect(streamRequests).toBe(1));
-            expect(applied).toEqual([]);
-            firstGate.resolve();
+            await vi.waitFor(() => expect(attempted).toEqual([prior.id, first.id]));
+            expect(applied).toEqual([prior.id]);
+            firstGate.resolve(undefined);
             await watching;
 
-            expect(applied).toEqual([first.id, second.id]);
-            expect(requestedAfterValues).toEqual([null, first.id]);
+            expect(attempted).toEqual([prior.id, first.id, first.id, second.id]);
+            expect(applied).toEqual([prior.id, first.id, second.id]);
+            expect(requestedAfterValues).toEqual([null, prior.id]);
         } finally {
             await new Promise<void>((resolve) => server.close(() => resolve()));
             await rm(directory, { recursive: true, force: true });
