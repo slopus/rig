@@ -135,7 +135,7 @@ This file tracks known defects, verified coverage gaps, and concrete follow-up w
     - Automatic compaction should not rely on a three-second response delay to queue a prompt.
     - Background polling should not rely on a three-second shell lifetime while later phases are manually gated.
 
-- [ ] Strengthen foreground shell history coverage.
+- [x] Strengthen foreground shell history coverage.
     - The test claims the command renders once but currently checks only containment; count exact `Ran` rows.
 
 - [ ] Reduce oversized terminal snapshots.

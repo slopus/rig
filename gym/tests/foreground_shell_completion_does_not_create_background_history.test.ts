@@ -32,7 +32,9 @@ describe("foreground shell completion history", () => {
         gym.terminal.press("enter");
 
         const snapshot = await gym.terminal.waitForText("Foreground work finished.");
-        expect(snapshot.text).toContain("• Ran printf 'foreground-complete\\n'");
+        expect(snapshot.rows.filter((row) => row.includes("• Ran "))).toEqual([
+            expect.stringContaining("• Ran printf 'foreground-complete\\n'"),
+        ]);
         expect(snapshot.text).toContain("└ foreground-complete");
         expect(snapshot.text).not.toContain("Background terminal completed");
         expect(snapshot.text).not.toContain("Background terminal closed");
