@@ -10,6 +10,9 @@
   <a href="https://github.com/slopus/happy2">Happy 2</a>.
 </p>
 
+
+https://github.com/user-attachments/assets/99a7dee6-36ef-4110-95b2-e236633640a4
+
 <p>
   <a href="#quick-start">Quick start</a> ·
   <a href="#why-rig">Why Rig?</a> ·
