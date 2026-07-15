@@ -148,7 +148,6 @@ describe("CodingAssistantApp", () => {
             id: "steer-1",
             role: "user" as const,
         };
-
         app.applySessionEvent({
             createdAt: 1,
             data: {
@@ -198,6 +197,11 @@ describe("CodingAssistantApp", () => {
             id: "legacy-steer-1",
             role: "user" as const,
         };
+        const laterMessage = {
+            blocks: [{ text: "Later stored request", type: "text" as const }],
+            id: "later-message-1",
+            role: "user" as const,
+        };
         const app = new CodingAssistantApp({
             agent: new Agent({
                 provider,
@@ -240,6 +244,37 @@ describe("CodingAssistantApp", () => {
                 },
                 {
                     createdAt: 4,
+                    data: {
+                        delivery: "run",
+                        displayText: "Later stored request",
+                        message: laterMessage,
+                        runId: "run-2",
+                    },
+                    id: "event-later-submitted",
+                    sessionId: "session-1",
+                    type: "message_submitted",
+                },
+                {
+                    createdAt: 5,
+                    data: { runId: "run-2" },
+                    id: "event-later-started",
+                    sessionId: "session-1",
+                    type: "run_started",
+                },
+                {
+                    createdAt: 6,
+                    data: {
+                        agentRunId: "agent-run-2",
+                        modelLocked: true,
+                        runId: "run-2",
+                        stopReason: "stop",
+                    },
+                    id: "event-later-finished",
+                    sessionId: "session-1",
+                    type: "run_finished",
+                },
+                {
+                    createdAt: 7,
                     data: { messageIds: [message.id], runId: "run-1" },
                     id: "event-repaired",
                     sessionId: "session-1",
@@ -254,6 +289,9 @@ describe("CodingAssistantApp", () => {
         const rendered = stripAnsi(app.render(100).join("\n"));
         expect(rendered).not.toContain("Messages to be submitted after next tool call");
         expect(rendered.match(/› Legacy repaired direction/gu)).toHaveLength(1);
+        expect(rendered.indexOf("› Legacy repaired direction")).toBeLessThan(
+            rendered.indexOf("› Later stored request"),
+        );
     });
 
     it("uses pending-aware abort without stopping the local run on Escape", async () => {

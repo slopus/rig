@@ -227,6 +227,7 @@ interface PendingSteeringMessage {
     displayText: string;
     id: string;
     runId: string;
+    transcriptIndex: number;
 }
 
 interface PastedImage {
@@ -552,6 +553,8 @@ export class CodingAssistantApp implements Component, Focusable {
                         displayText: event.data.displayText,
                         id: event.data.message.id,
                         runId: event.data.runId,
+                        transcriptIndex:
+                            this.#entries.length + this.#pendingSteeringMessages.length,
                     });
                 }
                 this.#requestRender();
@@ -2981,7 +2984,11 @@ export class CodingAssistantApp implements Component, Focusable {
             if (index < 0) continue;
             const [pending] = this.#pendingSteeringMessages.splice(index, 1);
             if (pending !== undefined) {
-                this.#appendEntry({ id: pending.id, role: "user", text: pending.displayText });
+                this.#entries.splice(pending.transcriptIndex, 0, {
+                    id: pending.id,
+                    role: "user",
+                    text: pending.displayText,
+                });
             }
         }
         if (this.#pendingSteeringMessages.length === 0) this.#sendingPendingSteering = false;

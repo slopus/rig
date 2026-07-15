@@ -121,13 +121,18 @@ describe("RemoteAgent", () => {
             id: "legacy-steer-1",
             role: "user" as const,
         };
+        const laterMessage = {
+            blocks: [{ text: "Later stored request", type: "text" as const }],
+            id: "later-message-1",
+            role: "user" as const,
+        };
         const session = protocolSession(model);
         const agent = new RemoteAgent({
             client: {} as ProtocolHttpClient,
             context: createJustBashToolHarness().context,
             session: {
                 ...session,
-                snapshot: { ...session.snapshot, messages: [message] },
+                snapshot: { ...session.snapshot, messages: [message, laterMessage] },
                 status: "aborted",
             },
         });
@@ -165,6 +170,37 @@ describe("RemoteAgent", () => {
             },
             {
                 createdAt: 4,
+                data: {
+                    delivery: "run",
+                    displayText: "Later stored request",
+                    message: laterMessage,
+                    runId: "run-2",
+                },
+                id: "event-later-submitted",
+                sessionId: session.id,
+                type: "message_submitted",
+            },
+            {
+                createdAt: 5,
+                data: { runId: "run-2" },
+                id: "event-later-started",
+                sessionId: session.id,
+                type: "run_started",
+            },
+            {
+                createdAt: 6,
+                data: {
+                    agentRunId: "agent-run-2",
+                    modelLocked: true,
+                    runId: "run-2",
+                    stopReason: "stop",
+                },
+                id: "event-later-finished",
+                sessionId: session.id,
+                type: "run_finished",
+            },
+            {
+                createdAt: 7,
                 data: { messageIds: [message.id], runId: "run-1" },
                 id: "event-repaired",
                 sessionId: session.id,
@@ -174,7 +210,7 @@ describe("RemoteAgent", () => {
 
         for (const event of events) agent.applySessionEvent(event);
 
-        expect(agent.snapshot().messages).toEqual([message]);
+        expect(agent.snapshot().messages).toEqual([message, laterMessage]);
     });
 
     it("keeps goal controls synchronized with responses and events", async () => {

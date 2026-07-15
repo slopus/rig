@@ -1,12 +1,7 @@
 import type { SessionEvent } from "../protocol/index.js";
+import { isStartupInterruptionRunError } from "./isStartupInterruptionRunError.js";
 
 type SubmittedSteeringEvent = Extract<SessionEvent, { type: "message_submitted" }>;
-
-const LEGACY_STARTUP_INTERRUPTION_MESSAGES = new Set([
-    "The session was interrupted because the local server stopped before the run completed.",
-    "The session was interrupted because the local server shut down before the run completed.",
-    "The subagent stopped working because the local server restarted before its suspended run finished.",
-]);
 
 export interface LegacyOrphanedSteering {
     events: readonly SubmittedSteeringEvent[];
@@ -57,9 +52,7 @@ export function findLegacyOrphanedSteering(
 
         if (
             event.type !== "run_finished" &&
-            (event.type !== "run_error" ||
-                event.data.startupInterruption === true ||
-                LEGACY_STARTUP_INTERRUPTION_MESSAGES.has(event.data.errorMessage))
+            (event.type !== "run_error" || isStartupInterruptionRunError(event))
         ) {
             continue;
         }

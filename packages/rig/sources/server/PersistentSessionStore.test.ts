@@ -506,13 +506,13 @@ describe("PersistentSessionStore", () => {
             try {
                 const restored = restoredStore.get(state.id);
                 expect(restored?.snapshot().snapshot.messages.map((message) => message.id)).toEqual(
-                    [alreadyStored.id, alreadyApplied.id, orphaned.id, secondOrphaned.id],
+                    [orphaned.id, alreadyStored.id, secondOrphaned.id, alreadyApplied.id],
                 );
                 expect(restored?.snapshot().snapshot.contextMessages).toEqual([
-                    alreadyStored,
-                    alreadyApplied,
                     richOrphanedContext,
+                    alreadyStored,
                     secondOrphaned,
+                    alreadyApplied,
                 ]);
                 const events = restored?.events.since(undefined) ?? [];
                 const repairEvents = events.filter(
@@ -554,10 +554,10 @@ describe("PersistentSessionStore", () => {
             expect(afterFirstOpen.lastEventId).toBe(afterFirstOpen.repairEventId);
             expect(afterFirstOpen.globalLastCursor).toBe(1);
             expect(afterFirstOpen.messageIds).toEqual([
-                alreadyStored.id,
-                alreadyApplied.id,
                 orphaned.id,
+                alreadyStored.id,
                 secondOrphaned.id,
+                alreadyApplied.id,
             ]);
 
             const reopenedStore = new PersistentSessionStore({
@@ -792,6 +792,108 @@ describe("PersistentSessionStore", () => {
         }
     });
 
+    it("keeps restart-interrupted steering excluded after a later run clears interruption state", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        try {
+            const active = textUserMessage("restart-orphan", "never reached inference");
+            const later = textUserMessage("later-run-message", "completed after restart");
+            const state = sessionState({
+                activeRunId: "crashed-run",
+                modelId: "openai/test",
+                models: testModelCatalog().models,
+                providerId: "codex",
+                status: "running",
+            });
+            const store = new PersistentSessionStore({
+                databasePath,
+                modelCatalog: testModelCatalog(),
+            });
+            store.saveSession(state);
+            store.close();
+            const database = new DatabaseSync(databasePath);
+            insertEvent(database, state.id, "crashed-start", "run_started", 1, {
+                runId: "crashed-run",
+            });
+            insertEvent(database, state.id, "crashed-steer", "message_submitted", 2, {
+                delivery: "steer",
+                displayText: "never reached inference",
+                message: active,
+                runId: "crashed-run",
+            });
+            database.close();
+
+            const firstReopen = new PersistentSessionStore({
+                databasePath,
+                modelCatalog: testModelCatalog(),
+                now: () => 100,
+            });
+            firstReopen.close();
+
+            const laterDatabase = new DatabaseSync(databasePath);
+            insertEvent(laterDatabase, state.id, "later-start", "run_started", 4, {
+                runId: "later-run",
+            });
+            insertEvent(laterDatabase, state.id, "later-submit", "message_submitted", 5, {
+                delivery: "run",
+                displayText: "completed after restart",
+                message: later,
+                runId: "later-run",
+            });
+            insertEvent(laterDatabase, state.id, "later-finished", "run_finished", 6, {
+                agentRunId: "later-agent-run",
+                modelLocked: true,
+                runId: "later-run",
+                stopReason: "stop",
+            });
+            laterDatabase
+                .prepare(
+                    "UPDATE sessions SET status = 'completed', active_run_id = NULL, interrupted = 0, interruption_json = NULL WHERE id = ?",
+                )
+                .run(state.id);
+            laterDatabase.close();
+
+            const secondReopen = new PersistentSessionStore({
+                databasePath,
+                modelCatalog: testModelCatalog(),
+                now: () => 200,
+            });
+            secondReopen.close();
+
+            const verify = new DatabaseSync(databasePath);
+            try {
+                expect(
+                    verify
+                        .prepare(
+                            "SELECT COUNT(*) AS count FROM session_messages WHERE session_id = ? AND message_id = ?",
+                        )
+                        .get(state.id, active.id),
+                ).toEqual({ count: 0 });
+                expect(
+                    verify
+                        .prepare(
+                            "SELECT COUNT(*) AS count FROM session_events WHERE session_id = ? AND type = 'steering_applied'",
+                        )
+                        .get(state.id),
+                ).toEqual({ count: 0 });
+                const crashError = verify
+                    .prepare(
+                        "SELECT data_json FROM session_events WHERE session_id = ? AND type = 'run_error'",
+                    )
+                    .get(state.id) as { data_json: string };
+                expect(JSON.parse(crashError.data_json)).toEqual(
+                    expect.objectContaining({
+                        runId: "crashed-run",
+                        startupInterruption: true,
+                    }),
+                );
+            } finally {
+                verify.close();
+            }
+        } finally {
+            await cleanup();
+        }
+    });
+
     it("does not promote suspended subagent steering on the second restart", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         try {
@@ -936,6 +1038,14 @@ describe("PersistentSessionStore", () => {
                         )
                         .get(state.id),
                 ).toEqual({ count: 0 });
+                const normalizedError = verify
+                    .prepare(
+                        "SELECT data_json FROM session_events WHERE session_id = ? AND event_id = 'legacy-suspended-error'",
+                    )
+                    .get(state.id) as { data_json: string };
+                expect(JSON.parse(normalizedError.data_json)).toEqual(
+                    expect.objectContaining({ startupInterruption: true }),
+                );
             } finally {
                 verify.close();
             }
