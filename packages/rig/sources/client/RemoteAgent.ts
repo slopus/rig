@@ -39,6 +39,7 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
     #modelCatalog: ModelCatalog | undefined;
     #models: readonly Model[];
     #providerId: string;
+    #pendingSteeringMessages = new Map<string, { message: UserMessage; runId: string }>();
     #session: ProtocolSession;
     #configurationChangeQueue: Promise<void> = Promise.resolve();
     #modelChangeVersion = 0;
@@ -397,6 +398,14 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         }
 
         if (event.type === "message_submitted") {
+            if (event.data.delivery === "steer") {
+                this.#pendingSteeringMessages.set(event.data.message.id, {
+                    message: event.data.message,
+                    runId: event.data.runId,
+                });
+                this.#session = { ...this.#session, modelLocked: true, status: "running" };
+                return;
+            }
             this.#session = {
                 ...this.#session,
                 modelLocked: true,
@@ -409,6 +418,25 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
                     ),
                 },
             };
+            return;
+        }
+
+        if (event.type === "steering_applied") {
+            for (const messageId of event.data.messageIds) {
+                const pending = this.#pendingSteeringMessages.get(messageId);
+                if (pending === undefined || pending.runId !== event.data.runId) continue;
+                this.#session = {
+                    ...this.#session,
+                    snapshot: {
+                        ...this.#session.snapshot,
+                        messages: appendUniqueMessage(
+                            this.#session.snapshot.messages,
+                            pending.message,
+                        ),
+                    },
+                };
+                this.#pendingSteeringMessages.delete(messageId);
+            }
             return;
         }
 
@@ -432,6 +460,7 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         }
 
         if (event.type === "run_error") {
+            this.#discardPendingSteeringMessages(event.data.runId);
             this.#session = {
                 ...this.#session,
                 modelLocked: event.data.modelLocked,
@@ -441,6 +470,7 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         }
 
         if (event.type === "run_finished") {
+            this.#discardPendingSteeringMessages(event.data.runId);
             this.#session = {
                 ...this.#session,
                 modelLocked: event.data.modelLocked,
@@ -450,6 +480,7 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         }
 
         if (event.type === "session_reset") {
+            this.#pendingSteeringMessages.clear();
             this.#session = {
                 ...this.#session,
                 modelLocked: false,
@@ -460,6 +491,7 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         }
 
         if (event.type === "session_rewound") {
+            this.#pendingSteeringMessages.clear();
             this.#session = {
                 ...this.#session,
                 modelLocked: false,
@@ -568,6 +600,12 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         this.#providerId = session.providerId;
     }
 
+    #discardPendingSteeringMessages(runId: string): void {
+        for (const [messageId, pending] of this.#pendingSteeringMessages) {
+            if (pending.runId === runId) this.#pendingSteeringMessages.delete(messageId);
+        }
+    }
+
     #enqueueConfigurationChange(change: () => Promise<void>): Promise<void> {
         const operation = this.#configurationChangeQueue.then(change);
         this.#configurationChangeQueue = operation.catch(() => undefined);
@@ -653,7 +691,8 @@ function isRunEvent(event: SessionEvent, runId: string): boolean {
         event.type !== "agent_message" &&
         event.type !== "run_error" &&
         event.type !== "run_finished" &&
-        event.type !== "run_started"
+        event.type !== "run_started" &&
+        event.type !== "steering_applied"
     ) {
         return false;
     }

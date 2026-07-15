@@ -305,6 +305,7 @@ export interface AbortRunResponse {
 export type SessionEvent =
     | SessionCreatedEvent
     | MessageSubmittedEvent
+    | SteeringAppliedEvent
     | RunStartedEvent
     | AgentStreamEvent
     | AgentMessageEvent
@@ -341,9 +342,18 @@ export type MessageSubmittedEvent = BaseSessionEvent<
     "message_submitted",
     {
         displayText: string;
+        delivery?: "run" | "steer";
         message: UserMessage;
         runId: string;
         source?: "notification";
+    }
+>;
+
+export type SteeringAppliedEvent = BaseSessionEvent<
+    "steering_applied",
+    {
+        messageIds: readonly string[];
+        runId: string;
     }
 >;
 

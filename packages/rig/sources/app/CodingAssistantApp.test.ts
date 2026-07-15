@@ -105,6 +105,68 @@ describe("CodingAssistantApp", () => {
         expect(rawLines[inputLineIndex + 2]).toContain("gpt-test off");
     });
 
+    it("promotes session-backed steering from pending preview only when applied", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            sessionBacked: true,
+            tui: fakeTui(),
+        });
+        const message = {
+            blocks: [{ text: "Pending direction", type: "text" as const }],
+            id: "steer-1",
+            role: "user" as const,
+        };
+
+        app.applySessionEvent({
+            createdAt: 1,
+            data: {
+                delivery: "steer",
+                displayText: "Pending direction",
+                message,
+                runId: "run-1",
+            },
+            id: "event-submitted",
+            sessionId: "session-1",
+            type: "message_submitted",
+        });
+        const pending = stripAnsi(app.render(100).join("\n"));
+        expect(pending).toContain("Messages to be submitted after next tool call");
+        expect(pending).toContain("↳ Pending direction");
+        expect(pending).not.toContain("› Pending direction");
+
+        app.applySessionEvent({
+            createdAt: 2,
+            data: { messageIds: [message.id], runId: "run-1" },
+            id: "event-applied",
+            sessionId: "session-1",
+            type: "steering_applied",
+        });
+        const applied = stripAnsi(app.render(100).join("\n"));
+        expect(applied).not.toContain("Messages to be submitted after next tool call");
+        expect(applied).toContain("› Pending direction");
+    });
+
     it("uses the idle abort command to stop session background processes", async () => {
         const model = defineModel({
             defaultThinkingLevel: "off",

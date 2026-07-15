@@ -81,6 +81,7 @@ import { renderBackgroundTerminalSummary } from "./renderBackgroundTerminalSumma
 import { renderCodexFileDiff } from "./renderCodexFileDiff.js";
 import { renderCodexMcpToolCall } from "./renderCodexMcpToolCall.js";
 import { renderExecCommand } from "./renderExecCommand.js";
+import { renderPendingSteeringMessages } from "./renderPendingSteeringMessages.js";
 import { renderRigBanner } from "./renderRigBanner.js";
 import { sanitizeTerminalText } from "./sanitizeTerminalText.js";
 import { renderSubagentSummary } from "./renderSubagentSummary.js";
@@ -210,6 +211,11 @@ interface PendingPrompt {
     transcriptAppended?: boolean;
 }
 
+interface PendingSteeringMessage {
+    displayText: string;
+    id: string;
+}
+
 interface PastedImage {
     data: string;
     mediaType: string;
@@ -280,6 +286,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #terminalFocused = true;
     #freeformUserInput: FreeformUserInput | undefined;
     #pendingPrompts: PendingPrompt[] = [];
+    #pendingSteeringMessages: PendingSteeringMessage[] = [];
     #compacting = false;
     #pastedImagesById = new Map<number, PastedImage>();
     #selectionPanel: Component | undefined;
@@ -471,6 +478,20 @@ export class CodingAssistantApp implements Component, Focusable {
             const notificationPrefix = "Background work ";
             if (event.data.source === "notification") {
                 if (this.#consumeRenderedCompletionNotice(event.data.displayText)) return;
+            } else if (event.data.delivery === "steer") {
+                this.#recordUserInput(event.createdAt);
+                if (
+                    !this.#pendingSteeringMessages.some(
+                        (pending) => pending.id === event.data.message.id,
+                    )
+                ) {
+                    this.#pendingSteeringMessages.push({
+                        displayText: event.data.displayText,
+                        id: event.data.message.id,
+                    });
+                }
+                this.#requestRender();
+                return;
             } else {
                 this.#recordUserInput(event.createdAt);
             }
@@ -484,6 +505,11 @@ export class CodingAssistantApp implements Component, Focusable {
                         : event.data.displayText,
                 ...(event.data.source === "notification" ? { title: "Background work" } : {}),
             });
+            return;
+        }
+
+        if (event.type === "steering_applied") {
+            this.#promotePendingSteeringMessages(event.data.messageIds);
             return;
         }
 
@@ -633,6 +659,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
         if (event.type === "session_reset") {
             this.#clearEntries();
+            this.#pendingSteeringMessages = [];
             this.#modelLocked = false;
             this.#seenToolCallIds.clear();
             this.#streamEntryId = undefined;
@@ -659,6 +686,7 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         if (event.type === "session_rewound") {
+            this.#pendingSteeringMessages = [];
             const targetIndex = this.#entries.findIndex(
                 (entry) => entry.id === event.data.messageId,
             );
@@ -1008,6 +1036,15 @@ export class CodingAssistantApp implements Component, Focusable {
         const input = this.#renderInput(safeWidth);
         const activeWork =
             this.#selectionPanel === undefined ? this.#renderActiveWorkList(safeWidth) : [];
+        const pendingSteering =
+            this.#selectionPanel === undefined
+                ? renderPendingSteeringMessages(
+                      this.#pendingSteeringMessages.map((message) => message.displayText),
+                      safeWidth,
+                  )
+                : [];
+        const queuedPrompts =
+            this.#selectionPanel === undefined ? this.#renderQueuedPrompts(safeWidth) : [];
 
         if (this.#exiting) {
             return [...header, ...this.#renderTranscript(safeWidth)];
@@ -1017,9 +1054,12 @@ export class CodingAssistantApp implements Component, Focusable {
             ...header,
             ...this.#renderTranscript(safeWidth),
             "",
-            ...this.#renderQueuedPrompts(safeWidth),
             ...activeWork,
             ...(activeWork.length > 0 ? [""] : []),
+            ...pendingSteering,
+            ...(pendingSteering.length > 0 ? [""] : []),
+            ...queuedPrompts,
+            ...(queuedPrompts.length > 0 ? [""] : []),
             ...(this.#selectionPanel === undefined
                 ? input
                 : this.#selectionPanel.render(safeWidth)),
@@ -2666,6 +2706,20 @@ export class CodingAssistantApp implements Component, Focusable {
                 this.#fitLine(`${index === 0 ? prefix : indent}${DIM}${line}${RESET}`, width),
             );
         });
+    }
+
+    #promotePendingSteeringMessages(messageIds: readonly string[]): void {
+        for (const messageId of messageIds) {
+            const index = this.#pendingSteeringMessages.findIndex(
+                (pending) => pending.id === messageId,
+            );
+            if (index < 0) continue;
+            const [pending] = this.#pendingSteeringMessages.splice(index, 1);
+            if (pending !== undefined) {
+                this.#appendEntry({ id: pending.id, role: "user", text: pending.displayText });
+            }
+        }
+        this.#requestRender();
     }
 
     #renderAutocomplete(

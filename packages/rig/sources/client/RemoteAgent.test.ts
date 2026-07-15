@@ -66,6 +66,49 @@ describe("RemoteAgent", () => {
         });
     });
 
+    it("keeps session steering out of the snapshot until the daemon applies it", () => {
+        const model = defineModel({
+            id: "openai/test",
+            name: "Test model",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const session = protocolSession(model);
+        const agent = new RemoteAgent({
+            client: {} as ProtocolHttpClient,
+            context: createJustBashToolHarness().context,
+            session: { ...session, status: "running" },
+        });
+        const message = {
+            blocks: [{ text: "Change direction.", type: "text" as const }],
+            id: "steer-1",
+            role: "user" as const,
+        };
+
+        agent.applySessionEvent({
+            createdAt: 1,
+            data: {
+                delivery: "steer",
+                displayText: "Change direction.",
+                message,
+                runId: "run-1",
+            },
+            id: "event-submitted",
+            sessionId: session.id,
+            type: "message_submitted",
+        });
+        expect(agent.snapshot().messages).toEqual([]);
+
+        agent.applySessionEvent({
+            createdAt: 2,
+            data: { messageIds: [message.id], runId: "run-1" },
+            id: "event-applied",
+            sessionId: session.id,
+            type: "steering_applied",
+        });
+        expect(agent.snapshot().messages).toEqual([message]);
+    });
+
     it("keeps goal controls synchronized with responses and events", async () => {
         const model = defineModel({
             id: "openai/test",

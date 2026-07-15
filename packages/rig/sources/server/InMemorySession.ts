@@ -200,6 +200,11 @@ interface PartialMessageState {
     runId: string;
 }
 
+interface PendingSteeringMessage {
+    message: UserMessage;
+    runId: string;
+}
+
 export interface SessionRunCompletion {
     errorMessage?: string;
     status: "aborted" | "completed" | "error";
@@ -236,6 +241,7 @@ export class InMemorySession {
     #nextTaskId = 1;
     #now: () => number;
     #partialPositions = new Set<number>();
+    #pendingSteeringMessages = new Map<string, PendingSteeringMessage>();
     #pendingUserInputs = new Map<string, PendingUserInput>();
     #persistence: InMemorySessionPersistence | undefined;
     #providerId: string;
@@ -1148,6 +1154,7 @@ export class InMemorySession {
         this.#activeRun = undefined;
         this.#restoredActiveRunId = undefined;
         this.#activePartial = undefined;
+        this.#pendingSteeringMessages.clear();
         this.#suspendedRunIds.clear();
         this.#pauseActiveGoal();
         const interruptedRunIds = [
@@ -1247,6 +1254,7 @@ export class InMemorySession {
         this.#contextMessages = undefined;
         this.#partialPositions.clear();
         this.#activePartial = undefined;
+        this.#pendingSteeringMessages.clear();
         this.#suspendedRunIds.clear();
         const hadTasks = this.#tasks.length > 0;
         const hadGoal = this.#goal !== undefined;
@@ -1498,6 +1506,7 @@ export class InMemorySession {
         this.#separateModelContextFromVisibleTranscript();
         this.#storeMessage(this.#messages.length, visibleMessage, false, runId);
         const event = this.#append("message_submitted", {
+            delivery: "run",
             displayText,
             message: visibleMessage,
             runId,
@@ -1528,16 +1537,31 @@ export class InMemorySession {
         };
 
         const agent = this.#ensureRuntime().agent;
-        if (agent.status === "running") agent.steerMessage(userMessage);
-        else agent.enqueueMessage(userMessage);
+        const pending = agent.status === "running";
+        if (pending) {
+            this.#pendingSteeringMessages.set(userMessage.id, {
+                message: userMessage,
+                runId: activeRun.runId,
+            });
+            agent.steerMessage(userMessage);
+        } else {
+            agent.enqueueMessage(userMessage);
+            this.#storeMessage(this.#messages.length, userMessage, false, activeRun.runId);
+        }
         this.#interruption = undefined;
         this.#lastMessageAt = this.#now();
-        this.#storeMessage(this.#messages.length, userMessage, false, activeRun.runId);
         const event = this.#append("message_submitted", {
+            delivery: "steer",
             displayText,
             message: userMessage,
             runId: activeRun.runId,
         });
+        if (!pending) {
+            this.#append("steering_applied", {
+                messageIds: [userMessage.id],
+                runId: activeRun.runId,
+            });
+        }
         return {
             eventId: event.id,
             runId: activeRun.runId,
@@ -1566,16 +1590,31 @@ export class InMemorySession {
         };
         const agent = this.#ensureRuntime().agent;
 
-        if (agent.status === "running") agent.steerMessage(userMessage);
-        else agent.enqueueMessage(userMessage);
+        const pending = agent.status === "running";
+        if (pending) {
+            this.#pendingSteeringMessages.set(userMessage.id, {
+                message: visibleMessage,
+                runId: activeRun.runId,
+            });
+            agent.steerMessage(userMessage);
+        } else {
+            agent.enqueueMessage(userMessage);
+            this.#storeMessage(this.#messages.length, visibleMessage, false, activeRun.runId);
+        }
         this.#interruption = undefined;
-        this.#storeMessage(this.#messages.length, visibleMessage, false, activeRun.runId);
         const event = this.#append("message_submitted", {
+            delivery: "steer",
             displayText,
             message: visibleMessage,
             runId: activeRun.runId,
             source: "notification",
         });
+        if (!pending) {
+            this.#append("steering_applied", {
+                messageIds: [userMessage.id],
+                runId: activeRun.runId,
+            });
+        }
         return {
             eventId: event.id,
             runId: activeRun.runId,
@@ -1817,6 +1856,17 @@ export class InMemorySession {
             return;
         }
 
+        if (event.type === "steering_applied") {
+            for (const messageId of event.messageIds) {
+                const pending = this.#pendingSteeringMessages.get(messageId);
+                if (pending === undefined || pending.runId !== runId) continue;
+                this.#storeMessage(this.#messages.length, pending.message, false, runId);
+                this.#pendingSteeringMessages.delete(messageId);
+            }
+            this.#append("steering_applied", { messageIds: event.messageIds, runId });
+            return;
+        }
+
         if (event.type === "inference_iteration_start") {
             this.#activePartial = {
                 fallbackId: `${runId}:assistant:${event.iteration}`,
@@ -1867,6 +1917,7 @@ export class InMemorySession {
         if (this.#activeRun?.runId === runId) {
             this.#activeRun = undefined;
         }
+        this.#discardPendingSteeringMessages(runId);
         this.#append("run_finished", {
             agentRunId: result.runId,
             modelLocked: this.#modelLocked(),
@@ -1880,6 +1931,12 @@ export class InMemorySession {
             .filter((message) => !message.isPartial)
             .sort((left, right) => left.position - right.position)
             .map((message) => message.message);
+    }
+
+    #discardPendingSteeringMessages(runId: string): void {
+        for (const [messageId, pending] of this.#pendingSteeringMessages) {
+            if (pending.runId === runId) this.#pendingSteeringMessages.delete(messageId);
+        }
     }
 
     #ensureKnownModel(modelId: string, providerId: string): Model {
@@ -2153,6 +2210,7 @@ export class InMemorySession {
                 controller.signal.aborted && this.#suspendOnAbort ? "suspended" : "error";
             this.#suspendOnAbort = false;
             this.#activePartial = undefined;
+            this.#discardPendingSteeringMessages(queued.runId);
             this.#pauseActiveGoal();
             if (this.#activeRun?.runId === queued.runId) {
                 this.#activeRun = undefined;

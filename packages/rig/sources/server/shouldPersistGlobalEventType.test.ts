@@ -7,10 +7,13 @@ describe("shouldPersistGlobalEventType", () => {
         expect(shouldPersistGlobalEventType("agent_event")).toBe(false);
     });
 
-    it.each(["message_submitted", "agent_message", "run_finished", "run_error"] as const)(
-        "keeps the durable %s update",
-        (type) => {
-            expect(shouldPersistGlobalEventType(type)).toBe(true);
-        },
-    );
+    it.each([
+        "message_submitted",
+        "steering_applied",
+        "agent_message",
+        "run_finished",
+        "run_error",
+    ] as const)("keeps the durable %s update", (type) => {
+        expect(shouldPersistGlobalEventType(type)).toBe(true);
+    });
 });

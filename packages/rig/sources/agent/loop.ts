@@ -93,6 +93,10 @@ export type AgentLoopEvent =
           iteration: number;
       }
     | {
+          type: "steering_applied";
+          messageIds: readonly string[];
+      }
+    | {
           type: "tool_execution_start";
           toolCall: ProviderToolCall;
       }
@@ -377,7 +381,15 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         }
 
         if (assistantMessage.stopReason !== "toolUse") {
-            if (appendSteering(options, transcript, contextTranscript, providerMessages, now) > 0) {
+            if (
+                (await appendSteering(
+                    options,
+                    transcript,
+                    contextTranscript,
+                    providerMessages,
+                    now,
+                )) > 0
+            ) {
                 continue;
             }
             return {
@@ -488,7 +500,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
             force: false,
             reportedTokens: assistantMessage.usage.totalTokens,
         });
-        appendSteering(options, transcript, contextTranscript, providerMessages, now);
+        await appendSteering(options, transcript, contextTranscript, providerMessages, now);
     }
 }
 
@@ -548,18 +560,24 @@ function collectToolCallIds(messages: readonly Message[]): ReadonlySet<string> {
     return ids;
 }
 
-function appendSteering(
+async function appendSteering(
     options: RunAgentLoopOptions,
     transcript: Message[],
     contextTranscript: Message[],
     providerMessages: ProviderMessage[],
     now: () => number,
-): number {
+): Promise<number> {
     const steering = options.takeSteering?.() ?? [];
     for (const message of steering) {
         transcript.push(message);
         contextTranscript.push(message);
         providerMessages.push(toProviderUserMessage(message, now));
+    }
+    if (steering.length > 0) {
+        await options.onEvent?.({
+            messageIds: steering.map((message) => message.id),
+            type: "steering_applied",
+        });
     }
     return steering.length;
 }
