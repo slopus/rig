@@ -82,18 +82,32 @@ export class ScrollbackPreservingTUI extends TUI {
         const liveTailLines = lines.slice(lines.length - liveTailLineCount);
         const liveTailStart = height - liveTailLineCount;
         const repaintRows = new Set<number>();
-        const previousLiveTailStart = Math.max(0, state.previousHeight - previousLiveTailLineCount);
-        for (
-            let row = previousLiveTailStart;
-            row < Math.min(state.previousHeight, height);
-            row += 1
-        ) {
-            repaintRows.add(row);
+        const repaintTopViewport = state.previousViewportTop === 0 && lines.length <= height;
+        if (repaintTopViewport) {
+            for (let row = 0; row < height; row += 1) {
+                repaintRows.add(row);
+            }
+        } else {
+            const previousLiveTailStart = Math.max(
+                0,
+                state.previousHeight - previousLiveTailLineCount,
+            );
+            for (
+                let row = previousLiveTailStart;
+                row < Math.min(state.previousHeight, height);
+                row += 1
+            ) {
+                repaintRows.add(row);
+            }
+            for (let row = liveTailStart; row < height; row += 1) repaintRows.add(row);
         }
-        for (let row = liveTailStart; row < height; row += 1) repaintRows.add(row);
         let output = "\x1b[?2026h";
         for (const row of [...repaintRows].sort((left, right) => left - right)) {
-            const line = row < liveTailStart ? "" : (liveTailLines[row - liveTailStart] ?? "");
+            const line = repaintTopViewport
+                ? (lines[row] ?? "")
+                : row < liveTailStart
+                  ? ""
+                  : (liveTailLines[row - liveTailStart] ?? "");
             output += `\x1b[${row + 1};1H\x1b[2K${line}`;
         }
         output += `\x1b[${height};1H`;

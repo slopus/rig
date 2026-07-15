@@ -53,6 +53,32 @@ describe("ScrollbackPreservingTUI", () => {
         expect(output).not.toContain("\x1b[2J");
         tui.stop();
     });
+
+    it("source-renders the complete top viewport when all stable content still fits", async () => {
+        const terminal = new RecordingTerminal(30, 6);
+        const tui = new ScrollbackPreservingTUI(terminal, false);
+        const component = {
+            invalidate: () => {},
+            render: (width: number) => [`header at ${width}`, "status", `input at ${width}`],
+            resizeLiveTailLineCount: () => 1,
+        };
+        tui.addChild(component);
+        tui.start();
+        await renderCycle();
+        terminal.output.length = 0;
+
+        terminal.columns = 19;
+        tui.requestRender();
+        await renderCycle();
+
+        const output = terminal.output.join("");
+        expect(output).toContain("header at 19");
+        expect(output).toContain("status");
+        expect(output).toContain("input at 19");
+        expect(output).not.toContain("\x1b[3J");
+        expect(output).not.toContain("\x1b[2J");
+        tui.stop();
+    });
 });
 
 class RecordingTerminal implements Terminal {
