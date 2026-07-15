@@ -177,6 +177,7 @@ describe("background subagent completion routes to its parent", () => {
         expect(completed.text).toContain("• Background work");
         expect(completed.text).toContain('└ "Inspect workspace" completed in');
         expect(completed.text).not.toContain('› "Inspect workspace" completed');
+        const notificationTitleRow = completed.rows.findIndex((row) => row === "• Background work");
         const notificationRow = completed.rows.findIndex((row) =>
             row.includes('"Inspect workspace" completed in'),
         );
@@ -194,10 +195,11 @@ describe("background subagent completion routes to its parent", () => {
         const composerRow = completed.rows.findIndex((row) =>
             row.includes("Ask Rig to do anything"),
         );
+        expect(notificationTitleRow).toBeLessThan(notificationRow);
         expect(notificationRow).toBeLessThan(continuingRow);
         expect(continuingRow).toBeLessThan(acknowledgementRow);
         expect(acknowledgementRow).toBeLessThan(composerRow);
-        expect(terminalRowStyleRuns(completed, notificationRow)).toEqual([
+        expect(terminalRowStyleRuns(completed, notificationTitleRow)).toEqual([
             {
                 background: null,
                 bold: false,
@@ -216,14 +218,25 @@ describe("background subagent completion routes to its parent", () => {
                 text: "Background work",
                 x: 2,
             },
+        ]);
+        expect(terminalRowStyleRuns(completed, notificationRow)).toEqual([
+            {
+                background: null,
+                bold: false,
+                dim: true,
+                foreground: null,
+                italic: false,
+                text: "└",
+                x: 2,
+            },
             {
                 background: null,
                 bold: false,
                 dim: false,
                 foreground: null,
                 italic: false,
-                text: '"Inspect workspace" completed.',
-                x: 18,
+                text: '"Inspect workspace" completed in 0s · 0 tokens.',
+                x: 4,
             },
         ]);
         const screenshotDirectory = process.env.RIG_GYM_SCREENSHOT_DIR;
