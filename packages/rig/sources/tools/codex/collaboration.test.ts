@@ -46,7 +46,11 @@ describe("Codex collaboration tools", () => {
 
         await expect(
             codexSpawnAgentTool.execute(
-                { message: "Inspect the implementation.", task_name: "inspect_code" },
+                {
+                    context: "task",
+                    message: "Inspect the implementation.",
+                    task_name: "inspect_code",
+                },
                 harness.context,
                 { toolCallId: "tool-1" },
             ),
@@ -57,6 +61,7 @@ describe("Codex collaboration tools", () => {
         });
         expect(spawn).toHaveBeenCalledWith({
             background: true,
+            contextMode: "task",
             description: "Inspect code",
             parentToolCallId: "tool-1",
             prompt: "Inspect the implementation.",

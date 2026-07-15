@@ -1,4 +1,7 @@
+import type { Message } from "../types.js";
+
 export type SubagentRunStatus = "aborted" | "completed" | "error" | "running" | "suspended";
+export type SubagentContextMode = "parent" | "task";
 
 export interface ManagedSubagent {
     description: string;
@@ -10,8 +13,11 @@ export interface ManagedSubagent {
 
 export interface SpawnSubagentRequest {
     background?: boolean;
+    contextMode?: SubagentContextMode;
+    contextMessages?: readonly Message[];
     description: string;
     modelId?: string;
+    providerId?: string;
     parentToolCallId?: string;
     prompt: string;
     taskName?: string;

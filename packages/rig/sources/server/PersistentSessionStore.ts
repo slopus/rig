@@ -72,7 +72,8 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         }
         this.#agentManager = new AgentSessionManager({
             repository: {
-                createSubagent: (request, metadata) => this.#createSession(request, metadata),
+                createSubagent: (request, metadata, contextMessages) =>
+                    this.#createSession(request, metadata, contextMessages),
                 get: (sessionId) => this.get(sessionId),
                 listByRoot: (rootSessionId) => this.#listSubagentSessionsByRoot(rootSessionId),
             },
@@ -162,6 +163,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
     #createSession(
         request: CreateSessionRequest,
         metadata?: SessionAgentMetadata,
+        contextMessages?: readonly Message[],
     ): InMemorySession {
         const session = new InMemorySession({
             agentManager: this.#agentManager,
@@ -172,6 +174,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 ? { mcpToolProvider: this.#mcpToolProvider }
                 : {}),
             ...(metadata !== undefined ? { metadata } : {}),
+            ...(contextMessages !== undefined ? { initialContextMessages: contextMessages } : {}),
             onAppendEvent: (event) => this.#appendEvent(event),
             persistence: this,
             request,

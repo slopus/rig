@@ -30,6 +30,7 @@ describe("Escape pauses delegated work with the parent", () => {
                         content: [
                             {
                                 arguments: {
+                                    context: "task",
                                     message: "Audit until the parent continues.",
                                     task_name: "paused_audit",
                                 },

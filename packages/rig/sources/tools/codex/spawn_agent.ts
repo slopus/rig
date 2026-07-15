@@ -10,24 +10,47 @@ export const codexSpawnAgentTool = defineTool({
     description:
         "Spawn a background subagent for a concrete, bounded task. The new agent shares the workspace and reports back when it finishes.",
     arguments: Type.Object({
+        context: Type.Union([Type.Literal("parent"), Type.Literal("task")], {
+            description:
+                "Use parent to continue with the parent thread context, or task to start with only the delegated message.",
+        }),
         task_name: Type.String({
             description: "Lowercase task name using letters, numbers, and underscores.",
         }),
         message: Type.String({ description: "Complete instructions for the new agent." }),
+        model: Type.Optional(
+            Type.String({ description: "Child model ID. Provide together with provider." }),
+        ),
+        provider: Type.Optional(
+            Type.String({ description: "Child provider ID. Provide together with model." }),
+        ),
     }),
     returnType: Type.Object({
         agent_id: Type.String(),
         path: Type.String(),
         task_name: Type.String(),
     }),
-    execute: async ({ message, task_name }, context, execution) => {
+    execute: async (
+        { context: contextMode, message, model, provider, task_name },
+        context,
+        execution,
+    ) => {
+        if ((model === undefined) !== (provider === undefined)) {
+            throw new Error("Subagent provider and model must be provided together.");
+        }
         const result = await requireSubagentContext(context).spawn({
             background: true,
+            contextMode,
+            ...(contextMode === "parent" && execution.messages !== undefined
+                ? { contextMessages: execution.messages.slice(0, -1) }
+                : {}),
             description: humanizeTaskName(task_name),
+            ...(model === undefined ? {} : { modelId: model }),
             ...(execution.toolCallId === undefined
                 ? {}
                 : { parentToolCallId: execution.toolCallId }),
             prompt: message,
+            ...(provider === undefined ? {} : { providerId: provider }),
             taskName: task_name,
         });
         return { agent_id: result.sessionId, path: result.path, task_name: result.taskName };

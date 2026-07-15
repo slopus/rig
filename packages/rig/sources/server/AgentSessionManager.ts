@@ -8,6 +8,7 @@ import {
     type WaitForSubagentResult,
 } from "../agent/index.js";
 import type { CreateSessionRequest, SessionAgentMetadata } from "../protocol/index.js";
+import type { Message } from "../agent/types.js";
 import type { PermissionMode } from "../permissions/index.js";
 import type { InMemorySession } from "./InMemorySession.js";
 
@@ -15,7 +16,11 @@ export const DEFAULT_MAX_SUBAGENT_DEPTH = 3;
 export const DEFAULT_MAX_ACTIVE_SUBAGENTS = 4;
 
 export interface AgentSessionRepository {
-    createSubagent(request: CreateSessionRequest, metadata: SessionAgentMetadata): InMemorySession;
+    createSubagent(
+        request: CreateSessionRequest,
+        metadata: SessionAgentMetadata,
+        contextMessages?: readonly Message[],
+    ): InMemorySession;
     get(sessionId: string): InMemorySession | undefined;
     listByRoot(rootSessionId: string): readonly InMemorySession[];
 }
@@ -144,8 +149,16 @@ export class AgentSessionManager {
         if (parent === undefined) {
             throw new Error("The parent session is no longer available.");
         }
-        if (request.modelId !== undefined && !parent.hasModel(request.modelId)) {
-            throw new Error(`Model '${request.modelId}' is not available for workflow agents.`);
+        if (request.providerId !== undefined && request.modelId === undefined) {
+            throw new Error("A subagent provider requires an explicit model.");
+        }
+        if (
+            request.modelId !== undefined &&
+            !parent.hasModel(request.modelId, request.providerId)
+        ) {
+            const providerDescription =
+                request.providerId === undefined ? "" : ` for provider '${request.providerId}'`;
+            throw new Error(`Model '${request.modelId}' is not available${providerDescription}.`);
         }
 
         const parentMetadata = parent.agentMetadata();
@@ -175,18 +188,24 @@ export class AgentSessionManager {
                 type: "subagent",
             };
             const parentRequest = parent.requestForSubagent();
-            child = this.#repository.createSubagent(
-                {
-                    ...parentRequest,
-                    instructions: createSubagentInstructions(
-                        parentRequest.instructions,
-                        depth,
-                        this.maxDepth,
-                    ),
-                    ...(request.modelId === undefined ? {} : { modelId: request.modelId }),
-                },
-                metadata,
-            );
+            const childRequest = {
+                ...parentRequest,
+                instructions: createSubagentInstructions(
+                    parentRequest.instructions,
+                    depth,
+                    this.maxDepth,
+                ),
+                ...(request.modelId === undefined ? {} : { modelId: request.modelId }),
+                ...(request.providerId === undefined ? {} : { providerId: request.providerId }),
+            };
+            child =
+                request.contextMode === "parent"
+                    ? this.#repository.createSubagent(
+                          childRequest,
+                          metadata,
+                          request.contextMessages,
+                      )
+                    : this.#repository.createSubagent(childRequest, metadata);
             submitted = child.submit({ text: request.prompt });
             parent.recordSubagentChanged(child.subagentSummary());
         } finally {

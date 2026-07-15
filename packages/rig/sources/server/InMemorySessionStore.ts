@@ -1,4 +1,5 @@
 import { createEventIdFactory } from "../protocol/index.js";
+import type { Message } from "../agent/types.js";
 import type {
     ChangeEffortRequest,
     ChangeModelRequest,
@@ -32,7 +33,8 @@ export class InMemorySessionStore implements SessionStore {
         this.#mcpToolProvider = options.mcpToolProvider;
         this.#agentManager = new AgentSessionManager({
             repository: {
-                createSubagent: (request, metadata) => this.#createSession(request, metadata),
+                createSubagent: (request, metadata, contextMessages) =>
+                    this.#createSession(request, metadata, contextMessages),
                 get: (sessionId) => this.get(sessionId),
                 listByRoot: (rootSessionId) =>
                     [...this.#sessions.values()].filter(
@@ -90,6 +92,7 @@ export class InMemorySessionStore implements SessionStore {
     #createSession(
         request: CreateSessionRequest,
         metadata?: SessionAgentMetadata,
+        contextMessages?: readonly Message[],
     ): InMemorySession {
         const session = new InMemorySession({
             agentManager: this.#agentManager,
@@ -99,6 +102,7 @@ export class InMemorySessionStore implements SessionStore {
                 ? { mcpToolProvider: this.#mcpToolProvider }
                 : {}),
             ...(metadata !== undefined ? { metadata } : {}),
+            ...(contextMessages !== undefined ? { initialContextMessages: contextMessages } : {}),
             request,
         });
         this.#sessions.set(session.id, session);

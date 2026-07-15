@@ -40,6 +40,7 @@ export interface GymOptions {
     modelId?: string;
     permissionMode?: "auto" | "from_config" | "full_access" | "read_only" | "workspace_write";
     providerId?: "claude-sdk" | "codex" | "gym";
+    providerOverrides?: readonly ("claude-sdk" | "codex")[];
     rows?: number;
     startupText?: string;
     timeoutMs?: number;

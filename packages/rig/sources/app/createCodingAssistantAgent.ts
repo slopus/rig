@@ -32,6 +32,7 @@ import { agentTool } from "../tools/Agent.js";
 import { goalTools } from "../tools/goals/index.js";
 import type { CodingAssistantRuntime } from "./CodingAssistantRuntime.js";
 import { createDefaultInstructions } from "./createDefaultInstructions.js";
+import { routeProviderThroughGym } from "./routeProviderThroughGym.js";
 
 export interface CreateCodingAssistantAgentOptions {
     cwd: string;
@@ -130,7 +131,7 @@ export function createCodingAssistantAgent(
             : [...baseTools, ...collaborationTools];
     const tools =
         options.goals === undefined ? toolsWithoutGoals : [...toolsWithoutGoals, ...goalTools];
-    const provider =
+    const nativeProvider =
         providerId === "bedrock"
             ? createBedrockProvider({ env: options.env ?? process.env })
             : providerId === "claude-sdk"
@@ -146,6 +147,7 @@ export function createCodingAssistantAgent(
                   : (() => {
                         throw new Error(`Unknown inference provider '${providerId}'.`);
                     })();
+    const provider = routeProviderThroughGym(nativeProvider, options.env ?? process.env);
     const agentOptions: AgentOptions = {
         provider,
         modelId,

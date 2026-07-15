@@ -72,6 +72,7 @@ export type {
     ManagedSubagent,
     SpawnSubagentRequest,
     SpawnSubagentResult,
+    SubagentContextMode,
     SubagentContext,
     SubagentRunStatus,
     WaitForSubagentResult,

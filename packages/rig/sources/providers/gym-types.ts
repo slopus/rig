@@ -4,6 +4,7 @@ export interface GymInferenceRequest {
     context: Context;
     modelId: string;
     options: StreamOptions;
+    providerId: string;
 }
 
 export interface GymInferenceResponse {

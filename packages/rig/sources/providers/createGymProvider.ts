@@ -5,6 +5,8 @@ import {
     defineProvider,
     type AssistantMessage,
     type AssistantMessageEvent,
+    type Model,
+    type ServiceTier,
     type StreamOptions,
     type Usage,
 } from "./types.js";
@@ -21,19 +23,27 @@ export interface CreateGymProviderOptions {
     contextWindow?: number;
     endpoint: string;
     fetch?: typeof globalThis.fetch;
+    models?: readonly Model[];
+    providerId?: string;
+    serviceTiers?: readonly ServiceTier[];
     token?: string;
 }
 
 export function createGymProvider(options: CreateGymProviderOptions) {
     const request = options.fetch ?? globalThis.fetch;
-    const model =
-        options.contextWindow === undefined
-            ? gymModel
-            : { ...gymModel, contextWindow: options.contextWindow };
+    const models = options.models ?? [gymModel];
+    const providerId = options.providerId ?? "gym";
+    const contextWindow = options.contextWindow;
+    const configuredModels =
+        contextWindow === undefined ? models : models.map((model) => ({ ...model, contextWindow }));
     return defineProvider({
-        id: "gym",
-        models: [model],
-        serviceTiers: ["fast"],
+        id: providerId,
+        models: configuredModels,
+        ...(options.providerId === undefined
+            ? { serviceTiers: ["fast"] as const }
+            : options.serviceTiers === undefined
+              ? {}
+              : { serviceTiers: options.serviceTiers }),
         stream(model, context, streamOptions = {}) {
             return createInferenceStream(async function* () {
                 const response = await request(options.endpoint, {
@@ -41,6 +51,7 @@ export function createGymProvider(options: CreateGymProviderOptions) {
                         context,
                         modelId: model.id,
                         options: streamOptions,
+                        providerId,
                     } satisfies GymInferenceRequest),
                     headers: {
                         "content-type": "application/json",
@@ -71,7 +82,7 @@ export function createGymProvider(options: CreateGymProviderOptions) {
                     api: "gym",
                     content: [],
                     model: model.id,
-                    provider: "gym",
+                    provider: providerId,
                     role: "assistant",
                     ...(reply.responseModel === undefined
                         ? {}

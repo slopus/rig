@@ -859,6 +859,7 @@ async function executeToolCall(
             args: unknown,
             context: AgentContext,
             options: {
+                messages?: readonly Message[];
                 onProgress?: (display: string) => void;
                 onStatus?: (status: string) => void;
                 signal?: AbortSignal;
@@ -872,11 +873,13 @@ async function executeToolCall(
             | undefined;
         const toUI = tool.toUI as (result: unknown, args: unknown) => string;
         const executionOptions: {
+            messages?: readonly Message[];
             onProgress?: (display: string) => void;
             onStatus?: (status: string) => void;
             signal?: AbortSignal;
             toolCallId?: string;
         } = {
+            messages: options.messages,
             toolCallId: toolCall.id,
         };
         if (options.onProgress !== undefined) executionOptions.onProgress = options.onProgress;

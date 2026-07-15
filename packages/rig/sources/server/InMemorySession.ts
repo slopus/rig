@@ -158,6 +158,7 @@ export interface InMemorySessionOptions {
     createRuntime?: (options: CreateCodingAssistantAgentOptions) => CodingAssistantRuntime;
     emitCreatedEvent?: boolean;
     events?: readonly SessionEvent[];
+    initialContextMessages?: readonly Message[];
     now?: () => number;
     modelCatalog: ModelCatalog;
     metadata?: SessionAgentMetadata;
@@ -323,7 +324,9 @@ export class InMemorySession {
         this.#goal = options.restore?.goal === undefined ? undefined : { ...options.restore.goal };
         this.#contextMessages =
             options.restore?.contextMessages === undefined
-                ? undefined
+                ? options.initialContextMessages === undefined
+                    ? undefined
+                    : [...options.initialContextMessages]
                 : [...options.restore.contextMessages];
         this.#models = this.#modelsForProvider(this.#providerId);
         this.#status = options.restore?.status ?? "idle";
@@ -515,8 +518,8 @@ export class InMemorySession {
         return { ...this.#agentMetadata };
     }
 
-    hasModel(modelId: string): boolean {
-        return getProviderIdForModel(this.#modelCatalog, modelId) !== undefined;
+    hasModel(modelId: string, providerId?: string): boolean {
+        return getProviderIdForModel(this.#modelCatalog, modelId, providerId) !== undefined;
     }
 
     changeModel(request: ChangeModelRequest): ProtocolSession {
@@ -1274,6 +1277,7 @@ export class InMemorySession {
             ...(this.#serviceTier !== undefined ? { serviceTier: this.#serviceTier } : {}),
             ...(this.#instructions !== undefined ? { instructions: this.#instructions } : {}),
             modelId: this.#modelId,
+            providerId: this.#providerId,
             ...(this.#request.apiKey !== undefined ? { apiKey: this.#request.apiKey } : {}),
             permissionMode: this.#permissionMode,
             workflowsEnabled: this.#workflowsEnabled,

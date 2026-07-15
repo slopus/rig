@@ -50,6 +50,7 @@ describe("delayed subagent completion does not add blank scrollback", () => {
                             })),
                             {
                                 arguments: {
+                                    context: "task",
                                     message:
                                         "Wait until released, then report FIRST_CHILD_COMPLETE.",
                                     task_name: "first_delayed_audit",
@@ -60,6 +61,7 @@ describe("delayed subagent completion does not add blank scrollback", () => {
                             },
                             {
                                 arguments: {
+                                    context: "task",
                                     message:
                                         "Wait until released, then report SECOND_CHILD_COMPLETE.",
                                     task_name: "second_delayed_audit",

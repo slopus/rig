@@ -73,6 +73,12 @@ export async function createGym(options: GymOptions): Promise<Gym> {
                     : ["--env", `RIG_GYM_CONTEXT_WINDOW=${options.contextWindow}`]),
                 "--env",
                 "RIG_GYM_OUTER_ISOLATION=docker",
+                ...(options.providerOverrides === undefined
+                    ? []
+                    : [
+                          "--env",
+                          `RIG_GYM_PROVIDER_OVERRIDES=${options.providerOverrides.join(",")}`,
+                      ]),
                 "--env",
                 `RIG_MODEL=${modelId}`,
                 ...(options.permissionMode === "from_config"

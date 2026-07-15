@@ -21,7 +21,8 @@ describe("AgentSessionManager", () => {
         const parent = {
             agentMetadata: () => ({ depth: 0, rootSessionId: "root-1", type: "primary" }),
             id: "root-1",
-            hasModel: (modelId: string) => modelId === "anthropic/claude-opus-4.6",
+            hasModel: (modelId: string, providerId?: string) =>
+                modelId === "anthropic/claude-opus-4.6" && providerId === "claude-sdk",
             isSubagent: () => false,
             recordSubagentChanged: vi.fn(),
             requestForSubagent: () => ({
@@ -45,6 +46,7 @@ describe("AgentSessionManager", () => {
             background: true,
             description: "Check another model",
             modelId: "anthropic/claude-opus-4.6",
+            providerId: "claude-sdk",
             prompt: "Inspect with the requested model.",
             taskName: "model_check",
         });
@@ -55,7 +57,7 @@ describe("AgentSessionManager", () => {
                 instructions: expect.stringContaining("Inherited instructions"),
                 modelId: "anthropic/claude-opus-4.6",
                 permissionMode: "auto",
-                providerId: "codex",
+                providerId: "claude-sdk",
             }),
             expect.objectContaining({ taskName: "model_check" }),
         );
@@ -63,9 +65,10 @@ describe("AgentSessionManager", () => {
             manager.spawn(parent.id, {
                 description: "Unknown model",
                 modelId: "missing/model",
+                providerId: "claude-sdk",
                 prompt: "This should not start.",
             }),
-        ).rejects.toThrow("Model 'missing/model' is not available for workflow agents.");
+        ).rejects.toThrow("Model 'missing/model' is not available for provider 'claude-sdk'.");
         expect(createSubagent).toHaveBeenCalledOnce();
     });
 

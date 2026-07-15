@@ -26,7 +26,11 @@ describe("Agent tool", () => {
         };
 
         const result = await agentTool.execute(
-            { description: "Inspect the tests", prompt: "Review the test suite." },
+            {
+                context: "task",
+                description: "Inspect the tests",
+                prompt: "Review the test suite.",
+            },
             harness.context,
             { toolCallId: "tool-1" },
         );
@@ -35,6 +39,7 @@ describe("Agent tool", () => {
         expect(spawn).toHaveBeenCalledWith(
             {
                 description: "Inspect the tests",
+                contextMode: "task",
                 parentToolCallId: "tool-1",
                 prompt: "Review the test suite.",
             },
@@ -58,7 +63,11 @@ describe("Agent tool", () => {
 
         await expect(
             agentTool.execute(
-                { description: "Go deeper", prompt: "Start another agent." },
+                {
+                    context: "task",
+                    description: "Go deeper",
+                    prompt: "Start another agent.",
+                },
                 harness.context,
                 {},
             ),
@@ -89,6 +98,7 @@ describe("Agent tool", () => {
         await expect(
             agentTool.execute(
                 {
+                    context: "task",
                     description: "Inspect the tests",
                     prompt: "Review the test suite.",
                     run_in_background: true,
@@ -132,7 +142,11 @@ describe("Agent tool", () => {
 
         await expect(
             agentTool.execute(
-                { description: "Run the check", prompt: "Run the delegated check." },
+                {
+                    context: "task",
+                    description: "Run the check",
+                    prompt: "Run the delegated check.",
+                },
                 harness.context,
                 {},
             ),
