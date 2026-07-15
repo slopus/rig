@@ -17,14 +17,18 @@ afterEach(async () => {
 
 describe("automatic conversation compaction", () => {
     it("shows a durable transcript row when a small context window triggers compaction", async () => {
+        const firstResponseStarted = deferred<void>();
+        const releaseFirstResponse = deferred<void>();
         const gym = await createGym({
             cols: 92,
             contextWindow: 500,
-            inference(request, callIndex) {
+            async inference(request, callIndex) {
                 const isCompaction = request.context.systemPrompt?.startsWith(
                     "Create a detailed continuation brief",
                 );
                 if (callIndex === 0) {
+                    firstResponseStarted.resolve();
+                    await releaseFirstResponse.promise;
                     return {
                         content: [
                             {
@@ -32,7 +36,6 @@ describe("automatic conversation compaction", () => {
                                 type: "text",
                             },
                         ],
-                        delayMs: 3_000,
                     };
                 }
                 if (callIndex === 1) {
@@ -50,11 +53,13 @@ describe("automatic conversation compaction", () => {
         running.add(gym);
 
         submit(gym, "Load enough detail to fill the context.");
+        await firstResponseStarted.promise;
         await gym.terminal.waitForText("Working", 30_000);
         gym.terminal.type("Continue from that work.");
         await gym.terminal.waitForText("› Continue from that work.", 30_000);
         gym.terminal.press("tab");
         await gym.terminal.waitForText("↳ queued Continue from that work.", 30_000);
+        releaseFirstResponse.resolve();
 
         const snapshot = await gym.terminal.waitUntil(
             (candidate) =>
@@ -80,4 +85,15 @@ async function captureReviewImage(snapshot: TerminalSnapshot, fileName: string):
     const directory = process.env.RIG_GYM_SCREENSHOT_DIR;
     if (directory === undefined) return;
     await renderTerminalSnapshotPng(snapshot, resolve(directory, fileName));
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value?: T) => void } {
+    let resolvePromise: (value: T | PromiseLike<T>) => void = () => {};
+    const promise = new Promise<T>((resolve) => {
+        resolvePromise = resolve;
+    });
+    return {
+        promise,
+        resolve: (value) => resolvePromise(value as T),
+    };
 }
