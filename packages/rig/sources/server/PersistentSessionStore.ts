@@ -8,6 +8,7 @@ import type {
     ChangeModelRequest,
     ChangeServiceTierRequest,
     CreateSessionRequest,
+    EventId,
     ModelCatalog,
     SessionEvent,
     SessionAgentMetadata,
@@ -88,8 +89,16 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             chmodSync(options.databasePath, 0o600);
         }
         this.#repairInterruptedTitleGenerations();
+        const repairEventIdFactories = new Map<string, () => EventId>();
         repairLegacyOrphanedSteering(this.#database, {
-            createEventId: this.#createEventId,
+            createEventId: (sessionId, after) => {
+                let createEventId = repairEventIdFactories.get(sessionId);
+                if (createEventId === undefined) {
+                    createEventId = createEventIdFactory(after === undefined ? {} : { after });
+                    repairEventIdFactories.set(sessionId, createEventId);
+                }
+                return createEventId();
+            },
             ...(this.#persistentGlobalEventQueue === undefined
                 ? {}
                 : { globalEventQueue: this.#persistentGlobalEventQueue }),

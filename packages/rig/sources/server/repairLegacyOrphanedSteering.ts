@@ -20,7 +20,7 @@ interface StoredMessageRow {
 export function repairLegacyOrphanedSteering(
     database: DatabaseSync,
     options: {
-        createEventId: () => EventId;
+        createEventId: (sessionId: string, after: EventId | undefined) => EventId;
         globalEventQueue?: PersistentGlobalEventQueue;
         now: () => number;
     },
@@ -65,7 +65,7 @@ export function repairLegacyOrphanedSteering(
                 contextJson === undefined ? undefined : (JSON.parse(contextJson) as Message[]);
             const repairedRows: StoredMessageRow[] = [];
             const repairedContext: { message: Message; messageId: string }[] = [];
-            let lastEventId: string | undefined;
+            let lastEventId = events.at(-1)?.id;
 
             for (const group of orphaned) {
                 for (const submitted of group.events) {
@@ -91,7 +91,7 @@ export function repairLegacyOrphanedSteering(
                         messageIds: group.events.map((event) => event.data.message.id),
                         runId: group.runId,
                     },
-                    id: options.createEventId(),
+                    id: options.createEventId(sessionId, lastEventId),
                     sessionId,
                     type: "steering_applied",
                 };
