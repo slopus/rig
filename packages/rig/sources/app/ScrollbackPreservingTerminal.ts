@@ -5,24 +5,36 @@ import {
     type TerminalInputBurstHandler,
 } from "./createTerminalInputBurstHandler.js";
 
-const CLEAR_SCROLLBACK = "\x1b[3J";
+const RESIZE_SETTLE_MS = 75;
 
 export class ScrollbackPreservingTerminal extends ProcessTerminal {
     #inputBurstHandler: TerminalInputBurstHandler | undefined;
+    #resizeTimer: NodeJS.Timeout | undefined;
+
+    get resizePending(): boolean {
+        return this.#resizeTimer !== undefined;
+    }
 
     override start(onInput: (data: string) => void, onResize: () => void): void {
         this.#inputBurstHandler?.dispose();
         this.#inputBurstHandler = createTerminalInputBurstHandler(onInput);
-        super.start((data) => this.#inputBurstHandler?.handle(data), onResize);
+        super.start(
+            (data) => this.#inputBurstHandler?.handle(data),
+            () => {
+                if (this.#resizeTimer !== undefined) clearTimeout(this.#resizeTimer);
+                this.#resizeTimer = setTimeout(() => {
+                    this.#resizeTimer = undefined;
+                    onResize();
+                }, RESIZE_SETTLE_MS);
+            },
+        );
     }
 
     override stop(): void {
+        if (this.#resizeTimer !== undefined) clearTimeout(this.#resizeTimer);
+        this.#resizeTimer = undefined;
         this.#inputBurstHandler?.dispose();
         this.#inputBurstHandler = undefined;
         super.stop();
-    }
-
-    override write(data: string): void {
-        super.write(data.replaceAll(CLEAR_SCROLLBACK, ""));
     }
 }

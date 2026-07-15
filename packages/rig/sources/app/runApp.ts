@@ -287,19 +287,10 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     process.on("SIGINT", stop);
     process.on("SIGTERM", stop);
 
-    const preserveTranscript = () => {
-        const pending = app.prepareForTerminalResize();
-        if (tui.preserveRenderedPrefix(pending?.lineCount ?? 0)) {
-            pending?.commit();
-        }
-    };
-
     try {
         app.start({ tuiAlreadyStarted: true });
-        process.stdout.on("resize", preserveTranscript);
         await app.waitForExit();
     } finally {
-        process.stdout.off("resize", preserveTranscript);
         process.off("SIGINT", stop);
         process.off("SIGTERM", stop);
         followController.abort();

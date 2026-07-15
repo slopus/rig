@@ -274,7 +274,6 @@ export class CodingAssistantApp implements Component, Focusable {
     readonly #entryRenderCache = new TranscriptEntryRenderCache();
     #showHeaderInFrame = true;
     #transcriptStartIndex = 0;
-    #lastRenderedWidth = 80;
     #exiting = false;
     #exitResolve: (() => void) | undefined;
     #focused = false;
@@ -993,7 +992,6 @@ export class CodingAssistantApp implements Component, Focusable {
 
     render(width: number): string[] {
         const safeWidth = Math.max(1, width);
-        this.#lastRenderedWidth = safeWidth;
         const header = this.#showHeaderInFrame ? this.#renderHeader(safeWidth) : [];
         const slashCommandSuggestions = this.#slashCommandSuggestions();
         const fileMentionSnapshot =
@@ -1028,29 +1026,6 @@ export class CodingAssistantApp implements Component, Focusable {
             ...footer,
             "",
         ];
-    }
-
-    prepareForTerminalResize(): { commit: () => void; lineCount: number } | undefined {
-        const endIndex = this.#stableTranscriptEndIndex();
-        if (endIndex <= this.#transcriptStartIndex && !this.#showHeaderInFrame) return undefined;
-
-        const prefixEntries =
-            this.#entries.length === 0 && this.#showHeaderInFrame
-                ? [{ id: "ready", role: "system" as const, text: "Ready." }]
-                : this.#visibleTranscriptEntries(this.#transcriptStartIndex, endIndex);
-        const lineCount =
-            (this.#showHeaderInFrame ? this.#renderHeader(this.#lastRenderedWidth).length : 0) +
-            this.#renderTranscriptEntries(prefixEntries, this.#lastRenderedWidth).length +
-            (prefixEntries.length > 0 ? 1 : 0);
-        if (lineCount === 0) return undefined;
-
-        return {
-            lineCount,
-            commit: () => {
-                this.#showHeaderInFrame = false;
-                this.#transcriptStartIndex = endIndex;
-            },
-        };
     }
 
     #submit(value: string): void {
@@ -2556,37 +2531,6 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#stoppedToolCallIds.has(entry.id),
             this.#shouldRenderActivityAsLastMessage(),
         ].join(":");
-    }
-
-    #visibleTranscriptEntries(startIndex: number, endIndex: number): AppTranscriptEntry[] {
-        const entries = this.#entries.slice(startIndex, endIndex);
-        return this.#showReasoning ? entries : entries.filter((entry) => entry.role !== "thinking");
-    }
-
-    #stableTranscriptEndIndex(): number {
-        if (!this.#running) return this.#entries.length;
-
-        const mutableEntryIds = new Set<string>();
-        if (this.#streamEntryId !== undefined) mutableEntryIds.add(this.#streamEntryId);
-        const latestThinkingIndex = Math.max(-1, ...this.#thinkingEntryIdsByContentIndex.keys());
-        const latestThinkingEntryId = this.#thinkingEntryIdsByContentIndex.get(latestThinkingIndex);
-        if (latestThinkingEntryId !== undefined) {
-            mutableEntryIds.add(latestThinkingEntryId);
-        }
-        for (const entryId of this.#toolCallEntryIdsByContentIndex.values()) {
-            mutableEntryIds.add(entryId);
-        }
-        for (const entryId of this.#activeToolCallIds) mutableEntryIds.add(entryId);
-
-        let endIndex = this.#entries.length;
-        for (let index = this.#transcriptStartIndex; index < this.#entries.length; index += 1) {
-            const entry = this.#entries[index];
-            if (entry !== undefined && mutableEntryIds.has(entry.id)) {
-                endIndex = index;
-                break;
-            }
-        }
-        return endIndex;
     }
 
     #renderEntry(entry: AppTranscriptEntry, width: number): string[] {

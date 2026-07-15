@@ -17,7 +17,7 @@ const binaryPath = join(
 );
 let build: Promise<void> | undefined;
 
-interface HelperSnapshot extends TerminalSnapshot {
+interface HelperSnapshot extends Omit<TerminalSnapshot, "outputRevision"> {
     id: number;
 }
 
@@ -31,6 +31,7 @@ export class GhosttyTerminal {
     #closed = false;
     #helper: ChildProcessWithoutNullStreams;
     #nextId = 1;
+    #outputRevision = 0;
     #pending = new Map<
         number,
         { reject: (error: unknown) => void; resolve: (snapshot: TerminalSnapshot) => void }
@@ -103,6 +104,7 @@ export class GhosttyTerminal {
     }
 
     write(data: string): void {
+        this.#outputRevision += 1;
         this.#send({ type: "write", data: Buffer.from(data).toString("base64") });
     }
 
@@ -124,7 +126,7 @@ export class GhosttyTerminal {
             const pending = this.#pending.get(id);
             if (pending === undefined) continue;
             this.#pending.delete(id);
-            pending.resolve(snapshot);
+            pending.resolve({ ...snapshot, outputRevision: this.#outputRevision });
         }
     }
 

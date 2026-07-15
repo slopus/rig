@@ -39,7 +39,14 @@ describe("shrinking terminal does not duplicate transcript scrollback", () => {
 
         gym.terminal.type("seed shrink history");
         gym.terminal.press("enter");
-        const beforeResize = await gym.terminal.waitForText("SHRINK MARKER 29", 30_000);
+        const beforeResize = await gym.terminal.waitUntil(
+            (snapshot) =>
+                snapshot.text.includes("SHRINK MARKER 29") &&
+                snapshot.text.includes("Ask Rig to do anything") &&
+                !snapshot.text.includes("esc to interrupt"),
+            "the complete shrink transcript and idle composer",
+            30_000,
+        );
         expect(beforeResize.scroll.atBottom).toBe(true);
 
         gym.terminal.resize(60, 6);

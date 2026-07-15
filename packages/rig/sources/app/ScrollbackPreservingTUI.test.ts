@@ -4,114 +4,25 @@ import type { Component, Terminal } from "@earendil-works/pi-tui";
 import { ScrollbackPreservingTUI } from "./ScrollbackPreservingTUI.js";
 
 describe("ScrollbackPreservingTUI", () => {
-    it("leaves committed rows in scrollback and redraws only the live tail after resize", async () => {
+    it("replays source-rendered history once at the new width", async () => {
         const terminal = new RecordingTerminal(20, 5);
         const tui = new ScrollbackPreservingTUI(terminal, false);
-        let transcriptPreserved = false;
         const component: Component = {
             invalidate: () => {},
-            render: (width) =>
-                transcriptPreserved
-                    ? [`input at ${width}`]
-                    : [
-                          "history 1",
-                          "history 2",
-                          "history 3",
-                          "history 4",
-                          "history 5",
-                          "history 6",
-                          "history 7",
-                          "history 8",
-                          "input at 20",
-                      ],
+            render: (width) => ["history 1", "history 2", `input at ${width}`],
         };
         tui.addChild(component);
         tui.start();
         await renderCycle();
 
         terminal.columns = 30;
-        expect(tui.preserveRenderedPrefix(8)).toBe(true);
-        transcriptPreserved = true;
         tui.requestRender();
         await renderCycle();
 
         const output = terminal.output.join("");
-        expect(output.match(/history 1/gu)).toHaveLength(1);
+        expect(output.match(/history 1/gu)).toHaveLength(2);
         expect(output).toContain("input at 30");
-        expect(output).not.toContain("\x1b[3J");
-        tui.stop();
-    });
-
-    it("preserves existing scrollback when only the live tail remains on a later resize", async () => {
-        const terminal = new RecordingTerminal(20, 5);
-        const tui = new ScrollbackPreservingTUI(terminal, false);
-        let transcriptPreserved = false;
-        const component: Component = {
-            invalidate: () => {},
-            render: (width) =>
-                transcriptPreserved
-                    ? [`input at ${width}`]
-                    : [
-                          "history 1",
-                          "history 2",
-                          "history 3",
-                          "history 4",
-                          "history 5",
-                          "history 6",
-                          "input at 20",
-                      ],
-        };
-        tui.addChild(component);
-        tui.start();
-        await renderCycle();
-
-        terminal.columns = 30;
-        expect(tui.preserveRenderedPrefix(6)).toBe(true);
-        transcriptPreserved = true;
-        tui.requestRender();
-        await renderCycle();
-
-        terminal.columns = 40;
-        expect(tui.preserveRenderedPrefix(0)).toBe(true);
-        tui.requestRender();
-        await renderCycle();
-
-        const output = terminal.output.join("");
-        expect(output.match(/history 1/gu)).toHaveLength(1);
-        expect(output).toContain("input at 40");
-        expect(output).not.toContain("\x1b[3J");
-        tui.stop();
-    });
-
-    it("clears only the live screen when the mutable tail already fills the viewport", async () => {
-        const terminal = new RecordingTerminal(20, 5);
-        const tui = new ScrollbackPreservingTUI(terminal, false);
-        tui.addChild({
-            invalidate: () => {},
-            render: () => Array.from({ length: 10 }, (_, index) => `line ${index}`),
-        });
-        tui.start();
-        await renderCycle();
-
-        expect(tui.preserveRenderedPrefix(4)).toBe(true);
-        expect(terminal.output.join("")).toContain("\x1b[2J\x1b[H");
-        expect(terminal.output.join("")).not.toContain("\x1b[3J");
-        tui.stop();
-    });
-
-    it("preserves a short frame without clearing content above it", async () => {
-        const terminal = new RecordingTerminal(30, 8);
-        const tui = new ScrollbackPreservingTUI(terminal, false);
-        tui.addChild({
-            invalidate: () => {},
-            render: () => ["history 1", "history 2", "input"],
-        });
-        tui.start();
-        await renderCycle();
-
-        expect(tui.preserveRenderedPrefix(2)).toBe(true);
-        expect(terminal.output.join("")).not.toContain("\x1b[2J");
-        expect(terminal.output.join("")).not.toContain("\x1b[3J");
+        expect(output).toContain("\x1b[3J");
         tui.stop();
     });
 });

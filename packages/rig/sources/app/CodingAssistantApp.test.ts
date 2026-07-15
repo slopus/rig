@@ -4976,7 +4976,7 @@ describe("CodingAssistantApp", () => {
         expect(renderedAfterDelta).not.toContain("◦ Working");
     });
 
-    it("commits stable transcript rows before a width-change redraw", async () => {
+    it("keeps stable transcript rows as source for a width-change redraw", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
             name: "GPT Test",
@@ -5025,14 +5025,10 @@ describe("CodingAssistantApp", () => {
             "────────────────────────────────────────────────────────────────────────────────",
         );
 
-        const pending = app.prepareForTerminalResize();
-        expect(pending?.lineCount).toBeGreaterThan(8);
-        pending?.commit();
-
         const resized = stripAnsi(app.render(48).join("\n"));
-        expect(resized).not.toContain(">_ Rig");
-        expect(resized).not.toContain("› first");
-        expect(resized).not.toContain("• answer 4");
+        expect(resized).toContain(">_ Rig");
+        expect(resized).toContain("› first");
+        expect(resized).toContain("• answer 4");
         expect(resized).toContain("Ask Rig to do anything");
 
         submit(app, "fifth");
@@ -5040,7 +5036,7 @@ describe("CodingAssistantApp", () => {
         const nextTurn = stripAnsi(app.render(48).join("\n"));
         expect(nextTurn).toContain("› fifth");
         expect(nextTurn).toContain("• answer 5");
-        expect(nextTurn).not.toContain("› fourth");
+        expect(nextTurn).toContain("› fourth");
     });
 });
 

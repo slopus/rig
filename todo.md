@@ -25,10 +25,9 @@ This file tracks known defects, verified coverage gaps, and concrete follow-up w
     - Do not append a normal user timeline entry until the queued turn actually begins and the model receives it.
     - Cover messages submitted locally and through session-backed events or another client.
 
-- [ ] Prevent Escape from dropping a prompt during queue-to-run transition.
-    - `#drainQueue()` currently removes a prompt before skill refresh and `agent.send()`.
-    - Escape during that window invalidates the run token after the prompt has left the restorable queue.
-    - Keep the prompt recoverable until submission is committed.
+- [x] Prevent Escape from dropping a prompt during queue-to-run transition.
+    - The queue retains ownership through asynchronous turn startup and removes the prompt only immediately before `agent.send()`.
+    - Escape during skill refresh restores the prompt to the composer, and an unchanged Gym scenario resubmits it successfully.
 
 - [ ] Make suspended subagents resumable after daemon restart.
     - Suspension can persist `status = suspended` together with a non-null active run ID.
@@ -44,6 +43,7 @@ This file tracks known defects, verified coverage gaps, and concrete follow-up w
     - Current matching also retries generic `terminated`, HTTP 408/429/5xx, and provider “you can retry” messages.
     - Narrow ambiguous matches or update the documented policy after an explicit product decision.
     - Add negative coverage proving disconnects after text, tool calls, or session mutations never replay inference.
+    - The observed zero-content `WebSocket error` after a completed tool now retries only the inference continuation; Gym verifies the tool runs once.
 
 - [ ] Add retry handling or an explicit exception for standalone compaction summary requests.
     - `requestCompactionSummary()` currently throws directly and does not use the main inference-loop retry mechanism.
@@ -51,10 +51,10 @@ This file tracks known defects, verified coverage gaps, and concrete follow-up w
 - [ ] Fix daemon-shutdown persistence races.
     - Shutdown can close the database while `PersistentSessionStore.saveSession()` is still running, producing `database is not open`.
 
-- [ ] Fix transcript-preserving resize behavior while reading scrollback.
-    - Resize preservation emits cursor-to-bottom, clear, and newline sequences without knowing whether the user follows live output.
-    - It can inflate scrollback with blank rows even where the terminal does not visibly jump.
-    - Add a Gym regression that resizes from historical scrollback and preserves both viewport anchor and row count semantics.
+- [x] Fix transcript-preserving resize behavior while reading scrollback.
+    - Resize notifications settle for 75 ms, then one full redraw clears Rig-owned scrollback and rebuilds from canonical transcript entries at the final size.
+    - The TUI defers input and activity renders during the resize quiet period instead of replaying intermediate dimensions.
+    - Gym starts from historical scrollback and verifies the chosen history anchor remains exactly once, with the same total row count as a fresh render at the final dimensions.
 
 ## Documentation and consistency
 
