@@ -38,7 +38,7 @@ All strings displayed to users must be human-readable English. Prefer natural, h
 
 ## Terminal layout stability
 
-Treat the visible transcript as append-only. Once a timeline row has rendered, update it in place when its state changes; do not remove it or replace it at a later position. In particular, repeated background-terminal waits must keep one stable timeline entry that changes from waiting to waited without disappearing between polls.
+Treat the visible transcript as append-only. Once a timeline row has rendered, do not remove it, replace it, or mutate it after later stable content appears. Ephemeral background-terminal polling belongs only in the live tail and must not create waiting or waited history rows. Keep actual terminal input and terminal completion as durable history.
 
 Keep above-composer live UI compact and predictable, with at most one truncated summary row per active-work category. Live components may grow downward, but shrinking or completing work must not pull transcript content downward or make the composer jump upward. Pair the removal of a final live status row with its corresponding history event in the same render so the occupied height moves into history instead of collapsing.
 

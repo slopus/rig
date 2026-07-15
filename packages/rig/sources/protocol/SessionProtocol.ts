@@ -14,6 +14,7 @@ import type { WorkflowRun, WorkflowRunUpdate } from "../workflows/index.js";
 import type { ChangeGoalStatusRequest, CreateGoalRequest, SessionGoal } from "../goals/index.js";
 import type { EventId } from "./EventId.js";
 import type { DockerExecutionConfig } from "../execution/index.js";
+import type { BashSessionActivity } from "../agent/context/BashContext.js";
 
 export type SessionStatus =
     | "idle"
@@ -134,6 +135,7 @@ export interface ProtocolSession {
     workflowsEnabled?: boolean;
     workflows?: readonly WorkflowRun[];
     goal?: SessionGoal;
+    backgroundProcesses?: readonly BashSessionActivity[];
 }
 
 export interface SubagentSummary {

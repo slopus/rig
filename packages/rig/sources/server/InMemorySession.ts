@@ -1305,6 +1305,7 @@ export class InMemorySession {
             tasks: this.listTasks(),
             workflowsEnabled: this.#workflowsEnabled,
             workflows: this.listWorkflows(),
+            backgroundProcesses: this.#runtime?.context.bash.activeSessions?.() ?? [],
             ...(this.#goal !== undefined ? { goal: { ...this.#goal } } : {}),
             ...(snapshot.effort !== undefined ? { effort: snapshot.effort } : {}),
             ...(snapshot.serviceTier !== undefined ? { serviceTier: snapshot.serviceTier } : {}),

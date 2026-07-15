@@ -125,6 +125,7 @@ const MAX_DIFF_ROWS_PER_TOOL = 120;
 export interface CodingAssistantAppOptions {
     agent: CodingAssistantAgentBackend;
     cwd: string;
+    initialBackgroundProcesses?: readonly BashSessionActivity[];
     initialMcpServers?: readonly McpServerSummary[];
     initialNotices?: readonly { text: string; title: string }[];
     initialSessionEvents?: readonly SessionEvent[];
@@ -329,6 +330,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #userInputRequests: UserInputRequest[] = [];
     #workflows: readonly WorkflowRun[];
     #workflowsEnabled: boolean;
+    #replayingInitialSessionEvents = false;
 
     constructor(options: CodingAssistantAppOptions) {
         this.#agent = options.agent;
@@ -377,16 +379,26 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#appendEntry({ role: "event", text: notice.text, title: notice.title });
         }
 
-        let reachedWorkflowSnapshot = options.initialWorkflowEventId === undefined;
-        for (const event of options.initialSessionEvents ?? []) {
-            // The snapshot is authoritative through its last event. Apply only workflow events
-            // that raced in after it so stale runs are not resurrected after a daemon restart.
-            if (event.type === "workflow_changed" && !reachedWorkflowSnapshot) {
+        this.#replayingInitialSessionEvents = true;
+        try {
+            let reachedWorkflowSnapshot = options.initialWorkflowEventId === undefined;
+            for (const event of options.initialSessionEvents ?? []) {
+                // The snapshot is authoritative through its last event. Apply only workflow events
+                // that raced in after it so stale runs are not resurrected after a daemon restart.
+                if (event.type === "workflow_changed" && !reachedWorkflowSnapshot) {
+                    if (event.id === options.initialWorkflowEventId) reachedWorkflowSnapshot = true;
+                    continue;
+                }
                 if (event.id === options.initialWorkflowEventId) reachedWorkflowSnapshot = true;
-                continue;
+                this.applySessionEvent(event);
             }
-            if (event.id === options.initialWorkflowEventId) reachedWorkflowSnapshot = true;
-            this.applySessionEvent(event);
+        } finally {
+            this.#replayingInitialSessionEvents = false;
+        }
+        this.#observedShellProcesses = options.initialBackgroundProcesses ?? [];
+        this.#backgroundProcesses = this.#observedShellProcesses;
+        for (const process of this.#observedShellProcesses) {
+            this.#yieldedBackgroundTerminals.set(process.sessionId, process.command);
         }
 
         void this.#refreshSkillCommands();
@@ -3819,7 +3831,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #trackYieldedBackgroundTerminal(
         presentation: NonNullable<AppTranscriptEntry["execCommand"]>,
     ): void {
-        if (presentation.sessionId === undefined) return;
+        if (presentation.sessionId === undefined || this.#replayingInitialSessionEvents) return;
         this.#yieldedBackgroundTerminals.set(presentation.sessionId, presentation.command);
         this.#backgroundProcesses = this.#observedShellProcesses.filter((process) =>
             this.#yieldedBackgroundTerminals.has(process.sessionId),

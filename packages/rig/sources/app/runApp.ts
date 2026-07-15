@@ -170,6 +170,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         agent,
         cwd: sessionCwd,
         initialSessionEvents: history.events,
+        initialBackgroundProcesses: session.session.backgroundProcesses ?? [],
         initialMcpServers: session.session.mcpServers,
         ...(projectConfigNotice === undefined && projectMcpNotice === undefined
             ? {}
