@@ -125,6 +125,9 @@ export interface ProtocolSession {
     title?: string;
     titleError?: string;
     titleStatus: SessionTitleStatus;
+    recap?: string;
+    metadataUpdatedAt?: number;
+    metadataRunId?: string;
     interruption?: SessionInterruption;
     lastEventId?: EventId;
     agent: SessionAgentMetadata;
@@ -167,6 +170,9 @@ export interface SessionSummary {
     title?: string;
     titleError?: string;
     titleStatus: SessionTitleStatus;
+    recap?: string;
+    metadataUpdatedAt?: number;
+    metadataRunId?: string;
     createdAt: number;
     updatedAt: number;
     lastMessageAt?: number;
@@ -427,6 +433,9 @@ export type SessionTitleChangedEvent = BaseSessionEvent<
     "session_title_changed",
     {
         errorMessage?: string;
+        metadataRunId?: string;
+        metadataUpdatedAt?: number;
+        recap?: string;
         status: SessionTitleStatus;
         title?: string;
     }

@@ -952,7 +952,7 @@ describe("PersistentSessionStore", () => {
         }
     });
 
-    it("persists generated session titles", async () => {
+    it("persists settled session metadata", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         try {
             const store = new PersistentSessionStore({ databasePath });
@@ -960,6 +960,9 @@ describe("PersistentSessionStore", () => {
                 sessionState({
                     title: "Persisted Title",
                     titleStatus: "ready",
+                    recap: "The persisted recap remains available after restart.",
+                    metadataRunId: "run-1",
+                    metadataUpdatedAt: 1_700_000_002_000,
                 }),
             );
             store.close();
@@ -972,10 +975,16 @@ describe("PersistentSessionStore", () => {
                 expect(restored?.snapshot()).toMatchObject({
                     title: "Persisted Title",
                     titleStatus: "ready",
+                    recap: "The persisted recap remains available after restart.",
+                    metadataRunId: "run-1",
+                    metadataUpdatedAt: 1_700_000_002_000,
                 });
                 expect(summary).toMatchObject({
                     title: "Persisted Title",
                     titleStatus: "ready",
+                    recap: "The persisted recap remains available after restart.",
+                    metadataRunId: "run-1",
+                    metadataUpdatedAt: 1_700_000_002_000,
                 });
             } finally {
                 restoredStore.close();

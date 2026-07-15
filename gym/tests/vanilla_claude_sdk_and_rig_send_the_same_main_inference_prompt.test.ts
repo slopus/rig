@@ -471,7 +471,7 @@ function expectExactRigPayload(
     const messageText = JSON.stringify(payload.messages);
     expect(messageText).toContain(userPrompt);
     expect(messageText).toContain(RIG_MCP_INSTRUCTIONS);
-    expect(messageText).not.toContain("Create a concise session title");
+    expect(messageText).not.toContain("Create settled session metadata");
     expect(payload.tools).toEqual(expectedApiTools(rigTools));
 }
 

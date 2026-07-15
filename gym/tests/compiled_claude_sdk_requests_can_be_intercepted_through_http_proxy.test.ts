@@ -68,7 +68,7 @@ describe("compiled Claude SDK requests through an intercepting HTTP proxy", () =
                 exchange.request.method === "POST" &&
                 new URL(exchange.request.url).pathname === "/v1/messages",
         );
-        expect(messageExchanges?.length).toBeGreaterThanOrEqual(2);
+        expect(messageExchanges?.length).toBeGreaterThanOrEqual(1);
         expect(
             messageExchanges?.every((exchange) => exchange.responseSource === "interceptor"),
         ).toBe(true);
@@ -79,19 +79,14 @@ describe("compiled Claude SDK requests through an intercepting HTTP proxy", () =
             ),
         ).toBe(true);
 
-        const titleExchange = messageExchanges?.find(
+        const metadataExchange = messageExchanges?.find(
             (exchange) => requestPayload(exchange.request).model === "claude-haiku-4-5",
         );
         const agentExchange = messageExchanges?.find(
             (exchange) => requestPayload(exchange.request).model === "claude-sonnet-4-6",
         );
-        expect(titleExchange).toBeDefined();
+        expect(metadataExchange).toBeUndefined();
         expect(agentExchange).toBeDefined();
-
-        const titlePayload = JSON.stringify(requestPayload(titleExchange!.request));
-        expect(titlePayload).toContain(userMarker);
-        expect(titlePayload).toContain("Create a concise session title");
-        expect(titlePayload).not.toContain("/workspace");
 
         const agentPayload = JSON.stringify(requestPayload(agentExchange!.request));
         expect(agentPayload).toContain(userMarker);

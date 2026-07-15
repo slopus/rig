@@ -144,6 +144,13 @@ export class AgentSessionManager {
             : agents.filter((agent) => agent.path.startsWith(pathPrefix));
     }
 
+    hasActiveDescendants(parentSessionId: string): boolean {
+        return this.#repository.listByRoot(parentSessionId).some((session) => {
+            const status = session.subagentSummary().status;
+            return status === "queued" || status === "running";
+        });
+    }
+
     async spawn(
         parentSessionId: string,
         request: SpawnSubagentRequest,

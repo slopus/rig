@@ -82,7 +82,15 @@ export class MockInferenceServer {
             const isTitle = payload.options.sessionId?.endsWith(":title") === true;
             const reply = isTitle
                 ? {
-                      content: [{ type: "text" as const, text: "Gym session" }],
+                      content: [
+                          {
+                              type: "text" as const,
+                              text: JSON.stringify({
+                                  title: "Gym session",
+                                  recap: "The user worked with Rig in the Gym environment.",
+                              }),
+                          },
+                      ],
                       stopReason: "stop" as const,
                   }
                 : await this.#handler(payload, this.#agentCallIndex++);

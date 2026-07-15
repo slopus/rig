@@ -322,7 +322,7 @@ async function waitForMainExchange(
                         return (
                             payload.model === modelId &&
                             !String(payload.instructions).startsWith(
-                                "Create a concise session title",
+                                "Create settled session metadata",
                             ) &&
                             JSON.stringify(payload).includes(USER_PROMPT)
                         );

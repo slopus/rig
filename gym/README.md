@@ -325,7 +325,7 @@ const inference = [
 
 Each non-title agent call consumes one entry. If the agent makes more calls than the script provides, the server returns an explanatory HTTP 500 error.
 
-Title-generation requests are answered automatically with `Gym session`. They are recorded in `gym.inference.requests`, but they do not consume an ordered response or increment the handler's `callIndex`.
+Session-metadata requests are answered automatically with a `Gym session` title and short recap. They are recorded in `gym.inference.requests`, but they do not consume an ordered response or increment the handler's `callIndex`.
 
 ### Request handler
 

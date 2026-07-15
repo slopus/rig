@@ -276,6 +276,9 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     title,
                     title_status,
                     title_error,
+                    recap,
+                    metadata_updated_at_ms,
+                    metadata_run_id,
                     interruption_json,
                     created_at_ms,
                     updated_at_ms,
@@ -296,6 +299,9 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             const serviceTier = readOptionalString(row, "service_tier");
             const title = readOptionalString(row, "title");
             const titleError = readOptionalString(row, "title_error");
+            const recap = readOptionalString(row, "recap");
+            const metadataUpdatedAt = readOptionalNumber(row, "metadata_updated_at_ms");
+            const metadataRunId = readOptionalString(row, "metadata_run_id");
             const lastMessageAt = readOptionalNumber(row, "last_message_at_ms");
             const interruptionJson = readOptionalString(row, "interruption_json");
             const dockerJson = readOptionalString(row, "docker_json");
@@ -319,6 +325,9 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 ...(lastMessageAt !== undefined ? { lastMessageAt } : {}),
                 ...(title !== undefined ? { title } : {}),
                 ...(titleError !== undefined ? { titleError } : {}),
+                ...(recap !== undefined ? { recap } : {}),
+                ...(metadataUpdatedAt !== undefined ? { metadataUpdatedAt } : {}),
+                ...(metadataRunId !== undefined ? { metadataRunId } : {}),
                 ...(interruptionJson !== undefined
                     ? { interruption: JSON.parse(interruptionJson) as SessionInterruption }
                     : {}),
@@ -494,13 +503,16 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     title,
                     title_status,
                     title_error,
+                    recap,
+                    metadata_updated_at_ms,
+                    metadata_run_id,
                     interrupted,
                     interruption_json,
                     last_message_at_ms,
                     created_at_ms,
                     updated_at_ms
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     agent_id = excluded.agent_id,
                     session_kind = excluded.session_kind,
@@ -531,6 +543,9 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     title = excluded.title,
                     title_status = excluded.title_status,
                     title_error = excluded.title_error,
+                    recap = excluded.recap,
+                    metadata_updated_at_ms = excluded.metadata_updated_at_ms,
+                    metadata_run_id = excluded.metadata_run_id,
                     interrupted = excluded.interrupted,
                     interruption_json = excluded.interruption_json,
                     last_message_at_ms = excluded.last_message_at_ms,
@@ -568,6 +583,9 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 state.title ?? null,
                 state.titleStatus,
                 state.titleError ?? null,
+                state.recap ?? null,
+                state.metadataUpdatedAt ?? null,
+                state.metadataRunId ?? null,
                 state.interruption === undefined ? 0 : 1,
                 state.interruption === undefined ? null : JSON.stringify(state.interruption),
                 state.lastMessageAt ?? null,
@@ -694,6 +712,9 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 title TEXT,
                 title_status TEXT NOT NULL DEFAULT 'idle',
                 title_error TEXT,
+                recap TEXT,
+                metadata_updated_at_ms INTEGER,
+                metadata_run_id TEXT,
                 interrupted INTEGER NOT NULL DEFAULT 0,
                 interruption_json TEXT,
                 last_message_at_ms INTEGER,
@@ -743,6 +764,9 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         this.#ensureSessionColumn("docker_json", "TEXT");
         this.#ensureSessionColumn("title_status", "TEXT NOT NULL DEFAULT 'idle'");
         this.#ensureSessionColumn("title_error", "TEXT");
+        this.#ensureSessionColumn("recap", "TEXT");
+        this.#ensureSessionColumn("metadata_updated_at_ms", "INTEGER");
+        this.#ensureSessionColumn("metadata_run_id", "TEXT");
         this.#ensureSessionColumn("last_message_at_ms", "INTEGER");
         this.#ensureSessionColumn("session_kind", "TEXT NOT NULL DEFAULT 'primary'");
         this.#ensureSessionColumn("parent_session_id", "TEXT");
@@ -854,6 +878,9 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         const modelId = readString(row, "model_id");
         const title = readOptionalString(row, "title");
         const titleError = readOptionalString(row, "title_error");
+        const recap = readOptionalString(row, "recap");
+        const metadataUpdatedAt = readOptionalNumber(row, "metadata_updated_at_ms");
+        const metadataRunId = readOptionalString(row, "metadata_run_id");
         const activeRunId = readOptionalString(row, "active_run_id");
         const contextMessagesJson = readOptionalString(row, "context_messages_json");
         const permissionMode = parsePermissionMode(readString(row, "permission_mode"));
@@ -904,6 +931,9 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             nextTaskId: readNumber(row, "next_task_id"),
             ...(title !== undefined ? { title } : {}),
             ...(titleError !== undefined ? { titleError } : {}),
+            ...(recap !== undefined ? { recap } : {}),
+            ...(metadataUpdatedAt !== undefined ? { metadataUpdatedAt } : {}),
+            ...(metadataRunId !== undefined ? { metadataRunId } : {}),
             titleStatus: readString(row, "title_status") as SessionTitleStatus,
             tools: JSON.parse(readString(row, "tools_json")) as string[],
         };

@@ -77,7 +77,8 @@ import {
     parsePermissionMode,
     type PermissionMode,
 } from "../permissions/index.js";
-import { generateSessionTitle } from "./generateSessionTitle.js";
+import { createSessionMetadataTranscript } from "./createSessionMetadataTranscript.js";
+import { generateSessionMetadata } from "./generateSessionMetadata.js";
 import { createGoalTitle } from "./createGoalTitle.js";
 import { getProviderIdForModel } from "./getProviderIdForModel.js";
 import { resolveInitialModelSelection } from "./resolveInitialModelSelection.js";
@@ -117,12 +118,15 @@ export interface PersistedSessionState {
     goal?: SessionGoal;
     interruption?: SessionInterruption;
     lastMessageAt?: number;
+    metadataRunId?: string;
+    metadataUpdatedAt?: number;
     messages: readonly PersistedSessionMessage[];
     modelId: string;
     models: readonly Model[];
     providerId: string;
     permissionMode: PermissionMode;
     queuedRuns: readonly PersistedQueuedRun[];
+    recap?: string;
     nextTaskId: number;
     status: SessionStatus;
     tasks: readonly SessionTask[];
@@ -188,6 +192,7 @@ interface InternalWorkflowRun {
 
 const MAX_WORKFLOW_LOG_CHARS = 4_000;
 const MAX_SUBAGENT_INSPECTION_TEXT_CHARS = 32_000;
+const SESSION_SETTLEMENT_DELAY_MS = 60_000;
 
 interface PendingUserInput {
     onAbort?: () => void;
@@ -240,6 +245,12 @@ export class InMemorySession {
     #interruption: SessionInterruption | undefined;
     #lastMessageAt: number | undefined;
     #lastSessionRunId: string | undefined;
+    #latestMetadataBoundaryRunId: string | undefined;
+    #metadataController: AbortController | undefined;
+    #metadataRevision = 0;
+    #metadataRunId: string | undefined;
+    #metadataTimer: ReturnType<typeof setTimeout> | undefined;
+    #metadataUpdatedAt: number | undefined;
     #messages: PersistedSessionMessage[] = [];
     #mcpLoaded = false;
     #mcpServers: readonly McpServerSummary[] = [];
@@ -258,6 +269,7 @@ export class InMemorySession {
     #providerId: string;
     #permissionMode: PermissionMode;
     #queue: PersistedQueuedRun[] = [];
+    #recap: string | undefined;
     #request: CreateSessionRequest;
     #restoredActiveRunId: string | undefined;
     #runtime: CodingAssistantRuntime | undefined;
@@ -351,6 +363,9 @@ export class InMemorySession {
         this.#models = this.#modelsForProvider(this.#providerId);
         this.#status = options.restore?.status ?? "idle";
         this.#lastMessageAt = options.restore?.lastMessageAt;
+        this.#metadataRunId = options.restore?.metadataRunId;
+        this.#metadataUpdatedAt = options.restore?.metadataUpdatedAt;
+        this.#recap = options.restore?.recap;
         this.#restoredActiveRunId = options.restore?.activeRunId;
         this.#lastSessionRunId = options.restore?.activeRunId;
         this.#title = options.restore?.title ?? this.#agentMetadata.description;
@@ -409,6 +424,10 @@ export class InMemorySession {
         if (options.onAppendEvent !== undefined) eventLogOptions.onAppend = options.onAppendEvent;
         this.events = new SessionEventLog(eventLogOptions);
 
+        this.#latestMetadataBoundaryRunId = findLatestForegroundRunBoundary(
+            this.events.since(undefined) ?? [],
+        );
+
         this.#ensureKnownModel(this.#modelId, this.#providerId);
         this.#saveSession();
         if (options.restore === undefined) {
@@ -417,6 +436,7 @@ export class InMemorySession {
             }
         } else {
             this.#continueGoalIfIdle();
+            this.#restartMetadataSettlement();
         }
     }
 
@@ -496,6 +516,11 @@ export class InMemorySession {
                 modelLocked: this.#modelLocked(),
                 runId: queuedRunId,
             });
+        }
+        const latestQueuedRunId = queuedRunIds.at(-1);
+        if (latestQueuedRunId !== undefined) {
+            this.#latestMetadataBoundaryRunId = latestQueuedRunId;
+            this.#restartMetadataSettlement();
         }
         return {
             aborted: true,
@@ -648,6 +673,9 @@ export class InMemorySession {
             interruption: _interruption,
             title: _title,
             titleError: _titleError,
+            metadataRunId: _metadataRunId,
+            metadataUpdatedAt: _metadataUpdatedAt,
+            recap: _recap,
             workflows: _workflows,
             ...rest
         } = state;
@@ -1311,6 +1339,7 @@ export class InMemorySession {
     }
 
     reset(): ProtocolSession {
+        this.#clearMetadataSettlement();
         void this.#agentManager?.stopDescendants(this.id);
         void this.abort({ pauseDescendants: false }).catch(() => undefined);
         for (const run of this.#workflowRuns.values()) {
@@ -1356,6 +1385,8 @@ export class InMemorySession {
         if (target === undefined || target.message.role !== "user") {
             throw new Error("The selected user message is no longer available.");
         }
+
+        this.#restartMetadataSettlement();
 
         void this.#killRuntimeProcesses();
         this.#runtime = undefined;
@@ -1414,6 +1445,7 @@ export class InMemorySession {
 
     recordSubagentChanged(subagent: SubagentSummary): void {
         this.#append("subagent_changed", { subagent });
+        this.#restartMetadataSettlement();
     }
 
     requestForSubagent(): CreateSessionRequest {
@@ -1447,6 +1479,11 @@ export class InMemorySession {
             status: this.#status,
             snapshot,
             titleStatus: this.#titleStatus,
+            ...(this.#recap !== undefined ? { recap: this.#recap } : {}),
+            ...(this.#metadataUpdatedAt !== undefined
+                ? { metadataUpdatedAt: this.#metadataUpdatedAt }
+                : {}),
+            ...(this.#metadataRunId !== undefined ? { metadataRunId: this.#metadataRunId } : {}),
             agent: this.agentMetadata(),
             pendingUserInputs: [...this.#pendingUserInputs.values()].map(
                 (pending) => pending.request,
@@ -1478,6 +1515,11 @@ export class InMemorySession {
             ...(this.#serviceTier !== undefined ? { serviceTier: this.#serviceTier } : {}),
             status: this.#status,
             titleStatus: this.#titleStatus,
+            ...(this.#recap !== undefined ? { recap: this.#recap } : {}),
+            ...(this.#metadataUpdatedAt !== undefined
+                ? { metadataUpdatedAt: this.#metadataUpdatedAt }
+                : {}),
+            ...(this.#metadataRunId !== undefined ? { metadataRunId: this.#metadataRunId } : {}),
             createdAt: this.events.firstCreatedAt() ?? this.#now(),
             updatedAt: this.events.lastCreatedAt() ?? this.#now(),
             ...(this.#lastMessageAt !== undefined ? { lastMessageAt: this.#lastMessageAt } : {}),
@@ -1510,12 +1552,17 @@ export class InMemorySession {
             ...(this.#goal !== undefined ? { goal: { ...this.#goal } } : {}),
             ...(this.#interruption !== undefined ? { interruption: this.#interruption } : {}),
             ...(this.#lastMessageAt !== undefined ? { lastMessageAt: this.#lastMessageAt } : {}),
+            ...(this.#metadataRunId !== undefined ? { metadataRunId: this.#metadataRunId } : {}),
+            ...(this.#metadataUpdatedAt !== undefined
+                ? { metadataUpdatedAt: this.#metadataUpdatedAt }
+                : {}),
             messages: [...this.#messages],
             modelId: this.#modelId,
             models: this.#models,
             providerId: this.#providerId,
             permissionMode: this.#permissionMode,
             queuedRuns: [...this.#queue],
+            ...(this.#recap !== undefined ? { recap: this.#recap } : {}),
             nextTaskId: this.#nextTaskId,
             status: this.#status,
             tasks: this.listTasks(),
@@ -1551,6 +1598,7 @@ export class InMemorySession {
         options: { source?: "notification" } = {},
     ): SubmitMessageResponse {
         this.#assertAcceptingWork();
+        this.#restartMetadataSettlement();
         const runId = createId();
         const displayText = request.displayText ?? request.text;
         const blocks: readonly ContentBlock[] = request.content ?? [
@@ -1593,7 +1641,6 @@ export class InMemorySession {
             runId,
             ...(options.source === undefined ? {} : { source: options.source }),
         });
-        this.#startTitleGeneration(request.text);
         this.#startDrainQueue();
         return {
             eventId: event.id,
@@ -1604,6 +1651,7 @@ export class InMemorySession {
 
     steer(request: SubmitMessageRequest): SteerMessageResponse {
         this.#assertAcceptingWork();
+        this.#restartMetadataSettlement();
         const activeRun = this.#activeRun;
         if (activeRun === undefined) {
             throw new Error("There is no active run to steer.");
@@ -1932,6 +1980,7 @@ export class InMemorySession {
 
     #recordWorkflowUpdate(update: WorkflowRunUpdate): void {
         this.#append("workflow_changed", { update });
+        this.#restartMetadataSettlement();
     }
 
     #appendAgentEvent(runId: string, event: AgentLoopEvent): void {
@@ -2007,6 +2056,8 @@ export class InMemorySession {
             runId,
             stopReason,
         });
+        this.#latestMetadataBoundaryRunId = runId;
+        this.#restartMetadataSettlement();
     }
 
     #committedMessages(): Message[] {
@@ -2107,6 +2158,7 @@ export class InMemorySession {
                 },
                 runId,
             });
+            this.#restartMetadataSettlement();
         });
         const snapshot = runtime.agent.snapshot();
         this.#runtime = runtime;
@@ -2220,42 +2272,110 @@ export class InMemorySession {
         );
     }
 
-    #startTitleGeneration(firstMessage: string): void {
+    #clearMetadataSettlement(): void {
+        this.#metadataRevision += 1;
+        if (this.#metadataTimer !== undefined) clearTimeout(this.#metadataTimer);
+        this.#metadataTimer = undefined;
+        this.#metadataController?.abort();
+        this.#metadataController = undefined;
+        if (this.#titleStatus === "generating") {
+            this.#titleStatus = this.#title === undefined ? "idle" : "ready";
+            this.#titleError = undefined;
+            this.#saveSession();
+        }
+    }
+
+    #restartMetadataSettlement(): void {
+        this.#clearMetadataSettlement();
         if (
-            this.#title !== undefined ||
-            this.#titleStatus === "generating" ||
-            this.#titleStatus === "ready"
+            this.isSubagent() ||
+            this.#latestMetadataBoundaryRunId === undefined ||
+            this.#latestMetadataBoundaryRunId === this.#metadataRunId ||
+            !this.#isMetadataSettlementIdle()
         ) {
             return;
         }
 
+        const revision = this.#metadataRevision;
+        this.#metadataTimer = setTimeout(() => {
+            this.#metadataTimer = undefined;
+            void this.#settleMetadata(revision);
+        }, SESSION_SETTLEMENT_DELAY_MS);
+        this.#metadataTimer.unref?.();
+    }
+
+    #isMetadataSettlementIdle(): boolean {
+        return (
+            this.#activeRun === undefined &&
+            this.#queue.length === 0 &&
+            !this.#agentManager?.hasActiveDescendants(this.id) &&
+            ![...this.#workflowRuns.values()].some((run) => run.state.status === "running") &&
+            (this.#runtime?.context.bash.activeSessionCount?.() ?? 0) === 0
+        );
+    }
+
+    async #settleMetadata(revision: number): Promise<void> {
+        const runId = this.#latestMetadataBoundaryRunId;
+        const transcript = createSessionMetadataTranscript(
+            this.#messages,
+            this.events.since(undefined) ?? [],
+        );
+        if (
+            revision !== this.#metadataRevision ||
+            runId === undefined ||
+            runId === this.#metadataRunId ||
+            transcript === undefined ||
+            !this.#isMetadataSettlementIdle()
+        ) {
+            return;
+        }
+
+        const controller = new AbortController();
+        this.#metadataController = controller;
         this.#titleStatus = "generating";
         this.#titleError = undefined;
         this.#append("session_title_changed", { status: this.#titleStatus });
-        const generate = () => this.#generateTitle(firstMessage);
-        const generation = this.#taskDrain?.run(generate) ?? generate();
-        void generation.catch(() => undefined);
-    }
-
-    async #generateTitle(firstMessage: string): Promise<void> {
         try {
-            const title = await generateSessionTitle({
-                firstMessage,
+            const metadata = await generateSessionMetadata({
+                ...(this.#title === undefined ? {} : { currentTitle: this.#title }),
                 now: this.#now,
                 provider: this.#ensureRuntime().provider,
                 sessionId: this.id,
+                signal: controller.signal,
+                transcript,
             });
-            this.#title = title;
+            if (
+                controller.signal.aborted ||
+                revision !== this.#metadataRevision ||
+                runId !== this.#latestMetadataBoundaryRunId ||
+                !this.#isMetadataSettlementIdle()
+            ) {
+                return;
+            }
+            const metadataUpdatedAt = this.#now();
+            this.#title = metadata.title;
+            this.#recap = metadata.recap;
+            this.#metadataRunId = runId;
+            this.#metadataUpdatedAt = metadataUpdatedAt;
             this.#titleStatus = "ready";
             this.#titleError = undefined;
-            this.#append("session_title_changed", { status: this.#titleStatus, title });
+            this.#append("session_title_changed", {
+                metadataRunId: runId,
+                metadataUpdatedAt,
+                recap: metadata.recap,
+                status: this.#titleStatus,
+                title: metadata.title,
+            });
         } catch (error) {
+            if (controller.signal.aborted || revision !== this.#metadataRevision) return;
             this.#titleStatus = "error";
             this.#titleError = error instanceof Error ? error.message : String(error);
             this.#append("session_title_changed", {
                 errorMessage: this.#titleError,
                 status: this.#titleStatus,
             });
+        } finally {
+            if (this.#metadataController === controller) this.#metadataController = undefined;
         }
     }
 
@@ -2330,6 +2450,8 @@ export class InMemorySession {
                 modelLocked: this.#modelLocked(),
                 runId: queued.runId,
             });
+            this.#latestMetadataBoundaryRunId = queued.runId;
+            this.#restartMetadataSettlement();
         } finally {
             this.#pendingSteeringContinuations.delete(queued.runId);
             if (this.#activeRun?.runId === queued.runId) {
@@ -2492,6 +2614,16 @@ function nextTaskId(tasks: readonly SessionTask[]): number {
             return Number.isSafeInteger(value) ? Math.max(highest, value) : highest;
         }, 0) + 1
     );
+}
+
+function findLatestForegroundRunBoundary(events: readonly SessionEvent[]): string | undefined {
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+        const event = events[index];
+        if (event?.type === "run_finished" || event?.type === "run_error") {
+            return event.data.runId;
+        }
+    }
+    return undefined;
 }
 
 function updateTaskString<TKey extends "activeForm" | "description" | "owner" | "subject">(
