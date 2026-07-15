@@ -95,6 +95,12 @@ export type AgentLoopEvent =
           iteration: number;
       }
     | {
+          type: "inference_retry";
+          attempt: number;
+          maxAttempts: number;
+          reason: "incomplete_response";
+      }
+    | {
           type: "tool_execution_start";
           toolCall: ProviderToolCall;
       }
@@ -235,12 +241,20 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                 }
 
                 if (
-                    !emittedContent &&
                     assistantMessage.stopReason === "error" &&
                     inferenceRetryCount < INFERENCE_MAX_RETRIES &&
-                    isRetryableInferenceError(assistantMessage)
+                    (assistantMessage.errorCode === "incomplete_response" ||
+                        (!emittedContent && isRetryableInferenceError(assistantMessage)))
                 ) {
                     inferenceRetryCount += 1;
+                    if (assistantMessage.errorCode === "incomplete_response") {
+                        await options.onEvent?.({
+                            type: "inference_retry",
+                            attempt: inferenceRetryCount,
+                            maxAttempts: INFERENCE_MAX_RETRIES,
+                            reason: "incomplete_response",
+                        });
+                    }
                     await delayBeforeInferenceRetry(inferenceRetryCount, options.signal);
                     continue;
                 }
@@ -379,6 +393,14 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         }
 
         if (assistantMessage.stopReason !== "toolUse") {
+            if (assistantMessage.endTurn === false) {
+                await compactLoopContext(options, contextTranscript, providerMessages, model, now, {
+                    force: false,
+                    reportedTokens: assistantMessage.usage.totalTokens,
+                });
+                appendSteering(options, transcript, contextTranscript, providerMessages, now);
+                continue;
+            }
             if (appendSteering(options, transcript, contextTranscript, providerMessages, now) > 0) {
                 continue;
             }

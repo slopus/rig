@@ -39,7 +39,7 @@ export interface GymOptions {
     inference?: readonly GymMockResponse[] | GymInferenceHandler | undefined;
     modelId?: string;
     permissionMode?: "auto" | "from_config" | "full_access" | "read_only" | "workspace_write";
-    providerId?: "claude-sdk" | "codex" | "gym";
+    providerId?: "bedrock" | "claude-sdk" | "codex" | "gym";
     rows?: number;
     startupText?: string;
     timeoutMs?: number;

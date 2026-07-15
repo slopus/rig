@@ -222,6 +222,7 @@ describe("Amazon Bedrock provider", () => {
 
         expect(request.reasoning).toEqual({ effort: "none" });
         expect(request.include).toBeUndefined();
+        expect(request.max_output_tokens).toBeUndefined();
     });
 
     it("uses the documented GPT-5.6 Bedrock model IDs and limits", () => {
@@ -257,6 +258,7 @@ describe("Amazon Bedrock provider", () => {
 
     it("routes OpenAI models through the official Bedrock OpenAI Responses client", async () => {
         const response = {
+            end_turn: false,
             id: "response-1",
             model: "openai.gpt-5.5",
             status: "completed",
@@ -343,6 +345,7 @@ describe("Amazon Bedrock provider", () => {
             provider: "bedrock",
             responseId: "response-1",
             responseModel: "openai.gpt-5.5",
+            endTurn: false,
             stopReason: "stop",
             usage: {
                 input: 9,
@@ -351,6 +354,36 @@ describe("Amazon Bedrock provider", () => {
                 cacheWrite: 1,
                 totalTokens: 15,
             },
+        });
+    });
+
+    it("preserves an incomplete response reason as a retryable stream error", async () => {
+        const response = {
+            id: "response-incomplete",
+            incomplete_details: { reason: "max_output_tokens" },
+            model: "openai.gpt-5.5",
+            status: "incomplete",
+        } as unknown as Response;
+        const responseStream = {
+            async *[Symbol.asyncIterator]() {
+                yield { type: "response.incomplete" as const, response };
+            },
+        };
+        const openAIClient = {
+            responses: { create: vi.fn(() => responseStream) },
+        } as unknown as BedrockOpenAIClient;
+        const provider = createBedrockProvider({
+            bearerToken: "bedrock-token",
+            openAIClient,
+            region: "us-east-1",
+        });
+
+        const message = await provider.stream(modelOpenaiGpt55, { messages: [] }).result();
+
+        expect(message).toMatchObject({
+            errorCode: "incomplete_response",
+            errorMessage: "Incomplete response returned, reason: max_output_tokens",
+            stopReason: "error",
         });
     });
 

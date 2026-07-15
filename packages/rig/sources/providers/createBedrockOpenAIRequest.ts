@@ -20,7 +20,6 @@ export function createBedrockOpenAIRequest(options: {
         input: toOpenAIResponseInput(options.context),
         stream: true,
         store: false,
-        max_output_tokens: options.modelRoute.maxTokens,
         ...(options.context.systemPrompt !== undefined
             ? { instructions: options.context.systemPrompt }
             : {}),

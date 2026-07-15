@@ -1966,6 +1966,8 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#streamedToolCallEntries.clear();
             this.#thinkingEntryIdsByContentIndex.clear();
             this.#toolCallEntryIdsByContentIndex.clear();
+        } else if (event.type === "inference_retry") {
+            this.#statusText = `Retrying incomplete response · ${event.attempt} of ${event.maxAttempts}`;
         } else if (event.type === "text_start") {
             this.#flushDeferredTurnSeparator();
             this.#statusText = "Running";

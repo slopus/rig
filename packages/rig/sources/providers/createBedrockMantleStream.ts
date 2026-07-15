@@ -8,16 +8,11 @@ import {
 import { createBedrockOpenAIRequest } from "./createBedrockOpenAIRequest.js";
 import { createInferenceStream } from "./createInferenceStream.js";
 import { finishBedrockOpenAIOutputItem } from "./finishBedrockOpenAIOutputItem.js";
+import { getBedrockIncompleteResponseReason } from "./getBedrockIncompleteResponseReason.js";
 import { parseOpenAIToolArguments } from "./parseOpenAIToolArguments.js";
 import { replaceAssistantContent } from "./replaceAssistantContent.js";
 import { toBedrockAssistantContent } from "./toBedrockAssistantContent.js";
-import type {
-    AssistantMessage,
-    AssistantMessageEvent,
-    Context,
-    StopReason,
-    StreamOptions,
-} from "./types.js";
+import type { AssistantMessage, AssistantMessageEvent, Context, StreamOptions } from "./types.js";
 
 export function createBedrockMantleStream(options: {
     bearerToken: string;
@@ -271,14 +266,17 @@ export function createBedrockMantleStream(options: {
                     continue;
                 }
 
-                if (event.type === "response.completed" || event.type === "response.incomplete") {
-                    applyBedrockOpenAIResponse(partial, event.response);
+                if (event.type === "response.incomplete") {
+                    const reason = getBedrockIncompleteResponseReason(event.response);
+                    partial.errorCode = "incomplete_response";
+                    throw new Error(`Incomplete response returned, reason: ${reason}`);
+                }
+
+                if (event.type === "response.completed") {
+                    const reason = applyBedrockOpenAIResponse(partial, event.response);
                     yield {
                         type: "done",
-                        reason: partial.stopReason as Extract<
-                            StopReason,
-                            "stop" | "length" | "toolUse"
-                        >,
+                        reason,
                         message: partial,
                     };
                     return partial;

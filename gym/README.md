@@ -414,8 +414,8 @@ Use request assertions to verify exact user text, normalized paste content, tool
 
 ## Intercepting provider HTTP
 
-Set `providerId` to run the deployed Claude Agent SDK or Codex provider instead of the deterministic
-gym provider. Adding `httpProxy` starts a test-owned proxy on the host and sets `HTTP_PROXY`,
+Set `providerId` to run the deployed Amazon Bedrock, Claude Agent SDK, or Codex provider instead of
+the deterministic gym provider. Adding `httpProxy` starts a test-owned proxy on the host and sets `HTTP_PROXY`,
 `HTTPS_PROXY`, `http_proxy`, and `https_proxy` inside the container. Every observed exchange is
 available through `gym.httpProxy.exchanges`. The gym also enables Node's environment-proxy support
 so the Codex provider's `fetch` transport uses these variables.
