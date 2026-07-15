@@ -24,10 +24,12 @@ import { resolveTerminalTheme } from "./resolveTerminalTheme.js";
 import { ScrollbackPreservingTerminal } from "./ScrollbackPreservingTerminal.js";
 import { ScrollbackPreservingTUI } from "./ScrollbackPreservingTUI.js";
 import { StartupStatusApp } from "./StartupStatusApp.js";
+import { getDebugRootDirectory } from "../debug/index.js";
 
 export interface RunAppOptions {
     apiKey?: string;
     cwd?: string;
+    debug?: boolean;
     effort?: string;
     instructions?: string;
     modelId?: string;
@@ -162,34 +164,40 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     const agent = new RemoteAgent({
         client: localServer.client,
         context,
+        debug: options.debug === true,
         modelCatalog,
         session: session.session,
     });
     const resumeCommand = `rig resume ${session.session.id}`;
+    const initialNotices = [
+        ...(options.debug === true
+            ? [
+                  {
+                      text: `Each request will write private JSON records to ${getDebugRootDirectory(sessionCwd)}. These files include prompts, model responses, tool arguments, and tool results.`,
+                      title: "Debug logging enabled",
+                  },
+              ]
+            : []),
+        ...(projectConfigNotice === undefined
+            ? []
+            : [
+                  {
+                      text: projectConfigNotice,
+                      title: createProjectConfigSecurityNoticeTitle(
+                          loadedConfig.sources.local.values,
+                      ),
+                  },
+              ]),
+        ...(projectMcpNotice === undefined
+            ? []
+            : [{ text: projectMcpNotice, title: "Project MCP needs trust" }]),
+    ];
     const app = new CodingAssistantApp({
         agent,
         cwd: sessionCwd,
         initialSessionEvents: history.events,
         initialMcpServers: session.session.mcpServers,
-        ...(projectConfigNotice === undefined && projectMcpNotice === undefined
-            ? {}
-            : {
-                  initialNotices: [
-                      ...(projectConfigNotice === undefined
-                          ? []
-                          : [
-                                {
-                                    text: projectConfigNotice,
-                                    title: createProjectConfigSecurityNoticeTitle(
-                                        loadedConfig.sources.local.values,
-                                    ),
-                                },
-                            ]),
-                      ...(projectMcpNotice === undefined
-                          ? []
-                          : [{ text: projectMcpNotice, title: "Project MCP needs trust" }]),
-                  ],
-              }),
+        ...(initialNotices.length === 0 ? {} : { initialNotices }),
         initialSubagents: subagents.subagents,
         initialUserInputs: session.session.pendingUserInputs,
         initialTasks: session.session.tasks,

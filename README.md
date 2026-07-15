@@ -185,6 +185,21 @@ rig exec --json "Summarize this repository"
 rig exec --stream-json "Run the test suite"
 ```
 
+Add `--debug` to an interactive or headless invocation to capture every request
+as ordered JSON files under `.rig/debug` in the project. Each request gets a
+time-sortable directory containing normalized inference inputs, every streamed
+provider event and final response, agent events and messages, tool arguments and
+results, and run completion or failure details:
+
+```sh
+rig --debug
+rig exec --debug "Diagnose the failing test"
+```
+
+The debug directory contains its own Git ignore rule. Its files use private
+permissions, but can still contain complete prompts, source excerpts, command
+output, and model reasoning; treat them as sensitive when sharing.
+
 Headless runs are normal persisted sessions. Continue or branch from them later:
 
 ```sh

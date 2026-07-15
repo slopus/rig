@@ -18,11 +18,15 @@ export async function runExec(
     options: ExecCommandOptions,
     environment: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
+    let debugDirectory: string | undefined;
     try {
-        await run(options, environment);
+        await run(options, environment, (directory) => {
+            debugDirectory = directory;
+        });
     } catch (error) {
         if (options.outputFormat === "text") throw error;
         const payload = {
+            ...(debugDirectory === undefined ? {} : { debugDirectory }),
             error: error instanceof Error ? error.message : String(error),
             type: "error",
         };
@@ -31,7 +35,11 @@ export async function runExec(
     }
 }
 
-async function run(options: ExecCommandOptions, environment: NodeJS.ProcessEnv): Promise<void> {
+async function run(
+    options: ExecCommandOptions,
+    environment: NodeJS.ProcessEnv,
+    onDebugDirectory: (directory: string) => void,
+): Promise<void> {
     const cwd = process.cwd();
     const prompt = await readExecPrompt(options.prompt);
     const [loadedConfig, mcpConfigEntries] = await Promise.all([
@@ -102,9 +110,14 @@ async function run(options: ExecCommandOptions, environment: NodeJS.ProcessEnv):
     }
 
     const submitted = await connection.client.submitMessage(session.id, {
+        ...(options.debug === true ? { debug: true } : {}),
         interactive: false,
         text: prompt,
     });
+    if (submitted.debugDirectory !== undefined) onDebugDirectory(submitted.debugDirectory);
+    if (options.outputFormat === "text" && submitted.debugDirectory !== undefined) {
+        process.stderr.write(`Debug log: ${submitted.debugDirectory}\n`);
+    }
     const controller = new AbortController();
     let failure: string | undefined;
     let stopReason: StopReason | undefined;
@@ -146,12 +159,21 @@ async function run(options: ExecCommandOptions, environment: NodeJS.ProcessEnv):
     const completed = (await connection.client.getSession(session.id)).session;
     const response = findLastAgentResponseText(completed.snapshot.messages) ?? "";
     if (failure !== undefined) {
-        emitFailure(options.outputFormat, failure, completed.id, submitted.runId);
+        emitFailure(
+            options.outputFormat,
+            failure,
+            completed.id,
+            submitted.runId,
+            submitted.debugDirectory,
+        );
         process.exitCode = 1;
         return;
     }
 
     const result = {
+        ...(submitted.debugDirectory === undefined
+            ? {}
+            : { debugDirectory: submitted.debugDirectory }),
         response,
         runId: submitted.runId,
         sessionId: completed.id,
@@ -226,10 +248,13 @@ function emitFailure(
     error: string,
     sessionId: string,
     runId: string,
+    debugDirectory?: string,
 ): void {
     if (outputFormat === "text") {
         process.stderr.write(`${error}\n`);
         return;
     }
-    process.stdout.write(`${JSON.stringify({ error, runId, sessionId, type: "error" })}\n`);
+    process.stdout.write(
+        `${JSON.stringify({ ...(debugDirectory === undefined ? {} : { debugDirectory }), error, runId, sessionId, type: "error" })}\n`,
+    );
 }

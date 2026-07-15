@@ -42,4 +42,19 @@ describe("parseSessionEnvironmentOptions", () => {
             parseSessionEnvironmentOptions(["--local", "--docker-container", "development"]),
         ).toThrow("Choose one");
     });
+
+    it("extracts request debug logging before interactive and headless commands", () => {
+        expect(parseSessionEnvironmentOptions(["--debug"])).toEqual({
+            debug: true,
+            remaining: [],
+        });
+        expect(parseSessionEnvironmentOptions(["exec", "--debug", "Inspect this"])).toEqual({
+            debug: true,
+            remaining: ["exec", "Inspect this"],
+        });
+        expect(parseSessionEnvironmentOptions(["resume", "--debug", "session-1"])).toEqual({
+            debug: true,
+            remaining: ["resume", "session-1"],
+        });
+    });
 });

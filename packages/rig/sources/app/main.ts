@@ -26,12 +26,14 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     argv = parsedEnvironment.remaining;
     const options: RunAppOptions = {
         cwd: process.cwd(),
+        ...(parsedEnvironment.debug === true ? { debug: true } : {}),
         ...(parsedEnvironment.docker === undefined ? {} : { docker: parsedEnvironment.docker }),
     };
     const [command, ...commandArgs] = argv;
     if (command === "exec") {
         await runExec({
             ...parseExecCommand(commandArgs),
+            ...(parsedEnvironment.debug === true ? { debug: true } : {}),
             ...(parsedEnvironment.docker === undefined ? {} : { docker: parsedEnvironment.docker }),
         });
         return;

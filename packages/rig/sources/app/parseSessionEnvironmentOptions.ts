@@ -1,6 +1,7 @@
 import type { DockerExecutionConfig, DockerMountConfig } from "../execution/index.js";
 
 export interface ParsedSessionEnvironmentOptions {
+    debug?: boolean;
     docker?: DockerExecutionConfig | null;
     remaining: readonly string[];
 }
@@ -16,12 +17,15 @@ export function parseSessionEnvironmentOptions(
     let name: string | undefined;
     let socketPath: string | undefined;
     let workingDirectory = "/workspace";
+    let debug = false;
 
     for (let index = 0; index < args.length; index += 1) {
         const argument = args[index];
         if (argument === "--") {
             remaining.push(...args.slice(index));
             break;
+        } else if (argument === "--debug") {
+            debug = true;
         } else if (argument === "--local") {
             selectMode("local");
         } else if (argument === "--docker-container") {
@@ -61,11 +65,11 @@ export function parseSessionEnvironmentOptions(
         if (hasDockerOptions) {
             throw new Error("Choose --docker-container or --docker-image with Docker options.");
         }
-        return { remaining };
+        return { ...(debug ? { debug: true } : {}), remaining };
     }
     if (mode === "local") {
         if (hasDockerOptions) throw new Error("--local cannot be combined with Docker options.");
-        return { docker: null, remaining };
+        return { ...(debug ? { debug: true } : {}), docker: null, remaining };
     }
     if (reference === undefined) throw new Error("A Docker container or image is required.");
     if (!workingDirectory.startsWith("/")) {
@@ -80,6 +84,7 @@ export function parseSessionEnvironmentOptions(
         );
     }
     return {
+        ...(debug ? { debug: true } : {}),
         docker: {
             ...(mode === "container" ? { container: reference } : { image: reference }),
             ...(name === undefined ? {} : { name }),

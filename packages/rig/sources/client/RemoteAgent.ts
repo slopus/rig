@@ -22,10 +22,12 @@ import {
 import type { PermissionMode } from "../permissions/index.js";
 import type { GoalStatus, SessionGoal } from "../goals/index.js";
 import { ProtocolHttpClient } from "./ProtocolHttpClient.js";
+import { RemoteAgentRunError } from "./RemoteAgentRunError.js";
 
 export interface RemoteAgentOptions {
     client: ProtocolHttpClient;
     context: AgentContext;
+    debug?: boolean;
     modelCatalog?: ModelCatalog;
     session: ProtocolSession;
 }
@@ -35,6 +37,7 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
     readonly id: string;
 
     #client: ProtocolHttpClient;
+    #debug: boolean;
     #modelId: string;
     #modelCatalog: ModelCatalog | undefined;
     #models: readonly Model[];
@@ -53,6 +56,7 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
 
     constructor(options: RemoteAgentOptions) {
         this.#client = options.client;
+        this.#debug = options.debug === true;
         this.#session = options.session;
         this.#modelCatalog = options.modelCatalog;
         this.context = options.context;
@@ -192,6 +196,7 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
                 : content;
         const submitted = await this.#client.submitMessage(this.#session.id, {
             ...(requestContent === undefined ? {} : { content: requestContent }),
+            ...(this.#debug ? { debug: true } : {}),
             ...(options.displayText !== undefined ? { displayText: options.displayText } : {}),
             text: displayText,
         });
@@ -224,7 +229,10 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
                 this.applySessionEvent(event);
 
                 if (event.type === "run_error") {
-                    failure = new Error(event.data.errorMessage);
+                    failure = new RemoteAgentRunError(
+                        event.data.errorMessage,
+                        submitted.debugDirectory,
+                    );
                     streamController.abort();
                     return;
                 }
@@ -249,6 +257,9 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         }
         if (finished === undefined) {
             return {
+                ...(submitted.debugDirectory === undefined
+                    ? {}
+                    : { debugDirectory: submitted.debugDirectory }),
                 messages: this.#session.snapshot.messages,
                 contextMessages:
                     this.#session.snapshot.contextMessages ?? this.#session.snapshot.messages,
@@ -258,6 +269,9 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         }
 
         return {
+            ...(submitted.debugDirectory === undefined
+                ? {}
+                : { debugDirectory: submitted.debugDirectory }),
             messages: finished.messages,
             contextMessages:
                 this.#session.snapshot.contextMessages ?? this.#session.snapshot.messages,

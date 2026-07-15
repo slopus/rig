@@ -6,6 +6,7 @@ import {
 } from "./compaction/compactConversation.js";
 import type { AgentContext } from "./context/AgentContext.js";
 import { runAgentLoop, type AgentLoopEvent, type AgentLoopResult } from "./loop.js";
+import { createDebugProvider, type DebugLog } from "../debug/index.js";
 import { printAgentMessageToConsole, type AgentConsole } from "./printAgentMessageToConsole.js";
 import { selectToolsForModel } from "./selectToolsForModel.js";
 import type { AnyDefinedTool, ContentBlock, Message, SystemMessage, UserMessage } from "./types.js";
@@ -55,6 +56,7 @@ export interface AgentOptions {
 }
 
 export interface AgentRunOptions {
+    debug?: DebugLog;
     displayText?: string;
     signal?: AbortSignal;
     onEvent?: (event: AgentLoopEvent) => void | Promise<void>;
@@ -62,6 +64,7 @@ export interface AgentRunOptions {
 }
 
 export interface AgentRunResult extends AgentLoopResult {
+    debugDirectory?: string;
     runId: string;
 }
 
@@ -305,12 +308,21 @@ export class Agent {
         this.#activeRunId = runId;
         this.#status = "running";
         this.#drainQueueToTranscript();
+        const provider =
+            options.debug === undefined
+                ? this.provider
+                : createDebugProvider(this.provider, {
+                      log: options.debug,
+                      runId,
+                      source: "agent",
+                  });
 
         try {
             try {
                 const compaction = await this.#compactContext({
                     force: false,
                     preserveLatestUserMessage: true,
+                    provider,
                     ...(options.signal !== undefined ? { signal: options.signal } : {}),
                 });
                 if (compaction.compacted) {
@@ -335,7 +347,7 @@ export class Agent {
 
             let contextCompactedDuringRun = false;
             const loopOptions: Parameters<typeof runAgentLoop>[0] = {
-                provider: this.provider,
+                provider,
                 modelId: this.#model.id,
                 tools: this.#tools,
                 messages: this.#messages,
@@ -352,6 +364,7 @@ export class Agent {
                             messages,
                             force: compaction.force,
                             preserveLatestUserMessage: true,
+                            provider,
                             ...(compaction.reportedTokens === undefined
                                 ? {}
                                 : { reportedTokens: compaction.reportedTokens }),
@@ -389,6 +402,7 @@ export class Agent {
             if (this.#serviceTier !== undefined) loopOptions.serviceTier = this.#serviceTier;
             if (this.#instructions !== undefined) loopOptions.instructions = this.#instructions;
             if (options.signal !== undefined) loopOptions.signal = options.signal;
+            if (options.debug !== undefined) loopOptions.debug = options.debug;
 
             const result = await runAgentLoop(loopOptions);
 
@@ -407,6 +421,7 @@ export class Agent {
             }
             return {
                 ...result,
+                ...(options.debug === undefined ? {} : { debugDirectory: options.debug.directory }),
                 runId,
             };
         } catch (error) {
@@ -473,12 +488,14 @@ export class Agent {
     async #compactContext(options: {
         force: boolean;
         preserveLatestUserMessage: boolean;
+        provider?: Provider;
         signal?: AbortSignal;
     }): Promise<AgentCompactionResult> {
         const result = await this.#compactMessages({
             messages: this.#contextMessages ?? this.#messages,
             force: options.force,
             preserveLatestUserMessage: options.preserveLatestUserMessage,
+            ...(options.provider === undefined ? {} : { provider: options.provider }),
             ...(options.signal !== undefined ? { signal: options.signal } : {}),
         });
         if (result.compacted) {
@@ -497,11 +514,12 @@ export class Agent {
         messages: readonly Message[];
         force: boolean;
         preserveLatestUserMessage: boolean;
+        provider?: Provider;
         reportedTokens?: number;
         signal?: AbortSignal;
     }): Promise<CompactConversationResult> {
         return compactConversation({
-            provider: this.provider,
+            provider: options.provider ?? this.provider,
             model: this.#model,
             messages: options.messages,
             idFactory: this.#idFactory,

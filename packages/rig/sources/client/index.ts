@@ -12,3 +12,4 @@ export {
     type WatchSessionEventsOptions,
 } from "./ProtocolHttpClient.js";
 export { RemoteAgent, type RemoteAgentOptions } from "./RemoteAgent.js";
+export { RemoteAgentRunError } from "./RemoteAgentRunError.js";

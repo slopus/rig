@@ -6,6 +6,7 @@ import type { ModelCatalog, ProtocolSession, SessionEvent } from "../protocol/in
 import { createJustBashToolHarness } from "../tools/testing/createJustBashToolHarness.js";
 import type { ProtocolHttpClient } from "./ProtocolHttpClient.js";
 import { RemoteAgent } from "./RemoteAgent.js";
+import { RemoteAgentRunError } from "./RemoteAgentRunError.js";
 
 describe("RemoteAgent", () => {
     it("keeps its local context synchronized with permission responses and events", async () => {
@@ -144,6 +145,49 @@ describe("RemoteAgent", () => {
             content: [{ type: "text", text: "Expanded reviewer instructions" }],
             displayText: "/review",
             text: "/review",
+        });
+    });
+
+    it("preserves the debug directory when a remote run fails", async () => {
+        const model = defineModel({
+            id: "openai/test",
+            name: "Test model",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const session = protocolSession(model);
+        const submitMessage = vi.fn(async () => ({
+            debugDirectory: "/workspace/.rig/debug/request-1",
+            eventId: "event-submit",
+            runId: "run-1",
+            sessionId: session.id,
+        }));
+        const watchSessionEvents = vi.fn(async (options) => {
+            await options.onEvent({
+                createdAt: 1,
+                data: { errorMessage: "provider failed", modelLocked: false, runId: "run-1" },
+                id: "event-error",
+                sessionId: session.id,
+                type: "run_error",
+            });
+        });
+        const agent = new RemoteAgent({
+            client: { submitMessage, watchSessionEvents } as unknown as ProtocolHttpClient,
+            context: createJustBashToolHarness().context,
+            debug: true,
+            session,
+        });
+
+        const failure = await agent.send("Trigger the failure.").catch((error: unknown) => error);
+
+        expect(failure).toBeInstanceOf(RemoteAgentRunError);
+        expect(failure).toMatchObject({
+            debugDirectory: "/workspace/.rig/debug/request-1",
+            message: "provider failed",
+        });
+        expect(submitMessage).toHaveBeenCalledWith(session.id, {
+            debug: true,
+            text: "Trigger the failure.",
         });
     });
 

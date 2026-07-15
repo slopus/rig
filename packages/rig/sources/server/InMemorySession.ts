@@ -85,6 +85,7 @@ import { SessionEventLog } from "./SessionEventLog.js";
 import type { AgentSessionManager } from "./AgentSessionManager.js";
 import type { DockerExecutionConfig } from "../execution/index.js";
 import { summarizeDockerExecution } from "../execution/index.js";
+import { createDebugProvider, createRequestDebugDirectory, DebugLog } from "../debug/index.js";
 
 export interface PersistedSessionMessage {
     isPartial: boolean;
@@ -94,6 +95,8 @@ export interface PersistedSessionMessage {
 }
 
 export interface PersistedQueuedRun {
+    debug?: boolean;
+    debugDirectory?: string;
     displayText: string;
     interactive?: boolean;
     kind: "goal" | "user";
@@ -170,6 +173,7 @@ export interface InMemorySessionOptions {
 
 interface ActiveRun {
     controller: AbortController;
+    debug: boolean;
     kind: PersistedQueuedRun["kind"];
     runId: string;
 }
@@ -216,6 +220,7 @@ export class InMemorySession {
     #createEventId: () => EventId;
     #createRuntime: (options: CreateCodingAssistantAgentOptions) => CodingAssistantRuntime;
     #contextMessages: Message[] | undefined;
+    #debugLogs = new Map<string, DebugLog>();
     #draining: Promise<void> | undefined;
     #effort: string | undefined;
     #serviceTier: ServiceTier | undefined;
@@ -421,15 +426,20 @@ export class InMemorySession {
             };
         }
 
-        const queuedRunIds = this.#queue.map((queued) => queued.runId);
-        for (const queued of this.#queue) {
+        const discardedQueue = this.#queue;
+        const queuedRunIds = discardedQueue.map((queued) => queued.runId);
+        for (const queued of discardedQueue) {
             this.#persistence?.deleteQueuedRun(this.id, queued.runId);
         }
         this.#queue = [];
         this.#pauseActiveGoal();
         this.#activeRun?.controller.abort();
         this.#restoredActiveRunId = undefined;
-        await Promise.all([this.#killRuntimeProcesses(), pauseDescendants]);
+        await Promise.all([
+            this.#killRuntimeProcesses(),
+            pauseDescendants,
+            ...discardedQueue.map((queued) => this.#closeDebugLog(queued)),
+        ]);
         const event = this.#append("abort_requested", runId !== undefined ? { runId } : {});
         for (const queuedRunId of queuedRunIds) {
             this.#append("run_error", {
@@ -463,12 +473,13 @@ export class InMemorySession {
         this.#saveSession();
     }
 
-    resumeSuspended(): SubmitMessageResponse {
+    resumeSuspended(options: { debug?: boolean } = {}): SubmitMessageResponse {
         if (!this.isSubagent() || this.#status !== "suspended") {
             throw new Error("Only a suspended subagent can be resumed.");
         }
         this.#suspendOnAbort = false;
         return this.submit({
+            ...(options.debug === true ? { debug: true } : {}),
             displayText: "Resuming delegated work",
             text: "Continue the delegated task from where you stopped. Re-check any interrupted tool calls before proceeding.",
         });
@@ -1151,10 +1162,12 @@ export class InMemorySession {
             ...(interruption.runId !== undefined ? [interruption.runId] : []),
             ...this.#queue.map((queued) => queued.runId),
         ];
-        for (const queued of this.#queue) {
+        const discardedQueue = this.#queue;
+        for (const queued of discardedQueue) {
             this.#persistence?.deleteQueuedRun(this.id, queued.runId);
         }
         this.#queue = [];
+        void Promise.all(discardedQueue.map((queued) => this.#closeDebugLog(queued)));
         if (interruptedRunIds.length > 0) {
             for (const runId of new Set(interruptedRunIds)) {
                 this.#append("run_error", {
@@ -1281,6 +1294,10 @@ export class InMemorySession {
         };
     }
 
+    activeRunDebug(): boolean {
+        return this.#activeRun?.debug === true;
+    }
+
     snapshot(): ProtocolSession {
         const snapshot = this.#agentSnapshot();
         const lastEventId = this.events.lastEventId();
@@ -1400,6 +1417,7 @@ export class InMemorySession {
         options: { source?: "notification" } = {},
     ): SubmitMessageResponse {
         const runId = createId();
+        const createdAt = this.#now();
         const displayText = request.displayText ?? request.text;
         const blocks: readonly ContentBlock[] = request.content ?? [
             { type: "text", text: createCodeReviewPrompt(request.text) ?? request.text },
@@ -1419,6 +1437,16 @@ export class InMemorySession {
                   : [],
         };
         const queued: PersistedQueuedRun = {
+            ...(request.debug === true
+                ? {
+                      debug: true,
+                      debugDirectory: createRequestDebugDirectory(
+                          this.#request.cwd,
+                          runId,
+                          createdAt,
+                      ),
+                  }
+                : {}),
             displayText,
             ...(request.interactive === undefined ? {} : { interactive: request.interactive }),
             kind: "user",
@@ -1440,9 +1468,26 @@ export class InMemorySession {
             runId,
             ...(options.source === undefined ? {} : { source: options.source }),
         });
-        this.#startTitleGeneration(request.text);
+        const debugLog = this.#debugLogFor(queued);
+        void debugLog?.record("request", {
+            agent: this.agentMetadata(),
+            displayText,
+            modelId: this.#modelId,
+            permissionMode: this.#permissionMode,
+            providerId: this.#providerId,
+            request: {
+                ...(request.content === undefined ? {} : { content: request.content }),
+                text: request.text,
+            },
+            runId,
+            sessionId: this.id,
+        });
+        this.#startTitleGeneration(request.text, runId, debugLog);
         this.#startDrainQueue();
         return {
+            ...(queued.debugDirectory === undefined
+                ? {}
+                : { debugDirectory: queued.debugDirectory }),
             eventId: event.id,
             runId,
             sessionId: this.id,
@@ -2017,7 +2062,7 @@ export class InMemorySession {
         );
     }
 
-    #startTitleGeneration(firstMessage: string): void {
+    #startTitleGeneration(firstMessage: string, runId: string, debugLog?: DebugLog): void {
         if (
             this.#title !== undefined ||
             this.#titleStatus === "generating" ||
@@ -2029,15 +2074,23 @@ export class InMemorySession {
         this.#titleStatus = "generating";
         this.#titleError = undefined;
         this.#append("session_title_changed", { status: this.#titleStatus });
-        void this.#generateTitle(firstMessage);
+        void this.#generateTitle(firstMessage, runId, debugLog);
     }
 
-    async #generateTitle(firstMessage: string): Promise<void> {
+    async #generateTitle(firstMessage: string, runId: string, debugLog?: DebugLog): Promise<void> {
         try {
+            const provider = this.#ensureRuntime().provider;
             const title = await generateSessionTitle({
                 firstMessage,
                 now: this.#now,
-                provider: this.#ensureRuntime().provider,
+                provider:
+                    debugLog === undefined
+                        ? provider
+                        : createDebugProvider(provider, {
+                              log: debugLog,
+                              runId,
+                              source: "title",
+                          }),
                 sessionId: this.id,
             });
             this.#title = title;
@@ -2056,13 +2109,23 @@ export class InMemorySession {
 
     async #runQueued(queued: PersistedQueuedRun): Promise<void> {
         const controller = new AbortController();
-        this.#activeRun = { controller, kind: queued.kind, runId: queued.runId };
+        const debugLog = this.#debugLogFor(queued);
+        this.#activeRun = {
+            controller,
+            debug: queued.debug === true,
+            kind: queued.kind,
+            runId: queued.runId,
+        };
         this.#lastSessionRunId = queued.runId;
         this.#restoredActiveRunId = undefined;
         this.#status = "running";
         this.#append("run_started", { runId: queued.runId });
 
         try {
+            await debugLog?.record("run-started", {
+                runId: queued.runId,
+                sessionId: this.id,
+            });
             const runtime = this.#ensureRuntime();
             await this.#ensureMcpTools(runtime, controller.signal, queued.interactive !== false);
             runtime.agent.enqueueMessage(queued.userMessage);
@@ -2071,14 +2134,26 @@ export class InMemorySession {
                 this.#saveSession();
             }
             const result = await runtime.agent.run({
+                ...(debugLog === undefined ? {} : { debug: debugLog }),
                 signal: controller.signal,
-                onEvent: (event) => this.#appendAgentEvent(queued.runId, event),
-                onMessage: (message) => this.#appendAgentMessage(queued.runId, message),
+                onEvent: async (event) => {
+                    this.#appendAgentEvent(queued.runId, event);
+                    await debugLog?.record("agent-event", { event, runId: queued.runId });
+                },
+                onMessage: async (message) => {
+                    this.#appendAgentMessage(queued.runId, message);
+                    await debugLog?.record("agent-message", { message, runId: queued.runId });
+                },
             });
             if (this.#activeRun?.runId !== queued.runId) {
                 return;
             }
             this.#appendRunFinished(queued.runId, result);
+            await debugLog?.record("run-finished", {
+                agentRunId: result.runId,
+                runId: queued.runId,
+                stopReason: result.stopReason,
+            });
             if (result.stopReason !== "aborted" && result.stopReason !== "error") {
                 this.#continueGoalIfIdle();
             }
@@ -2094,6 +2169,9 @@ export class InMemorySession {
             if (this.#activeRun?.runId === queued.runId) {
                 this.#activeRun = undefined;
             }
+            await debugLog
+                ?.record("run-error", { error, runId: queued.runId, sessionId: this.id })
+                .catch(() => undefined);
             this.#append("run_error", {
                 errorMessage: error instanceof Error ? error.message : String(error),
                 modelLocked: this.#modelLocked(),
@@ -2105,7 +2183,26 @@ export class InMemorySession {
             }
             this.#syncContextMessages();
             this.#saveSession();
+            await this.#closeDebugLog(queued);
         }
+    }
+
+    async #closeDebugLog(queued: PersistedQueuedRun): Promise<void> {
+        const debugLog = this.#debugLogFor(queued);
+        if (debugLog === undefined) return;
+        await debugLog.flush().catch(() => undefined);
+        if (this.#debugLogs.get(queued.runId) === debugLog) {
+            this.#debugLogs.delete(queued.runId);
+        }
+    }
+
+    #debugLogFor(queued: PersistedQueuedRun): DebugLog | undefined {
+        if (queued.debug !== true || queued.debugDirectory === undefined) return undefined;
+        const existing = this.#debugLogs.get(queued.runId);
+        if (existing !== undefined) return existing;
+        const created = new DebugLog({ directory: queued.debugDirectory, now: this.#now });
+        this.#debugLogs.set(queued.runId, created);
+        return created;
     }
 
     #syncContextMessages(): void {
@@ -2159,13 +2256,14 @@ export class InMemorySession {
     }
 
     #discardQueuedGoalRuns(): void {
-        const goalRunIds = this.#queue
-            .filter((queued) => queued.kind === "goal")
-            .map((queued) => queued.runId);
-        if (goalRunIds.length === 0) return;
+        const discardedQueue = this.#queue.filter((queued) => queued.kind === "goal");
+        if (discardedQueue.length === 0) return;
 
         this.#queue = this.#queue.filter((queued) => queued.kind !== "goal");
-        for (const runId of goalRunIds) this.#persistence?.deleteQueuedRun(this.id, runId);
+        for (const queued of discardedQueue) {
+            this.#persistence?.deleteQueuedRun(this.id, queued.runId);
+        }
+        void Promise.all(discardedQueue.map((queued) => this.#closeDebugLog(queued)));
         if (this.#activeRun === undefined && this.#queue.length === 0) this.#status = "idle";
         this.#saveSession();
     }

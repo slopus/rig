@@ -15,6 +15,7 @@ import {
     type StreamOptions,
     type Usage,
 } from "../providers/types.js";
+import type { DebugLog } from "../debug/index.js";
 
 describe("Agent", () => {
     it("queues steering and user messages, runs the loop, and prints messages", async () => {
@@ -75,9 +76,14 @@ describe("Agent", () => {
         expect(user.id).toBe("id-4");
         expect(queuedIds).toEqual(["id-3", "id-5"]);
 
-        const result = await agent.run();
+        const debug = {
+            directory: "/tmp/rig-agent-debug",
+            record: async () => undefined,
+        } as unknown as DebugLog;
+        const result = await agent.run({ debug });
 
         expect(result.runId).toBe("id-6");
+        expect(result.debugDirectory).toBe("/tmp/rig-agent-debug");
         expect(result.stopReason).toBe("stop");
         expect(agent.status).toBe("idle");
         expect(agent.queue).toEqual([]);

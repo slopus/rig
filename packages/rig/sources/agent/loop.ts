@@ -45,11 +45,13 @@ import {
     shouldReviewToolInAutoMode,
     summarizePermissionAction,
 } from "../permissions/index.js";
+import type { DebugLog } from "../debug/index.js";
 
 const INFERENCE_MAX_RETRIES = 5;
 const INFERENCE_RETRY_INITIAL_DELAY_MS = 200;
 
 export interface RunAgentLoopOptions {
+    debug?: DebugLog;
     provider: Provider;
     modelId: string;
     effort?: string;
@@ -410,6 +412,10 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
 
         const toolResultBlocks = await Promise.all(
             toolCalls.map(async (toolCall) => {
+                await options.debug?.record("tool-call", {
+                    iteration,
+                    toolCall,
+                });
                 await options.onEvent?.({ type: "tool_execution_start", toolCall });
                 const result = await executeToolCall(toolCall, toolsByName, toolContext, {
                     messages: contextTranscript,
@@ -435,8 +441,25 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                             toolCallId: toolCall.id,
                             ...review,
                         }),
+                    onRawResult: (rawResult) =>
+                        options.debug?.record("tool-raw-result", {
+                            iteration,
+                            rawResult,
+                            toolCall,
+                        }),
+                    onError: (error) =>
+                        options.debug?.record("tool-error", {
+                            error,
+                            iteration,
+                            toolCall,
+                        }),
                     provider: options.provider,
                     ...(options.signal === undefined ? {} : { signal: options.signal }),
+                });
+                await options.debug?.record("tool-result", {
+                    iteration,
+                    result,
+                    toolCall,
                 });
                 await options.onEvent?.({
                     type: "tool_execution_end",
@@ -789,6 +812,8 @@ async function executeToolCall(
             risk: "low" | "medium" | "high";
             userAuthorization: "low" | "medium" | "high";
         }) => void | Promise<void>;
+        onError?: (error: unknown) => void | Promise<void>;
+        onRawResult?: (result: unknown) => void | Promise<void>;
         provider: Provider;
         signal?: AbortSignal;
     },
@@ -887,6 +912,7 @@ async function executeToolCall(
             runWithFullAccess && context.permissions !== undefined
                 ? await context.permissions.runWithMode("full_access", run)
                 : await run();
+        await options.onRawResult?.(result);
         const resultIsError = isError?.(result);
         const presentation =
             resultIsError === true ? undefined : toPresentation?.(result, toolCall.arguments);
@@ -901,6 +927,7 @@ async function executeToolCall(
             ...(presentation === undefined ? {} : { presentation }),
         };
     } catch (error) {
+        await options.onError?.(error);
         return errorToolResultBlock(
             toolCall,
             `Tool '${tool.name}' failed: ${errorToMessage(error)}`,
