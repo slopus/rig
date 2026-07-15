@@ -1958,7 +1958,7 @@ export class CodingAssistantApp implements Component, Focusable {
                     this.#activeSessionMutation = undefined;
                 }
                 this.#requestRender();
-        });
+            });
         this.#activeSessionMutation = mutation;
     }
 
