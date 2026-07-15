@@ -29,6 +29,10 @@ describe("double Escape in the composer", () => {
 
         gym.terminal.press("up");
         await waitForComposer(gym, draft);
+        gym.terminal.press("down");
+        await waitForComposer(gym, "Ask Rig to do anything");
+        gym.terminal.press("up");
+        await waitForComposer(gym, draft);
     }, 60_000);
 });
 

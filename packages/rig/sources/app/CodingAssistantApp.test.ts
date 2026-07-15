@@ -206,6 +206,7 @@ describe("CodingAssistantApp", () => {
         const app = new CodingAssistantApp({
             agent,
             cwd: harness.context.fs.cwd,
+            now: () => 100,
             processManager: new NativeProxessManager(),
             sessionBacked: true,
             tui: fakeTui(),
@@ -235,14 +236,127 @@ describe("CodingAssistantApp", () => {
             type: "message_submitted",
         });
 
+        app.handleInput("Keep this pending-run draft");
+        app.handleInput("\x1b");
         app.handleInput("\x1b");
         await vi.waitFor(() =>
             expect(abort).toHaveBeenCalledWith({ continuePendingSteering: true }),
         );
+        expect(abort).toHaveBeenCalledTimes(2);
+        expect(abort).toHaveBeenNthCalledWith(1, { continuePendingSteering: true });
+        expect(abort).toHaveBeenNthCalledWith(2, { continuePendingSteering: true });
 
         const rendered = stripAnsi(app.render(100).join("\n"));
         expect(rendered).toContain("esc to interrupt");
+        expect(rendered).toContain("› Keep this pending-run draft");
         expect(rendered).not.toContain("Session interrupted");
+    });
+
+    it("treats both rapid Escapes as stop actions while running without pending steering", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const abort = vi.fn(async () => ({ aborted: true }));
+        const agent = Object.assign(
+            new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            { abort },
+        );
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            now: () => 100,
+            processManager: new NativeProxessManager(),
+            sessionBacked: true,
+            tui: fakeTui(),
+        });
+        app.applySessionEvent({
+            createdAt: 1,
+            data: { runId: "run-1" },
+            id: "event-started",
+            sessionId: "session-1",
+            type: "run_started",
+        });
+
+        app.handleInput("Keep this stopping-run draft");
+        app.handleInput("\x1b");
+        app.handleInput("\x1b");
+
+        await vi.waitFor(() => expect(abort).toHaveBeenCalledTimes(2));
+        expect(abort).toHaveBeenNthCalledWith(1);
+        expect(abort).toHaveBeenNthCalledWith(2);
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› Keep this stopping-run draft");
+    });
+
+    it("resets idle double-Escape timing across a running transition", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            now: () => 100,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        app.handleInput("Keep this transition draft");
+        app.handleInput("\x1b");
+        app.applySessionEvent({
+            createdAt: 1,
+            data: { runId: "run-1" },
+            id: "event-started",
+            sessionId: "session-1",
+            type: "run_started",
+        });
+        app.applySessionEvent({
+            createdAt: 2,
+            data: {
+                agentRunId: "agent-run-1",
+                modelLocked: true,
+                runId: "run-1",
+                stopReason: "stop",
+            },
+            id: "event-finished",
+            sessionId: "session-1",
+            type: "run_finished",
+        });
+
+        app.handleInput("\x1b");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› Keep this transition draft");
+        app.handleInput("\x1b");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› Ask Rig to do anything");
     });
 
     it("clears a draft on double Escape and retrieves it with Up", () => {
@@ -277,6 +391,10 @@ describe("CodingAssistantApp", () => {
         app.handleInput("\x1b");
         expect(stripAnsi(app.render(100).join("\n"))).toContain("› Recover this draft");
         app.handleInput("\x1b");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› Ask Rig to do anything");
+        app.handleInput("\x1b[A");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› Recover this draft");
+        app.handleInput("\x1b[B");
         expect(stripAnsi(app.render(100).join("\n"))).toContain("› Ask Rig to do anything");
         app.handleInput("\x1b[A");
         expect(stripAnsi(app.render(100).join("\n"))).toContain("› Recover this draft");

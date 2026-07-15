@@ -578,7 +578,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (event.type === "run_started") {
             this.#usageRequestVersion += 1;
             this.#abortNotified = false;
-            this.#running = true;
+            this.#setRunning(true);
             this.#statusText = "Running";
             this.#activityStartedAtMs = this.#lastUserInputAtMs ?? this.#now();
             this.#startActivityAnimation();
@@ -705,7 +705,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 this.#workSegmentStartedAtMs = undefined;
             }
             this.#discardPendingToolCallEntries();
-            this.#running = false;
+            this.#setRunning(false);
             this.#modelLocked = this.#pendingPrompts.length > 0;
             this.#statusText =
                 event.data.stopReason === "stop" ? "Idle" : `Stopped: ${event.data.stopReason}`;
@@ -728,7 +728,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#deferredTurnSeparator = false;
             this.#workSegmentStartedAtMs = undefined;
             this.#discardPendingToolCallEntries();
-            this.#running = false;
+            this.#setRunning(false);
             this.#modelLocked = this.#pendingPrompts.length > 0;
             this.#statusText = "Error";
             this.#stopActivityAnimation();
@@ -1887,7 +1887,7 @@ export class CodingAssistantApp implements Component, Focusable {
         const runToken = ++this.#runToken;
         this.#abortController = controller;
         this.#abortNotified = false;
-        this.#running = true;
+        this.#setRunning(true);
         this.#statusText = "Running";
         this.#streamEntryId = undefined;
         this.#thinkingEntryIdsByContentIndex.clear();
@@ -1960,7 +1960,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 if (this.#abortController === controller) {
                     this.#abortController = undefined;
                 }
-                this.#running = false;
+                this.#setRunning(false);
                 this.#discardPendingToolCallEntries();
                 this.#stopActivityAnimation();
                 this.#streamEntryId = undefined;
@@ -1981,33 +1981,37 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #handleEscape(): void {
-        const doubleEscape = this.#registerEscapePress();
-        if (doubleEscape) this.#clearComposerDraftToHistory();
+        if (this.#running) {
+            this.#lastEscapeAtMs = undefined;
+            if (
+                this.#pendingSteeringMessages.length > 0 &&
+                this.#sessionBacked &&
+                this.#agent.abort !== undefined
+            ) {
+                this.#sendPendingSteeringNow();
+                return;
+            }
 
-        if (
-            this.#running &&
-            this.#pendingSteeringMessages.length > 0 &&
-            this.#sessionBacked &&
-            this.#agent.abort !== undefined
-        ) {
-            this.#sendPendingSteeringNow();
+            this.#restoreQueuedPromptsToComposer();
+            if (this.#abortActiveRun()) return;
+            if (this.#sessionBacked && this.#agent.abort !== undefined) {
+                this.#statusText = "Stopping";
+                void Promise.resolve(this.#agent.abort()).catch((error: unknown) => {
+                    this.#statusText = "Error";
+                    this.#appendEntry({ role: "error", text: this.#formatError(error) });
+                    this.#requestRender();
+                });
+            }
             return;
         }
 
-        if (!this.#running && !doubleEscape && this.#editor.getText().trim().length > 0) {
+        const doubleEscape = this.#registerEscapePress();
+        if (doubleEscape) this.#clearComposerDraftToHistory();
+        if (!doubleEscape && this.#editor.getText().trim().length > 0) {
             return;
         }
 
         this.#restoreQueuedPromptsToComposer();
-        if (this.#abortActiveRun()) return;
-        if (this.#running && this.#sessionBacked && this.#agent.abort !== undefined) {
-            this.#statusText = "Stopping";
-            void Promise.resolve(this.#agent.abort()).catch((error: unknown) => {
-                this.#statusText = "Error";
-                this.#appendEntry({ role: "error", text: this.#formatError(error) });
-                this.#requestRender();
-            });
-        }
     }
 
     #registerEscapePress(): boolean {
@@ -2030,7 +2034,7 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #sendPendingSteeringNow(): void {
-        if (this.#sendingPendingSteering || this.#agent.abort === undefined) return;
+        if (this.#agent.abort === undefined) return;
         this.#sendingPendingSteering = true;
         this.#statusText = "Sending pending messages";
         this.#requestRender();
@@ -2121,7 +2125,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#runToken += 1;
         controller.abort();
         this.#abortController = undefined;
-        this.#running = false;
+        this.#setRunning(false);
         this.#statusText = "Idle";
         this.#discardPendingToolCallEntries();
         this.#thinkingEntryIdsByContentIndex.clear();
@@ -4723,5 +4727,10 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#cursorVisible = false;
         }
         this.#requestRender();
+    }
+
+    #setRunning(running: boolean): void {
+        if (this.#running !== running) this.#lastEscapeAtMs = undefined;
+        this.#running = running;
     }
 }
