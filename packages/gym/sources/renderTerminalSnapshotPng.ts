@@ -17,8 +17,8 @@ export async function renderTerminalSnapshotPng(
     const cellWidth = options.cellWidth ?? 10;
     const cellHeight = options.cellHeight ?? 20;
     const padding = options.padding ?? 16;
-    const background = options.background ?? "#0f1115";
-    const foreground = options.foreground ?? "#d8dee9";
+    const background = options.background ?? terminalColor(snapshot.defaultBackground, "#0f1115");
+    const foreground = options.foreground ?? terminalColor(snapshot.defaultForeground, "#d8dee9");
     const fontFamily = options.fontFamily ?? "SFMono-Regular, Menlo, Monaco, Consolas, monospace";
     const fontSize = options.fontSize ?? 14;
     const columns = Math.max(

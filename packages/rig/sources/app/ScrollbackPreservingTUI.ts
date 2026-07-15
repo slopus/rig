@@ -16,6 +16,7 @@ export class ScrollbackPreservingTUI extends TUI {
         }
         const shouldForce = force || this.#forceRenderAfterResize;
         this.#forceRenderAfterResize = false;
+        if (shouldForce) this.terminal.write("\x1b[0m");
         super.requestRender(shouldForce);
     }
 }

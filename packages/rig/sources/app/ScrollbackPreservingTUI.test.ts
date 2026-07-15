@@ -4,6 +4,22 @@ import type { Component, Terminal } from "@earendil-works/pi-tui";
 import { ScrollbackPreservingTUI } from "./ScrollbackPreservingTUI.js";
 
 describe("ScrollbackPreservingTUI", () => {
+    it("resets terminal styling before a forced full redraw clears the screen", async () => {
+        const terminal = new RecordingTerminal(20, 5);
+        const tui = new ScrollbackPreservingTUI(terminal, false);
+        tui.addChild({ invalidate: () => {}, render: () => ["frame"] });
+        tui.start();
+        await renderCycle();
+        terminal.output.length = 0;
+
+        tui.requestRender(true);
+        await renderCycle();
+
+        expect(terminal.output[0]).toBe("\x1b[0m");
+        expect(terminal.output.join("")).toContain("\x1b[?2026h\x1b[2J");
+        tui.stop();
+    });
+
     it("replays source-rendered history once at the new width", async () => {
         const terminal = new RecordingTerminal(20, 5);
         const tui = new ScrollbackPreservingTUI(terminal, false);

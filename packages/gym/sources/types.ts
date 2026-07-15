@@ -83,9 +83,12 @@ export interface TerminalScrollSnapshot {
 export interface TerminalSnapshot {
     cells: readonly TerminalCellSnapshot[];
     cursor: TerminalCursorSnapshot;
+    defaultBackground: TerminalColorSnapshot;
+    defaultForeground: TerminalColorSnapshot;
     outputRevision: number;
     rows: readonly string[];
     scroll: TerminalScrollSnapshot;
+    synchronizedOutputActive: boolean;
     text: string;
     title: string;
 }

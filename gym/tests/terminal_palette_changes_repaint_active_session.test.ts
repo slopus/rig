@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 import {
     createGym,
+    renderTerminalSnapshotPng,
     type Gym,
     type TerminalCellSnapshot,
     type TerminalColorScheme,
@@ -11,6 +12,8 @@ import {
 
 const running = new Set<Gym>();
 const prompt = "Keep this turn active while the terminal palette changes.";
+const composerPlaceholder = "Ask Rig to do anything";
+const terminalWidth = 100;
 
 afterEach(async () => {
     await Promise.all([...running].map((gym) => gym.dispose()));
@@ -20,6 +23,7 @@ afterEach(async () => {
 describe("terminal palette changes during an active session", () => {
     it("repaints retained text and the composer from light to dark and back to light", async () => {
         const gym = await createGym({
+            cols: terminalWidth,
             inference: [
                 {
                     content: [{ text: "Palette transition complete.", type: "text" }],
@@ -34,68 +38,140 @@ describe("terminal palette changes during an active session", () => {
         gym.terminal.press("enter");
         await gym.terminal.waitForText(prompt);
 
-        const dark = await transition(gym, "dark", 235);
-        await captureProof(gym, dark, "dark");
+        const dark = await transition(gym, "dark");
+        await captureProof(dark, "dark");
 
-        const light = await transition(gym, "light", 254);
-        await captureProof(gym, light, "light");
+        const light = await transition(gym, "light");
+        await captureProof(light, "light");
 
-        expect(surfaceBackgrounds(dark, prompt)).toEqual([235]);
-        expect(surfaceBackgrounds(dark, "Ask Rig to do anything")).toEqual([235]);
-        expect(surfaceBackgrounds(light, prompt)).toEqual([254]);
-        expect(surfaceBackgrounds(light, "Ask Rig to do anything")).toEqual([254]);
+        assertCompletePalette(dark, "dark");
+        assertCompletePalette(light, "light");
         expect(dark.scroll.atBottom).toBe(true);
         expect(light.scroll.atBottom).toBe(true);
     });
 });
 
-async function transition(
-    gym: Gym,
-    colorScheme: TerminalColorScheme,
-    expectedBackground: number,
-): Promise<TerminalSnapshot> {
+async function transition(gym: Gym, colorScheme: TerminalColorScheme): Promise<TerminalSnapshot> {
     gym.terminal.setColorScheme(colorScheme);
-    return gym.terminal
-        .waitUntil(
-            (snapshot) =>
-                surfaceBackgrounds(snapshot, prompt).includes(expectedBackground) &&
-                surfaceBackgrounds(snapshot, "Ask Rig to do anything").includes(expectedBackground),
-            `${colorScheme} palette repaint`,
+    try {
+        return await gym.terminal.waitUntil(
+            (snapshot) => hasCompletePalette(snapshot, colorScheme),
+            `${colorScheme} whole-screen palette repaint`,
             2_000,
-        )
-        .catch(() => gym.terminal.snapshot());
+        );
+    } catch (error) {
+        const snapshot = await gym.terminal.snapshot();
+        await captureProof(snapshot, colorScheme);
+        throw new Error(
+            `${String(error)}\nPalette diagnostics: ${JSON.stringify(paletteDiagnostics(snapshot))}`,
+        );
+    }
 }
 
-function surfaceBackgrounds(snapshot: TerminalSnapshot, text: string): number[] {
-    const row = snapshot.rows.findIndex((line) => line.includes(text));
-    if (row < 0) return [];
-    const backgrounds = cellsOnRow(snapshot, row)
+function paletteDiagnostics(snapshot: TerminalSnapshot): object {
+    const backgrounds = new Map<string, number>();
+    for (const cell of snapshot.cells) {
+        const key = JSON.stringify(cell.background);
+        backgrounds.set(key, (backgrounds.get(key) ?? 0) + 1);
+    }
+    return {
+        backgrounds: Object.fromEntries(backgrounds),
+        defaultBackground: snapshot.defaultBackground,
+        defaultForeground: snapshot.defaultForeground,
+        synchronizedOutputActive: snapshot.synchronizedOutputActive,
+    };
+}
+
+function hasCompletePalette(snapshot: TerminalSnapshot, colorScheme: TerminalColorScheme): boolean {
+    try {
+        assertCompletePalette(snapshot, colorScheme);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function assertCompletePalette(snapshot: TerminalSnapshot, colorScheme: TerminalColorScheme): void {
+    const light = colorScheme === "light";
+    const expectedSurface = light ? 254 : 235;
+    const staleSurface = light ? 235 : 254;
+    const expectedForeground = light ? 0x0d : 0xee;
+    const expectedBackground = light ? 0xee : 0x0d;
+    expect(snapshot.synchronizedOutputActive).toBe(false);
+    expect(snapshot.defaultForeground).toEqual({
+        kind: "rgb",
+        red: expectedForeground,
+        green: expectedForeground,
+        blue: expectedForeground,
+    });
+    expect(snapshot.defaultBackground).toEqual({
+        kind: "rgb",
+        red: expectedBackground,
+        green: expectedBackground,
+        blue: expectedBackground,
+    });
+    expect(snapshot.text).toContain("██████╗ ██╗ ██████╗");
+    expect(snapshot.text).toContain(prompt);
+    expect(snapshot.text).toContain("Working");
+    expect(snapshot.text).toContain(composerPlaceholder);
+    expect(snapshot.text).toContain("gym off · /workspace · main [default] · full access");
+
+    const explicitBackgrounds = snapshot.cells
         .map((cell) => cell.background)
-        .filter(
-            (background): background is { kind: "palette"; index: number } =>
-                background?.kind === "palette",
-        )
-        .map((background) => background.index)
-        .filter((index) => index !== 244);
-    return [...new Set(backgrounds)];
+        .filter((background): background is NonNullable<typeof background> => background !== null);
+    expect(explicitBackgrounds).not.toContainEqual({ kind: "palette", index: staleSurface });
+    expect(
+        explicitBackgrounds.filter(
+            (background) =>
+                !(
+                    background.kind === "palette" &&
+                    (background.index === expectedSurface || background.index === 244)
+                ),
+        ),
+    ).toEqual([]);
+    expect(
+        explicitBackgrounds.filter(
+            (background) => background.kind === "palette" && background.index === 244,
+        ),
+    ).toHaveLength(1);
+
+    const promptRow = rowContaining(snapshot, prompt);
+    expect(cellsOnRow(snapshot, promptRow)).toHaveLength(terminalWidth);
+    expect(rowBackgroundIndexes(snapshot, promptRow)).toEqual([expectedSurface]);
+    const composerRow = rowContaining(snapshot, composerPlaceholder);
+    expect(cellsOnRow(snapshot, composerRow)).toHaveLength(terminalWidth);
+    expect(rowBackgroundIndexes(snapshot, composerRow)).toEqual(
+        [244, expectedSurface].sort((left, right) => left - right),
+    );
 }
 
 function cellsOnRow(snapshot: TerminalSnapshot, row: number): TerminalCellSnapshot[] {
     return snapshot.cells.filter((cell) => cell.y === row);
 }
 
+function rowBackgroundIndexes(snapshot: TerminalSnapshot, row: number): number[] {
+    return [
+        ...new Set(
+            cellsOnRow(snapshot, row).flatMap((cell) =>
+                cell.background?.kind === "palette" ? [cell.background.index] : [],
+            ),
+        ),
+    ].sort((left, right) => left - right);
+}
+
+function rowContaining(snapshot: TerminalSnapshot, text: string): number {
+    const row = snapshot.rows.findIndex((line) => line.includes(text));
+    if (row < 0) throw new Error(`Could not find ${JSON.stringify(text)} in terminal snapshot.`);
+    return row;
+}
+
 async function captureProof(
-    gym: Gym,
     snapshot: TerminalSnapshot,
     colorScheme: TerminalColorScheme,
 ): Promise<void> {
     const directory = process.env.RIG_LIVE_THEME_PROOF_DIR;
     const label = process.env.RIG_LIVE_THEME_PROOF_LABEL;
     if (directory === undefined || label === undefined) return;
-    const light = colorScheme === "light";
-    await gym.terminal.screenshot(resolve(directory, `${label}-${colorScheme}.png`), {
-        background: light ? "#eeeeee" : "#0d0d0d",
-        foreground: light ? "#0d0d0d" : "#eeeeee",
-    });
+    await renderTerminalSnapshotPng(snapshot, resolve(directory, `${label}-${colorScheme}.png`));
     expect(snapshot.rows).toHaveLength(32);
 }

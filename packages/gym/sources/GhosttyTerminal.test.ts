@@ -71,6 +71,54 @@ describe("GhosttyTerminal cell styles", () => {
         expect(replies.join("")).toContain("\x1b]11;");
         expect(output.join("")).not.toContain("rgb:");
     });
+
+    it("normalizes cleared cells back to the effective default background", async () => {
+        const terminal = await GhosttyTerminal.create(20, 4);
+        running.add(terminal);
+
+        terminal.write("\x1b[48;5;235m\x1b[2J");
+        const snapshot = await terminal.snapshot();
+
+        expect(snapshot.cells).toEqual([]);
+        expect(snapshot.defaultBackground).toEqual({
+            kind: "rgb",
+            red: 13,
+            green: 13,
+            blue: 13,
+        });
+    });
+
+    it("tracks synchronized output markers split across PTY chunks", async () => {
+        const terminal = await GhosttyTerminal.create(20, 4);
+        running.add(terminal);
+
+        terminal.write("\x1b[?20");
+        terminal.write("26hframe");
+        expect((await terminal.snapshot()).synchronizedOutputActive).toBe(true);
+
+        terminal.write("\x1b[?2026");
+        terminal.write("l");
+        expect((await terminal.snapshot()).synchronizedOutputActive).toBe(false);
+    });
+
+    it("reports updated effective terminal defaults", async () => {
+        const terminal = await GhosttyTerminal.create(20, 4, "light");
+        running.add(terminal);
+
+        const snapshot = await terminal.snapshot();
+        expect(snapshot.defaultForeground).toEqual({
+            kind: "rgb",
+            red: 13,
+            green: 13,
+            blue: 13,
+        });
+        expect(snapshot.defaultBackground).toEqual({
+            kind: "rgb",
+            red: 238,
+            green: 238,
+            blue: 238,
+        });
+    });
 });
 
 describe("GhosttyTerminal scroll tracking", () => {

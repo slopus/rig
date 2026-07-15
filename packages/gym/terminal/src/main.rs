@@ -68,9 +68,15 @@ struct Scroll {
 struct Snapshot {
     cells: Vec<Cell>,
     cursor: Cursor,
+    #[serde(rename = "defaultBackground")]
+    default_background: Color,
+    #[serde(rename = "defaultForeground")]
+    default_foreground: Color,
     id: u64,
     rows: Vec<String>,
     scroll: Scroll,
+    #[serde(rename = "synchronizedOutputActive")]
+    synchronized_output_active: bool,
     text: String,
     title: String,
 }
@@ -86,6 +92,11 @@ struct ScrollTracker {
     last_at_bottom: bool,
     last_at_top: bool,
     top_arrival_count: u64,
+}
+
+struct SynchronizedOutputTracker {
+    active: bool,
+    suffix: Vec<u8>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -116,6 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             move |_terminal, data| pty_writes.borrow_mut().push(data.to_vec())
         })?;
     let mut scroll_tracker = ScrollTracker::new(&terminal)?;
+    let mut synchronized_output_tracker = SynchronizedOutputTracker::new();
 
     for line in stdin.lock().lines() {
         match serde_json::from_str::<Command>(&line?)? {
@@ -150,6 +162,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Command::Write { data } => {
                 let decoded = STANDARD.decode(data)?;
+                synchronized_output_tracker.observe(&decoded);
                 terminal.vt_write(&decoded);
                 if contains(&decoded, b"\x1b[?2031h") {
                     color_scheme_notifications_enabled = true;
@@ -181,13 +194,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 stdout.flush()?;
             }
             Command::Snapshot { id } => {
-                serde_json::to_writer(&mut stdout, &snapshot(&terminal, &scroll_tracker, id)?)?;
+                serde_json::to_writer(
+                    &mut stdout,
+                    &snapshot(
+                        &terminal,
+                        &scroll_tracker,
+                        &synchronized_output_tracker,
+                        default_fg,
+                        default_bg,
+                        id,
+                    )?,
+                )?;
                 stdout.write_all(b"\n")?;
                 stdout.flush()?;
             }
         }
     }
     Ok(())
+}
+
+impl SynchronizedOutputTracker {
+    fn new() -> Self {
+        Self {
+            active: false,
+            suffix: Vec::new(),
+        }
+    }
+
+    fn observe(&mut self, data: &[u8]) {
+        const BEGIN: &[u8] = b"\x1b[?2026h";
+        const END: &[u8] = b"\x1b[?2026l";
+        for byte in data {
+            self.suffix.push(*byte);
+            if self.suffix.ends_with(BEGIN) {
+                self.active = true;
+                self.suffix.clear();
+            } else if self.suffix.ends_with(END) {
+                self.active = false;
+                self.suffix.clear();
+            } else if self.suffix.len() >= BEGIN.len() {
+                self.suffix.remove(0);
+            }
+        }
+    }
 }
 
 fn contains(data: &[u8], needle: &[u8]) -> bool {
@@ -271,6 +320,9 @@ fn is_at_top(total: u64, offset: u64, visible: u64) -> bool {
 fn snapshot(
     terminal: &Terminal<'_, '_>,
     scroll_tracker: &ScrollTracker,
+    synchronized_output_tracker: &SynchronizedOutputTracker,
+    default_fg: RgbColor,
+    default_bg: RgbColor,
     id: u64,
 ) -> Result<Snapshot, Box<dyn std::error::Error>> {
     let cols = terminal.cols()?;
@@ -283,17 +335,19 @@ fn snapshot(
             let cell =
                 terminal.grid_ref(Point::Viewport(PointCoordinate { x, y: u32::from(y) }))?;
             let value = cell.cell()?;
+            let style = cell.style()?;
+            let background = color(style.bg_color);
+            let foreground = color(style.fg_color);
             if value.has_text()? {
                 let mut graphemes = ['\0'; 16];
                 let length = cell.graphemes(&mut graphemes)?;
                 let text = graphemes[..length].iter().collect::<String>();
                 line.push_str(&text);
-                let style = cell.style()?;
                 cells.push(Cell {
-                    background: color(style.bg_color),
+                    background,
                     bold: style.bold,
                     dim: style.faint,
-                    foreground: color(style.fg_color),
+                    foreground,
                     italic: style.italic,
                     text,
                     x,
@@ -301,6 +355,23 @@ fn snapshot(
                 });
             } else if !matches!(value.wide()?, libghostty_vt::screen::CellWide::SpacerTail) {
                 line.push(' ');
+                if background.is_some()
+                    || foreground.is_some()
+                    || style.bold
+                    || style.faint
+                    || style.italic
+                {
+                    cells.push(Cell {
+                        background,
+                        bold: style.bold,
+                        dim: style.faint,
+                        foreground,
+                        italic: style.italic,
+                        text: " ".to_owned(),
+                        x,
+                        y,
+                    });
+                }
             }
         }
         rows.push(line.trim_end().to_owned());
@@ -314,6 +385,8 @@ fn snapshot(
             x: terminal.cursor_x()?,
             y: terminal.cursor_y()?,
         },
+        default_background: rgb_color(default_bg),
+        default_foreground: rgb_color(default_fg),
         id,
         rows,
         scroll: Scroll {
@@ -325,9 +398,18 @@ fn snapshot(
             total_rows: scrollbar.total,
             visible_rows: scrollbar.len,
         },
+        synchronized_output_active: synchronized_output_tracker.active,
         text,
         title: terminal.title()?.to_owned(),
     })
+}
+
+fn rgb_color(value: RgbColor) -> Color {
+    Color::Rgb {
+        red: value.r,
+        green: value.g,
+        blue: value.b,
+    }
 }
 
 fn color(value: StyleColor) -> Option<Color> {
