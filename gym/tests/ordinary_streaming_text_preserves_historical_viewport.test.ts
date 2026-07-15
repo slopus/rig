@@ -36,14 +36,18 @@ describe("ordinary streaming text while reading history", () => {
                 if (callIndex < responses.length) {
                     return { content: [{ text: responses[callIndex] ?? "", type: "text" }] };
                 }
-                expect(callIndex).toBe(3);
-                finalRequestStarted.resolve();
-                await releaseFinalAnswer.promise;
-                return {
-                    content: [{ text: streamedAnswer, type: "text" }],
-                    textDeltaChunkSize: 19,
-                    textDeltaDelayMs: 15,
-                };
+                if (callIndex === 3) {
+                    finalRequestStarted.resolve();
+                    await releaseFinalAnswer.promise;
+                    return {
+                        completionDelayMs: 800,
+                        content: [{ text: streamedAnswer, type: "text" }],
+                        textDeltaChunkSize: 19,
+                        textDeltaDelayMs: 15,
+                    };
+                }
+                expect(callIndex).toBe(4);
+                return { content: [{ text: "ORDINARY_FOLLOW_UP", type: "text" }] };
             },
             rows: 16,
         });
@@ -67,7 +71,8 @@ describe("ordinary streaming text while reading history", () => {
             30_000,
         );
 
-        gym.terminal.scrollBy(-70);
+        gym.terminal.scrollToTop();
+        gym.terminal.scrollBy(70);
         const anchored = await gym.terminal.snapshot();
         expect(anchored.scroll.atTop).toBe(false);
         expect(anchored.scroll.atBottom).toBe(false);
@@ -94,6 +99,8 @@ describe("ordinary streaming text while reading history", () => {
 
         const middleOutput = waitForTerminalOutput(gym, "ORDINARY_STREAM_MIDDLE", 30_000);
         const finalOutput = waitForTerminalOutput(gym, "ORDINARY_STREAM_END", 30_000);
+        const output: string[] = [];
+        const stopOutputCapture = gym.terminal.onOutput((data) => output.push(data));
         releaseFinalAnswer.resolve();
 
         await middleOutput;
@@ -103,13 +110,40 @@ describe("ordinary streaming text while reading history", () => {
         assertHistoricalAnchor(duringStream, anchor);
         await writeProof(gym, "ordinary-02-during-stream.png");
 
+        gym.terminal.scrollToBottom();
+        const liveMiddleBottom = await gym.terminal.waitUntil(
+            (snapshot) =>
+                snapshot.text.includes("ORDINARY_STREAM_MIDDLE") &&
+                snapshot.text.includes("esc to interrupt") &&
+                snapshot.scroll.atBottom,
+            "the current live tail during ordinary streaming",
+            30_000,
+        );
+        expect(liveMiddleBottom.text).not.toContain("ORDINARY_STREAM_END");
+
+        gym.terminal.scrollToTop();
+        gym.terminal.scrollBy(anchor.offset);
+        const anchoredAgain = await gym.terminal.snapshot();
+        expect(anchoredAgain.rows).toEqual(anchor.rows);
+        expect(anchoredAgain.text).toBe(anchor.text);
+
         await finalOutput;
         const afterStream = await gym.terminal.snapshot();
         expect(afterStream.scroll.totalRows).toBeGreaterThan(anchor.totalRows + 40);
-        assertHistoricalAnchor(afterStream, anchor);
+        expect(afterStream.rows).toEqual(anchor.rows);
+        expect(afterStream.text).toBe(anchor.text);
         await writeProof(gym, "ordinary-03-after-stream.png");
 
         gym.terminal.scrollToBottom();
+        const beforeSettlement = await gym.terminal.waitUntil(
+            (snapshot) =>
+                snapshot.text.includes("ORDINARY_STREAM_END") &&
+                snapshot.text.includes("esc to interrupt") &&
+                snapshot.scroll.atBottom,
+            "the final streamed frame immediately before settlement",
+            30_000,
+        );
+        expect(beforeSettlement.text).toContain("Working");
         const completed = await gym.terminal.waitUntil(
             (snapshot) =>
                 snapshot.text.includes("ORDINARY_STREAM_END") &&
@@ -120,6 +154,20 @@ describe("ordinary streaming text while reading history", () => {
         );
         expect(completed.text).not.toContain("Session interrupted");
         expect(completed.text).not.toContain("�");
+        expect(output.join("")).not.toContain("\x1b[3J");
+        expect(output.join("")).not.toContain("\x1b[2J\x1b[H");
+        stopOutputCapture();
+
+        submit(gym, "Render one later revision after live return-to-bottom transitions.");
+        const followUp = await gym.terminal.waitUntil(
+            (snapshot) =>
+                snapshot.text.includes("ORDINARY_FOLLOW_UP") &&
+                snapshot.text.includes("Ask Rig to do anything") &&
+                snapshot.scroll.atBottom,
+            "a later healthy revision after streamed return-to-bottom",
+            30_000,
+        );
+        expect(followUp.text).not.toContain("�");
 
         const transcript = await captureScrollback(gym);
         expect(countOccurrences(transcript, "FIRST_HISTORY_BEGIN")).toBe(1);
@@ -127,14 +175,15 @@ describe("ordinary streaming text while reading history", () => {
         expect(countOccurrences(transcript, "THIRD_HISTORY_BEGIN")).toBe(1);
         expect(countOccurrences(transcript, "ORDINARY_STREAM_BEGIN")).toBe(1);
         expect(countOccurrences(transcript, "ORDINARY_STREAM_END")).toBe(1);
+        expect(countOccurrences(transcript, "ORDINARY_FOLLOW_UP")).toBe(1);
 
         const agentRequests = gym.inference.requests.filter(
             (request) => !request.options.sessionId?.endsWith(":title"),
         );
-        expect(agentRequests).toHaveLength(4);
+        expect(agentRequests).toHaveLength(5);
         expect(
             agentRequests
-                .slice(1)
+                .slice(1, 4)
                 .map((request) => request.context.messages.at(-1))
                 .map((message) => messageText(message?.content)),
         ).toEqual(["again", "again", "again"]);
