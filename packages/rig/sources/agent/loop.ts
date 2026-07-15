@@ -369,7 +369,10 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
 
         providerMessages.push(assistantMessage);
 
-        const agentMessage = assistantMessageToAgentMessage(assistantMessage, idFactory);
+        const agentMessage = assistantMessageToAgentMessage(assistantMessage, idFactory, {
+            providerId: options.provider.id,
+            requestedModelId: model.id,
+        });
         transcript.push(agentMessage);
         contextTranscript.push(agentMessage);
         await options.onMessage?.(agentMessage);

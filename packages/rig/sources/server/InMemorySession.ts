@@ -2694,7 +2694,10 @@ export class InMemorySession {
             ...activePartial,
             position,
         };
-        const message = assistantMessageToAgentMessage(partial, () => activePartial.fallbackId);
+        const message = assistantMessageToAgentMessage(partial, () => activePartial.fallbackId, {
+            providerId: this.#providerId,
+            requestedModelId: this.#modelId,
+        });
         this.#storeMessage(position, message, true, runId);
     }
 }

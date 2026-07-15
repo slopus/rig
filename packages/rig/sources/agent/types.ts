@@ -76,6 +76,10 @@ export interface AgentMessage {
     blocks: readonly AgentBlock[];
     /** Provider-reported usage for inference messages. Tool-result messages omit it. */
     usage?: Usage;
+    /** Durable inference attribution. Legacy and tool-result messages omit these fields. */
+    providerId?: string;
+    requestedModelId?: string;
+    responseModel?: string;
 }
 
 export type Message = SystemMessage | UserMessage | AgentMessage;

@@ -8,12 +8,22 @@ import type {
 export function assistantMessageToAgentMessage(
     message: ProviderAssistantMessage,
     fallbackId: () => string,
+    attribution?: { providerId: string; requestedModelId: string },
 ): AgentMessage {
     return {
         role: "agent",
         id: message.responseId ?? fallbackId(),
         blocks: message.content.map(providerAssistantContentToAgentBlock),
         usage: message.usage,
+        ...(attribution === undefined
+            ? {}
+            : {
+                  providerId: attribution.providerId,
+                  requestedModelId: attribution.requestedModelId,
+                  ...(message.responseModel === undefined
+                      ? {}
+                      : { responseModel: message.responseModel }),
+              }),
     };
 }
 
