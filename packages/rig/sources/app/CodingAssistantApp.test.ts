@@ -3843,6 +3843,69 @@ describe("CodingAssistantApp", () => {
         expect(stripAnsi(app.render(80).join("\n"))).toContain("› [Image #1 PNG]");
     });
 
+    it("restores image history as a real attachment after clearing and submitting", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const contexts: Context[] = [];
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream(_model, context) {
+                contexts.push(context);
+                return streamText("image restored");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            now: () => 100,
+            processManager: new NativeProxessManager(),
+            readClipboardImage: async () => ({
+                data: validPng32Base64,
+                mediaType: "image/png",
+                path: "/workspace/.context/clipboard-images/history.png",
+            }),
+            tui: fakeTui(),
+        });
+
+        app.handleInput("explain ");
+        app.handleInput("\x16");
+        await delay(0);
+        app.handleInput("\x1b");
+        app.handleInput("\x1b");
+        app.handleInput("\x1b[A");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› explain [Image #1 PNG]");
+
+        app.handleInput("\r");
+        await app.waitForIdle();
+        app.handleInput("\x1b[A");
+        app.handleInput("\r");
+        await app.waitForIdle();
+
+        expect(contexts).toHaveLength(2);
+        for (const context of contexts) {
+            expect(
+                context.messages.filter((message) => message.role === "user").at(-1),
+            ).toMatchObject({
+                role: "user",
+                content: [
+                    { type: "text", text: "explain " },
+                    { type: "image", mimeType: "image/png", data: validPng32Base64 },
+                ],
+            });
+        }
+    });
+
     it("pastes multiple clipboard images into one prompt", async () => {
         const model = defineModel({
             id: "openai/gpt-test",

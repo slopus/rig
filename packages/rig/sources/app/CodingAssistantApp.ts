@@ -1321,7 +1321,6 @@ export class CodingAssistantApp implements Component, Focusable {
                 return;
             }
             await this.#agent.steer(submission.content, { displayText: submission.displayText });
-            this.#clearSubmittedImages(prompt);
             if (!this.#sessionBacked) this.#appendEntry({ role: "user", text: prompt });
             this.#requestRender();
             return;
@@ -1385,16 +1384,6 @@ export class CodingAssistantApp implements Component, Focusable {
         }
 
         return blocks;
-    }
-
-    #clearSubmittedImages(prompt: string): void {
-        for (const match of prompt.matchAll(IMAGE_PLACEHOLDER_REGEX)) {
-            const imageId = Number(match[1]);
-            const image = this.#pastedImagesById.get(imageId);
-            if (image !== undefined && image.placeholder === match[0]) {
-                this.#pastedImagesById.delete(imageId);
-            }
-        }
     }
 
     async #submitSkillCommand(prompt: string): Promise<void> {
@@ -2031,7 +2020,6 @@ export class CodingAssistantApp implements Component, Focusable {
                 return;
             }
             this.#pendingPrompts.shift();
-            this.#clearSubmittedImages(prompt.displayText);
             if (!this.#sessionBacked && prompt.transcriptAppended !== true) {
                 this.#appendEntry({ role: "user", text: prompt.displayText });
             }
@@ -2148,7 +2136,6 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#editor.setText("");
         this.#fileMentionAutocomplete?.clear();
         this.#dismissedSlashCommandText = undefined;
-        this.#pastedImagesById.clear();
     }
 
     #sendPendingSteeringNow(): void {
@@ -4862,7 +4849,6 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#editor.setText("");
             this.#fileMentionAutocomplete?.clear();
             this.#dismissedSlashCommandText = undefined;
-            this.#pastedImagesById.clear();
             this.#requestRender();
             return;
         }
