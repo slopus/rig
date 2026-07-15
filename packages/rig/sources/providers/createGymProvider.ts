@@ -108,6 +108,12 @@ export function createGymProvider(options: CreateGymProviderOptions) {
                     );
                 }
 
+                if (reply.completionDelayMs !== undefined && reply.completionDelayMs > 0) {
+                    await new Promise<void>((resolve) =>
+                        setTimeout(resolve, reply.completionDelayMs),
+                    );
+                }
+
                 if (stopReason === "error" || stopReason === "aborted") {
                     const event: AssistantMessageEvent = {
                         type: "error",

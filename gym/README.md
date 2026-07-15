@@ -367,6 +367,7 @@ Normal responses support:
 ```ts
 interface GymInferenceResponse {
     content: readonly AssistantContent[];
+    completionDelayMs?: number;
     delayMs?: number;
     errorMessage?: string;
     responseModel?: string;
@@ -377,6 +378,8 @@ interface GymInferenceResponse {
 ```
 
 - `content` may contain text, thinking, or tool-call blocks accepted by Rig's provider types.
+- `completionDelayMs` delays the final provider result after content has streamed. It intentionally
+  continues through cancellation so tests can reproduce a completion already in flight.
 - `delayMs` delays the response inside the container-side provider and respects abort signals. Use it for interruption and concurrency scenarios.
 - `toolCallDeltaDelayMs` pauses after `toolcall_start` and before the arguments delta. Use it to exercise the live streamed-tool-call UI deterministically.
 - `stopReason` defaults to `toolUse` when any content block is a tool call, otherwise `stop`.

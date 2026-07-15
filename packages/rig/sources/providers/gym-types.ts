@@ -8,6 +8,7 @@ export interface GymInferenceRequest {
 }
 
 export interface GymInferenceResponse {
+    completionDelayMs?: number;
     content: readonly AssistantContent[];
     delayMs?: number;
     errorMessage?: string;

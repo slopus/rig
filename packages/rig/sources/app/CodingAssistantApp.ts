@@ -1895,7 +1895,6 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#running = false;
         this.#statusText = "Idle";
         this.#discardPendingToolCallEntries();
-        this.#streamEntryId = undefined;
         this.#thinkingEntryIdsByContentIndex.clear();
         this.#toolCallEntryIdsByContentIndex.clear();
         this.#markActiveToolCallsStopped();
@@ -2381,7 +2380,7 @@ export class CodingAssistantApp implements Component, Focusable {
             if (entry !== undefined) {
                 this.#flushDeferredTurnSeparator(entry);
                 entry.id = messageId;
-                entry.text = text;
+                if (!this.#abortNotified) entry.text = text;
                 this.#streamEntryId = undefined;
                 return;
             }
