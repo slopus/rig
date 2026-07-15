@@ -7,8 +7,9 @@
 <p>
   Use model-native prompts and tools with provider access already configured on
   your machine. Rig adds no account or subscription of its own, never pools or
-  resells provider access, and leaves provider terms and limits in force. Built by
-  the authors of
+  resells provider access, and leaves provider terms and limits in force. 
+  
+  Built by the authors of
   <a href="https://github.com/slopus/happy">Happy</a> and
   <a href="https://github.com/slopus/happy2">Happy 2</a>.
 </p>
