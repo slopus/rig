@@ -19,15 +19,20 @@ describe("formatSessionUsageSummary", () => {
         ).toBe(
             [
                 "Codex",
-                "GPT-5.6 · 1,200 in · 100 out · 40 read · 30 write · 20 reasoning · 1,370 total",
-                "5-hour: 68% left · resets in 2h 14m",
-                "Weekly: 79% left · resets in 6d 2h",
-                "Observed while this session was active: 5h +3.5% · week +1% (approx.)",
-                "Context: 1,300 / 200,000 · 99% left",
+                "  GPT-5.6",
+                "    1.4k total · 1.2k input · 100 output · 40 cache read · 30 cache write · 20 reasoning",
+                "    Context: 1.3k / 200k · 99.4% left",
+                "  Account quota",
+                "    5-hour: 68% left · resets in 2h 14m",
+                "    Weekly: 79% left · resets in 6d 2h",
+                "    Observed remaining: 5h -3.5% · week -1% (approx.)",
+                "",
                 "Earlier usage",
-                "Model unavailable · 5 in · 2 out · 0 read · 0 write · 7 total",
-                "Account usage may include other activity.",
-                "Overall session total: 1,377",
+                "  Model unavailable",
+                "    7 total · 5 input · 2 output · 0 cache read · 0 cache write",
+                "",
+                "Observed remaining may include other account activity.",
+                "Session total: 1.4k",
             ].join("\n"),
         );
     });
@@ -53,10 +58,8 @@ describe("formatSessionUsageSummary", () => {
         const text = formatSessionUsageSummary(value, [{ model: codex, providerId: "codex" }]);
         expect(text).toContain("5-hour: unavailable");
         expect(text).toContain("Weekly: unavailable");
-        expect(text).toContain(
-            "Observed while this session was active: 5h unavailable · week unavailable (approx.)",
-        );
-        expect(text).toContain("Context: ~1,300 / 200,000");
+        expect(text).not.toContain("Observed remaining:");
+        expect(text).toContain("Context: ~1.3k / 200k");
     });
 
     it("shows authoritative Claude cost and keeps provider observations separate", () => {
@@ -86,12 +89,48 @@ describe("formatSessionUsageSummary", () => {
         ];
 
         const text = formatSessionUsageSummary(value, [{ model: codex, providerId: "codex" }]);
-        expect(text).toContain("anthropic/sonnet-4-6 · 100 in · 20 out");
-        expect(text).toContain("120 total · $0.12");
-        expect(text).toContain(
-            "Observed while this session was active: 5h +0% · week +2% (approx.)",
+        expect(text).toContain("Claude\n  Sonnet 4 6\n    120 total · 100 input · 20 output");
+        expect(text).toContain("· $0.12");
+        expect(text).toContain("Observed remaining: week -2% (approx.)");
+        expect(text).toContain("Observed remaining may include other account activity.");
+    });
+
+    it("formats sub-one-percent quota values without a leading zero", () => {
+        const value = summary();
+        value.quotas[0]!.quota.windows.fiveHour = {
+            capturedAt: 1_000,
+            resetsAt: 2_000,
+            status: "available",
+            usedPercent: 99.8,
+        };
+        value.observedQuota[0]!.windows = {
+            fiveHour: { observedUsedPercent: 0.2 },
+            weekly: { observedUsedPercent: 0.9 },
+        };
+
+        const text = formatSessionUsageSummary(
+            value,
+            [{ model: codex, providerId: "codex" }],
+            1_000,
         );
-        expect(text).toContain("Account usage may include other activity.");
+        expect(text).toContain("5-hour: .2% left");
+        expect(text).toContain("Observed remaining: 5h -.2% · week -.9% (approx.)");
+    });
+
+    it("uses compact million-scale token labels", () => {
+        const value = summary();
+        value.groups = [
+            {
+                kind: "attributed",
+                modelId: codex.id,
+                providerId: "codex",
+                usage: usage(1_000_000, 0, 0, 0, 1_000_000),
+            },
+        ];
+
+        const text = formatSessionUsageSummary(value, [{ model: codex, providerId: "codex" }]);
+        expect(text).toContain("1m total · 1m input · 0 output");
+        expect(text).toContain("Session total: 1m");
     });
 });
 

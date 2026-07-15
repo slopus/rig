@@ -47,8 +47,10 @@ describe("settings reveal reasoning and usage without corrupting layout", () => 
 
         gym.terminal.type("/usage");
         gym.terminal.press("enter");
-        const usage = await gym.terminal.waitForText("Overall session total: 1,300");
-        expect(usage.text).toContain("Gym · 1,200 in · 100 out · 40 read · 30 write · 1,300 total");
+        const usage = await gym.terminal.waitForText("Session total: 1.3k");
+        expect(usage.text.replace(/\s+/gu, " ")).toContain(
+            "1.3k total · 1.2k input · 100 output · 40 cache read · 30 cache write",
+        );
         expect(usage.text).toContain("5-hour: unavailable");
 
         gym.terminal.type("/configure");

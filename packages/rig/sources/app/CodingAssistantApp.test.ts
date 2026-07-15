@@ -3495,11 +3495,25 @@ describe("CodingAssistantApp", () => {
 
         submit(app, "/usage");
         await vi.waitFor(() => {
-            const report = stripAnsi(app.render(100).join("\n"));
-            expect(report).toContain("GPT Test · 1,200 in · 100 out");
-            expect(report).toContain("5-hour: 68% left · resets in 2h 14m");
-            expect(report).toContain("Context: 1,300 / 200,000 · 99% left");
-            expect(report).toContain("Overall session total: 1,370");
+            const rows = stripAnsi(app.render(64).join("\n"))
+                .split("\n")
+                .map((row) => row.trimEnd());
+            const usageIndex = rows.indexOf("• Usage");
+            expect(rows.slice(usageIndex, usageIndex + 11)).toEqual([
+                "• Usage",
+                "  └ Codex",
+                "      GPT Test",
+                "        1.4k total · 1.2k input · 100 output · 40 cache read ·",
+                "        30 cache write",
+                "        Context: 1.3k / 200k · 99.4% left",
+                "      Account quota",
+                "        5-hour: 68% left · resets in 2h 14m",
+                "        Weekly: unavailable",
+                "    Session total: 1.4k",
+                "",
+            ]);
+            expect(rows.filter((row) => row.includes("└"))).toEqual(["  └ Codex"]);
+            expect(rows.every((row) => visibleWidth(row) <= 64)).toBe(true);
         });
     });
 
