@@ -4,6 +4,29 @@ This file tracks known defects, verified coverage gaps, and concrete follow-up w
 
 ## Product defects
 
+- [ ] Generate a conservative session title and recap after the session settles.
+    - Replace immediate first-message title generation with one structured title-and-recap call after the foreground agent stops, one minute passes without user input, and no subagent, workflow, or background terminal remains active.
+    - Cancel or restart settlement on user activity or renewed work, and discard stale generation results with a revision token.
+    - Send only a bounded set of recent real user messages and the final visible assistant text block from relevant turns; exclude tools, thinking, notifications, and intermediate stream deltas, with a marked partial fallback for interrupted turns.
+    - Ask for a 2–6 word title and short recap, conservatively preserving the current title unless it has become clearly misleading.
+    - Persist both values and show a one-line recap beneath each session in the resume picker.
+    - Add fake-clock state-machine coverage and a real session/resume regression.
+
+- [ ] Render the completed-turn elapsed time below the assistant output.
+    - The immutable `Worked for …` row currently appears before the completed response.
+    - Move it below that response, occupying the position where the live working status was, without moving earlier transcript content or making the composer jump.
+    - Add a real Gym/PTTY regression that verifies final row ordering for normal, interrupted, and tool-using turns.
+
+- [ ] Render blocked MCP servers as structured child rows.
+    - Keep `MCP servers blocked` as the parent row, then render each humanized server name and reason below it with a fixed child indent like `/agents`.
+    - Preserve stable wrapping, terminal-width bounds, input order, and immutable transcript behavior.
+    - Add exact wide/narrow row assertions and a two-server real Gym regression.
+
+- [ ] Support a trusted machine-level permission ceiling.
+    - Let machine/runtime configuration cap selectable session modes, including a ceiling of Auto that forbids Full access.
+    - Enforce the ceiling server-side for creation, protocol changes, spawn, restore, and descendants; filter forbidden modes from the UI.
+    - Keep project configuration unable to raise or define the ceiling.
+
 - [x] Align Auto-mode reviews with Codex risk thresholds, including MCP actions.
     - Trusted MCP tools are available in Auto and use the same per-action reviewer as shell and host-access tools.
     - Low- and medium-risk work proceeds without redundant approval; narrowly scoped high-risk work proceeds only with clear user authorization.
@@ -57,6 +80,7 @@ This file tracks known defects, verified coverage gaps, and concrete follow-up w
 
 - [ ] Fix daemon-shutdown persistence races.
     - Shutdown can close the database while `PersistentSessionStore.saveSession()` is still running, producing `database is not open`.
+    - Track and drain run cleanup, title/recap generation, workflows, and subagent notifications before closing SQLite; reject new mutations once shutdown begins.
 
 - [x] Fix transcript-preserving resize behavior while reading scrollback.
     - Resize notifications settle for 75 ms, then one full redraw clears Rig-owned scrollback and rebuilds from canonical transcript entries at the final size.
@@ -112,15 +136,13 @@ This file tracks known defects, verified coverage gaps, and concrete follow-up w
 - [ ] Plan and scope Podman support.
     - Identify the Docker-specific assumptions in Gym and normal Rig workflows, then define the smallest useful compatibility target before implementation.
 
-- [ ] Give background terminals human-readable names.
-    - Audit the current naming behavior first; decide whether names should be inferred from commands, supplied by the agent, or both.
-
-- [ ] Consolidate long-running background-terminal status.
-    - Avoid showing multiple simultaneous shimmering/waiting indicators for one period of background work.
-    - Keep the live status compact while preserving durable start and completion history.
+- [x] Consolidate long-running background-terminal status.
+    - Active tools, subagents, workflows, and background terminals already render as one compact count-based row per category in the live tail.
+    - Empty polling remains live-only while durable start and completion history is preserved.
 
 - [ ] Add an optional terminal-completion chime.
-    - Define when it should sound, how users control it, and how to avoid noise from short or numerous background jobs.
+    - Emit one opt-in chime when delayed title/recap settlement completes, meaning foreground work and all session-owned background work are finished.
+    - Never chime while replaying persisted history.
 
 - [ ] Explore cmux integration.
     - Identify the high-value session, pane, and background-terminal workflows before choosing an integration surface.
