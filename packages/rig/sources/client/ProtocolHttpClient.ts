@@ -300,7 +300,13 @@ export class ProtocolHttpClient {
         let after = options.after;
         while (options.signal?.aborted !== true) {
             try {
-                after = await this.#watchSessionEventsOnce(after, options);
+                after = await this.#watchSessionEventsOnce(after, {
+                    ...options,
+                    onEvent: async (event) => {
+                        after = event.id;
+                        await options.onEvent(event);
+                    },
+                });
             } catch {
                 if (options.signal?.aborted) {
                     return;

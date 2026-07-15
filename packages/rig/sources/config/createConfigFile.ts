@@ -29,6 +29,7 @@ export async function createConfigFile(
                     : {}),
             },
             settings: {
+                completion_chime: config.settings.completionChime,
                 durable_global_event_queue: config.settings.durableGlobalEventQueue,
                 show_reasoning: config.settings.showReasoning,
                 show_usage: config.settings.showUsage,

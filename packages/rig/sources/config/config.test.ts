@@ -32,6 +32,7 @@ permission_mode = "auto"
 service_tier = "fast"
 
 [settings]
+completion_chime = true
 durable_global_event_queue = true
 show_reasoning = false
 
@@ -73,6 +74,7 @@ mounts = [
                 serviceTier: "fast",
             },
             settings: {
+                completionChime: true,
                 durableGlobalEventQueue: true,
                 showReasoning: false,
             },
@@ -190,6 +192,7 @@ effort = "minimal"
                 providerId: "bedrock",
             });
             expect(loaded.config.settings).toEqual({
+                completionChime: false,
                 durableGlobalEventQueue: false,
                 showReasoning: true,
                 showUsage: true,
@@ -210,6 +213,7 @@ effort = "minimal"
                 env: { XDG_CONFIG_HOME: join(root, "empty-config-home") } as NodeJS.ProcessEnv,
             });
             expect(defaultLoaded.config.settings).toEqual({
+                completionChime: false,
                 durableGlobalEventQueue: false,
                 showReasoning: false,
                 showUsage: false,
@@ -238,6 +242,7 @@ effort = "minimal"
                     permissionMode: "workspace_write",
                 },
                 settings: {
+                    completionChime: true,
                     durableGlobalEventQueue: true,
                     showReasoning: true,
                     showUsage: true,
@@ -275,6 +280,7 @@ effort = "minimal"
                     'effort = "low"',
                     "",
                     "[settings]",
+                    "completion_chime = true",
                     "durable_global_event_queue = true",
                     "show_reasoning = true",
                     "show_usage = true",

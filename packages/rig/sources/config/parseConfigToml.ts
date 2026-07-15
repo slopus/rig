@@ -70,6 +70,8 @@ export function parseConfigToml(source: string): PartialRigConfig {
 
     const settingsTable = table.settings;
     if (isTomlTable(settingsTable)) {
+        const completionChime = readBoolean(settingsTable, "completion_chime");
+        if (completionChime !== undefined) settings.completionChime = completionChime;
         const durableGlobalEventQueue = readBoolean(settingsTable, "durable_global_event_queue");
         if (durableGlobalEventQueue !== undefined) {
             settings.durableGlobalEventQueue = durableGlobalEventQueue;

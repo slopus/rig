@@ -57,6 +57,51 @@ describe("ProtocolHttpClient", () => {
             await rm(directory, { recursive: true, force: true });
         }
     });
+
+    it("keeps the last observed event cursor when an SSE transport fails", async () => {
+        const directory = await mkdtemp(join(tmpdir(), "rig-client-test-"));
+        const socketPath = join(directory, "server.sock");
+        const first = sessionResetEvent("018bcfe5-6800-7001-8000-000000000001");
+        const second = sessionResetEvent("018bcfe5-6800-7002-8000-000000000002");
+        const requestedAfterValues: Array<string | null> = [];
+        let streamRequests = 0;
+        const server = createServer((request, response) => {
+            const url = new URL(request.url ?? "/", "http://unix");
+            requestedAfterValues.push(url.searchParams.get("after"));
+            streamRequests += 1;
+            response.writeHead(200, {
+                "content-type": "text/event-stream; charset=utf-8",
+            });
+            if (streamRequests === 1) {
+                writeSseEvent(response, first);
+                setImmediate(() => response.destroy(new Error("simulated stream failure")));
+                return;
+            }
+            writeSseEvent(response, second);
+        });
+
+        try {
+            await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+            const client = new ProtocolHttpClient({ socketPath, token: "test-token" });
+            const controller = new AbortController();
+            const received: SessionEvent[] = [];
+
+            await client.watchSessionEvents({
+                sessionId: "session-1",
+                signal: controller.signal,
+                onEvent(event) {
+                    received.push(event);
+                    if (received.length === 2) controller.abort();
+                },
+            });
+
+            expect(received.map((event) => event.id)).toEqual([first.id, second.id]);
+            expect(requestedAfterValues).toEqual([null, first.id]);
+        } finally {
+            await new Promise<void>((resolve) => server.close(() => resolve()));
+            await rm(directory, { recursive: true, force: true });
+        }
+    });
 });
 
 function sessionResetEvent(id: string): SessionEvent {

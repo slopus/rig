@@ -5197,6 +5197,7 @@ describe("CodingAssistantApp", () => {
             printToConsole: false,
         });
         const settingsChanges: Array<{
+            completionChime: boolean;
             durableGlobalEventQueue: boolean;
             showReasoning: boolean;
             showUsage: boolean;
@@ -5223,13 +5224,19 @@ describe("CodingAssistantApp", () => {
         expect(menu).toContain("Configure");
         expect(menu).toContain("Show reasoning");
         expect(menu).toContain("Show token status");
+        expect(menu).toContain("Enable completion chime");
         expect(menu).toContain("Enable durable event queue");
 
         app.handleInput("\r");
 
         const rendered = stripAnsi(app.render(100).join("\n"));
         expect(settingsChanges).toEqual([
-            { durableGlobalEventQueue: false, showReasoning: true, showUsage: false },
+            {
+                completionChime: false,
+                durableGlobalEventQueue: false,
+                showReasoning: true,
+                showUsage: false,
+            },
         ]);
         expect(rendered).toContain("This reasoning text can be hidden.");
         expect(rendered).toContain("Final answer stays visible.");
@@ -5241,6 +5248,21 @@ describe("CodingAssistantApp", () => {
         app.handleInput("\r");
 
         expect(settingsChanges.at(-1)).toEqual({
+            completionChime: true,
+            durableGlobalEventQueue: false,
+            showReasoning: true,
+            showUsage: false,
+        });
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("Completion chime enabled.");
+
+        submit(app, "/configure");
+        app.handleInput("\x1b[B");
+        app.handleInput("\x1b[B");
+        app.handleInput("\x1b[B");
+        app.handleInput("\r");
+
+        expect(settingsChanges.at(-1)).toEqual({
+            completionChime: true,
             durableGlobalEventQueue: true,
             showReasoning: true,
             showUsage: false,

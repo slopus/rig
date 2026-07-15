@@ -22,12 +22,14 @@ export interface PartialConfigDefaults {
 }
 
 export interface ConfigSettings {
+    completionChime: boolean;
     durableGlobalEventQueue: boolean;
     showReasoning: boolean;
     showUsage: boolean;
 }
 
 export interface PartialConfigSettings {
+    completionChime?: boolean;
     durableGlobalEventQueue?: boolean;
     showReasoning?: boolean;
     showUsage?: boolean;

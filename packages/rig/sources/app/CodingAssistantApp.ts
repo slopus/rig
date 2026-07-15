@@ -157,6 +157,7 @@ export interface CodingAssistantAppOptions {
         options?: ReadClipboardImageOptions,
     ) => Promise<ClipboardImage | undefined>;
     searchFiles?: (query: string) => Promise<readonly FileSearchResult[]>;
+    completionChime?: boolean;
     durableGlobalEventQueue?: boolean;
     showReasoning?: boolean;
     showUsage?: boolean;
@@ -206,6 +207,7 @@ export interface DefaultModelPreference {
 }
 
 export interface AppSettings {
+    completionChime: boolean;
     durableGlobalEventQueue: boolean;
     showReasoning: boolean;
     showUsage: boolean;
@@ -306,6 +308,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #backgroundProcesses: readonly BashSessionActivity[] = [];
     #observedShellProcesses: readonly BashSessionActivity[] = [];
     #yieldedBackgroundTerminals = new Map<number, string>();
+    #completionChime: boolean;
     #durableGlobalEventQueue: boolean;
     #showReasoning: boolean;
     #showUsage: boolean;
@@ -362,6 +365,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#processManager = options.processManager;
         this.#readClipboardImage = options.readClipboardImage ?? readClipboardImage;
         this.#sessionBacked = options.sessionBacked ?? false;
+        this.#completionChime = options.completionChime ?? false;
         this.#durableGlobalEventQueue = options.durableGlobalEventQueue ?? false;
         this.#showReasoning = options.showReasoning ?? false;
         this.#showUsage = options.showUsage ?? false;
@@ -3007,6 +3011,13 @@ export class CodingAssistantApp implements Component, Focusable {
                     description: "Toggle context usage below the input.",
                 },
                 {
+                    value: "completion-chime",
+                    label: this.#completionChime
+                        ? "Disable completion chime"
+                        : "Enable completion chime",
+                    description: "Ring once when all session work has settled.",
+                },
+                {
                     value: "durable-events",
                     label: this.#durableGlobalEventQueue
                         ? "Disable durable event queue"
@@ -3017,6 +3028,9 @@ export class CodingAssistantApp implements Component, Focusable {
             onSelect: (item) => {
                 if (item.value === "reasoning") this.#showReasoning = !this.#showReasoning;
                 if (item.value === "usage") this.#showUsage = !this.#showUsage;
+                if (item.value === "completion-chime") {
+                    this.#completionChime = !this.#completionChime;
+                }
                 if (item.value === "durable-events") {
                     this.#durableGlobalEventQueue = !this.#durableGlobalEventQueue;
                 }
@@ -3027,6 +3041,8 @@ export class CodingAssistantApp implements Component, Focusable {
                     text = `Reasoning display ${this.#showReasoning ? "enabled" : "disabled"}.`;
                 } else if (item.value === "usage") {
                     text = `Token status ${this.#showUsage ? "enabled" : "disabled"}.`;
+                } else if (item.value === "completion-chime") {
+                    text = `Completion chime ${this.#completionChime ? "enabled" : "disabled"}.`;
                 } else {
                     text = `Durable event queue ${this.#durableGlobalEventQueue ? "enabled" : "disabled"}.`;
                 }
@@ -4104,6 +4120,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
         void Promise.resolve(
             this.#onSettingsChange({
+                completionChime: this.#completionChime,
                 durableGlobalEventQueue: this.#durableGlobalEventQueue,
                 showReasoning: this.#showReasoning,
                 showUsage: this.#showUsage,

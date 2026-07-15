@@ -82,6 +82,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     if (options.modelId !== undefined) agentOptions.modelId = options.modelId;
     if (options.providerId !== undefined) agentOptions.providerId = options.providerId;
     if (options.permissionMode !== undefined) agentOptions.permissionMode = options.permissionMode;
+    let completionChime = loadedConfig.config.settings.completionChime;
     let durableGlobalEventQueue = loadedConfig.config.settings.durableGlobalEventQueue;
     let showReasoning = options.showReasoning ?? loadedConfig.config.settings.showReasoning;
     let showUsage = options.showUsage ?? loadedConfig.config.settings.showUsage;
@@ -212,6 +213,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
                         serviceTier: preference.serviceTier,
                     },
                     settings: {
+                        completionChime,
                         durableGlobalEventQueue,
                         showReasoning,
                         showUsage,
@@ -220,6 +222,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
                 }),
             ),
         onSettingsChange: async (settings) => {
+            completionChime = settings.completionChime;
             durableGlobalEventQueue = settings.durableGlobalEventQueue;
             showReasoning = settings.showReasoning;
             showUsage = settings.showUsage;
@@ -255,6 +258,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
                 .searchFiles(session.session.id, query)
                 .then((response) => response.files),
         sessionBacked: true,
+        completionChime,
         durableGlobalEventQueue,
         showReasoning,
         showUsage,
@@ -280,12 +284,22 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     });
     startup.stop();
     const followController = new AbortController();
+    const observedSettlementEvents = new Set<string>();
     const lastHistoryEventId = history.events.at(-1)?.id ?? session.session.lastEventId;
     void localServer.client.watchSessionEvents({
         ...(lastHistoryEventId !== undefined ? { after: lastHistoryEventId } : {}),
         onEvent: (event) => {
             if (event.type === "session_title_changed" && event.data.title !== undefined) {
                 terminal.setTitle(`Rig - ${sanitizeTerminalTitle(event.data.title)}`);
+            }
+            const isNewSettlement =
+                event.type === "session_title_changed" &&
+                event.data.status === "ready" &&
+                event.data.metadataUpdatedAt !== undefined &&
+                !observedSettlementEvents.has(event.id);
+            if (isNewSettlement) {
+                observedSettlementEvents.add(event.id);
+                if (completionChime) terminal.write("\x07");
             }
             agent.applySessionEvent(event);
             app.applySessionEvent(event);
