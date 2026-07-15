@@ -29,6 +29,7 @@ import {
 import { resolveClaudeCodeExecutablePath } from "./resolveClaudeCodeExecutablePath.js";
 import { createProviderQuotaCache } from "./createProviderQuotaCache.js";
 import { fetchClaudeProviderQuota } from "./fetchClaudeProviderQuota.js";
+import { idleClaudeSdkPrompt } from "./idleClaudeSdkPrompt.js";
 import {
     defineProvider,
     type AssistantContent,
@@ -65,18 +66,30 @@ export function createClaudeSdkProvider(options: ClaudeSdkProviderOptions) {
     const now = options.now ?? Date.now;
     const pathToClaudeCodeExecutable =
         options.pathToClaudeCodeExecutable ?? resolveClaudeCodeExecutablePath();
-    const quota = createProviderQuotaCache(async () => {
-        const probe = query({
-            prompt: idleQuotaPrompt(),
-            options: {
-                cwd: options.agentContext.fs.cwd,
-                pathToClaudeCodeExecutable,
-                persistSession: false,
-                settingSources: [],
-            },
-        });
-        return fetchClaudeProviderQuota(probe);
-    });
+    const quota = createProviderQuotaCache(
+        async () => {
+            try {
+                const probe = query({
+                    prompt: idleClaudeSdkPrompt(),
+                    options: {
+                        cwd: options.agentContext.fs.cwd,
+                        pathToClaudeCodeExecutable,
+                        persistSession: false,
+                        settingSources: [],
+                    },
+                });
+                return fetchClaudeProviderQuota(probe, { now });
+            } catch {
+                return {
+                    capturedAt: now(),
+                    source: "claude-sdk",
+                    status: "unavailable",
+                    window: "five_hour",
+                };
+            }
+        },
+        { now },
+    );
 
     return defineProvider({
         id: CLAUDE_SDK_PROVIDER_ID,
@@ -231,10 +244,6 @@ export function createClaudeSdkProvider(options: ClaudeSdkProviderOptions) {
             return createInferenceStream(run);
         },
     });
-}
-
-async function* idleQuotaPrompt(): AsyncGenerator<SDKUserMessage> {
-    await new Promise<void>(() => {});
 }
 
 function toolsForProviderContext(

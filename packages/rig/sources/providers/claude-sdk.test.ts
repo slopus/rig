@@ -10,6 +10,68 @@ import { createClaudeSdkProvider, type ClaudeSdkQuery } from "./claude-sdk.js";
 import type { Context } from "./types.js";
 
 describe("Claude SDK provider", () => {
+    it("maps and caches quota through the documented SDK usage control API", async () => {
+        const harness = createJustBashToolHarness();
+        const calls: Parameters<ClaudeSdkQuery>[0][] = [];
+        let closes = 0;
+        const provider = createClaudeSdkProvider({
+            agentContext: harness.context,
+            now: () => 1_000,
+            pathToClaudeCodeExecutable: "/test/claude",
+            query: ((params) => {
+                calls.push(params);
+                return {
+                    close: () => {
+                        closes += 1;
+                    },
+                    usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: async () => ({
+                        rate_limits_available: true,
+                        rate_limits: {
+                            five_hour: {
+                                utilization: 32,
+                                resets_at: "2026-07-15T04:31:00.000Z",
+                            },
+                        },
+                    }),
+                };
+            }) as ClaudeSdkQuery,
+        });
+
+        await expect(provider.quota?.()).resolves.toMatchObject({
+            capturedAt: 1_000,
+            source: "claude-sdk",
+            status: "available",
+            usedPercent: 32,
+        });
+        await expect(provider.quota?.()).resolves.toMatchObject({ usedPercent: 32 });
+        expect(calls).toHaveLength(1);
+        expect(calls[0]?.options).toMatchObject({
+            cwd: harness.context.fs.cwd,
+            pathToClaudeCodeExecutable: "/test/claude",
+            persistSession: false,
+            settingSources: [],
+        });
+        expect(closes).toBe(1);
+    });
+
+    it("returns unavailable when the Claude SDK quota probe cannot start", async () => {
+        const harness = createJustBashToolHarness();
+        const provider = createClaudeSdkProvider({
+            agentContext: harness.context,
+            now: () => 1_000,
+            query: (() => {
+                throw new Error("Claude executable unavailable");
+            }) as ClaudeSdkQuery,
+        });
+
+        await expect(provider.quota?.()).resolves.toEqual({
+            capturedAt: 1_000,
+            source: "claude-sdk",
+            status: "unavailable",
+            window: "five_hour",
+        });
+    });
+
     it("runs Claude Agent SDK with built-in tools disabled and project tools exposed", async () => {
         const harness = createJustBashToolHarness();
         const calls: Parameters<ClaudeSdkQuery>[0][] = [];
