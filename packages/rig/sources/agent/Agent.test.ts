@@ -957,6 +957,94 @@ describe("Agent", () => {
         ]);
     });
 
+    it("commits pending steering when inference is aborted", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const controller = new AbortController();
+        const started = deferred<void>();
+        const contexts: Context[] = [];
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream(_model, context, options) {
+                contexts.push(context);
+                if (contexts.length === 1) {
+                    const message: AssistantMessage = {
+                        role: "assistant",
+                        content: [],
+                        api: "test",
+                        provider: "codex",
+                        model: model.id,
+                        usage: zeroUsage(),
+                        stopReason: "aborted",
+                        timestamp: 1,
+                    };
+                    return {
+                        async *[Symbol.asyncIterator]() {
+                            started.resolve();
+                            await new Promise<void>((resolve) => {
+                                options?.signal?.addEventListener("abort", () => resolve(), {
+                                    once: true,
+                                });
+                            });
+                            throw new Error("aborted");
+                        },
+                        async result() {
+                            return message;
+                        },
+                    };
+                }
+                return streamFor({
+                    role: "assistant",
+                    content: [{ type: "text", text: "continued" }],
+                    api: "test",
+                    provider: "codex",
+                    model: model.id,
+                    usage: zeroUsage(),
+                    stopReason: "stop",
+                    timestamp: 2,
+                });
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+
+        const firstRun = agent.send("initial", { signal: controller.signal });
+        await started.promise;
+        await agent.steer("pending direction");
+        controller.abort();
+
+        await expect(firstRun).resolves.toMatchObject({ stopReason: "aborted" });
+        expect(
+            agent.messages.filter(
+                (message) =>
+                    message.role === "user" &&
+                    message.blocks.some(
+                        (block) => block.type === "text" && block.text === "pending direction",
+                    ),
+            ),
+        ).toHaveLength(1);
+
+        await agent.send("continue");
+
+        const continuedUserText = contexts[1]?.messages.flatMap((message) =>
+            message.role === "user" && typeof message.content !== "string"
+                ? message.content.flatMap((block) => (block.type === "text" ? [block.text] : []))
+                : [],
+        );
+        expect(continuedUserText?.filter((text) => text === "pending direction")).toHaveLength(1);
+        expect(continuedUserText?.filter((text) => text === "continue")).toHaveLength(1);
+    });
+
     it("does not allow reset to start an overlapping in-flight run", async () => {
         const model = defineModel({
             id: "openai/gpt-test",

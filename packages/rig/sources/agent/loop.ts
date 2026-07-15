@@ -172,6 +172,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
     let contextOverflowRecoveryAttempted = false;
     for (;;) {
         if (options.signal?.aborted) {
+            await appendSteering(options, transcript, contextTranscript, providerMessages, now);
             return {
                 messages: transcript,
                 contextMessages: contextTranscript,
@@ -250,6 +251,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
             }
         } catch (error) {
             if (options.signal?.aborted) {
+                await appendSteering(options, transcript, contextTranscript, providerMessages, now);
                 return {
                     messages: transcript,
                     contextMessages: contextTranscript,
@@ -372,7 +374,16 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         contextTranscript.push(agentMessage);
         await options.onMessage?.(agentMessage);
 
-        if (assistantMessage.stopReason === "aborted" || assistantMessage.stopReason === "error") {
+        if (assistantMessage.stopReason === "aborted") {
+            await appendSteering(options, transcript, contextTranscript, providerMessages, now);
+            return {
+                messages: transcript,
+                contextMessages: contextTranscript,
+                stopReason: assistantMessage.stopReason,
+            };
+        }
+
+        if (assistantMessage.stopReason === "error") {
             return {
                 messages: transcript,
                 contextMessages: contextTranscript,
@@ -409,7 +420,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         }
 
         if (options.signal?.aborted) {
-            return appendInterruptedToolResults({
+            const interrupted = await appendInterruptedToolResults({
                 toolCalls,
                 transcript,
                 contextTranscript,
@@ -418,6 +429,8 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                 now,
                 onMessage: options.onMessage,
             });
+            await appendSteering(options, transcript, contextTranscript, providerMessages, now);
+            return interrupted;
         }
 
         const toolResultBlocks = await Promise.all(
