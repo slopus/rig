@@ -3495,10 +3495,10 @@ describe("CodingAssistantApp", () => {
         submit(app, "/usage");
         await vi.waitFor(() => {
             const report = stripAnsi(app.render(100).join("\n"));
-            expect(report).toContain("GPT Test · 1.2k in · 100 out");
+            expect(report).toContain("GPT Test · 1,200 in · 100 out");
             expect(report).toContain("5-hour: 68% left · resets in 2h 14m");
-            expect(report).toContain("Context: 1.3k / 200k · 99% left");
-            expect(report).toContain("Overall session total: 1.4k");
+            expect(report).toContain("Context: 1,300 / 200,000 · 99% left");
+            expect(report).toContain("Overall session total: 1,370");
         });
     });
 

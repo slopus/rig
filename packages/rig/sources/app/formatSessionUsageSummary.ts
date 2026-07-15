@@ -5,7 +5,6 @@ import type {
 } from "../protocol/index.js";
 import type { ProviderQuotaWindow } from "../providers/providerQuota.js";
 import type { CodingAssistantModelChoice } from "./CodingAssistantAgentBackend.js";
-import { formatCompactTokens } from "./formatCompactTokens.js";
 
 export function formatSessionUsageSummary(
     summary: GetSessionUsageResponse,
@@ -48,7 +47,7 @@ export function formatSessionUsageSummary(
         lines.push("Observed quota changes are account-wide and may include other activity.");
     }
     const total = summary.groups.reduce((sum, group) => sum + group.usage.totalTokens, 0);
-    lines.push(`Overall session total: ${formatCompactTokens(total)}`);
+    lines.push(`Overall session total: ${formatExactTokens(total)}`);
     return lines.join("\n");
 }
 
@@ -64,12 +63,12 @@ function formatModelUsage(
     const reasoning =
         group.usage.reasoning === undefined
             ? ""
-            : ` · ${formatCompactTokens(group.usage.reasoning)} reasoning`;
+            : ` · ${formatExactTokens(group.usage.reasoning)} reasoning`;
     const cost =
         group.providerId === "claude-sdk" && group.usage.cost.total > 0
             ? ` · ${formatUsd(group.usage.cost.total)}`
             : "";
-    return `${model} · ${formatCompactTokens(group.usage.input)} in · ${formatCompactTokens(group.usage.output)} out · ${formatCompactTokens(group.usage.cacheRead)} read · ${formatCompactTokens(group.usage.cacheWrite)} write${reasoning} · ${formatCompactTokens(group.usage.totalTokens)} total${cost}`;
+    return `${model} · ${formatExactTokens(group.usage.input)} in · ${formatExactTokens(group.usage.output)} out · ${formatExactTokens(group.usage.cacheRead)} read · ${formatExactTokens(group.usage.cacheWrite)} write${reasoning} · ${formatExactTokens(group.usage.totalTokens)} total${cost}`;
 }
 
 function formatQuotaWindow(
@@ -107,10 +106,9 @@ function formatContext(
             choice.model.id === context.requestedModelId,
     )?.model.contextWindow;
     const prefix = context.approximate ? "~" : "";
-    if (window === undefined)
-        return `Context: ${prefix}${formatCompactTokens(context.totalTokens)}`;
+    if (window === undefined) return `Context: ${prefix}${formatExactTokens(context.totalTokens)}`;
     const percentLeft = Math.max(0, Math.round((1 - context.totalTokens / window) * 100));
-    return `Context: ${prefix}${formatCompactTokens(context.totalTokens)} / ${formatCompactTokens(window)} · ${percentLeft}% left`;
+    return `Context: ${prefix}${formatExactTokens(context.totalTokens)} / ${formatExactTokens(window)} · ${percentLeft}% left`;
 }
 
 function formatResetDuration(milliseconds: number): string {
@@ -133,6 +131,10 @@ function formatPercent(value: number): string {
 
 function formatUsd(value: number): string {
     return `$${value < 0.01 ? value.toFixed(4) : value.toFixed(2)}`;
+}
+
+function formatExactTokens(value: number): string {
+    return Math.max(0, Math.round(value)).toLocaleString("en-US");
 }
 
 function providerName(providerId: string): string {

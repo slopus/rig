@@ -19,16 +19,16 @@ describe("formatSessionUsageSummary", () => {
         ).toBe(
             [
                 "Codex",
-                "GPT-5.6 · 1.2k in · 100 out · 40 read · 30 write · 20 reasoning · 1.4k total",
+                "GPT-5.6 · 1,200 in · 100 out · 40 read · 30 write · 20 reasoning · 1,370 total",
                 "5-hour: 68% left · resets in 2h 14m",
                 "Observed while this session was active: +3.5%",
                 "Weekly: 79% left · resets in 6d 2h",
                 "Observed while this session was active: +1%",
-                "Context: 1.3k / 200k · 99% left",
+                "Context: 1,300 / 200,000 · 99% left",
                 "Earlier usage",
                 "Model unavailable · 5 in · 2 out · 0 read · 0 write · 7 total",
                 "Observed quota changes are account-wide and may include other activity.",
-                "Overall session total: 1.4k",
+                "Overall session total: 1,377",
             ].join("\n"),
         );
     });
@@ -55,7 +55,7 @@ describe("formatSessionUsageSummary", () => {
         expect(text).toContain("5-hour: unavailable");
         expect(text).toContain("Weekly: unavailable");
         expect(text).toContain("Observed while this session was active: unavailable");
-        expect(text).toContain("Context: ~1.3k / 200k");
+        expect(text).toContain("Context: ~1,300 / 200,000");
     });
 
     it("shows authoritative Claude cost and keeps provider observations separate", () => {
