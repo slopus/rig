@@ -37,8 +37,9 @@ describe("external reset boundary", () => {
         submit(gym, "Start active work before reset.");
         await gym.terminal.waitForText("esc to interrupt", 30_000);
         gym.terminal.type(queued);
+        await waitForComposer(gym, queued);
         gym.terminal.press("tab");
-        await gym.terminal.waitForText(queued, 30_000);
+        await gym.terminal.waitForText(`↳ queued ${queued}`, 30_000);
         gym.terminal.type(draft);
 
         const reset = await gym.runInContainer("node", ["-e", resetActiveSessionScript]);
@@ -76,6 +77,20 @@ function agentRequests(gym: Gym) {
     return gym.inference.requests.filter(
         (request) => !request.options.sessionId?.endsWith(":title"),
     );
+}
+
+async function waitForComposer(gym: Gym, text: string) {
+    return gym.terminal.waitUntil(
+        (snapshot) => composerText(snapshot) === text,
+        `composer text ${JSON.stringify(text)}`,
+        30_000,
+    );
+}
+
+function composerText(snapshot: { rows: readonly string[] }): string | undefined {
+    const footer = snapshot.rows.findIndex((row) => row.includes("gym off · /workspace"));
+    const row = footer >= 2 ? snapshot.rows[footer - 2] : undefined;
+    return row?.replace(/^\s*›\s?/u, "").trimEnd();
 }
 
 function messageText(content: unknown): string {
