@@ -93,6 +93,37 @@ describe("fetchCodexProviderQuota", () => {
         expect(new Headers(init?.headers).get("chatgpt-account-id")).toBe("jwt-account");
     });
 
+    it("keeps weekly available when the duration-classified five-hour window is absent", async () => {
+        const authPath = await writeAuthFile({ access_token: "access-token" });
+        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+            Response.json({
+                rate_limit: {
+                    primary_window: {
+                        limit_window_seconds: 604_800,
+                        used_percent: 14.5,
+                        reset_at: 1_736_208_000,
+                    },
+                },
+            }),
+        );
+
+        await expect(
+            fetchCodexProviderQuota({ authPath, fetch: fetchMock, now: () => 44 }),
+        ).resolves.toEqual({
+            capturedAt: 44,
+            source: "codex",
+            windows: {
+                fiveHour: { status: "unavailable" },
+                weekly: {
+                    durationMs: 604_800_000,
+                    resetsAt: 1_736_208_000_000,
+                    status: "available",
+                    usedPercent: 14.5,
+                },
+            },
+        });
+    });
+
     it.each([
         ["missing auth", undefined],
         ["malformed response", { rate_limit: { primary_window: { used_percent: 20 } } }],

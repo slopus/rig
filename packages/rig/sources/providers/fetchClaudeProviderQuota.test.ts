@@ -58,6 +58,32 @@ describe("fetchClaudeProviderQuota", () => {
         });
     });
 
+    it("keeps weekly available when the SDK five-hour window is unavailable", async () => {
+        const query = usageQuery({
+            rate_limits_available: true,
+            rate_limits: {
+                five_hour: null,
+                seven_day: {
+                    utilization: 18.75,
+                    resets_at: "2026-05-07T12:00:00.000Z",
+                },
+            },
+        });
+
+        await expect(fetchClaudeProviderQuota(query, { now: () => 550 })).resolves.toEqual({
+            capturedAt: 550,
+            source: "claude-sdk",
+            windows: {
+                fiveHour: { status: "unavailable" },
+                weekly: {
+                    resetsAt: Date.parse("2026-05-07T12:00:00.000Z"),
+                    status: "available",
+                    usedPercent: 18.75,
+                },
+            },
+        });
+    });
+
     it.each([
         {
             name: "rate limits explicitly unavailable",
