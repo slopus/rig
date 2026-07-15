@@ -47,10 +47,9 @@ describe("settings reveal reasoning and usage without corrupting layout", () => 
 
         gym.terminal.type("/usage");
         gym.terminal.press("enter");
-        const usage = await gym.terminal.waitForText("Total processed: 1.3k");
-        expect(usage.text).toContain("Input: 1.2k");
-        expect(usage.text).toContain("Output: 100");
-        expect(usage.text).toContain("Cache read: 40");
+        const usage = await gym.terminal.waitForText("Total: 1.3k");
+        expect(usage.text).toContain("Gym · 1.2k in · 100 out · 40 read · 30 write · 1.3k total");
+        expect(usage.text).toContain("5-hour: unavailable");
 
         gym.terminal.type("/configure");
         gym.terminal.press("enter");

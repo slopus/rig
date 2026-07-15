@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolve } from "node:path";
 
@@ -9,6 +10,7 @@ import {
 } from "../../packages/gym/sources/index.js";
 
 const running = new Set<Gym>();
+const usageArtifacts = resolve(import.meta.dirname, "../../artifacts/session-usage");
 
 afterEach(async () => {
     await Promise.all([...running].map((gym) => gym.dispose()));
@@ -36,6 +38,7 @@ describe("automatic conversation compaction", () => {
                                 type: "text",
                             },
                         ],
+                        usage: usage(400, 50),
                     };
                 }
                 if (callIndex === 1) {
@@ -46,7 +49,10 @@ describe("automatic conversation compaction", () => {
                 }
                 expect(callIndex).toBe(2);
                 expect(isCompaction).toBe(false);
-                return { content: [{ text: "Continued with compacted context.", type: "text" }] };
+                return {
+                    content: [{ text: "Continued with compacted context.", type: "text" }],
+                    usage: usage(100, 30),
+                };
             },
             rows: 26,
         });
@@ -73,12 +79,38 @@ describe("automatic conversation compaction", () => {
             /Summarized \d+ older messages; [\d.]+k? → [\d.]+k? tokens\./u,
         );
         await captureReviewImage(snapshot, "automatic-compaction-visible.png");
+
+        submit(gym, "/usage");
+        const refreshed = await gym.terminal.waitUntil(
+            (candidate) =>
+                candidate.text.includes("Context: 130 / 500 · 74% left") &&
+                candidate.text.includes("Total: 580"),
+            "authoritative context after compaction inference",
+            30_000,
+        );
+        expect(refreshed.text).not.toContain("Context: ~130");
+        await mkdir(usageArtifacts, { recursive: true });
+        await renderTerminalSnapshotPng(
+            refreshed,
+            resolve(usageArtifacts, "post-compaction-context-refresh.png"),
+        );
     }, 120_000);
 });
 
 function submit(gym: Gym, text: string): void {
     gym.terminal.type(text);
     gym.terminal.press("enter");
+}
+
+function usage(input: number, output: number) {
+    return {
+        cacheRead: 0,
+        cacheWrite: 0,
+        cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0, total: 0 },
+        input,
+        output,
+        totalTokens: input + output,
+    };
 }
 
 async function captureReviewImage(snapshot: TerminalSnapshot, fileName: string): Promise<void> {
