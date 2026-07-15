@@ -142,6 +142,13 @@ describe("concurrent Auto approvals keep the remaining request waiting", () => {
         gym.terminal.press("enter");
         await gym.terminal.waitForText("Permissions changed to Auto.");
 
+        const output: string[] = [];
+        const stopOutputCapture = gym.terminal.onOutput((data) => output.push(data));
+        const alphaReview = waitForTerminalOutput(
+            gym,
+            "Alpha still needs your explicit approval.",
+            30_000,
+        );
         submit(gym, "Run both proof actions, but ask me about each command before it runs.");
         await gym.terminal.waitForText("esc to interrupt", 30_000);
         gym.terminal.scrollToTop();
@@ -153,9 +160,7 @@ describe("concurrent Auto approvals keep the remaining request waiting", () => {
         const anchorMarker = /APPROVAL_HISTORY_\d{3}/u.exec(anchored.text)?.[0];
         expect(anchorMarker).toBeDefined();
         if (anchorMarker === undefined) throw new Error("Approval anchor marker was not visible.");
-        const output: string[] = [];
-        const stopOutputCapture = gym.terminal.onOutput((data) => output.push(data));
-        await waitForTerminalOutput(gym, "Alpha still needs your explicit approval.", 30_000);
+        await alphaReview;
         const reviewWhileAnchored = await gym.terminal.snapshot();
         assertSameViewport(reviewWhileAnchored, anchored);
 
