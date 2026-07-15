@@ -5,12 +5,13 @@
 <h3>The best of Pi, Codex, and Claude Code — unified in one coding-agent harness.</h3>
 
 <p>
-  Use Rig interactively in your terminal, run it headlessly, or integrate through
-  its durable API. Built by the authors of
+  Use model-native prompts and tools with provider access already configured on
+  your machine. Rig adds no account or subscription of its own, never pools or
+  resells provider access, and leaves provider terms and limits in force. Built by
+  the authors of
   <a href="https://github.com/slopus/happy">Happy</a> and
   <a href="https://github.com/slopus/happy2">Happy 2</a>.
 </p>
-
 
 https://github.com/user-attachments/assets/99a7dee6-36ef-4110-95b2-e236633640a4
 
@@ -89,16 +90,35 @@ keyboard. It suggested **Rig**.
 
 ## How it works
 
-Rig is not a thin command alias and it does not pretend every model is the same.
-It shares a common runtime while preserving the behavior each model expects.
+Rig separates inference transport from agent behavior. That lets it share one
+runtime without flattening the important differences between models.
 
-| Layer               | Foundation                             | What Rig adds                                                                                     |
-| ------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Model and streaming | Pi's provider and streaming primitives | Curated Codex, Claude SDK, and optional Amazon Bedrock routes                                     |
-| Terminal experience | Pi's terminal UI primitives            | A stable activity timeline, permissions, session controls, background work, and polished defaults |
-| GPT behavior        | Codex                                  | Codex-aligned prompts, tools, planning, collaboration, sandbox reviews, code review, and rewind   |
-| Claude behavior     | Claude Code                            | Claude-aligned prompts, tools, tasks, subagents, background commands, and structured questions    |
-| App integration     | Rig's local daemon and protocol        | Durable sessions and lifecycle events that can be consumed by external clients                    |
+| Path              | What Rig uses                                                                                                    | What Rig controls                                                                                                       |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Pi foundation     | Pi's inference adapters and terminal UI library                                                                  | The shared terminal, permissions, sessions, processes, persistence, and client protocol                                 |
+| Codex             | Pi's Codex transport, with [OpenAI's source](https://github.com/openai/codex) as the behavioral reference        | Reimplemented Codex prompts, tool contracts, reasoning controls, collaboration, approvals, review, and transcript rules |
+| Claude Code       | Anthropic's official [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) for direct inference | Reimplemented Claude-facing prompts, tools, tasks, subagents, permissions, and session behavior                         |
+| Other model paths | Pi inference adapters and selected generic Pi tool definitions                                                   | A useful fallback experience without pretending those models are Codex or Claude Code                                   |
+| External clients  | Rig's local daemon, durable event stream, and protocol                                                           | One stable API for terminal, headless, mobile, web, or other interfaces                                                 |
+
+The Codex integration is implemented inside Rig rather than wrapping the Codex
+CLI. Rig follows the open-source client closely so prompts, tools, permissions,
+and interaction patterns behave as Codex models expect while still participating
+in Rig's shared runtime.
+
+Claude takes a different route. Rig calls the official Claude Agent SDK directly
+for inference, but disables its built-in tools, skills, slash commands, and
+filesystem settings. Rig then supplies its own implementations of those surfaces.
+This keeps Claude's native inference path while giving Rig one place to control
+tools, permissions, persistence, subagents, and client events.
+
+That separation is what makes Rig flexible: transports can stay provider-native
+while the surrounding harness remains consistent and independently evolvable.
+Anthropic's [current Claude plan policy](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)
+explicitly includes third-party apps authenticated through the Agent SDK: their
+usage continues to draw from the user's subscription limits. Rig follows that
+local SDK path. It does not host a Claude login, relay credentials through a Rig
+service, pool access, or bypass Anthropic's terms and limits.
 
 ## How Rig compares
 
