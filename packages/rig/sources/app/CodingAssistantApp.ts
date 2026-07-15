@@ -3099,8 +3099,9 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #renderActiveToolRows(width: number): string[] {
-        const entry = this.#entries.find((candidate) => this.#activeToolCallIds.has(candidate.id));
-        return entry === undefined ? [] : this.#renderEntry(entry, width);
+        return this.#entries
+            .filter((entry) => this.#activeToolCallIds.has(entry.id))
+            .flatMap((entry) => this.#renderEntry(entry, width));
     }
 
     #usageFooter(): string {
