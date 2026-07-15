@@ -23,6 +23,7 @@ import { ensureSessionCanResume } from "./ensureSessionCanResume.js";
 import { providerQuotaToStartupStatusUsage } from "./providerQuotaToStartupStatusUsage.js";
 import { readPackageVersion } from "./readPackageVersion.js";
 import { resolveTerminalTheme } from "./resolveTerminalTheme.js";
+import { resolveStartupProviderQuota } from "./resolveStartupProviderQuota.js";
 import { ScrollbackPreservingTerminal } from "./ScrollbackPreservingTerminal.js";
 import { ScrollbackPreservingTUI } from "./ScrollbackPreservingTUI.js";
 import { sessionAgentFooterLabel } from "./sessionAgentFooterLabel.js";
@@ -153,7 +154,9 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     }
     const [subagents, currentProviderQuotaResponse] = await Promise.all([
         localServer.client.listSubagents(session.session.id),
-        localServer.client.getCurrentProviderQuota(session.session.id).catch(() => undefined),
+        resolveStartupProviderQuota(() =>
+            localServer.client.getCurrentProviderQuota(session.session.id),
+        ),
     ]).catch((error: unknown) => {
         startup.stop();
         terminal.write("\x1b[?1004l");
