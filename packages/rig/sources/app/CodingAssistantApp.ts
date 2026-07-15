@@ -306,6 +306,8 @@ export class CodingAssistantApp implements Component, Focusable {
     #pendingPrompts: PendingPrompt[] = [];
     #pendingSteeringMessages: PendingSteeringMessage[] = [];
     #activeSessionRunId: string | undefined;
+    #interruptRequestInFlight = false;
+    #interruptSettlementRunId: string | undefined;
     #sendingPendingSteering = false;
     #lastEscapeAtMs: number | undefined;
     #compacting = false;
@@ -715,6 +717,9 @@ export class CodingAssistantApp implements Component, Focusable {
             if (this.#activeSessionRunId === event.data.runId) {
                 this.#activeSessionRunId = undefined;
             }
+            if (this.#interruptSettlementRunId === event.data.runId) {
+                this.#interruptSettlementRunId = undefined;
+            }
             this.#setRunning(false);
             this.#modelLocked = this.#pendingPrompts.length > 0;
             this.#statusText =
@@ -730,6 +735,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#toolStatusByCallId.clear();
             this.#clearUserInputRequests();
             if (turnElapsedMs !== undefined) this.#appendTurnCompletion(turnElapsedMs);
+            this.#startDrainQueue();
             this.#requestRender();
             return;
         }
@@ -740,6 +746,9 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#discardPendingToolCallEntries();
             if (this.#activeSessionRunId === event.data.runId) {
                 this.#activeSessionRunId = undefined;
+            }
+            if (this.#interruptSettlementRunId === event.data.runId) {
+                this.#interruptSettlementRunId = undefined;
             }
             this.#setRunning(false);
             this.#modelLocked = this.#pendingPrompts.length > 0;
@@ -752,6 +761,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#toolStatusByCallId.clear();
             this.#clearUserInputRequests();
             this.#appendEntry({ role: "error", text: event.data.errorMessage });
+            this.#startDrainQueue();
             return;
         }
 
@@ -759,6 +769,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#usageRequestVersion += 1;
             this.#lastEscapeAtMs = undefined;
             this.#activeSessionRunId = undefined;
+            this.#interruptSettlementRunId = undefined;
             this.#setRunning(false);
             this.#clearEntries();
             this.#pendingSteeringMessages = [];
@@ -791,6 +802,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#usageRequestVersion += 1;
             this.#lastEscapeAtMs = undefined;
             this.#activeSessionRunId = undefined;
+            this.#interruptSettlementRunId = undefined;
             this.#setRunning(false);
             this.#pendingSteeringMessages = [];
             const targetIndex = this.#entries.findIndex(
@@ -1258,6 +1270,14 @@ export class CodingAssistantApp implements Component, Focusable {
         if (!this.#sessionBacked) this.#recordUserInput(this.#now());
         this.#modelLocked = true;
         if (this.#running) {
+            if (
+                this.#interruptSettlementRunId !== undefined &&
+                this.#interruptSettlementRunId === this.#activeSessionRunId
+            ) {
+                this.#pendingPrompts.push(submission);
+                this.#requestRender();
+                return;
+            }
             await this.#agent.steer(submission.content, { displayText: submission.displayText });
             this.#clearSubmittedImages(prompt);
             if (!this.#sessionBacked) this.#appendEntry({ role: "user", text: prompt });
@@ -1887,6 +1907,8 @@ export class CodingAssistantApp implements Component, Focusable {
         if (
             this.#activeRun !== undefined ||
             this.#compacting ||
+            this.#interruptRequestInFlight ||
+            this.#running ||
             this.#pendingPrompts.length === 0
         ) {
             return;
@@ -2011,6 +2033,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #handleEscape(): void {
         if (this.#running) {
             this.#lastEscapeAtMs = undefined;
+            if (this.#interruptRequestInFlight) return;
             if (
                 this.#pendingSteeringMessages.some(
                     (pending) => pending.runId === this.#activeSessionRunId,
@@ -2025,12 +2048,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#restoreQueuedPromptsToComposer();
             if (this.#abortActiveRun()) return;
             if (this.#sessionBacked && this.#agent.abort !== undefined) {
-                this.#statusText = "Stopping";
-                void Promise.resolve(this.#agent.abort()).catch((error: unknown) => {
-                    this.#statusText = "Error";
-                    this.#appendEntry({ role: "error", text: this.#formatError(error) });
-                    this.#requestRender();
-                });
+                this.#requestSessionInterrupt(false);
             }
             return;
         }
@@ -2064,21 +2082,34 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #sendPendingSteeringNow(): void {
-        if (this.#agent.abort === undefined) return;
-        this.#sendingPendingSteering = true;
-        this.#statusText = "Sending pending messages";
+        this.#requestSessionInterrupt(true);
+    }
+
+    #requestSessionInterrupt(continuePendingSteering: boolean): void {
+        if (this.#agent.abort === undefined || this.#interruptRequestInFlight) return;
+        this.#interruptRequestInFlight = true;
+        this.#interruptSettlementRunId = this.#activeSessionRunId;
+        this.#sendingPendingSteering = continuePendingSteering;
+        this.#statusText = continuePendingSteering ? "Sending pending messages" : "Stopping";
         this.#requestRender();
-        void this.#agent
-            .abort({ continuePendingSteering: true })
+        const request = continuePendingSteering
+            ? this.#agent.abort({ continuePendingSteering: true })
+            : this.#agent.abort();
+        void request
             .then((response) => {
                 if (response.continued !== true) this.#sendingPendingSteering = false;
                 if (this.#running) this.#statusText = "Running";
-                this.#requestRender();
             })
             .catch((error: unknown) => {
                 this.#sendingPendingSteering = false;
+                this.#interruptSettlementRunId = undefined;
                 this.#statusText = "Error";
                 this.#appendEntry({ role: "error", text: this.#formatError(error) });
+            })
+            .finally(() => {
+                this.#interruptRequestInFlight = false;
+                if (!this.#running) this.#interruptSettlementRunId = undefined;
+                this.#startDrainQueue();
                 this.#requestRender();
             });
     }

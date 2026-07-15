@@ -155,6 +155,89 @@ describe("InMemorySession abort", () => {
         expect(events.filter((event) => event.type === "run_finished")).toHaveLength(1);
     });
 
+    it("coalesces overlapping interrupts and retains steering submitted during settlement", async () => {
+        const started = deferred<void>();
+        const releaseDescendants = deferred<number>();
+        const contexts: Context[] = [];
+        const model = defineModel({
+            defaultThinkingLevel: "off",
+            id: "test/coalesced-steering-continuation",
+            name: "Coalesced steering continuation",
+            thinkingLevels: ["off"],
+        });
+        const provider = defineProvider({
+            id: "test",
+            models: [model],
+            stream(_model, context, options) {
+                contexts.push(context);
+                if (contexts.length === 1) {
+                    return abortableStream(options?.signal, started.resolve);
+                }
+                return responseStream("Continued once.");
+            },
+        });
+        let session: InMemorySession;
+        const pauseDescendants = vi.fn(() => {
+            session.recordSubagentsSuspended([
+                { description: "Only child", path: "/root/only_child" },
+            ]);
+            return releaseDescendants.promise;
+        });
+        session = new InMemorySession({
+            agentManager: { pauseDescendants } as unknown as AgentSessionManager,
+            createEventId: createEventIdFactory(),
+            createRuntime: (options) => createRuntime(options, provider),
+            modelCatalog: {
+                defaultModelId: model.id,
+                defaultProviderId: provider.id,
+                models: [model],
+                providers: [{ models: [model], providerId: provider.id }],
+            },
+            request: { cwd: "/tmp/rig-coalesced-steering", modelId: model.id },
+        });
+
+        const submitted = session.submit({ text: "Start waiting." });
+        await started.promise;
+        session.steer({ text: "First pending direction." });
+
+        const firstAbort = session.abort({ continuePendingSteering: true });
+        const secondAbort = session.abort({ continuePendingSteering: true });
+        expect(secondAbort).toBe(firstAbort);
+        expect(pauseDescendants).toHaveBeenCalledOnce();
+        session.steer({ text: "Submitted while interrupt settles." });
+        releaseDescendants.resolve(1);
+
+        await expect(Promise.all([firstAbort, secondAbort])).resolves.toEqual([
+            expect.objectContaining({ aborted: true, continued: true }),
+            expect.objectContaining({ aborted: true, continued: true }),
+        ]);
+        await expect(session.waitForRun(submitted.runId)).resolves.toEqual({
+            status: "completed",
+        });
+
+        expect(contexts).toHaveLength(2);
+        const continuedText = contexts[1]?.messages.flatMap((message) =>
+            message.role === "user" && Array.isArray(message.content)
+                ? message.content.flatMap((block) => (block.type === "text" ? [block.text] : []))
+                : [],
+        );
+        expect(continuedText?.filter((text) => text === "First pending direction.")).toHaveLength(
+            1,
+        );
+        expect(
+            continuedText?.filter((text) => text === "Submitted while interrupt settles."),
+        ).toHaveLength(1);
+        const events = session.events.since(undefined) ?? [];
+        expect(events.filter((event) => event.type === "abort_requested")).toHaveLength(1);
+        expect(events.filter((event) => event.type === "subagents_suspended")).toHaveLength(1);
+        expect(events.filter((event) => event.type === "run_finished")).toHaveLength(1);
+        const appliedIds = events.flatMap((event) =>
+            event.type === "steering_applied" ? event.data.messageIds : [],
+        );
+        expect(new Set(appliedIds).size).toBe(2);
+        expect(appliedIds).toHaveLength(2);
+    });
+
     it("aborts compaction without overwriting the repaired shutdown state", async () => {
         const model = defineModel({
             defaultThinkingLevel: "off",

@@ -358,9 +358,7 @@ describe("CodingAssistantApp", () => {
         await vi.waitFor(() =>
             expect(abort).toHaveBeenCalledWith({ continuePendingSteering: true }),
         );
-        expect(abort).toHaveBeenCalledTimes(2);
-        expect(abort).toHaveBeenNthCalledWith(1, { continuePendingSteering: true });
-        expect(abort).toHaveBeenNthCalledWith(2, { continuePendingSteering: true });
+        expect(abort).toHaveBeenCalledTimes(1);
 
         const rendered = stripAnsi(app.render(100).join("\n"));
         expect(rendered).toContain("esc to interrupt");
@@ -540,10 +538,90 @@ describe("CodingAssistantApp", () => {
         app.handleInput("\x1b");
         app.handleInput("\x1b");
 
-        await vi.waitFor(() => expect(abort).toHaveBeenCalledTimes(2));
-        expect(abort).toHaveBeenNthCalledWith(1);
-        expect(abort).toHaveBeenNthCalledWith(2);
+        await vi.waitFor(() => expect(abort).toHaveBeenCalledTimes(1));
+        expect(abort).toHaveBeenCalledWith();
         expect(stripAnsi(app.render(100).join("\n"))).toContain("› Keep this stopping-run draft");
+    });
+
+    it("queues an immediate post-Escape submit until the interrupted run settles", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const interrupt = deferred<{ aborted: boolean }>();
+        const abort = vi.fn(() => interrupt.promise);
+        const steer = vi.fn(async () => undefined);
+        const send = vi.fn(async () => ({
+            contextMessages: [],
+            messages: [],
+            runId: "next-agent-run",
+            stopReason: "stop" as const,
+        }));
+        const agent = Object.assign(
+            new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            { abort, send, steer },
+        );
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            sessionBacked: true,
+            tui: fakeTui(),
+        });
+        app.applySessionEvent({
+            createdAt: 1,
+            data: { runId: "interrupted-run" },
+            id: "event-started",
+            sessionId: "session-1",
+            type: "run_started",
+        });
+
+        app.handleInput("\x1b");
+        submit(app, "Retain this immediate follow-up");
+
+        expect(abort).toHaveBeenCalledOnce();
+        expect(steer).not.toHaveBeenCalled();
+        expect(send).not.toHaveBeenCalled();
+        expect(stripAnsi(app.render(100).join("\n"))).toContain(
+            "↳ queued Retain this immediate follow-up",
+        );
+
+        app.applySessionEvent({
+            createdAt: 2,
+            data: {
+                agentRunId: "interrupted-agent-run",
+                modelLocked: true,
+                runId: "interrupted-run",
+                stopReason: "aborted",
+            },
+            id: "event-finished",
+            sessionId: "session-1",
+            type: "run_finished",
+        });
+        expect(send).not.toHaveBeenCalled();
+        interrupt.resolve({ aborted: true });
+
+        await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+        expect(send).toHaveBeenCalledWith(
+            "Retain this immediate follow-up",
+            expect.objectContaining({ displayText: "Retain this immediate follow-up" }),
+        );
+        expect(steer).not.toHaveBeenCalled();
     });
 
     it("resets idle double-Escape timing across a running transition", () => {

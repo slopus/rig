@@ -26,6 +26,7 @@ import {
 } from "../app/createCodingAssistantAgent.js";
 import type {
     ChangeEffortRequest,
+    AbortRunResponse,
     ChangeModelRequest,
     ChangePermissionModeRequest,
     ChangeServiceTierRequest,
@@ -236,6 +237,7 @@ export class InMemorySession {
 
     #activePartial: PartialMessageState | undefined;
     #activeRun: ActiveRun | undefined;
+    #abortInFlight: Promise<AbortRunResponse> | undefined;
     #agentManager: AgentSessionManager | undefined;
     #agentMetadata: SessionAgentMetadata;
     #agentId: string;
@@ -454,14 +456,22 @@ export class InMemorySession {
         }
     }
 
-    async abort(
+    abort(
         options: { continuePendingSteering?: boolean; pauseDescendants?: boolean } = {},
-    ): Promise<{
-        aborted: boolean;
-        continued?: boolean;
-        eventId?: EventId;
-        stoppedProcesses?: number;
-    }> {
+    ): Promise<AbortRunResponse> {
+        if (this.#abortInFlight !== undefined) return this.#abortInFlight;
+        const operation = this.#performAbort(options);
+        const tracked = operation.finally(() => {
+            if (this.#abortInFlight === tracked) this.#abortInFlight = undefined;
+        });
+        this.#abortInFlight = tracked;
+        return tracked;
+    }
+
+    async #performAbort(options: {
+        continuePendingSteering?: boolean;
+        pauseDescendants?: boolean;
+    }): Promise<AbortRunResponse> {
         const runId = this.#activeRun?.runId;
         const shouldContinuePendingSteering =
             options.continuePendingSteering === true &&
@@ -1731,6 +1741,24 @@ export class InMemorySession {
         };
 
         const agent = this.#ensureRuntime().agent;
+        const continuation = this.#pendingSteeringContinuations.get(activeRun.runId);
+        if (continuation !== undefined && !continuation.cancelled) {
+            agent.enqueueMessage(userMessage);
+            this.#storeMessage(this.#messages.length, userMessage, false, activeRun.runId);
+            this.#interruption = undefined;
+            this.#lastMessageAt = this.#now();
+            const event = this.#append("message_submitted", {
+                delivery: "steer",
+                displayText,
+                message: userMessage,
+                runId: activeRun.runId,
+            });
+            this.#append("steering_applied", {
+                messageIds: [userMessage.id],
+                runId: activeRun.runId,
+            });
+            return { eventId: event.id, runId: activeRun.runId, sessionId: this.id };
+        }
         const pending = agent.status === "running";
         if (pending) {
             this.#pendingSteeringMessages.set(userMessage.id, {
