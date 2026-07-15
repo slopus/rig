@@ -83,7 +83,7 @@ describe("createProviderQuotaCache", () => {
                         capturedAt: 2,
                         status: "available",
                         usedPercent: load.mock.calls.length,
-                        resetsAt: 9,
+                        resetsAt: 9_000,
                     },
                     weekly: { status: "unavailable" },
                 },
@@ -98,5 +98,39 @@ describe("createProviderQuotaCache", () => {
         expect(load).toHaveBeenCalledTimes(2);
         expect(refreshed.capturedAt).toBe(2_000);
         expect(await cache.get()).toBe(refreshed);
+    });
+
+    it("refreshes as soon as any available quota window has reset", async () => {
+        let now = 1_000;
+        const load = vi.fn(
+            async (): Promise<ProviderQuota> => ({
+                capturedAt: now,
+                source: "codex",
+                windows: {
+                    fiveHour: {
+                        capturedAt: now,
+                        resetsAt: 2_000,
+                        status: "available",
+                        usedPercent: 20,
+                    },
+                    weekly: {
+                        capturedAt: now,
+                        resetsAt: 20_000,
+                        status: "available",
+                        usedPercent: 10,
+                    },
+                },
+            }),
+        );
+        const cache = createProviderQuotaCache(load, { now: () => now });
+
+        await cache.get();
+        now = 1_999;
+        await cache.get();
+        expect(load).toHaveBeenCalledTimes(1);
+
+        now = 2_000;
+        await cache.get();
+        expect(load).toHaveBeenCalledTimes(2);
     });
 });

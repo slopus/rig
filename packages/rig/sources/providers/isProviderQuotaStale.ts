@@ -7,5 +7,10 @@ export function isProviderQuotaStale(
     now = Date.now(),
     staleAfterMs = DEFAULT_PROVIDER_QUOTA_STALE_AFTER_MS,
 ): boolean {
-    return now - quota.capturedAt >= staleAfterMs;
+    return (
+        now - quota.capturedAt >= staleAfterMs ||
+        Object.values(quota.windows).some(
+            (window) => window?.status === "available" && window.resetsAt <= now,
+        )
+    );
 }
