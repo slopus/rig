@@ -131,23 +131,28 @@ export function createCodingAssistantAgent(
             : [...baseTools, ...collaborationTools];
     const tools =
         options.goals === undefined ? toolsWithoutGoals : [...toolsWithoutGoals, ...goalTools];
+    const runtimeEnv = options.env ?? process.env;
+    const claudeExecutable = runtimeEnv.RIG_CLAUDE_CODE_EXECUTABLE;
     const nativeProvider =
         providerId === "bedrock"
-            ? createBedrockProvider({ env: options.env ?? process.env })
+            ? createBedrockProvider({ env: runtimeEnv })
             : providerId === "claude-sdk"
               ? createClaudeSdkProvider({
                     agentContext: context,
+                    ...(claudeExecutable === undefined
+                        ? {}
+                        : { pathToClaudeCodeExecutable: claudeExecutable }),
                     sessionId: createClaudeSessionId(agentId),
                     tools,
                 })
               : providerId === "codex"
                 ? createCodexProvider(toCodexProviderOptions(options))
                 : providerId === "gym"
-                  ? createGymProviderFromEnvironment(options.env ?? process.env)
+                  ? createGymProviderFromEnvironment(runtimeEnv)
                   : (() => {
                         throw new Error(`Unknown inference provider '${providerId}'.`);
                     })();
-    const provider = routeProviderThroughGym(nativeProvider, options.env ?? process.env);
+    const provider = routeProviderThroughGym(nativeProvider, runtimeEnv);
     const agentOptions: AgentOptions = {
         provider,
         modelId,

@@ -48,6 +48,7 @@ export function createProviderQuotaService(
                             cwd: options.cwd,
                             pathToClaudeCodeExecutable:
                                 options.pathToClaudeCodeExecutable ??
+                                env.RIG_CLAUDE_CODE_EXECUTABLE ??
                                 resolveClaudeCodeExecutablePath(),
                             persistSession: false,
                             settingSources: [],

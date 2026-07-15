@@ -16,7 +16,7 @@ export function routeProviderThroughGym(provider: Provider, env: NodeJS.ProcessE
         throw new Error("RIG_GYM_INFERENCE_URL is required for Gym provider overrides.");
     }
     const contextWindow = readGymContextWindow(env);
-    return createGymProvider({
+    const gymProvider = createGymProvider({
         ...(contextWindow === undefined ? {} : { contextWindow }),
         endpoint,
         models: provider.models,
@@ -24,4 +24,7 @@ export function routeProviderThroughGym(provider: Provider, env: NodeJS.ProcessE
         ...(provider.serviceTiers === undefined ? {} : { serviceTiers: provider.serviceTiers }),
         ...(env.RIG_GYM_TOKEN === undefined ? {} : { token: env.RIG_GYM_TOKEN }),
     });
+    return provider.quota === undefined
+        ? gymProvider
+        : { ...gymProvider, quota: (options) => provider.quota!(options) };
 }
