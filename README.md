@@ -1,8 +1,6 @@
 <div align="center">
 
-<p><img src="./logo.png" alt="Rig" width="168" /></p>
-
-<h1>Rig</h1>
+<p><img src="./logo.png" alt="Rig" width="400" /></p>
 
 <h3>One coding-agent harness. Codex and Claude behavior. Pi foundations.</h3>
 
