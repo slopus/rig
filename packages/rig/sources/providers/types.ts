@@ -97,6 +97,8 @@ export interface Usage {
     cacheRead: number;
     cacheWrite: number;
     totalTokens: number;
+    /** Reported reasoning tokens, when the provider exposes an exact breakdown. */
+    reasoning?: number;
     cost: {
         input: number;
         output: number;

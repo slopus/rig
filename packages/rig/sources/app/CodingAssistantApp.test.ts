@@ -3463,14 +3463,24 @@ describe("CodingAssistantApp", () => {
                             },
                         },
                     ],
-                    quota: {
-                        capturedAt: 1,
-                        resetsAt: 8_041_000,
-                        source: "codex" as const,
-                        status: "available" as const,
-                        usedPercent: 32,
-                        window: "five_hour" as const,
-                    },
+                    quotaContributions: [],
+                    quotas: [
+                        {
+                            providerId: "codex",
+                            quota: {
+                                capturedAt: 1,
+                                source: "codex" as const,
+                                windows: {
+                                    fiveHour: {
+                                        resetsAt: 8_041_000,
+                                        status: "available" as const,
+                                        usedPercent: 32,
+                                    },
+                                    weekly: { status: "unavailable" as const },
+                                },
+                            },
+                        },
+                    ],
                 })),
             },
         );
@@ -3488,7 +3498,7 @@ describe("CodingAssistantApp", () => {
             expect(report).toContain("GPT Test · 1.2k in · 100 out");
             expect(report).toContain("5-hour: 68% left · resets in 2h 14m");
             expect(report).toContain("Context: 1.3k / 200k · 99% left");
-            expect(report).toContain("Total: 1.4k");
+            expect(report).toContain("Overall session total: 1.4k");
         });
     });
 

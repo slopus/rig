@@ -13,35 +13,81 @@ const codex = defineModel({
 });
 
 describe("formatSessionUsageSummary", () => {
-    it("renders compact provider sections, quota, context, and total", () => {
+    it("renders detailed compact tokens, both quota windows, observed movement, and context", () => {
         expect(
             formatSessionUsageSummary(summary(), [{ model: codex, providerId: "codex" }], 1_000),
         ).toBe(
             [
                 "Codex",
-                "GPT-5.6 · 1.2k in · 100 out · 40 read · 30 write · 1.4k total",
+                "GPT-5.6 · 1.2k in · 100 out · 40 read · 30 write · 20 reasoning · 1.4k total",
                 "5-hour: 68% left · resets in 2h 14m",
+                "Observed while this session was active: +3.5%",
+                "Weekly: 79% left · resets in 6d 2h",
+                "Observed while this session was active: +1%",
                 "Context: 1.3k / 200k · 99% left",
                 "Earlier usage",
                 "Model unavailable · 5 in · 2 out · 0 read · 0 write · 7 total",
-                "Total: 1.4k",
+                "Overall session total: 1.4k",
             ].join("\n"),
         );
     });
 
-    it("marks approximate context and unavailable quota without estimates", () => {
+    it("marks approximate context and unavailable windows without estimates", () => {
         const value = summary();
         value.context = { ...value.context!, approximate: true };
-        value.quota = {
-            capturedAt: 1_000,
-            source: "codex",
-            status: "unavailable",
-            window: "five_hour",
-        };
+        value.quotas = [
+            {
+                providerId: "codex",
+                quota: {
+                    capturedAt: 1_000,
+                    source: "codex",
+                    windows: {
+                        fiveHour: { status: "unavailable" },
+                        weekly: { status: "unavailable" },
+                    },
+                },
+            },
+        ];
+        value.quotaContributions = [];
 
         const text = formatSessionUsageSummary(value, [{ model: codex, providerId: "codex" }]);
         expect(text).toContain("5-hour: unavailable");
+        expect(text).toContain("Weekly: unavailable");
+        expect(text).toContain("Observed while this session was active: unavailable");
         expect(text).toContain("Context: ~1.3k / 200k");
+    });
+
+    it("shows authoritative Claude cost and keeps provider observations separate", () => {
+        const value = summary();
+        value.currentProviderId = "claude-sdk";
+        value.groups = [
+            ...value.groups,
+            {
+                kind: "attributed",
+                modelId: "anthropic/sonnet-4-6",
+                providerId: "claude-sdk",
+                usage: {
+                    ...usage(100, 20, 0, 0, 120),
+                    cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0, total: 0.1234 },
+                },
+            },
+        ];
+        value.quotaContributions = [
+            ...value.quotaContributions,
+            {
+                providerId: "claude-sdk",
+                windows: {
+                    fiveHour: { observedUsedPercent: 0 },
+                    weekly: { observedUsedPercent: 2 },
+                },
+            },
+        ];
+
+        const text = formatSessionUsageSummary(value, [{ model: codex, providerId: "codex" }]);
+        expect(text).toContain("anthropic/sonnet-4-6 · 100 in · 20 out");
+        expect(text).toContain("120 total · $0.12");
+        expect(text).toContain("Observed while this session was active: no increase");
+        expect(text).toContain("Observed while this session was active: +2%");
     });
 });
 
@@ -60,7 +106,7 @@ function summary(): GetSessionUsageResponse {
                 kind: "attributed",
                 modelId: codex.id,
                 providerId: "codex",
-                usage: usage(1_200, 100, 40, 30, 1_370),
+                usage: { ...usage(1_200, 100, 40, 30, 1_370), reasoning: 20 },
             },
             {
                 kind: "earlier",
@@ -72,14 +118,36 @@ function summary(): GetSessionUsageResponse {
                 usage: usage(5, 2, 0, 0, 7),
             },
         ],
-        quota: {
-            capturedAt: 1_000,
-            resetsAt: 1_000 + (2 * 60 + 14) * 60_000,
-            source: "codex",
-            status: "available",
-            usedPercent: 32,
-            window: "five_hour",
-        },
+        quotaContributions: [
+            {
+                providerId: "codex",
+                windows: {
+                    fiveHour: { observedUsedPercent: 3.5 },
+                    weekly: { observedUsedPercent: 1 },
+                },
+            },
+        ],
+        quotas: [
+            {
+                providerId: "codex",
+                quota: {
+                    capturedAt: 1_000,
+                    source: "codex",
+                    windows: {
+                        fiveHour: {
+                            resetsAt: 1_000 + (2 * 60 + 14) * 60_000,
+                            status: "available",
+                            usedPercent: 32,
+                        },
+                        weekly: {
+                            resetsAt: 1_000 + (6 * 24 + 2) * 60 * 60_000,
+                            status: "available",
+                            usedPercent: 21,
+                        },
+                    },
+                },
+            },
+        ],
     };
 }
 

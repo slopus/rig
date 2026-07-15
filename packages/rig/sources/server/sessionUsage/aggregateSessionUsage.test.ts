@@ -65,6 +65,40 @@ describe("aggregateSessionUsage", () => {
         });
     });
 
+    it("keeps an exact reasoning breakdown only when every grouped response reports it", () => {
+        const exactFirst = { ...usage(2), reasoning: 3 };
+        const exactSecond = { ...usage(3), reasoning: 4 };
+        const exact = aggregateSessionUsage(
+            [
+                inference("reasoning-1", exactFirst, {
+                    providerId: "codex",
+                    requestedModelId: "openai/gpt-5.6",
+                }),
+                inference("reasoning-2", exactSecond, {
+                    providerId: "codex",
+                    requestedModelId: "openai/gpt-5.6",
+                }),
+            ],
+            primary,
+        );
+        expect(exact.groups[0]?.usage.reasoning).toBe(7);
+
+        const incomplete = aggregateSessionUsage(
+            [
+                inference("reasoning-known", exactFirst, {
+                    providerId: "codex",
+                    requestedModelId: "openai/gpt-5.6",
+                }),
+                inference("reasoning-unknown", usage(3), {
+                    providerId: "codex",
+                    requestedModelId: "openai/gpt-5.6",
+                }),
+            ],
+            primary,
+        );
+        expect(incomplete.groups[0]?.usage.reasoning).toBeUndefined();
+    });
+
     it("only counts usage after the latest session reset", () => {
         expect(
             aggregateSessionUsage(
