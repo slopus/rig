@@ -110,6 +110,14 @@ export const modelOpenaiGpt54 = defineModel({
     contextWindow: 272_000,
 });
 
+export const modelXaiGrokBuild = defineModel({
+    id: "xai/grok-build",
+    name: "Grok Build",
+    thinkingLevels: ["on"],
+    defaultThinkingLevel: "on",
+    contextWindow: 500_000,
+});
+
 export const modelMoonshotKimiK25 = defineModel({
     id: "moonshot/kimi-k2.5",
     name: "Kimi K2.5",

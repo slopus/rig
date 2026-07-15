@@ -16,7 +16,9 @@
         "rig": "./dist/main.js"
     },
     "files": [
-        "dist"
+        "dist",
+        "LICENSE-GROK-BUILD",
+        "THIRD-PARTY-NOTICES.md"
     ],
     "type": "module",
     "publishConfig": {

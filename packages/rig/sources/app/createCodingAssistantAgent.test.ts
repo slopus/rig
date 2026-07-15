@@ -6,6 +6,7 @@ import {
     modelMoonshotKimiK25,
     modelOpenaiGpt55,
     modelOpenaiGpt56Sol,
+    modelXaiGrokBuild,
 } from "../providers/models.js";
 import { createCodingAssistantAgent } from "./createCodingAssistantAgent.js";
 
@@ -59,6 +60,46 @@ describe("createCodingAssistantAgent", () => {
             "TaskStop",
             "AskUserQuestion",
         ]);
+    });
+
+    it("creates a Grok Build agent with the native Grok tool surface", () => {
+        const runtime = createCodingAssistantAgent({
+            cwd: "/tmp/rig-app-test",
+            env: { XAI_API_KEY: "xai-test-key" },
+            modelId: modelXaiGrokBuild.id,
+        });
+
+        expect(runtime.provider.id).toBe("grok");
+        expect(runtime.agent.model).toEqual(modelXaiGrokBuild);
+        expect(runtime.agent.tools.map((tool) => tool.name)).toEqual([
+            "run_terminal_command",
+            "read_file",
+            "search_replace",
+            "list_dir",
+            "grep",
+            "get_command_or_subagent_output",
+            "kill_command_or_subagent",
+        ]);
+    });
+
+    it("creates a Grok agent for an account-discovered model", () => {
+        const grok45 = {
+            contextWindow: 500_000,
+            defaultThinkingLevel: "high",
+            id: "xai/grok-4.5",
+            name: "Grok 4.5",
+            thinkingLevels: ["low", "medium", "high"],
+        } as const;
+        const runtime = createCodingAssistantAgent({
+            cwd: "/tmp/rig-app-test",
+            env: { XAI_API_KEY: "xai-test-key" },
+            grokModelsByProviderId: { grok: [modelXaiGrokBuild, grok45] },
+            modelId: grok45.id,
+        });
+
+        expect(runtime.provider.id).toBe("grok");
+        expect(runtime.agent.model).toEqual(grok45);
+        expect(runtime.agent.tools.map((tool) => tool.name)).toContain("run_terminal_command");
     });
 
     it("creates agents for named provider instances and applies their model filters", () => {

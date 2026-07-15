@@ -8,6 +8,9 @@ export function humanizeProviderId(providerId: string): string {
     if (providerId === "claude-sdk") {
         return "Claude Code";
     }
+    if (providerId === "grok") {
+        return "Grok Build";
+    }
     if (providerId === "anthropic") {
         return "Anthropic";
     }

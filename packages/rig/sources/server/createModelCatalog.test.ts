@@ -8,6 +8,7 @@ import {
     modelOpenaiGpt56Sol,
     modelOpenaiGpt56Terra,
     modelZaiGlm5,
+    modelXaiGrokBuild,
 } from "../providers/models.js";
 import { createModelCatalog } from "./createModelCatalog.js";
 
@@ -23,6 +24,27 @@ describe("createModelCatalog", () => {
             catalog.providers.find((provider) => provider.providerId === "claude-sdk")
                 ?.serviceTiers,
         ).toBeUndefined();
+        expect(
+            catalog.providers.find((provider) => provider.providerId === "grok")?.models,
+        ).toEqual([modelXaiGrokBuild]);
+    });
+
+    it("exposes models discovered for the configured Grok account", () => {
+        const grok45 = {
+            contextWindow: 500_000,
+            defaultThinkingLevel: "high",
+            id: "xai/grok-4.5",
+            name: "Grok 4.5",
+            thinkingLevels: ["low", "medium", "high"],
+        } as const;
+        const catalog = createModelCatalog({
+            env: {},
+            grokModelsByProviderId: { grok: [modelXaiGrokBuild, grok45] },
+        });
+
+        expect(
+            catalog.providers.find((provider) => provider.providerId === "grok")?.models,
+        ).toEqual([modelXaiGrokBuild, grok45]);
     });
 
     it("enables Amazon Bedrock when its bearer token is present", () => {

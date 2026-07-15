@@ -8,6 +8,7 @@ import { createBedrockProvider } from "../providers/bedrock.js";
 import { createClaudeSdkProvider } from "../providers/claude-sdk.js";
 import { createCodexProvider } from "../providers/codex.js";
 import { createGymProvider } from "../providers/createGymProvider.js";
+import { createGrokProvider } from "../providers/grok.js";
 import { filterConfiguredProviderModels } from "../providers/filterConfiguredProviderModels.js";
 import {
     modelOpenaiGpt56Luna,
@@ -16,13 +17,14 @@ import {
 } from "../providers/models.js";
 import { readConfiguredBedrockBearerToken } from "../providers/readConfiguredBedrockBearerToken.js";
 import { readGymContextWindow } from "../providers/readGymContextWindow.js";
-import type { Provider } from "../providers/types.js";
+import type { Model, Provider } from "../providers/types.js";
 import { claudeCodeTools } from "../tools/claude/index.js";
 import { uniqueModelsById } from "./uniqueModelsById.js";
 
 export interface CreateModelCatalogOptions {
     cwd?: string;
     env?: NodeJS.ProcessEnv;
+    grokModelsByProviderId?: Readonly<Record<string, readonly Model[]>>;
     providers?: ConfigProviders;
 }
 
@@ -76,6 +78,17 @@ export function createModelCatalog(options: CreateModelCatalogOptions = {}): Mod
                     ? {}
                     : { pathToClaudeCodeExecutable: config.executable }),
                 tools: claudeCodeTools,
+            });
+        } else if (config.type === "grok") {
+            const baseUrl = config.baseUrl ?? env.RIG_GROK_BASE_URL;
+            provider = createGrokProvider({
+                env,
+                id,
+                ...(options.grokModelsByProviderId?.[id] === undefined
+                    ? {}
+                    : { models: options.grokModelsByProviderId[id] }),
+                ...(config.authFile === undefined ? {} : { authFile: config.authFile }),
+                ...(baseUrl === undefined ? {} : { baseUrl }),
             });
         } else {
             const bearerToken = readConfiguredBedrockBearerToken(config, env);

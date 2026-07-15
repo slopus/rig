@@ -68,7 +68,17 @@ export interface ConfigCodexProvider extends ConfigProviderBase {
     type: "codex";
 }
 
-export type ConfigProvider = ConfigBedrockProvider | ConfigClaudeProvider | ConfigCodexProvider;
+export interface ConfigGrokProvider extends ConfigProviderBase {
+    authFile?: string;
+    baseUrl?: string;
+    type: "grok";
+}
+
+export type ConfigProvider =
+    | ConfigBedrockProvider
+    | ConfigClaudeProvider
+    | ConfigCodexProvider
+    | ConfigGrokProvider;
 
 export type ConfigProviders = Readonly<Record<string, ConfigProvider>>;
 

@@ -161,6 +161,26 @@ function readProviders(value: TomlValue | undefined): Record<string, ConfigProvi
             continue;
         }
 
+        if (type === "grok") {
+            assertKnownKeys(id, rawProvider, [
+                "auth_file",
+                "base_url",
+                "enabled",
+                "exclude_models",
+                "include_models",
+                "type",
+            ]);
+            const authFile = readProviderString(id, rawProvider, "auth_file");
+            const baseUrl = readProviderString(id, rawProvider, "base_url");
+            providers[id] = {
+                ...common,
+                ...(authFile === undefined ? {} : { authFile }),
+                ...(baseUrl === undefined ? {} : { baseUrl }),
+                type,
+            };
+            continue;
+        }
+
         if (type === "claude") {
             assertKnownKeys(id, rawProvider, [
                 "config_dir",
@@ -204,9 +224,10 @@ function readProviders(value: TomlValue | undefined): Record<string, ConfigProvi
     return providers;
 }
 
-function readProviderType(id: string, table: TomlTable): "bedrock" | "claude" | "codex" {
+function readProviderType(id: string, table: TomlTable): "bedrock" | "claude" | "codex" | "grok" {
     const configuredType = readProviderString(id, table, "type");
-    const builtInType = id === "bedrock" || id === "claude" || id === "codex" ? id : undefined;
+    const builtInType =
+        id === "bedrock" || id === "claude" || id === "codex" || id === "grok" ? id : undefined;
     if (
         configuredType !== undefined &&
         builtInType !== undefined &&
@@ -215,8 +236,10 @@ function readProviderType(id: string, table: TomlTable): "bedrock" | "claude" | 
         throw new Error(`Built-in provider "${id}" must use type "${builtInType}".`);
     }
     const type = configuredType ?? builtInType;
-    if (type !== "bedrock" && type !== "claude" && type !== "codex") {
-        throw new Error(`Provider "${id}" must set type to "codex", "claude", or "bedrock".`);
+    if (type !== "bedrock" && type !== "claude" && type !== "codex" && type !== "grok") {
+        throw new Error(
+            `Provider "${id}" must set type to "codex", "claude", "grok", or "bedrock".`,
+        );
     }
     return type;
 }

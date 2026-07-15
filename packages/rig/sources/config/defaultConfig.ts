@@ -22,6 +22,10 @@ export const DEFAULT_RIG_CONFIG: RigConfig = {
             enabled: true,
             type: "bedrock",
         },
+        grok: {
+            enabled: true,
+            type: "grok",
+        },
     },
     settings: {
         durableGlobalEventQueue: false,

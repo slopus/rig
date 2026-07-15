@@ -120,6 +120,11 @@ type = "claude"
 config_dir = "/Users/me/.claude-work"
 executable = "/opt/claude"
 
+[providers.work_grok]
+type = "grok"
+auth_file = "/Users/me/.grok-work/auth.json"
+base_url = "https://grok.example/v1"
+
 [providers.eu_bedrock]
 type = "bedrock"
 region = "eu-west-1"
@@ -158,13 +163,19 @@ bearer_token_env_var = "WORK_BEDROCK_TOKEN"
                     transport: "sse",
                     type: "codex",
                 },
+                work_grok: {
+                    authFile: "/Users/me/.grok-work/auth.json",
+                    baseUrl: "https://grok.example/v1",
+                    enabled: true,
+                    type: "grok",
+                },
             },
         });
     });
 
     it("requires a type for custom providers and rejects parameters from another type", () => {
         expect(() => parseConfigToml("[providers.work]\nenabled = true\n")).toThrow(
-            'Provider "work" must set type to "codex", "claude", or "bedrock".',
+            'Provider "work" must set type to "codex", "claude", "grok", or "bedrock".',
         );
         expect(() =>
             parseConfigToml('[providers.work]\ntype = "codex"\nconfig_dir = "/tmp/work"\n'),
@@ -313,6 +324,7 @@ effort = "minimal"
                 bedrock: { enabled: true, type: "bedrock" },
                 claude: { enabled: true, type: "claude" },
                 codex: { enabled: true, type: "codex" },
+                grok: { enabled: true, type: "grok" },
             });
             expect(loaded.config.docker).toEqual({
                 container: "trusted-development-container",
@@ -492,6 +504,12 @@ effort = "minimal"
                     region: "us-west-2",
                     type: "bedrock" as const,
                 },
+                work_grok: {
+                    authFile: "/Users/me/.grok-work/auth.json",
+                    baseUrl: "https://grok.example/v1",
+                    enabled: true,
+                    type: "grok" as const,
+                },
             };
 
             await writeRuntimeConfig(runtimePath, { providers });
@@ -499,6 +517,7 @@ effort = "minimal"
 
             expect(source).toContain("[providers.work_codex]");
             expect(source).toContain("[providers.work_bedrock]");
+            expect(source).toContain("[providers.work_grok]");
             expect(source).not.toContain("parameters");
             expect(parseConfigToml(source)).toEqual({ providers });
         } finally {

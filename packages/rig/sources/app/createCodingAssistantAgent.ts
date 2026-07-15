@@ -15,7 +15,7 @@ import {
 import type { DockerExecutionConfig } from "../execution/index.js";
 import { DEFAULT_RIG_CONFIG } from "../config/defaultConfig.js";
 import { findConfiguredProvider } from "../config/findConfiguredProvider.js";
-import type { ConfigCodexProvider, ConfigProviders } from "../config/types.js";
+import type { ConfigCodexProvider, ConfigGrokProvider, ConfigProviders } from "../config/types.js";
 import type { WorkflowContext } from "../workflows/index.js";
 import type { Message } from "../agent/types.js";
 import { NativeProxessManager } from "../processes/index.js";
@@ -24,15 +24,17 @@ import { createClaudeSdkProvider } from "../providers/claude-sdk.js";
 import { createClaudeSessionId } from "../providers/createClaudeSessionId.js";
 import { createCodexProvider, type CodexProviderOptions } from "../providers/codex.js";
 import { createGymProvider } from "../providers/createGymProvider.js";
+import { createGrokProvider, type GrokProviderOptions } from "../providers/grok.js";
 import { filterConfiguredProviderModels } from "../providers/filterConfiguredProviderModels.js";
 import { getBedrockModelRoute } from "../providers/getBedrockModelRoute.js";
 import { modelOpenaiGpt56Sol } from "../providers/models.js";
 import { readGymContextWindow } from "../providers/readGymContextWindow.js";
 import { readConfiguredBedrockBearerToken } from "../providers/readConfiguredBedrockBearerToken.js";
-import type { ServiceTier } from "../providers/types.js";
+import type { Model, ServiceTier } from "../providers/types.js";
 import { claudeCodeTools, claudeCollaborationTools } from "../tools/claude/index.js";
 import { codexCollaborationTools, codexTools } from "../tools/codex/index.js";
 import { piTools } from "../tools/pi/index.js";
+import { grokBuildTools, grokCollaborationTools } from "../tools/grok/index.js";
 import { agentTool } from "../tools/Agent.js";
 import { goalTools } from "../tools/goals/index.js";
 import type { CodingAssistantRuntime } from "./CodingAssistantRuntime.js";
@@ -46,6 +48,7 @@ export interface CreateCodingAssistantAgentOptions {
     effort?: string;
     env?: NodeJS.ProcessEnv;
     goals?: GoalContext;
+    grokModelsByProviderId?: Readonly<Record<string, readonly Model[]>>;
     instructions?: string;
     local?: boolean;
     messages?: readonly Message[];
@@ -98,11 +101,13 @@ export function createCodingAssistantAgent(
         options.providerId ??
         (modelId.startsWith("anthropic/")
             ? "claude-sdk"
-            : modelId.startsWith("openai/")
-              ? "codex"
-              : getBedrockModelRoute(modelId) !== undefined
-                ? "bedrock"
-                : "codex");
+            : modelId.startsWith("xai/")
+              ? "grok"
+              : modelId.startsWith("openai/")
+                ? "codex"
+                : getBedrockModelRoute(modelId) !== undefined
+                  ? "bedrock"
+                  : "codex");
     const providerConfig =
         providerId === "gym"
             ? undefined
@@ -115,17 +120,22 @@ export function createCodingAssistantAgent(
     const usesClaudeTools = providerType === "claude" || bedrockRoute?.provider === "anthropic";
     const usesCodexTools =
         providerType === "codex" || providerType === "gym" || bedrockRoute?.provider === "openai";
+    const usesGrokTools = providerType === "grok";
     const baseTools: readonly AnyDefinedTool[] = usesClaudeTools
         ? claudeCodeTools
-        : usesCodexTools
-          ? codexTools
-          : piTools;
+        : usesGrokTools
+          ? grokBuildTools
+          : usesCodexTools
+            ? codexTools
+            : piTools;
     const collaborationTools = (
         usesCodexTools
             ? codexCollaborationTools
-            : usesClaudeTools
-              ? [agentTool, ...claudeCollaborationTools]
-              : [agentTool]
+            : usesGrokTools
+              ? grokCollaborationTools
+              : usesClaudeTools
+                ? [agentTool, ...claudeCollaborationTools]
+                : [agentTool]
     ).filter(
         (tool) =>
             workflowsEnabled ||
@@ -193,6 +203,14 @@ export function createCodingAssistantAgent(
                 providerConfig,
             );
         }
+        if (providerConfig?.type === "grok") {
+            return filterConfiguredProviderModels(
+                createGrokProvider(
+                    toGrokProviderOptions(options, providerId, providerConfig, agentId),
+                ),
+                providerConfig,
+            );
+        }
         throw new Error(`Unknown inference provider '${providerId}'.`);
     })();
     const agentOptions: AgentOptions = {
@@ -221,6 +239,27 @@ export function createCodingAssistantAgent(
         cwd: runtimeCwd,
         processManager,
         provider,
+    };
+}
+
+function toGrokProviderOptions(
+    options: CreateCodingAssistantAgentOptions,
+    providerId: string,
+    config: ConfigGrokProvider,
+    sessionId: string,
+): GrokProviderOptions {
+    const env = options.env ?? process.env;
+    const baseUrl = config.baseUrl ?? env.RIG_GROK_BASE_URL;
+    return {
+        id: providerId,
+        env,
+        sessionId,
+        ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
+        ...(config.authFile === undefined ? {} : { authFile: config.authFile }),
+        ...(baseUrl === undefined ? {} : { baseUrl }),
+        ...(options.grokModelsByProviderId?.[providerId] === undefined
+            ? {}
+            : { models: options.grokModelsByProviderId[providerId] }),
     };
 }
 

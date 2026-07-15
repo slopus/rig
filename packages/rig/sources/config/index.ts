@@ -18,6 +18,7 @@ export type {
     ConfigBedrockProvider,
     ConfigClaudeProvider,
     ConfigCodexProvider,
+    ConfigGrokProvider,
     ConfigProvider,
     DaemonSettings,
     ConfigFeatures,

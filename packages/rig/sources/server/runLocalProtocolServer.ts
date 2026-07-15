@@ -10,6 +10,7 @@ import { removeStaleSocket } from "./removeStaleSocket.js";
 import { McpClientManager } from "../mcp/index.js";
 import { loadConfig, writeDaemonSettings } from "../config/index.js";
 import { createCodingAssistantAgent } from "../app/createCodingAssistantAgent.js";
+import { discoverConfiguredGrokModels } from "./discoverConfiguredGrokModels.js";
 
 export interface RunLocalProtocolServerOptions {
     socketPath?: string;
@@ -27,8 +28,12 @@ export async function runLocalProtocolServer(
     await removeStaleSocket(socketPath);
 
     const loadedConfig = await loadConfig({ cwd: process.cwd() });
+    const grokModelsByProviderId = await discoverConfiguredGrokModels({
+        providers: loadedConfig.config.providers,
+    });
     const modelCatalog = createModelCatalog({
         cwd: process.cwd(),
+        grokModelsByProviderId,
         providers: loadedConfig.config.providers,
     });
     const mcpToolProvider = new McpClientManager();
@@ -36,6 +41,7 @@ export async function runLocalProtocolServer(
         createRuntime: (options) =>
             createCodingAssistantAgent({
                 ...options,
+                grokModelsByProviderId,
                 providers: loadedConfig.config.providers,
             }),
         databasePath: paths.databasePath,

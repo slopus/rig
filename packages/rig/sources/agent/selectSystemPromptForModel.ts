@@ -4,6 +4,7 @@ import { GPT_5_5_SYSTEM_PROMPT } from "./prompts/gpt55SystemPrompt.js";
 import { GPT_5_6_SOL_SYSTEM_PROMPT } from "./prompts/gpt56SolSystemPrompt.js";
 import { GPT_5_6_TERRA_SYSTEM_PROMPT } from "./prompts/gpt56TerraSystemPrompt.js";
 import { KIMI_SYSTEM_PROMPT } from "./prompts/kimiSystemPrompt.js";
+import { GROK_BUILD_SYSTEM_PROMPT } from "./prompts/grokBuildSystemPrompt.js";
 import type { Model, Provider } from "../providers/types.js";
 
 const MODERN_CLAUDE_MODEL_PATTERNS = [
@@ -19,6 +20,10 @@ export function selectSystemPromptForModel(provider: Provider, model: Model): st
     const modelId = model.id.toLowerCase();
     const modelName = model.name.toLowerCase();
     const modelIdentity = `${modelId} ${modelName}`;
+
+    if (providerId.includes("grok") || modelId.includes("xai/grok-build")) {
+        return GROK_BUILD_SYSTEM_PROMPT;
+    }
 
     if (MODERN_CLAUDE_MODEL_PATTERNS.some((pattern) => modelIdentity.includes(pattern))) {
         return CLAUDE_CODE_SYSTEM_PROMPT;
