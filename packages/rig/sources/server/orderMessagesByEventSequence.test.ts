@@ -10,6 +10,7 @@ describe("orderMessagesByEventSequence", () => {
                     { messageId: "unknown" },
                     { messageId: "later" },
                     { messageId: "orphan", variant: "rich" },
+                    { messageId: "orphan", variant: "duplicate" },
                 ],
                 [{ messageId: "orphan" }, { messageId: "middle" }, { messageId: "middle" }],
                 new Map([

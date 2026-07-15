@@ -573,6 +573,150 @@ describe("PersistentSessionStore", () => {
         }
     });
 
+    it("sends repaired run A steering before later stored run B on the next inference", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        const model = defineModel({
+            defaultThinkingLevel: "off",
+            id: "openai/gym",
+            name: "Gym order",
+            thinkingLevels: ["off"],
+        });
+        const catalog: ModelCatalog = {
+            defaultModelId: model.id,
+            defaultProviderId: "gym",
+            models: [model],
+            providers: [{ providerId: "gym", models: [model] }],
+        };
+        const runA = textUserMessage("run-a-message", "Run A request");
+        const orphan = textUserMessage("run-a-orphan", "Run A repaired steering");
+        const runB = textUserMessage("run-b-message", "Run B later request");
+        const inferenceRequests: GymInferenceRequest[] = [];
+        const originalFetch = globalThis.fetch;
+        const originalInferenceUrl = process.env.RIG_GYM_INFERENCE_URL;
+        let openStore: PersistentSessionStore | undefined;
+        try {
+            process.env.RIG_GYM_INFERENCE_URL = "http://gym.test/inference";
+            globalThis.fetch = async (_input, init) => {
+                if (typeof init?.body !== "string") {
+                    throw new Error("Expected a serialized gym inference request.");
+                }
+                inferenceRequests.push(JSON.parse(init.body) as GymInferenceRequest);
+                return new Response(
+                    JSON.stringify({
+                        content: [{ text: "Ordered.", type: "text" }],
+                        stopReason: "stop",
+                    }),
+                    { headers: { "content-type": "application/json" }, status: 200 },
+                );
+            };
+
+            openStore = new PersistentSessionStore({ databasePath, modelCatalog: catalog });
+            const state = sessionState({
+                contextMessages: [runA, runB],
+                modelId: model.id,
+                models: [model],
+                providerId: "gym",
+                status: "completed",
+                title: "Ordering test",
+                titleStatus: "ready",
+            });
+            openStore.saveSession(state);
+            openStore.upsertMessage(state.id, {
+                isPartial: false,
+                message: runA,
+                position: 0,
+                runId: "run-a",
+            });
+            openStore.upsertMessage(state.id, {
+                isPartial: false,
+                message: runB,
+                position: 1,
+                runId: "run-b",
+            });
+            openStore.close();
+            openStore = undefined;
+
+            const database = new DatabaseSync(databasePath);
+            insertEvent(database, state.id, "run-a-start", "run_started", 1, {
+                runId: "run-a",
+            });
+            insertEvent(database, state.id, "run-a-submitted", "message_submitted", 2, {
+                delivery: "run",
+                displayText: "Run A request",
+                message: runA,
+                runId: "run-a",
+            });
+            insertEvent(database, state.id, "run-a-steering", "message_submitted", 3, {
+                delivery: "steer",
+                displayText: "Run A repaired steering",
+                message: orphan,
+                runId: "run-a",
+            });
+            insertEvent(database, state.id, "run-a-finished", "run_finished", 4, {
+                agentRunId: "agent-run-a",
+                modelLocked: true,
+                runId: "run-a",
+                stopReason: "aborted",
+            });
+            insertEvent(database, state.id, "run-b-start", "run_started", 5, {
+                runId: "run-b",
+            });
+            insertEvent(database, state.id, "run-b-submitted", "message_submitted", 6, {
+                delivery: "run",
+                displayText: "Run B later request",
+                message: runB,
+                runId: "run-b",
+            });
+            insertEvent(database, state.id, "run-b-finished", "run_finished", 7, {
+                agentRunId: "agent-run-b",
+                modelLocked: false,
+                runId: "run-b",
+                stopReason: "stop",
+            });
+            database.close();
+
+            openStore = new PersistentSessionStore({ databasePath, modelCatalog: catalog });
+            const restored = openStore.get(state.id);
+            expect(restored?.snapshot().snapshot.messages.map((message) => message.id)).toEqual([
+                runA.id,
+                orphan.id,
+                runB.id,
+            ]);
+            expect(
+                restored?.snapshot().snapshot.contextMessages?.map((message) => message.id),
+            ).toEqual([runA.id, orphan.id, runB.id]);
+            if (restored === undefined) throw new Error("Expected the repaired session.");
+            const submitted = restored.submit({ text: "Fresh request" });
+            await expect(restored.waitForRun(submitted.runId)).resolves.toEqual({
+                status: "completed",
+            });
+
+            expect(inferenceRequests).toHaveLength(1);
+            expect(
+                inferenceRequests[0]?.context.messages.flatMap((message) => {
+                    if (message.role !== "user") return [];
+                    if (typeof message.content === "string") return [message.content];
+                    return [
+                        message.content
+                            .flatMap((block) => (block.type === "text" ? [block.text] : []))
+                            .join(""),
+                    ];
+                }),
+            ).toEqual([
+                "Run A request",
+                "Run A repaired steering",
+                "Run B later request",
+                "Fresh request",
+            ]);
+        } finally {
+            openStore?.close();
+            globalThis.fetch = originalFetch;
+            if (originalInferenceUrl === undefined) delete process.env.RIG_GYM_INFERENCE_URL;
+            else process.env.RIG_GYM_INFERENCE_URL = originalInferenceUrl;
+            await cleanup();
+        }
+    });
+
     it("leaves notifications, modern runs, invalid ordering, and discarded epochs unchanged", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         try {

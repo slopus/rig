@@ -3,15 +3,12 @@ export function orderMessagesByEventSequence<T extends { messageId: string }>(
     additions: readonly T[],
     sequenceByMessageId: ReadonlyMap<string, number>,
 ): T[] {
-    const seen = new Set(existing.map((entry) => entry.messageId));
-    const combined = [
-        ...existing,
-        ...additions.filter((entry) => {
-            if (seen.has(entry.messageId)) return false;
-            seen.add(entry.messageId);
-            return true;
-        }),
-    ];
+    const seen = new Set<string>();
+    const combined = [...existing, ...additions].filter((entry) => {
+        if (seen.has(entry.messageId)) return false;
+        seen.add(entry.messageId);
+        return true;
+    });
     const orderedKnown = combined
         .filter((entry) => sequenceByMessageId.has(entry.messageId))
         .sort(
