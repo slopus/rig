@@ -104,21 +104,29 @@ describe("account quota observations", () => {
         await expect(gym.readFile("claude-quota-requests.log")).resolves.toContain('"fiveHour":42');
         submit(gym, "/usage");
         const bothProviders = await gym.terminal.waitUntil(
-            (screen) =>
-                screen.text.includes("Codex") &&
-                screen.text.includes("5-hour: 70% left") &&
-                screen.text.includes("Weekly: 85% left") &&
-                screen.text.includes("Claude") &&
-                screen.text.includes("5-hour: 55% left") &&
-                screen.text.includes("Weekly: 75% left") &&
-                screen.text.includes("Observed while this session was active: +3%") &&
-                screen.text.includes("Observed while this session was active: +2%") &&
-                screen.text.includes("Overall session total: 300") &&
-                !screen.synchronizedOutputActive,
+            (screen) => {
+                const text = normalizeTerminalText(screen.text);
+                return (
+                    text.includes("Codex") &&
+                    text.includes("5-hour: 70% left") &&
+                    text.includes("Weekly: 85% left") &&
+                    text.includes("Claude") &&
+                    text.includes("5-hour: 55% left") &&
+                    text.includes("Weekly: 75% left") &&
+                    text.includes(
+                        "Observed while this session was active: 5h +3% · week +1% (approx.)",
+                    ) &&
+                    text.includes(
+                        "Observed while this session was active: 5h +2% · week +2% (approx.)",
+                    ) &&
+                    text.includes("Overall session total: 300") &&
+                    !screen.synchronizedOutputActive
+                );
+            },
             "independent Codex and Claude quota windows",
             30_000,
         );
-        expect(bothProviders.text).toContain("Observed while this session was active: +1%");
+        expect(bothProviders.text).toContain("Account usage may include other activity.");
         expect(bothProviders.text).not.toContain("�");
         await repaint(gym);
         await gym.terminal.screenshot(`${artifacts}/codex-claude-weekly-observed-narrow.png`);
@@ -135,10 +143,15 @@ describe("account quota observations", () => {
             "resumed quota report",
             30_000,
         );
-        expect(resumed.text).toContain("Observed while this session was active: +3%");
-        expect(resumed.text).toContain("Observed while this session was active: +2%");
-        expect(resumed.text).not.toContain("Observed while this session was active: +6%");
-        expect(resumed.text).not.toContain("Observed while this session was active: +4%");
+        const resumedText = normalizeTerminalText(resumed.text);
+        expect(resumedText).toContain(
+            "Observed while this session was active: 5h +3% · week +1% (approx.)",
+        );
+        expect(resumedText).toContain(
+            "Observed while this session was active: 5h +2% · week +2% (approx.)",
+        );
+        expect(resumedText).not.toContain("5h +6%");
+        expect(resumedText).not.toContain("week +4%");
         await gym.terminal.screenshot(`${artifacts}/quota-resume-no-double-count.png`);
         await repaint(gym);
 
@@ -148,14 +161,19 @@ describe("account quota observations", () => {
         await waitForQuotaRequests(gym, 7);
         submit(gym, "/usage");
         const rollover = await gym.terminal.waitUntil(
-            (screen) =>
-                screen.text.includes("Overall session total: 375") &&
-                screen.text.includes("5-hour: 96% left") &&
-                screen.text.includes("Weekly: 98% left") &&
-                screen.text.includes("Observed while this session was active: +4%") &&
-                screen.text.includes("Observed while this session was active: +3%") &&
-                !screen.synchronizedOutputActive &&
-                screen.scroll.atBottom,
+            (screen) => {
+                const text = normalizeTerminalText(screen.text);
+                return (
+                    text.includes("Overall session total: 375") &&
+                    text.includes("5-hour: 96% left") &&
+                    text.includes("Weekly: 98% left") &&
+                    text.includes(
+                        "Observed while this session was active: 5h +4% · week +3% (approx.)",
+                    ) &&
+                    !screen.synchronizedOutputActive &&
+                    screen.scroll.atBottom
+                );
+            },
             "rollover-safe observed movement",
             30_000,
         );
@@ -168,6 +186,10 @@ describe("account quota observations", () => {
 function submit(gym: Gym, text: string): void {
     gym.terminal.type(text);
     gym.terminal.press("enter");
+}
+
+function normalizeTerminalText(text: string): string {
+    return text.replace(/\s+/gu, " ");
 }
 
 async function submitAndWait(gym: Gym, prompt: string): Promise<void> {
