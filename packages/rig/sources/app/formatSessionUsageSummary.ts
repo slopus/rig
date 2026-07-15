@@ -44,6 +44,9 @@ export function formatSessionUsageSummary(
         }
     }
 
+    if (summary.quotaContributions.length > 0) {
+        lines.push("Observed quota changes are account-wide and may include other activity.");
+    }
     const total = summary.groups.reduce((sum, group) => sum + group.usage.totalTokens, 0);
     lines.push(`Overall session total: ${formatCompactTokens(total)}`);
     return lines.join("\n");

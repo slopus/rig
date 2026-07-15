@@ -27,6 +27,7 @@ describe("formatSessionUsageSummary", () => {
                 "Context: 1.3k / 200k · 99% left",
                 "Earlier usage",
                 "Model unavailable · 5 in · 2 out · 0 read · 0 write · 7 total",
+                "Observed quota changes are account-wide and may include other activity.",
                 "Overall session total: 1.4k",
             ].join("\n"),
         );
@@ -88,6 +89,9 @@ describe("formatSessionUsageSummary", () => {
         expect(text).toContain("120 total · $0.12");
         expect(text).toContain("Observed while this session was active: no increase");
         expect(text).toContain("Observed while this session was active: +2%");
+        expect(text).toContain(
+            "Observed quota changes are account-wide and may include other activity.",
+        );
     });
 });
 
