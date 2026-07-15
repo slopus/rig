@@ -131,6 +131,22 @@ describe("findLegacyOrphanedSteering", () => {
             ]),
         ).toEqual([]);
     });
+
+    it("recognizes unmarked startup interruptions written by older versions", () => {
+        const active = steerSubmitted("legacy-active-message", "legacy-active-run", 2);
+        expect(
+            findLegacyOrphanedSteering([
+                event("run_started", 1, { runId: "legacy-active-run" }),
+                active,
+                event("run_error", 3, {
+                    errorMessage:
+                        "The subagent stopped working because the local server restarted before its suspended run finished.",
+                    modelLocked: true,
+                    runId: "legacy-active-run",
+                }),
+            ]),
+        ).toEqual([]);
+    });
 });
 
 function steerSubmitted(

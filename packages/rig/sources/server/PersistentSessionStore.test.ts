@@ -871,6 +871,79 @@ describe("PersistentSessionStore", () => {
         }
     });
 
+    it("does not promote steering terminated by an unmarked legacy restart error", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        try {
+            const active = textUserMessage("legacy-suspended-orphan", "still not user context");
+            const store = new PersistentSessionStore({
+                databasePath,
+                modelCatalog: testModelCatalog(),
+            });
+            store.saveSession(sessionState());
+            const state = sessionState({
+                agent: {
+                    depth: 1,
+                    description: "Legacy suspended worker",
+                    parentSessionId: "session-1",
+                    rootSessionId: "session-1",
+                    type: "subagent",
+                },
+                agentId: "legacy-subagent-agent",
+                id: "legacy-subagent-1",
+                status: "suspended",
+            });
+            store.saveSession(state);
+            store.close();
+            const database = new DatabaseSync(databasePath);
+            insertEvent(database, state.id, "legacy-suspended-start", "run_started", 1, {
+                runId: "legacy-suspended-run",
+            });
+            insertEvent(database, state.id, "legacy-suspended-submit", "message_submitted", 2, {
+                delivery: "steer",
+                displayText: "still not user context",
+                message: active,
+                runId: "legacy-suspended-run",
+            });
+            insertEvent(database, state.id, "legacy-suspended-error", "run_error", 3, {
+                errorMessage:
+                    "The subagent stopped working because the local server restarted before its suspended run finished.",
+                modelLocked: true,
+                runId: "legacy-suspended-run",
+            });
+            database.close();
+
+            for (let open = 0; open < 2; open += 1) {
+                const restored = new PersistentSessionStore({
+                    databasePath,
+                    modelCatalog: testModelCatalog(),
+                });
+                restored.close();
+            }
+
+            const verify = new DatabaseSync(databasePath);
+            try {
+                expect(
+                    verify
+                        .prepare(
+                            "SELECT COUNT(*) AS count FROM session_messages WHERE session_id = ? AND message_id = ?",
+                        )
+                        .get(state.id, active.id),
+                ).toEqual({ count: 0 });
+                expect(
+                    verify
+                        .prepare(
+                            "SELECT COUNT(*) AS count FROM session_events WHERE session_id = ? AND type = 'steering_applied'",
+                        )
+                        .get(state.id),
+                ).toEqual({ count: 0 });
+            } finally {
+                verify.close();
+            }
+        } finally {
+            await cleanup();
+        }
+    });
+
     it("keeps workflows disabled across daemon restarts", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         try {
