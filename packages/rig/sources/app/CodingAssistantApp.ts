@@ -744,6 +744,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
         if (event.type === "session_reset") {
             this.#usageRequestVersion += 1;
+            this.#lastEscapeAtMs = undefined;
             this.#clearEntries();
             this.#pendingSteeringMessages = [];
             this.#modelLocked = false;
@@ -773,6 +774,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
         if (event.type === "session_rewound") {
             this.#usageRequestVersion += 1;
+            this.#lastEscapeAtMs = undefined;
             this.#pendingSteeringMessages = [];
             const targetIndex = this.#entries.findIndex(
                 (entry) => entry.id === event.data.messageId,
@@ -878,6 +880,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 return;
             }
             this.#selectionPanel.handleInput?.(data);
+            this.#lastEscapeAtMs = undefined;
             this.#requestRender();
             return;
         }
@@ -894,6 +897,7 @@ export class CodingAssistantApp implements Component, Focusable {
             }
             if (matchesKey(data, "escape")) {
                 this.#handleEscape();
+                this.#lastEscapeAtMs = undefined;
                 this.#requestRender();
                 return;
             }
@@ -3394,6 +3398,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (active.request.questions[active.questionIndex]?.id !== freeform.questionId) return;
 
         this.#freeformUserInput = undefined;
+        this.#lastEscapeAtMs = undefined;
         this.#editor.setText("");
         this.#commitUserInputAnswer([...freeform.existingAnswers, answer]);
         this.#requestRender();
@@ -3441,6 +3446,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (wasActive) this.#activeUserInput = undefined;
         if (wasFreeform) {
             this.#freeformUserInput = undefined;
+            this.#lastEscapeAtMs = undefined;
             this.#editor.setText("");
         }
         if (this.#answeringUserInputRequestId === requestId) {
@@ -3459,14 +3465,17 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#answeringUserInputRequestId = undefined;
         if (this.#freeformUserInput !== undefined) this.#editor.setText("");
         this.#freeformUserInput = undefined;
+        if (hadVisibleRequest) this.#lastEscapeAtMs = undefined;
         if (hadVisibleRequest) this.#closeSelectionPanel();
     }
 
     #showSelectionPanel(component: Component): void {
+        this.#lastEscapeAtMs = undefined;
         this.#selectionPanel = component;
     }
 
     #closeSelectionPanel(): void {
+        this.#lastEscapeAtMs = undefined;
         this.#selectionPanel = undefined;
     }
 
@@ -4730,7 +4739,7 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #setRunning(running: boolean): void {
-        if (this.#running !== running) this.#lastEscapeAtMs = undefined;
+        this.#lastEscapeAtMs = undefined;
         this.#running = running;
     }
 }

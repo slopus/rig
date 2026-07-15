@@ -178,6 +178,84 @@ describe("CodingAssistantApp", () => {
         expect(applied).toContain("› Pending direction");
     });
 
+    it("replays a terminal legacy run followed by repair without pending or duplicate UI", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const message = {
+            blocks: [{ text: "Legacy repaired direction", type: "text" as const }],
+            id: "legacy-steer-1",
+            role: "user" as const,
+        };
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            initialSessionEvents: [
+                {
+                    createdAt: 1,
+                    data: { runId: "run-1" },
+                    id: "event-started",
+                    sessionId: "session-1",
+                    type: "run_started",
+                },
+                {
+                    createdAt: 2,
+                    data: {
+                        delivery: "steer",
+                        displayText: "Legacy repaired direction",
+                        message,
+                        runId: "run-1",
+                    },
+                    id: "event-submitted",
+                    sessionId: "session-1",
+                    type: "message_submitted",
+                },
+                {
+                    createdAt: 3,
+                    data: {
+                        agentRunId: "agent-run-1",
+                        modelLocked: true,
+                        runId: "run-1",
+                        stopReason: "aborted",
+                    },
+                    id: "event-finished",
+                    sessionId: "session-1",
+                    type: "run_finished",
+                },
+                {
+                    createdAt: 4,
+                    data: { messageIds: [message.id], runId: "run-1" },
+                    id: "event-repaired",
+                    sessionId: "session-1",
+                    type: "steering_applied",
+                },
+            ],
+            processManager: new NativeProxessManager(),
+            sessionBacked: true,
+            tui: fakeTui(),
+        });
+
+        const rendered = stripAnsi(app.render(100).join("\n"));
+        expect(rendered).not.toContain("Messages to be submitted after next tool call");
+        expect(rendered.match(/› Legacy repaired direction/gu)).toHaveLength(1);
+    });
+
     it("uses pending-aware abort without stopping the local run on Escape", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
@@ -355,6 +433,233 @@ describe("CodingAssistantApp", () => {
 
         app.handleInput("\x1b");
         expect(stripAnsi(app.render(100).join("\n"))).toContain("› Keep this transition draft");
+        app.handleInput("\x1b");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› Ask Rig to do anything");
+    });
+
+    it("does not pair a running Escape with the first idle Escape after completion", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const abort = vi.fn(async () => ({ aborted: true }));
+        const app = new CodingAssistantApp({
+            agent: Object.assign(
+                new Agent({
+                    provider,
+                    modelId: model.id,
+                    context: harness.context,
+                    printToConsole: false,
+                }),
+                { abort },
+            ),
+            cwd: harness.context.fs.cwd,
+            now: () => 100,
+            processManager: new NativeProxessManager(),
+            sessionBacked: true,
+            tui: fakeTui(),
+        });
+        app.applySessionEvent({
+            createdAt: 1,
+            data: { runId: "run-1" },
+            id: "event-started",
+            sessionId: "session-1",
+            type: "run_started",
+        });
+        app.handleInput("Never add this running draft to history");
+        app.handleInput("\x1b");
+        await vi.waitFor(() => expect(abort).toHaveBeenCalledOnce());
+        app.applySessionEvent({
+            createdAt: 2,
+            data: {
+                agentRunId: "agent-run-1",
+                modelLocked: true,
+                runId: "run-1",
+                stopReason: "aborted",
+            },
+            id: "event-finished",
+            sessionId: "session-1",
+            type: "run_finished",
+        });
+
+        app.handleInput("\x1b");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain(
+            "› Never add this running draft to history",
+        );
+        app.handleInput("\x03");
+        app.handleInput("\x1b[A");
+        expect(stripAnsi(app.render(100).join("\n"))).not.toContain(
+            "› Never add this running draft to history",
+        );
+    });
+
+    it("resets double-Escape timing across reset and rewind events", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        const app = new CodingAssistantApp({
+            agent,
+            cwd: harness.context.fs.cwd,
+            now: () => 100,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        app.handleInput("Keep across reset");
+        app.handleInput("\x1b");
+        app.applySessionEvent({
+            createdAt: 1,
+            data: { snapshot: agent.snapshot() },
+            id: "event-reset",
+            sessionId: "session-1",
+            type: "session_reset",
+        });
+        app.handleInput("\x1b");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› Keep across reset");
+        app.handleInput("\x1b");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› Ask Rig to do anything");
+
+        app.handleInput("Keep across rewind");
+        app.handleInput("\x1b");
+        app.applySessionEvent({
+            createdAt: 2,
+            data: { messageId: "rewind-target", snapshot: agent.snapshot() },
+            id: "event-rewound",
+            sessionId: "session-1",
+            type: "session_rewound",
+        });
+        app.handleInput("\x1b");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› Keep across rewind");
+        app.handleInput("\x1b");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› Ask Rig to do anything");
+    });
+
+    it("does not let selection-panel Escape arm the composer chain", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            now: () => 100,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        app.handleInput("Keep after closing overlay");
+        app.handleInput("\x1bm");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("Choose Model");
+        app.handleInput("\x1b");
+        app.handleInput("\x1b");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› Keep after closing overlay");
+        app.handleInput("\x1b");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› Ask Rig to do anything");
+    });
+
+    it("does not let freeform Escape or exit arm the composer chain", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            now: () => 100,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+        app.applySessionEvent({
+            createdAt: 1,
+            data: {
+                questions: [
+                    {
+                        header: "Choice",
+                        id: "choice",
+                        multiSelect: false,
+                        options: [{ description: "Use the listed answer.", label: "Listed" }],
+                        question: "Choose an answer.",
+                    },
+                ],
+                requestId: "request-1",
+            },
+            id: "event-requested",
+            sessionId: "session-1",
+            type: "user_input_requested",
+        });
+        app.handleInput("\x1b[B");
+        app.handleInput("\r");
+        app.handleInput("Keep this freeform answer");
+        app.handleInput("\x1b");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› Keep this freeform answer");
+        app.applySessionEvent({
+            createdAt: 2,
+            data: { requestId: "request-1", status: "cancelled" },
+            id: "event-resolved",
+            sessionId: "session-1",
+            type: "user_input_resolved",
+        });
+
+        app.handleInput("Keep after freeform exit");
+        app.handleInput("\x1b");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("› Keep after freeform exit");
         app.handleInput("\x1b");
         expect(stripAnsi(app.render(100).join("\n"))).toContain("› Ask Rig to do anything");
     });
