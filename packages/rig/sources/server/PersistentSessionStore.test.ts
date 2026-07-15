@@ -6,7 +6,12 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 
 import type { UserMessage } from "../agent/types.js";
-import { createEventIdFactory, type ModelCatalog, type SessionEvent } from "../protocol/index.js";
+import {
+    createEventIdFactory,
+    eventIdsShareScope,
+    type ModelCatalog,
+    type SessionEvent,
+} from "../protocol/index.js";
 import type { GymInferenceRequest } from "../providers/gym-types.js";
 import { defineModel } from "../providers/types.js";
 import type { PersistedQueuedRun, PersistedSessionState } from "./InMemorySession.js";
@@ -568,6 +573,70 @@ describe("PersistentSessionStore", () => {
             });
             reopenedStore.close();
             expect(readLegacyRepairDatabaseState(databasePath, state.id)).toEqual(afterFirstOpen);
+        } finally {
+            await cleanup();
+        }
+    });
+
+    it("repairs legacy steering with each restored session's cursor scope", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        try {
+            const store = new PersistentSessionStore({ databasePath });
+            const sessions = [
+                store.create({ cwd: "/tmp/rig-repair-scope-a" }),
+                store.create({ cwd: "/tmp/rig-repair-scope-b" }),
+            ];
+            const initialIds = sessions.map((session) => session.snapshot().lastEventId);
+            store.close();
+            if (initialIds.some((id) => id === undefined)) {
+                throw new Error("Expected initial session event identifiers.");
+            }
+
+            const database = new DatabaseSync(databasePath);
+            for (const [index, session] of sessions.entries()) {
+                const initialId = initialIds[index];
+                if (initialId === undefined) continue;
+                const createEventId = createEventIdFactory({ after: initialId });
+                const runId = `legacy-run-${String(index)}`;
+                const message = textUserMessage(`legacy-message-${String(index)}`, "repair me");
+                insertEvent(database, session.id, createEventId(), "run_started", 2, { runId });
+                insertEvent(database, session.id, createEventId(), "message_submitted", 3, {
+                    delivery: "steer",
+                    displayText: "repair me",
+                    message,
+                    runId,
+                });
+                insertEvent(database, session.id, createEventId(), "run_finished", 4, {
+                    agentRunId: `agent-run-${String(index)}`,
+                    modelLocked: true,
+                    runId,
+                    stopReason: "aborted",
+                });
+            }
+            database.close();
+
+            const restoredStore = new PersistentSessionStore({ databasePath });
+            try {
+                const repairedIds = sessions.map(
+                    (session) =>
+                        restoredStore
+                            .get(session.id)
+                            ?.events.since(undefined)
+                            ?.find((event) => event.type === "steering_applied")?.id,
+                );
+                expect(repairedIds.every((id) => id !== undefined)).toBe(true);
+                expect(eventIdsShareScope(initialIds[0]!, repairedIds[0]!)).toBe(true);
+                expect(eventIdsShareScope(initialIds[1]!, repairedIds[1]!)).toBe(true);
+                expect(eventIdsShareScope(repairedIds[0]!, repairedIds[1]!)).toBe(false);
+                expect(
+                    restoredStore.get(sessions[0]!.id)?.events.since(repairedIds[1]!),
+                ).toBeUndefined();
+                expect(
+                    restoredStore.get(sessions[1]!.id)?.events.since(repairedIds[0]!),
+                ).toBeUndefined();
+            } finally {
+                restoredStore.close();
+            }
         } finally {
             await cleanup();
         }
