@@ -55,6 +55,21 @@ describe("InMemorySession metadata settlement", () => {
         });
     });
 
+    it("restarts the idle window for unsent user activity", async () => {
+        vi.useFakeTimers();
+        const harness = createHarness();
+        const run = harness.session.submit({ text: "Wait for an unsent draft." });
+        await harness.session.waitForRun(run.runId);
+
+        await vi.advanceTimersByTimeAsync(59_999);
+        harness.session.recordUserActivity();
+        await vi.advanceTimersByTimeAsync(59_999);
+        expect(harness.metadataContexts).toHaveLength(0);
+
+        await vi.advanceTimersByTimeAsync(1);
+        expect(harness.metadataContexts).toHaveLength(1);
+    });
+
     it("discards an aborted stale generation when new work arrives", async () => {
         vi.useFakeTimers();
         let releaseStale: (() => void) | undefined;
@@ -79,6 +94,105 @@ describe("InMemorySession metadata settlement", () => {
             title: "Delayed session metadata",
         });
         expect(harness.session.snapshot().title).not.toBe("Stale generated title");
+    });
+
+    it("settles metadata for the run_error boundary repaired after interruption", async () => {
+        vi.useFakeTimers();
+        const harness = createHarness();
+        const foreground = harness.session.submit({ text: "Finish before the restart." });
+        await harness.session.waitForRun(foreground.runId);
+        await vi.advanceTimersByTimeAsync(60_000);
+
+        harness.session.markInterrupted({
+            interruptedAt: Date.now(),
+            message: "The restored run was interrupted.",
+            reason: "crash",
+            runId: "restored-run",
+        });
+        await vi.advanceTimersByTimeAsync(59_999);
+        expect(harness.metadataContexts).toHaveLength(1);
+
+        await vi.advanceTimersByTimeAsync(1);
+        expect(harness.metadataContexts).toHaveLength(2);
+        expect(harness.session.snapshot().metadataRunId).toBe("restored-run");
+    });
+
+    it("invalidates stale metadata on rewind and reset", async () => {
+        vi.useFakeTimers();
+        const harness = createHarness();
+        const first = harness.session.submit({ text: "Keep this turn." });
+        await harness.session.waitForRun(first.runId);
+        const second = harness.session.submit({ text: "Remove this turn." });
+        await harness.session.waitForRun(second.runId);
+        await vi.advanceTimersByTimeAsync(60_000);
+
+        const secondMessage = harness.session
+            .snapshot()
+            .snapshot.messages.find(
+                (message) =>
+                    message.role === "user" &&
+                    message.blocks[0]?.type === "text" &&
+                    message.blocks[0].text === "Remove this turn.",
+            );
+        if (secondMessage === undefined) throw new Error("Second user message was not persisted.");
+        harness.session.rewind(secondMessage.id);
+        expect(harness.session.snapshot()).toMatchObject({ titleStatus: "idle" });
+        expect(harness.session.snapshot()).not.toHaveProperty("metadataRunId");
+        expect(harness.session.snapshot()).not.toHaveProperty("metadataUpdatedAt");
+        expect(harness.session.snapshot()).not.toHaveProperty("recap");
+
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(harness.session.snapshot().metadataRunId).toBe(first.runId);
+
+        harness.session.reset();
+        expect(harness.session.snapshot()).toMatchObject({ titleStatus: "idle" });
+        expect(harness.session.snapshot()).not.toHaveProperty("metadataRunId");
+        expect(harness.session.snapshot()).not.toHaveProperty("metadataUpdatedAt");
+        expect(harness.session.snapshot()).not.toHaveProperty("recap");
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(harness.metadataContexts).toHaveLength(2);
+    });
+
+    it("restarts the root idle window for descendant-local activity transitions", async () => {
+        vi.useFakeTimers();
+        const harness = createHarness();
+        const foreground = harness.session.submit({ text: "Wait for descendant work." });
+        await harness.session.waitForRun(foreground.runId);
+
+        await vi.advanceTimersByTimeAsync(59_999);
+        harness.setSubagentActive(true);
+        harness.recordDescendantActivity();
+        await vi.advanceTimersByTimeAsync(10_000);
+        harness.setSubagentActive(false);
+        harness.recordDescendantActivity();
+        await vi.advanceTimersByTimeAsync(59_999);
+        expect(harness.metadataContexts).toHaveLength(0);
+
+        await vi.advanceTimersByTimeAsync(1);
+        expect(harness.metadataContexts).toHaveLength(1);
+    });
+
+    it("blocks settlement while manual compaction is active", async () => {
+        vi.useFakeTimers();
+        let finishCompaction: (() => void) | undefined;
+        const compaction = new Promise<void>((resolve) => {
+            finishCompaction = resolve;
+        });
+        const harness = createHarness({ compaction });
+        const foreground = harness.session.submit({ text: "Compact before settling." });
+        await harness.session.waitForRun(foreground.runId);
+
+        await vi.advanceTimersByTimeAsync(59_999);
+        const compacting = harness.session.compact();
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(harness.metadataContexts).toHaveLength(0);
+
+        finishCompaction?.();
+        await compacting;
+        await vi.advanceTimersByTimeAsync(59_999);
+        expect(harness.metadataContexts).toHaveLength(0);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(harness.metadataContexts).toHaveLength(1);
     });
 
     it("requires subagents, workflows, and managed background terminals to become idle", async () => {
@@ -128,7 +242,13 @@ describe("InMemorySession metadata settlement", () => {
     });
 });
 
-function createHarness(options: { activeSubagent?: boolean; staleMetadata?: Promise<void> } = {}) {
+function createHarness(
+    options: {
+        activeSubagent?: boolean;
+        compaction?: Promise<void>;
+        staleMetadata?: Promise<void>;
+    } = {},
+) {
     const model = defineModel({
         defaultThinkingLevel: "off",
         id: "test/session-metadata",
@@ -187,13 +307,16 @@ function createHarness(options: { activeSubagent?: boolean; staleMetadata?: Prom
     let activeSubagent = options.activeSubagent === true;
     let root: InMemorySession | undefined;
     const child = {
+        agentMetadata: () => ({ depth: 1, rootSessionId: "root", type: "subagent" }),
+        hasLocalSettlementWork: () => activeSubagent,
+        id: "child-session",
         subagentSummary: () => subagentSummary(activeSubagent),
     } as InMemorySession;
     const manager = new AgentSessionManager({
         repository: {
             createSubagent: () => child,
-            get: () => root,
-            listByRoot: () => (activeSubagent ? [child] : []),
+            get: (sessionId) => (sessionId === child.id ? child : root),
+            listByRoot: () => [child],
         },
     });
     let backgroundCount = 0;
@@ -203,6 +326,18 @@ function createHarness(options: { activeSubagent?: boolean; staleMetadata?: Prom
         createEventId: createEventIdFactory(),
         createRuntime: (runtimeOptions) => {
             const runtime = createRuntime(runtimeOptions, provider);
+            if (options.compaction !== undefined) {
+                runtime.agent.compact = async () => {
+                    await options.compaction;
+                    return {
+                        compacted: true,
+                        compactedMessageCount: 2,
+                        estimatedTokensAfter: 1,
+                        estimatedTokensBefore: 2,
+                        retainedMessageCount: 0,
+                    };
+                };
+            }
             runtime.context.bash.activeSessionCount = () => backgroundCount;
             runtime.context.bash.setActiveSessionCountListener = (listener) => {
                 backgroundListener = listener;
@@ -216,6 +351,9 @@ function createHarness(options: { activeSubagent?: boolean; staleMetadata?: Prom
     return {
         metadataContexts,
         metadataSignals,
+        recordDescendantActivity() {
+            manager.recordDescendantSettlementActivity("root");
+        },
         session: root,
         setBackgroundCount(count: number) {
             backgroundCount = count;

@@ -147,6 +147,7 @@ export interface CodingAssistantAppOptions {
     tui: TUI;
     idFactory?: () => string;
     onDefaultModelChange?: (preference: DefaultModelPreference) => void | Promise<void>;
+    onUserActivity?: () => void;
     onSettingsChange?: (settings: AppSettings) => void | Promise<void>;
     onStopWorkflow?: (runId: string) => void | Promise<void>;
     onExit?: () => void | Promise<void>;
@@ -258,6 +259,7 @@ export class CodingAssistantApp implements Component, Focusable {
         | ((preference: DefaultModelPreference) => void | Promise<void>)
         | undefined;
     readonly #onSettingsChange: ((settings: AppSettings) => void | Promise<void>) | undefined;
+    readonly #onUserActivity: (() => void) | undefined;
     readonly #onStopWorkflow: ((runId: string) => void | Promise<void>) | undefined;
     readonly #onExit: (() => void | Promise<void>) | undefined;
     readonly #respondUserInput:
@@ -353,6 +355,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#now = options.now ?? Date.now;
         this.#onDefaultModelChange = options.onDefaultModelChange;
         this.#onSettingsChange = options.onSettingsChange;
+        this.#onUserActivity = options.onUserActivity;
         this.#onStopWorkflow = options.onStopWorkflow;
         this.#onExit = options.onExit;
         this.#respondUserInput = options.respondUserInput;
@@ -792,6 +795,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
         const escapePressed = matchesKey(data, "escape");
         if (!escapePressed) this.#lastEscapeAtMs = undefined;
+        this.#onUserActivity?.();
 
         if (this.#selectionPanel !== undefined) {
             if (matchesKey(data, "ctrl+c") || data === "\x03") {

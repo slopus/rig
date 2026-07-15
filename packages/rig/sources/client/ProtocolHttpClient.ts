@@ -23,6 +23,7 @@ import type {
     ListSessionsResponse,
     ListSubagentsResponse,
     ProtocolSession,
+    RecordSessionActivityResponse,
     RewindSessionResponse,
     SearchFilesResponse,
     SessionEvent,
@@ -234,6 +235,10 @@ export class ProtocolHttpClient {
 
     reset(sessionId: string): Promise<{ session: ProtocolSession }> {
         return this.#requestJson("POST", `/sessions/${encodeURIComponent(sessionId)}/reset`);
+    }
+
+    recordSessionActivity(sessionId: string): Promise<RecordSessionActivityResponse> {
+        return this.#requestJson("POST", `/sessions/${encodeURIComponent(sessionId)}/activity`);
     }
 
     rewind(sessionId: string, messageId: string): Promise<RewindSessionResponse> {

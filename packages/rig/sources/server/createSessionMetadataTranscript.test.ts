@@ -19,7 +19,8 @@ describe("createSessionMetadataTranscript", () => {
             ]),
             entry(3, "notice", false, "user", [{ type: "text", text: "Workflow finished." }]),
             entry(4, "run-2", false, "user", [{ type: "text", text: "Keep going." }]),
-            entry(5, "run-2", true, "agent", [{ type: "text", text: "Interrupted answer" }]),
+            entry(5, "run-2", false, "agent", [{ type: "text", text: "Earlier commentary." }]),
+            entry(6, "run-2", true, "agent", [{ type: "text", text: "Interrupted answer" }]),
         ];
         const events = [
             {
@@ -42,6 +43,7 @@ describe("createSessionMetadataTranscript", () => {
         expect(transcript).toContain("Assistant: Actual final visible block.");
         expect(transcript).not.toContain("Intermediate commentary");
         expect(transcript).not.toContain("Workflow finished");
+        expect(transcript).not.toContain("Earlier commentary");
         expect(transcript).toContain(
             "Assistant [persisted partial response from interrupted turn]: Interrupted answer",
         );

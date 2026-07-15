@@ -35,26 +35,16 @@ export function createSessionMetadataTranscript(
         const runMessages = messages.filter(
             (entry) => entry.runId === user.runId && entry.message.role === "agent",
         );
-        const committed = [...runMessages]
+        const assistant = [...runMessages]
             .reverse()
-            .find(
-                (entry) => !entry.isPartial && finalVisibleText(entry.message.blocks) !== undefined,
-            );
-        if (committed !== undefined) {
-            const assistantText = finalVisibleText(committed.message.blocks);
-            if (assistantText !== undefined) lines.push(`Assistant: ${truncate(assistantText)}`);
-            continue;
-        }
-        const partial = [...runMessages]
-            .reverse()
-            .find(
-                (entry) => entry.isPartial && finalVisibleText(entry.message.blocks) !== undefined,
-            );
-        if (partial !== undefined) {
-            const partialText = finalVisibleText(partial.message.blocks);
-            if (partialText !== undefined) {
+            .find((entry) => finalVisibleText(entry.message.blocks) !== undefined);
+        if (assistant !== undefined) {
+            const assistantText = finalVisibleText(assistant.message.blocks);
+            if (assistantText !== undefined) {
                 lines.push(
-                    `Assistant [persisted partial response from interrupted turn]: ${truncate(partialText)}`,
+                    assistant.isPartial
+                        ? `Assistant [persisted partial response from interrupted turn]: ${truncate(assistantText)}`
+                        : `Assistant: ${truncate(assistantText)}`,
                 );
             }
         }

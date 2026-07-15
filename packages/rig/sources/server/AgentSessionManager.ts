@@ -144,11 +144,14 @@ export class AgentSessionManager {
             : agents.filter((agent) => agent.path.startsWith(pathPrefix));
     }
 
-    hasActiveDescendants(parentSessionId: string): boolean {
-        return this.#repository.listByRoot(parentSessionId).some((session) => {
-            const status = session.subagentSummary().status;
-            return status === "queued" || status === "running";
-        });
+    hasActiveDescendantWork(rootSessionId: string): boolean {
+        return this.#repository
+            .listByRoot(rootSessionId)
+            .some((session) => session.hasLocalSettlementWork());
+    }
+
+    recordDescendantSettlementActivity(rootSessionId: string): void {
+        this.#repository.get(rootSessionId)?.recordDescendantActivity();
     }
 
     async spawn(

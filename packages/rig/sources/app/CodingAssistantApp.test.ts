@@ -44,9 +44,11 @@ describe("CodingAssistantApp", () => {
             context: harness.context,
             printToConsole: false,
         });
+        const onUserActivity = vi.fn();
         const app = new CodingAssistantApp({
             agent,
             cwd: harness.context.fs.cwd,
+            onUserActivity,
             processManager: new NativeProxessManager(),
             tui: fakeTui(),
             version: "1.2.3",
@@ -86,6 +88,7 @@ describe("CodingAssistantApp", () => {
         expect(rendered).not.toContain("/clear /abort /quit");
 
         app.handleInput("h");
+        expect(onUserActivity).toHaveBeenCalledOnce();
         const typedInput = app.render(80).join("\n");
         expect(typedInput).toContain("\x1b[39m");
         expect(typedInput).toContain("\x1b[38;5;202m\x1b[1m›\x1b[22m\x1b[39m");

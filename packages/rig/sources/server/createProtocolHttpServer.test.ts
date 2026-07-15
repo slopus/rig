@@ -18,6 +18,26 @@ import type { GlobalEventQueue } from "./GlobalEventQueue.js";
 import { TrackedTaskDrain } from "./TrackedTaskDrain.js";
 
 describe("createProtocolHttpServer", () => {
+    it("records raw user activity without appending a session event", async () => {
+        const { client, close, store } = await startServer();
+        try {
+            const created = await client.createSession({ cwd: "/tmp/activity-project" });
+            const session = store.get(created.session.id);
+            if (session === undefined) throw new Error("Expected the created session.");
+            const recordUserActivity = vi.spyOn(session, "recordUserActivity");
+            const eventCount = session.events.since(undefined)?.length;
+
+            await expect(client.recordSessionActivity(created.session.id)).resolves.toEqual({
+                recorded: true,
+            });
+
+            expect(recordUserActivity).toHaveBeenCalledOnce();
+            expect(session.events.since(undefined)).toHaveLength(eventCount ?? 0);
+        } finally {
+            await close();
+        }
+    });
+
     it("uses Docker defaults unless the new session chooses another environment", async () => {
         const defaultDocker: DockerExecutionConfig = {
             image: "default:local",

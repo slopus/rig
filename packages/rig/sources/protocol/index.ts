@@ -41,6 +41,7 @@ export type {
     PermissionModeChangedEvent,
     ProviderModelCatalog,
     ProtocolSession,
+    RecordSessionActivityResponse,
     RewindSessionRequest,
     RewindSessionResponse,
     RunErrorEvent,

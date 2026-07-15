@@ -237,6 +237,7 @@ export class InMemorySession {
     #compactionController: AbortController | undefined;
     #contextMessages: Message[] | undefined;
     #closing = false;
+    #compactionActive = false;
     #draining: Promise<void> | undefined;
     #effort: string | undefined;
     #serviceTier: ServiceTier | undefined;
@@ -602,6 +603,16 @@ export class InMemorySession {
 
     hasModel(modelId: string, providerId?: string): boolean {
         return getProviderIdForModel(this.#modelCatalog, modelId, providerId) !== undefined;
+    }
+
+    hasLocalSettlementWork(): boolean {
+        return (
+            this.#activeRun !== undefined ||
+            this.#queue.length > 0 ||
+            this.#compactionActive ||
+            [...this.#workflowRuns.values()].some((run) => run.state.status === "running") ||
+            (this.#runtime?.context.bash.activeSessionCount?.() ?? 0) > 0
+        );
     }
 
     changeModel(request: ChangeModelRequest): ProtocolSession {
@@ -1273,6 +1284,8 @@ export class InMemorySession {
                     runId,
                 });
             }
+            this.#latestMetadataBoundaryRunId = interruptedRunIds.at(-1);
+            this.#restartMetadataSettlement();
             this.#saveSession();
             return;
         }
@@ -1340,6 +1353,7 @@ export class InMemorySession {
 
     reset(): ProtocolSession {
         this.#clearMetadataSettlement();
+        this.#invalidateSessionMetadata();
         void this.#agentManager?.stopDescendants(this.id);
         void this.abort({ pauseDescendants: false }).catch(() => undefined);
         for (const run of this.#workflowRuns.values()) {
@@ -1386,8 +1400,6 @@ export class InMemorySession {
             throw new Error("The selected user message is no longer available.");
         }
 
-        this.#restartMetadataSettlement();
-
         void this.#killRuntimeProcesses();
         this.#runtime = undefined;
         this.#mcpLoaded = false;
@@ -1395,6 +1407,14 @@ export class InMemorySession {
         this.#mcpToolNames.clear();
         this.#tools = [];
         this.#messages = this.#messages.filter((entry) => entry.position < target.position);
+        this.#invalidateSessionMetadata();
+        const retainedRunIds = new Set(
+            this.#messages.flatMap((entry) => (entry.runId === undefined ? [] : [entry.runId])),
+        );
+        this.#latestMetadataBoundaryRunId = findLatestForegroundRunBoundary(
+            this.events.since(undefined) ?? [],
+            retainedRunIds,
+        );
         this.#contextMessages = undefined;
         this.#partialPositions = new Set(
             [...this.#partialPositions].filter((position) => position < target.position),
@@ -1410,6 +1430,7 @@ export class InMemorySession {
             messageId,
             snapshot: this.#agentSnapshot(),
         });
+        this.#restartMetadataSettlement();
         return { message: target.message, session: this.snapshot() };
     }
 
@@ -1424,16 +1445,20 @@ export class InMemorySession {
         const compactSignal =
             signal === undefined ? controller.signal : AbortSignal.any([signal, controller.signal]);
         const previousStatus = this.#status;
+        this.#compactionActive = true;
         this.#status = "running";
+        this.#restartMetadataSettlement();
         this.#saveSession();
         try {
             const result = await this.#ensureRuntime().agent.compact(compactSignal);
             this.#syncContextMessages();
             return result;
         } finally {
+            this.#compactionActive = false;
             if (this.#compactionController === controller) this.#compactionController = undefined;
             if (!this.#closing) {
                 this.#status = previousStatus;
+                this.#restartMetadataSettlement();
                 this.#saveSession();
             }
         }
@@ -1445,6 +1470,14 @@ export class InMemorySession {
 
     recordSubagentChanged(subagent: SubagentSummary): void {
         this.#append("subagent_changed", { subagent });
+        this.#restartMetadataSettlement();
+    }
+
+    recordDescendantActivity(): void {
+        this.#restartMetadataSettlement();
+    }
+
+    recordUserActivity(): void {
         this.#restartMetadataSettlement();
     }
 
@@ -2148,6 +2181,7 @@ export class InMemorySession {
             };
         }
         const runtime = this.#createRuntime(options);
+        let previousBackgroundCount = runtime.context.bash.activeSessionCount?.() ?? 0;
         runtime.context.bash.setActiveSessionCountListener?.((running) => {
             const runId = this.#activeRun?.runId ?? this.#lastSessionRunId ?? "background";
             this.#append("agent_event", {
@@ -2158,6 +2192,8 @@ export class InMemorySession {
                 },
                 runId,
             });
+            if (running === previousBackgroundCount) return;
+            previousBackgroundCount = running;
             this.#restartMetadataSettlement();
         });
         const snapshot = runtime.agent.snapshot();
@@ -2285,10 +2321,25 @@ export class InMemorySession {
         }
     }
 
+    #invalidateSessionMetadata(): void {
+        this.#latestMetadataBoundaryRunId = undefined;
+        this.#metadataRunId = undefined;
+        this.#metadataUpdatedAt = undefined;
+        this.#recap = undefined;
+        this.#title = this.#agentMetadata.description;
+        this.#titleError = undefined;
+        this.#titleStatus = this.#title === undefined ? "idle" : "ready";
+    }
+
     #restartMetadataSettlement(): void {
         this.#clearMetadataSettlement();
+        if (this.isSubagent()) {
+            this.#agentManager?.recordDescendantSettlementActivity(
+                this.#agentMetadata.rootSessionId,
+            );
+            return;
+        }
         if (
-            this.isSubagent() ||
             this.#latestMetadataBoundaryRunId === undefined ||
             this.#latestMetadataBoundaryRunId === this.#metadataRunId ||
             !this.#isMetadataSettlementIdle()
@@ -2306,11 +2357,7 @@ export class InMemorySession {
 
     #isMetadataSettlementIdle(): boolean {
         return (
-            this.#activeRun === undefined &&
-            this.#queue.length === 0 &&
-            !this.#agentManager?.hasActiveDescendants(this.id) &&
-            ![...this.#workflowRuns.values()].some((run) => run.state.status === "running") &&
-            (this.#runtime?.context.bash.activeSessionCount?.() ?? 0) === 0
+            !this.hasLocalSettlementWork() && !this.#agentManager?.hasActiveDescendantWork(this.id)
         );
     }
 
@@ -2616,10 +2663,16 @@ function nextTaskId(tasks: readonly SessionTask[]): number {
     );
 }
 
-function findLatestForegroundRunBoundary(events: readonly SessionEvent[]): string | undefined {
+function findLatestForegroundRunBoundary(
+    events: readonly SessionEvent[],
+    retainedRunIds?: ReadonlySet<string>,
+): string | undefined {
     for (let index = events.length - 1; index >= 0; index -= 1) {
         const event = events[index];
-        if (event?.type === "run_finished" || event?.type === "run_error") {
+        if (
+            (event?.type === "run_finished" || event?.type === "run_error") &&
+            (retainedRunIds === undefined || retainedRunIds.has(event.data.runId))
+        ) {
             return event.data.runId;
         }
     }

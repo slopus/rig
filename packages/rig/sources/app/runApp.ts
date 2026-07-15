@@ -240,6 +240,9 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
                 settings: { durableGlobalEventQueue },
             });
         },
+        onUserActivity: () => {
+            void localServer.client.recordSessionActivity(session.session.id).catch(() => {});
+        },
         onStopWorkflow: (runId) =>
             localServer.client.stopWorkflow(session.session.id, runId).then(() => undefined),
         processManager,

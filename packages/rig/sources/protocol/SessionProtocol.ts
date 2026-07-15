@@ -285,6 +285,10 @@ export interface SubmitMessageResponse {
     sessionId: string;
 }
 
+export interface RecordSessionActivityResponse {
+    recorded: true;
+}
+
 export type SteerMessageRequest = SubmitMessageRequest;
 export type SteerMessageResponse = SubmitMessageResponse;
 

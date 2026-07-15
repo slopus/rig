@@ -24,6 +24,7 @@ import type {
     ModelCatalog,
     RewindSessionRequest,
     RewindSessionResponse,
+    RecordSessionActivityResponse,
     SearchFilesResponse,
     SessionEvent,
     SetGoalRequest,
@@ -397,6 +398,12 @@ async function handleRequest(
         return;
     }
 
+    if (request.method === "POST" && route.name === "activity") {
+        session.recordUserActivity();
+        sendJson<RecordSessionActivityResponse>(response, 200, { recorded: true });
+        return;
+    }
+
     if (request.method === "POST" && route.name === "steer") {
         const body = await readJson<SubmitMessageRequest>(request);
         try {
@@ -690,6 +697,7 @@ function matchRoute(pathname: string):
     | {
           name:
               | "abort"
+              | "activity"
               | "background-processes-stop"
               | "compact"
               | "effort"
@@ -753,6 +761,7 @@ function matchRoute(pathname: string):
     if (parts.length !== 3) return undefined;
 
     if (parts[2] === "abort") return { name: "abort", sessionId };
+    if (parts[2] === "activity") return { name: "activity", sessionId };
     if (parts[2] === "compact") return { name: "compact", sessionId };
     if (parts[2] === "effort") return { name: "effort", sessionId };
     if (parts[2] === "events") return { name: "events", sessionId };
@@ -776,6 +785,7 @@ function isSessionMutation(routeName: string, method: string | undefined): boole
         (method === "POST" &&
             [
                 "abort",
+                "activity",
                 "background-processes-stop",
                 "compact",
                 "fork",
