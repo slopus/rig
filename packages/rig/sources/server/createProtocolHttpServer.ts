@@ -56,6 +56,7 @@ import { isGoalStatus } from "../goals/index.js";
 import { resolveDockerExecutionConfig, validateDockerExecutionConfig } from "../execution/index.js";
 import type { DockerExecutionConfig } from "../execution/index.js";
 import type { TaskDrain } from "./TrackedTaskDrain.js";
+import type { ProviderQuota } from "../providers/providerQuota.js";
 
 export interface ProtocolHttpServerOptions {
     defaultDocker?: DockerExecutionConfig;
@@ -64,6 +65,7 @@ export interface ProtocolHttpServerOptions {
     modelCatalog?: ModelCatalog;
     fileSearchService?: FileSearchServiceContract;
     globalEventQueue?: GlobalEventQueue;
+    getProviderQuota?: (providerId: string) => Promise<ProviderQuota | undefined>;
     onDurableGlobalEventQueueChange?: (
         enabled: boolean,
     ) => GlobalEventQueue | undefined | Promise<GlobalEventQueue | undefined>;
@@ -105,6 +107,7 @@ export function createProtocolHttpServer(options: ProtocolHttpServerOptions): Se
                 options.onShutdown,
                 options.defaultDocker,
                 options.taskDrain,
+                options.getProviderQuota,
             );
         const handling =
             mutating && options.taskDrain !== undefined ? options.taskDrain.run(handle) : handle();
@@ -145,6 +148,7 @@ async function handleRequest(
     onShutdown: (() => void) | undefined,
     defaultDocker: DockerExecutionConfig | undefined,
     taskDrain: TaskDrain | undefined,
+    getProviderQuota: ((providerId: string) => Promise<ProviderQuota | undefined>) | undefined,
 ): Promise<void> {
     if (!isAuthorized(request, token)) {
         sendJson(response, 401, { error: "Unauthorized" });
@@ -341,12 +345,34 @@ async function handleRequest(
     if (request.method === "GET" && route.name === "usage") {
         const usage = session.usage();
         const currentProviderId = session.snapshot().providerId;
-        const quota = await session.providerQuota();
+        const providerIds = [
+            ...new Set([
+                ...usage.groups.flatMap((group) =>
+                    group.providerId === null ? [] : [group.providerId],
+                ),
+                ...usage.quotaContributions.map((contribution) => contribution.providerId),
+                currentProviderId,
+            ]),
+        ];
+        const quotas = (
+            await Promise.all(
+                providerIds.map(async (providerId) => {
+                    const quota =
+                        getProviderQuota === undefined
+                            ? providerId === currentProviderId
+                                ? await session.providerQuota()
+                                : undefined
+                            : await getProviderQuota(providerId);
+                    return quota === undefined ? undefined : { providerId, quota };
+                }),
+            )
+        ).filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
         sendJson<GetSessionUsageResponse>(response, 200, {
             currentProviderId,
             groups: usage.groups,
+            quotaContributions: usage.quotaContributions,
+            quotas,
             ...(usage.currentContext === undefined ? {} : { context: usage.currentContext }),
-            ...(quota === undefined ? {} : { quota }),
         });
         return;
     }

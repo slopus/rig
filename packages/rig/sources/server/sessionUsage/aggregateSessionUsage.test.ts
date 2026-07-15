@@ -230,7 +230,7 @@ describe("aggregateSessionUsage", () => {
             { type: "subagent" },
         );
 
-        expect(result).toEqual({ groups: [] });
+        expect(result).toEqual({ groups: [], quotaContributions: [] });
     });
 });
 

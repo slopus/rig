@@ -264,7 +264,25 @@ export interface GetSessionUsageResponse {
     currentProviderId: string;
     groups: readonly SessionUsageGroup[];
     context?: SessionContextUsage;
-    quota?: ProviderQuota;
+    quotaContributions: readonly SessionQuotaContribution[];
+    quotas: readonly SessionProviderQuota[];
+}
+
+export interface SessionProviderQuota {
+    providerId: string;
+    quota: ProviderQuota;
+}
+
+export interface SessionQuotaContribution {
+    providerId: string;
+    windows: {
+        fiveHour?: SessionQuotaWindowContribution;
+        weekly?: SessionQuotaWindowContribution;
+    };
+}
+
+export interface SessionQuotaWindowContribution {
+    observedUsedPercent: number;
 }
 
 export interface StopWorkflowResponse {
@@ -355,6 +373,7 @@ export type SessionEvent =
     | AgentStreamEvent
     | AgentMessageEvent
     | RunFinishedEvent
+    | ProviderQuotaObservedEvent
     | RunErrorEvent
     | AbortRequestedEvent
     | SessionResetEvent
@@ -427,6 +446,17 @@ export type RunFinishedEvent = BaseSessionEvent<
         modelLocked: boolean;
         runId: string;
         stopReason: StopReason;
+    }
+>;
+
+export type ProviderQuotaObservedEvent = BaseSessionEvent<
+    "provider_quota_observed",
+    {
+        observationId: string;
+        phase: "before" | "after";
+        providerId: string;
+        quota: ProviderQuota;
+        runId: string;
     }
 >;
 

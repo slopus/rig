@@ -1,5 +1,6 @@
 import type { SessionEvent } from "../../protocol/index.js";
 import { addUsage } from "./addUsage.js";
+import { aggregateQuotaContributions } from "./aggregateQuotaContributions.js";
 import {
     EARLIER_USAGE_LABEL,
     MODEL_UNAVAILABLE_LABEL,
@@ -23,7 +24,7 @@ export function aggregateSessionUsage(
     events: readonly SessionEvent[],
     metadata: SessionUsageMetadata,
 ): SessionUsageSummary {
-    if (metadata.type === "subagent") return { groups: [] };
+    if (metadata.type === "subagent") return { groups: [], quotaContributions: [] };
 
     let groups: SessionUsageGroup[] = [];
     let attributedGroupIndexes = new Map<string, number>();
@@ -149,5 +150,6 @@ export function aggregateSessionUsage(
     return {
         ...(currentContext === undefined ? {} : { currentContext }),
         groups,
+        quotaContributions: aggregateQuotaContributions(events),
     };
 }

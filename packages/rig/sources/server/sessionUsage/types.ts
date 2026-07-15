@@ -36,6 +36,19 @@ export interface SessionContextUsage {
 export interface SessionUsageSummary {
     currentContext?: SessionContextUsage;
     groups: readonly SessionUsageGroup[];
+    quotaContributions: readonly SessionQuotaContribution[];
+}
+
+export interface SessionQuotaContribution {
+    providerId: string;
+    windows: {
+        fiveHour?: SessionQuotaWindowContribution;
+        weekly?: SessionQuotaWindowContribution;
+    };
+}
+
+export interface SessionQuotaWindowContribution {
+    observedUsedPercent: number;
 }
 
 export interface SessionUsageMetadata {

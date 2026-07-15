@@ -45,7 +45,7 @@ import type {
     SubmitMessageResponse,
     SteerMessageResponse,
 } from "../protocol/index.js";
-import type { Model, ServiceTier, StopReason } from "../providers/types.js";
+import type { Model, Provider, ServiceTier, StopReason } from "../providers/types.js";
 import type { ProviderQuota } from "../providers/providerQuota.js";
 import type { UserInputRequest, UserInputResponse } from "../user-input/index.js";
 import {
@@ -619,8 +619,8 @@ export class InMemorySession {
         });
     }
 
-    providerQuota(): Promise<ProviderQuota | undefined> {
-        return this.#ensureRuntime().provider.quota?.() ?? Promise.resolve(undefined);
+    providerQuota(options?: { fresh?: boolean }): Promise<ProviderQuota | undefined> {
+        return this.#ensureRuntime().provider.quota?.(options) ?? Promise.resolve(undefined);
     }
 
     hasModel(modelId: string, providerId?: string): boolean {
@@ -2135,6 +2135,27 @@ export class InMemorySession {
         if (this.isSubagent()) this.#agentManager?.recordChanged(this);
     }
 
+    async #observeProviderQuota(
+        provider: Provider,
+        runId: string,
+        observationId: string,
+        phase: "before" | "after",
+    ): Promise<void> {
+        if (this.isSubagent() || provider.quota === undefined) return;
+        try {
+            const quota = await provider.quota({ fresh: true });
+            this.#append("provider_quota_observed", {
+                observationId,
+                phase,
+                providerId: provider.id,
+                quota,
+                runId,
+            });
+        } catch {
+            // Quota observation must never fail or replay an otherwise completed agent run.
+        }
+    }
+
     #finishElapsedInterval(): void {
         if (this.#activeSince === undefined) return;
         this.#elapsedMs += Math.max(0, this.#now() - this.#activeSince);
@@ -2514,9 +2535,17 @@ export class InMemorySession {
         this.#append("run_started", { runId: queued.runId });
         if (this.isSubagent()) this.#agentManager?.recordChanged(this);
 
+        let runtime: CodingAssistantRuntime | undefined;
+        const quotaObservationId = createId();
         try {
-            const runtime = this.#ensureRuntime();
+            runtime = this.#ensureRuntime();
             await this.#ensureMcpTools(runtime, controller.signal, queued.interactive !== false);
+            await this.#observeProviderQuota(
+                runtime.provider,
+                queued.runId,
+                quotaObservationId,
+                "before",
+            );
             runtime.agent.enqueueMessage(queued.userMessage);
             if (this.#contextMessages !== undefined) {
                 this.#contextMessages = [...this.#contextMessages, queued.userMessage];
@@ -2554,6 +2583,12 @@ export class InMemorySession {
                 }
 
                 this.#appendRunFinished(queued.runId, result);
+                await this.#observeProviderQuota(
+                    runtime.provider,
+                    queued.runId,
+                    quotaObservationId,
+                    "after",
+                );
                 if (result.stopReason !== "aborted" && result.stopReason !== "error") {
                     this.#continueGoalIfIdle();
                 }
@@ -2578,6 +2613,14 @@ export class InMemorySession {
                 modelLocked: this.#modelLocked(),
                 runId: queued.runId,
             });
+            if (runtime !== undefined) {
+                await this.#observeProviderQuota(
+                    runtime.provider,
+                    queued.runId,
+                    quotaObservationId,
+                    "after",
+                );
+            }
             this.#latestMetadataBoundaryRunId = queued.runId;
             this.#restartMetadataSettlement();
             if (this.isSubagent()) this.#agentManager?.recordChanged(this);

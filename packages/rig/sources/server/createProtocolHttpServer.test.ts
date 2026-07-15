@@ -16,6 +16,7 @@ import type { FileSearchServiceContract } from "./FileSearchService.js";
 import type { DockerExecutionConfig } from "../execution/index.js";
 import type { GlobalEventQueue } from "./GlobalEventQueue.js";
 import { TrackedTaskDrain } from "./TrackedTaskDrain.js";
+import type { ProviderQuota } from "../providers/providerQuota.js";
 
 describe("createProtocolHttpServer", () => {
     it("serves durable attributed usage and current-provider quota", async () => {
@@ -26,11 +27,11 @@ describe("createProtocolHttpServer", () => {
             if (session === undefined) throw new Error("Expected the created session.");
             vi.spyOn(session, "providerQuota").mockResolvedValue({
                 capturedAt: 10,
-                resetsAt: 20,
                 source: "codex",
-                status: "available",
-                usedPercent: 32,
-                window: "five_hour",
+                windows: {
+                    fiveHour: { resetsAt: 20, status: "available", usedPercent: 32 },
+                    weekly: { status: "unavailable" },
+                },
             });
             session.events.append({
                 createdAt: 2,
@@ -74,8 +75,131 @@ describe("createProtocolHttpServer", () => {
                         usage: { input: 10, output: 2, totalTokens: 19 },
                     },
                 ],
-                quota: { status: "available", usedPercent: 32 },
+                quotaContributions: [],
+                quotas: [
+                    {
+                        providerId: "codex",
+                        quota: {
+                            windows: {
+                                fiveHour: { status: "available", usedPercent: 32 },
+                            },
+                        },
+                    },
+                ],
             });
+        } finally {
+            await close();
+        }
+    });
+
+    it("returns independent current quotas and observed movement for every used provider", async () => {
+        const getProviderQuota = vi.fn(
+            async (providerId: string): Promise<ProviderQuota> => ({
+                capturedAt: 10,
+                source: providerId === "codex" ? "codex" : "claude-sdk",
+                windows: {
+                    fiveHour: {
+                        resetsAt: 100,
+                        status: "available",
+                        usedPercent: providerId === "codex" ? 30 : 40,
+                    },
+                    weekly: {
+                        resetsAt: 200,
+                        status: "available",
+                        usedPercent: providerId === "codex" ? 10 : 20,
+                    },
+                },
+            }),
+        );
+        const { client, close, store } = await startServer({ getProviderQuota });
+        try {
+            const created = await client.createSession({ cwd: "/tmp/multi-provider-usage" });
+            const session = store.get(created.session.id);
+            if (session === undefined) throw new Error("Expected the created session.");
+            const before = {
+                capturedAt: 1,
+                source: "claude-sdk" as const,
+                windows: {
+                    fiveHour: { resetsAt: 100, status: "available" as const, usedPercent: 5 },
+                    weekly: { resetsAt: 200, status: "available" as const, usedPercent: 2 },
+                },
+            };
+            session.events.append({
+                createdAt: 2,
+                data: {
+                    message: {
+                        blocks: [{ text: "Claude turn", type: "text" }],
+                        id: "claude-message",
+                        providerId: "claude-sdk",
+                        requestedModelId: "anthropic/sonnet-4-6",
+                        role: "agent",
+                        usage: {
+                            cacheRead: 0,
+                            cacheWrite: 0,
+                            cost: {
+                                cacheRead: 0,
+                                cacheWrite: 0,
+                                input: 0,
+                                output: 0,
+                                total: 0,
+                            },
+                            input: 5,
+                            output: 2,
+                            totalTokens: 7,
+                        },
+                    },
+                    runId: "claude-run",
+                },
+                id: createEventIdFactory()(),
+                sessionId: created.session.id,
+                type: "agent_message",
+            });
+            for (const [phase, quota] of [
+                ["before", before],
+                [
+                    "after",
+                    {
+                        ...before,
+                        capturedAt: 2,
+                        windows: {
+                            fiveHour: { ...before.windows.fiveHour, usedPercent: 8 },
+                            weekly: { ...before.windows.weekly, usedPercent: 3 },
+                        },
+                    },
+                ],
+            ] as const) {
+                session.events.append({
+                    createdAt: quota.capturedAt,
+                    data: {
+                        observationId: "claude-observation",
+                        phase,
+                        providerId: "claude-sdk",
+                        quota,
+                        runId: "claude-run",
+                    },
+                    id: createEventIdFactory()(),
+                    sessionId: created.session.id,
+                    type: "provider_quota_observed",
+                });
+            }
+
+            const response = await client.getSessionUsage(created.session.id);
+
+            expect(response.quotas).toEqual([
+                expect.objectContaining({ providerId: "claude-sdk" }),
+                expect.objectContaining({ providerId: "codex" }),
+            ]);
+            expect(response.quotaContributions).toEqual([
+                {
+                    providerId: "claude-sdk",
+                    windows: {
+                        fiveHour: { observedUsedPercent: 3 },
+                        weekly: { observedUsedPercent: 1 },
+                    },
+                },
+            ]);
+            expect(getProviderQuota).toHaveBeenCalledWith("claude-sdk");
+            expect(getProviderQuota).toHaveBeenCalledWith("codex");
         } finally {
             await close();
         }
@@ -848,6 +972,7 @@ async function startServer(
         defaultDocker?: DockerExecutionConfig;
         fileSearchService?: FileSearchServiceContract;
         globalEventQueue?: GlobalEventQueue;
+        getProviderQuota?: (providerId: string) => Promise<ProviderQuota | undefined>;
         onDurableGlobalEventQueueChange?: (
             enabled: boolean,
         ) => GlobalEventQueue | undefined | Promise<GlobalEventQueue | undefined>;
@@ -872,6 +997,9 @@ async function startServer(
         ...(options.globalEventQueue === undefined
             ? {}
             : { globalEventQueue: options.globalEventQueue }),
+        ...(options.getProviderQuota === undefined
+            ? {}
+            : { getProviderQuota: options.getProviderQuota }),
         ...(options.onShutdown !== undefined ? { onShutdown: options.onShutdown } : {}),
         ...(options.onDurableGlobalEventQueueChange === undefined
             ? {}

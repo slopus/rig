@@ -10,6 +10,7 @@ import { readLocalServerToken } from "./readLocalServerToken.js";
 import { removeStaleSocket } from "./removeStaleSocket.js";
 import { McpClientManager } from "../mcp/index.js";
 import { loadConfig, writeDaemonSettings } from "../config/index.js";
+import { createProviderQuotaService } from "../providers/createProviderQuotaService.js";
 
 export interface RunLocalProtocolServerOptions {
     socketPath?: string;
@@ -28,6 +29,7 @@ export async function runLocalProtocolServer(
 
     const loadedConfig = await loadConfig({ cwd: process.cwd() });
     const modelCatalog = createModelCatalog({ cwd: process.cwd() });
+    const providerQuotaService = createProviderQuotaService({ cwd: process.cwd() });
     const mcpToolProvider = new McpClientManager();
     const taskDrain = new TrackedTaskDrain();
     const store = new PersistentSessionStore({
@@ -46,6 +48,7 @@ export async function runLocalProtocolServer(
             ? {}
             : { globalEventQueue: store.globalEventQueue }),
         modelCatalog,
+        getProviderQuota: (providerId) => providerQuotaService.get(providerId),
         onDurableGlobalEventQueueChange: async (enabled) => {
             await writeDaemonSettings({ durableGlobalEventQueue: enabled });
             return store.setDurableGlobalEventQueue(enabled);
