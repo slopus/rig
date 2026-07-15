@@ -120,7 +120,7 @@ describe("session clear, new, compact, and review preserve expected state", () =
             (snapshot) =>
                 snapshot.text.includes("Gym · 200 in · 50 out · 15 read · 5 write · 270 total") &&
                 snapshot.text.includes("5-hour: unavailable") &&
-                snapshot.text.includes("Total: 270"),
+                snapshot.text.includes("Overall session total: 270"),
             "the accumulated provider usage",
             30_000,
         );
@@ -139,7 +139,7 @@ describe("session clear, new, compact, and review preserve expected state", () =
         const resetUsage = await gym.terminal.waitUntil(
             (snapshot) =>
                 snapshot.text.includes("Context: unavailable") &&
-                snapshot.text.includes("Total: 0"),
+                snapshot.text.includes("Overall session total: 0"),
             "usage reset for the new session",
             30_000,
         );

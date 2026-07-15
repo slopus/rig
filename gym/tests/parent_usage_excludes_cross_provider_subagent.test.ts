@@ -65,7 +65,7 @@ describe("parent session usage", () => {
         submit(gym, "Delegate the usage-heavy audit.");
         await gym.terminal.waitForText("PARENT_ACKNOWLEDGED_CHILD", 30_000);
         submit(gym, "/usage");
-        const report = await gym.terminal.waitForText("Total: 175", 30_000);
+        const report = await gym.terminal.waitForText("Overall session total: 175", 30_000);
         expect(report.text).toContain("Gym · 0 in · 175 out");
         expect(report.text).not.toMatch(/Claude\s+\S+ · \d+ in/u);
         await gym.terminal.screenshot(`${artifacts}/parent-excludes-cross-provider-subagent.png`);

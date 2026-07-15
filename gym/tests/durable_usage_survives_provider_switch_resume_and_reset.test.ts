@@ -75,7 +75,7 @@ describe("durable session usage", () => {
                 screen.text.includes("Gym") &&
                 screen.text.includes("Claude") &&
                 screen.text.includes("claude-fable-concrete") &&
-                screen.text.includes("Total: 330") &&
+                screen.text.includes("Overall session total: 330") &&
                 screen.text.includes("5-hour: unavailable"),
             "multi-provider durable usage",
             30_000,
@@ -88,21 +88,21 @@ describe("durable session usage", () => {
         await gym.terminal.waitForText("SESSION_USAGE_RESUMED", 30_000);
         await gym.terminal.waitForText("Ask Rig to do anything", 30_000);
         submit(gym, "/usage");
-        const resumed = await gym.terminal.waitForText("Total: 330", 30_000);
+        const resumed = await gym.terminal.waitForText("Overall session total: 330", 30_000);
         await gym.terminal.screenshot(`${artifacts}/resume-exactly-once.png`);
         expect(resumed.text).toContain("claude-fable-concrete");
 
         submit(gym, "Increment after resume.");
         await gym.terminal.waitForText("RESUMED_USAGE_TURN", 30_000);
         submit(gym, "/usage");
-        const incremented = await gym.terminal.waitForText("Total: 660", 30_000);
+        const incremented = await gym.terminal.waitForText("Overall session total: 660", 30_000);
         await gym.terminal.screenshot(`${artifacts}/resume-increment.png`);
         expect(incremented.text).toContain("Claude");
 
         submit(gym, "/new");
         await gym.terminal.waitForText("Session reset. Started a new session.", 30_000);
         submit(gym, "/usage");
-        const reset = await gym.terminal.waitForText("Total: 0", 30_000);
+        const reset = await gym.terminal.waitForText("Overall session total: 0", 30_000);
         expect(reset.text).toContain("Context: unavailable");
         await gym.terminal.screenshot(`${artifacts}/new-resets-usage.png`);
     }, 180_000);
