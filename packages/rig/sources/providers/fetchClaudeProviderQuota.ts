@@ -1,11 +1,5 @@
-import {
-    query as defaultClaudeSdkQuery,
-    type Options as ClaudeSdkOptions,
-    type Query,
-    type SDKUserMessage,
-} from "@anthropic-ai/claude-agent-sdk";
+import type { Query } from "@anthropic-ai/claude-agent-sdk";
 
-import { idleClaudeSdkPrompt } from "./idleClaudeSdkPrompt.js";
 import type { ProviderQuota } from "./providerQuota.js";
 
 export type ClaudeQuotaQuery = Pick<
@@ -14,17 +8,12 @@ export type ClaudeQuotaQuery = Pick<
 >;
 
 export interface FetchClaudeProviderQuotaOptions {
-    cwd?: string;
     now?: () => number;
-    pathToClaudeCodeExecutable?: string;
     timeoutMs?: number;
-    query?: (params: {
-        prompt: AsyncIterable<SDKUserMessage>;
-        options?: ClaudeSdkOptions;
-    }) => ClaudeQuotaQuery;
 }
 
 export async function fetchClaudeProviderQuota(
+    query: ClaudeQuotaQuery,
     options: FetchClaudeProviderQuotaOptions = {},
 ): Promise<ProviderQuota> {
     const now = options.now ?? Date.now;
@@ -36,21 +25,8 @@ export async function fetchClaudeProviderQuota(
         capturedAt: now(),
     });
 
-    const abortController = new AbortController();
-    let sdkQuery: ClaudeQuotaQuery | undefined;
     try {
-        sdkQuery = (options.query ?? defaultClaudeSdkQuery)({
-            prompt: idleClaudeSdkPrompt(abortController.signal),
-            options: {
-                abortController,
-                ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
-                ...(options.pathToClaudeCodeExecutable !== undefined
-                    ? { pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable }
-                    : {}),
-                persistSession: false,
-            },
-        });
-        const usageRequest = sdkQuery.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET();
+        const usageRequest = query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET();
         let timeout: ReturnType<typeof setTimeout> | undefined;
         const timeoutRequest = new Promise<never>((_resolve, reject) => {
             timeout = setTimeout(
@@ -90,9 +66,8 @@ export async function fetchClaudeProviderQuota(
     } catch {
         return unavailable();
     } finally {
-        abortController.abort();
         try {
-            sdkQuery?.close();
+            query.close();
         } catch {
             // Cleanup errors do not make an otherwise authoritative response unavailable.
         }

@@ -1,16 +1,16 @@
 import type { SDKControlGetUsageResponse } from "@anthropic-ai/claude-agent-sdk";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-    fetchClaudeProviderQuota,
-    type ClaudeQuotaQuery,
-    type FetchClaudeProviderQuotaOptions,
-} from "./fetchClaudeProviderQuota.js";
+import { fetchClaudeProviderQuota, type ClaudeQuotaQuery } from "./fetchClaudeProviderQuota.js";
+
+afterEach(() => {
+    vi.useRealTimers();
+});
 
 describe("fetchClaudeProviderQuota", () => {
-    it("opens a streaming control session and closes it after reading usage", async () => {
+    it("closes the supplied query after reading usage", async () => {
         const close = vi.fn();
-        const query = vi.fn<NonNullable<FetchClaudeProviderQuotaOptions["query"]>>(() => ({
+        const query: ClaudeQuotaQuery = {
             close,
             usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: vi.fn().mockResolvedValue({
                 session: emptySessionUsage(),
@@ -18,23 +18,10 @@ describe("fetchClaudeProviderQuota", () => {
                 rate_limits_available: false,
                 rate_limits: null,
             }),
-        }));
+        };
 
-        await fetchClaudeProviderQuota({
-            cwd: "/workspace",
-            pathToClaudeCodeExecutable: "/usr/local/bin/claude",
-            query,
-        });
+        await fetchClaudeProviderQuota(query);
 
-        expect(query).toHaveBeenCalledOnce();
-        const request = query.mock.calls[0]?.[0];
-        expect(request?.prompt[Symbol.asyncIterator]).toBeTypeOf("function");
-        expect(request?.options).toMatchObject({
-            cwd: "/workspace",
-            pathToClaudeCodeExecutable: "/usr/local/bin/claude",
-            persistSession: false,
-        });
-        expect(request?.options?.abortController?.signal.aborted).toBe(true);
         expect(close).toHaveBeenCalledOnce();
     });
 
@@ -49,7 +36,7 @@ describe("fetchClaudeProviderQuota", () => {
             },
         });
 
-        await expect(fetchClaudeProviderQuota({ query, now: () => 500 })).resolves.toEqual({
+        await expect(fetchClaudeProviderQuota(query, { now: () => 500 })).resolves.toEqual({
             status: "available",
             source: "claude-sdk",
             window: "five_hour",
@@ -81,7 +68,7 @@ describe("fetchClaudeProviderQuota", () => {
         },
     ])("returns unavailable for $name", async ({ response }) => {
         await expect(
-            fetchClaudeProviderQuota({ query: usageQuery(response), now: () => 600 }),
+            fetchClaudeProviderQuota(usageQuery(response), { now: () => 600 }),
         ).resolves.toEqual({
             status: "unavailable",
             source: "claude-sdk",
@@ -91,14 +78,14 @@ describe("fetchClaudeProviderQuota", () => {
     });
 
     it("returns unavailable when the SDK control request fails", async () => {
-        const query = (): ClaudeQuotaQuery => ({
+        const query: ClaudeQuotaQuery = {
             close: vi.fn(),
             usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: vi
                 .fn()
                 .mockRejectedValue(new Error("control request failed")),
-        });
+        };
 
-        await expect(fetchClaudeProviderQuota({ query, now: () => 700 })).resolves.toEqual({
+        await expect(fetchClaudeProviderQuota(query, { now: () => 700 })).resolves.toEqual({
             status: "unavailable",
             source: "claude-sdk",
             window: "five_hour",
@@ -108,30 +95,51 @@ describe("fetchClaudeProviderQuota", () => {
 
     it("times out the SDK control request and closes the query", async () => {
         const close = vi.fn();
-        const query = (): ClaudeQuotaQuery => ({
+        const query: ClaudeQuotaQuery = {
             close,
             usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: () =>
                 new Promise<never>(() => {}),
-        });
+        };
 
         await expect(
-            fetchClaudeProviderQuota({ query, now: () => 800, timeoutMs: 1 }),
+            fetchClaudeProviderQuota(query, { now: () => 800, timeoutMs: 1 }),
         ).resolves.toMatchObject({ capturedAt: 800, status: "unavailable" });
+        expect(close).toHaveBeenCalledOnce();
+    });
+
+    it("uses a five-second timeout by default", async () => {
+        vi.useFakeTimers();
+        const close = vi.fn();
+        const query: ClaudeQuotaQuery = {
+            close,
+            usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: () =>
+                new Promise<never>(() => {}),
+        };
+        let settled = false;
+        const result = fetchClaudeProviderQuota(query, { now: () => 900 }).finally(() => {
+            settled = true;
+        });
+
+        await vi.advanceTimersByTimeAsync(4_999);
+        expect(settled).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(1);
+        await expect(result).resolves.toMatchObject({ capturedAt: 900, status: "unavailable" });
         expect(close).toHaveBeenCalledOnce();
     });
 });
 
 function usageQuery(
     response: Pick<SDKControlGetUsageResponse, "rate_limits_available" | "rate_limits">,
-): NonNullable<FetchClaudeProviderQuotaOptions["query"]> {
-    return () => ({
+): ClaudeQuotaQuery {
+    return {
         close: vi.fn(),
         usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: vi.fn().mockResolvedValue({
             session: emptySessionUsage(),
             subscription_type: null,
             ...response,
         }),
-    });
+    };
 }
 
 function emptySessionUsage(): SDKControlGetUsageResponse["session"] {
