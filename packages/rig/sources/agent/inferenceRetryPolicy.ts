@@ -1,0 +1,2 @@
+export const INFERENCE_MAX_RETRIES = 5;
+export const INFERENCE_RETRY_INITIAL_DELAY_MS = 200;

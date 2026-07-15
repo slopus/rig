@@ -5,6 +5,9 @@ import { assistantMessageToAgentMessage } from "./assistantMessageToAgentMessage
 import { createAmbiguousToolCallRejection } from "./createAmbiguousToolCallRejection.js";
 import type { AgentContext } from "./context/AgentContext.js";
 import type { BashSessionActivity } from "./context/BashContext.js";
+import { delayBeforeInferenceRetry } from "./delayBeforeInferenceRetry.js";
+import { hasResponseContentBegun } from "./hasResponseContentBegun.js";
+import { INFERENCE_MAX_RETRIES } from "./inferenceRetryPolicy.js";
 import { isContextWindowExceededError } from "./isContextWindowExceededError.js";
 import { isInvalidImageRequestError } from "./isInvalidImageRequestError.js";
 import { isRetryableInferenceError } from "./isRetryableInferenceError.js";
@@ -45,9 +48,6 @@ import {
     shouldReviewToolInAutoMode,
     summarizePermissionAction,
 } from "../permissions/index.js";
-
-const INFERENCE_MAX_RETRIES = 5;
-const INFERENCE_RETRY_INITIAL_DELAY_MS = 200;
 
 export interface RunAgentLoopOptions {
     provider: Provider;
@@ -218,7 +218,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                             await options.onEvent?.(pendingStartEvent);
                             pendingStartEvent = undefined;
                         }
-                        emittedContent = true;
+                        if (hasResponseContentBegun(event)) emittedContent = true;
                         await options.onEvent?.(event);
                     }
 
@@ -502,27 +502,6 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         });
         await appendSteering(options, transcript, contextTranscript, providerMessages, now);
     }
-}
-
-async function delayBeforeInferenceRetry(attempt: number, signal: AbortSignal | undefined) {
-    const baseDelayMs = INFERENCE_RETRY_INITIAL_DELAY_MS * 2 ** (attempt - 1);
-    const delayMs = baseDelayMs * (0.9 + Math.random() * 0.2);
-    await new Promise<void>((resolve, reject) => {
-        const onAbort = () => {
-            clearTimeout(timeout);
-            reject(signal?.reason ?? new Error("Inference retry aborted."));
-        };
-        const timeout = setTimeout(() => {
-            signal?.removeEventListener("abort", onAbort);
-            resolve();
-        }, delayMs);
-        if (signal === undefined) return;
-        if (signal.aborted) {
-            onAbort();
-            return;
-        }
-        signal.addEventListener("abort", onAbort, { once: true });
-    });
 }
 
 async function compactLoopContext(

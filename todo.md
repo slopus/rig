@@ -89,20 +89,19 @@ This file tracks known defects, verified coverage gaps, and concrete follow-up w
     - Invocation arguments and result blocks currently process the full payload before display row limits apply.
     - Add byte/character bounds and a large-payload render performance regression.
 
-- [ ] Decide and enforce the exact inference retry boundary.
-    - The stated product rule is transport failures only and only before response content begins.
-    - Current matching also retries generic `terminated`, HTTP 408/429/5xx, and provider “you can retry” messages.
-    - Narrow ambiguous matches or update the documented policy after an explicit product decision.
-    - Add negative coverage proving disconnects after text, tool calls, or session mutations never replay inference.
-    - The observed zero-content `WebSocket error` after a completed tool now retries only the inference continuation; Gym verifies the tool runs once.
+- [x] Enforce the inference retry boundary at low-level transport failures before response content.
+    - Retry typed socket, DNS, and Undici failures plus exact fetch, WebSocket, and incomplete-stream transport errors.
+    - Do not retry generic `terminated`, HTTP 408/429/5xx, provider retry guidance, or failures after text, thinking, or tool-call events.
+    - A zero-content continuation after a completed tool may retry; Gym verifies the completed tool runs once.
 
 - [ ] Deduplicate visible provider error rows.
     - A terminal inference failure such as HTTP 503 currently renders the same durable `Error` row twice.
     - Reconcile provider-error and run-error events so one failure produces one append-only transcript row without hiding distinct nested causes.
     - Add a real Gym regression with an exact error-row count.
 
-- [ ] Add retry handling or an explicit exception for standalone compaction summary requests.
-    - `requestCompactionSummary()` currently throws directly and does not use the main inference-loop retry mechanism.
+- [x] Apply the same transport-before-content policy to standalone compaction summaries.
+    - Main-loop and compaction requests share the classifier, content boundary, retry budget, and backoff.
+    - Gym verifies safe standalone recovery and no retry after partial summary text.
 
 - [ ] Fix daemon-shutdown persistence races.
     - Shutdown can close the database while `PersistentSessionStore.saveSession()` is still running, producing `database is not open`.
