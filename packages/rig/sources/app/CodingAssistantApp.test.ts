@@ -62,8 +62,9 @@ describe("CodingAssistantApp", () => {
         expect(rendered).not.toContain("Provider: Codex");
         expect(rendered).not.toContain("Directory:");
         expect(rendered).toContain("Ask Rig to do anything");
-        expect(renderedLines[0]?.length).toBeLessThan(80);
-        expect(renderedLines[0]).toBe("  ██████╗ ██╗ ██████╗    ██╗   ██████╗    ██████╗  ");
+        expect(renderedLines[0]).toBe("");
+        expect(renderedLines[1]?.length).toBeLessThan(80);
+        expect(renderedLines[1]).toBe("  ██████╗ ██╗ ██████╗    ██╗   ██████╗    ██████╗  ");
         expect(rendered).not.toContain(">_ Rig");
         expect(rendered).not.toContain("Tools:");
         expect(rendered).not.toContain("cwd:");

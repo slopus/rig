@@ -47,6 +47,7 @@ export class StartupStatusApp implements Component, Focusable {
     render(width: number): string[] {
         const safeWidth = Math.max(1, width);
         const lines = [
+            "",
             ...renderRigBanner({
                 brand: this.#theme.brand,
                 secondary: this.#theme.secondary,

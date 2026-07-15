@@ -2482,6 +2482,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
     #renderHeader(width: number): string[] {
         return [
+            "",
             ...renderRigBanner({
                 brand: this.#theme.brand,
                 secondary: this.#theme.secondary,

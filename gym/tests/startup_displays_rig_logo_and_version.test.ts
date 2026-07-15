@@ -52,6 +52,7 @@ describe("terminal startup branding", () => {
         running.add(gym);
 
         const startup = await gym.terminal.snapshot();
+        expect(startup.text).toContain(`\n${EXPECTED_BANNER}`);
         expect(startup.text).toContain(EXPECTED_BANNER);
         expect(startup.text).not.toContain(">_ Rig 1.2.3");
         expect(startup.text).not.toContain("Agentic coding CLI");

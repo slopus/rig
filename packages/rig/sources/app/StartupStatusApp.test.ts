@@ -13,7 +13,9 @@ describe("StartupStatusApp", () => {
             version: "1.2.3",
         });
 
-        const rendered = stripAnsi(app.render(80).join("\n"));
+        const lines = app.render(80);
+        const rendered = stripAnsi(lines.join("\n"));
+        expect(lines[0]).toBe("");
         expect(rendered).toContain("  ██████╗ ██╗ ██████╗    ██╗   ██████╗    ██████╗  ");
         expect(rendered).toContain("  ╚═╝  ╚═╝╚═╝ ╚═════╝    ╚═╝╚═╝╚══════╝╚═╝╚═════╝  ");
         expect(rendered).not.toContain("Agentic coding CLI");
