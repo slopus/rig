@@ -25,14 +25,24 @@ export function formatSessionUsageSummary(
     for (const [providerIndex, providerId] of providerIds.entries()) {
         if (providerIndex > 0) lines.push("");
         lines.push(providerName(providerId));
-        for (const group of summary.groups.filter(
+        const providerGroups = summary.groups.filter(
             (candidate) => (candidate.providerId ?? "earlier") === providerId,
-        )) {
+        );
+        for (const group of providerGroups) {
             lines.push(`  ${modelName(group, modelChoices)}`);
             lines.push(`    ${formatModelUsage(group)}`);
             if (isCurrentContextGroup(group, summary)) {
                 lines.push(`    ${formatContext(summary, modelChoices)}`);
             }
+        }
+        if (
+            summary.context !== undefined &&
+            providerId === summary.currentProviderId &&
+            providerId === summary.context.providerId &&
+            !providerGroups.some((group) => isCurrentContextGroup(group, summary))
+        ) {
+            lines.push(`  ${contextModelName(summary, modelChoices)}`);
+            lines.push(`    ${formatContext(summary, modelChoices)}`);
         }
         if (providerId !== "earlier") {
             const quota = summary.quotas.find((entry) => entry.providerId === providerId)?.quota;
@@ -59,6 +69,21 @@ export function formatSessionUsageSummary(
     const total = summary.groups.reduce((sum, group) => sum + group.usage.totalTokens, 0);
     lines.push(`Session total: ${formatTokens(total)}`);
     return lines.join("\n");
+}
+
+function contextModelName(
+    summary: GetSessionUsageResponse,
+    modelChoices: readonly CodingAssistantModelChoice[],
+): string {
+    const context = summary.context;
+    if (context === undefined) return "Model unavailable";
+    return (
+        modelChoices.find(
+            (choice) =>
+                choice.providerId === context.providerId &&
+                choice.model.id === context.requestedModelId,
+        )?.model.name ?? humanizeIdentifier(context.modelId)
+    );
 }
 
 function modelName(

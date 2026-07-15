@@ -796,6 +796,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
         if (event.type === "model_changed") {
             this.#usageRequestVersion += 1;
+            this.#latestContextTokens = 0;
             this.#appendEntry({
                 role: "event",
                 title: "model",
@@ -2221,6 +2222,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 this.#refreshToolActivityStatus();
             }
         } else if (event.type === "context_compacted") {
+            this.#latestContextTokens = event.estimatedTokensAfter;
             this.#appendEntry({
                 role: "event",
                 title: "Context compacted",

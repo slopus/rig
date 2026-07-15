@@ -132,6 +132,19 @@ describe("formatSessionUsageSummary", () => {
         expect(text).toContain("1m total · 1m input · 0 output");
         expect(text).toContain("Session total: 1m");
     });
+
+    it("renders current context before the selected model has a usage group", () => {
+        const value = summary();
+        value.groups = [];
+        value.observedQuota = [];
+        value.quotas = [];
+        value.context = { ...value.context!, approximate: true, totalTokens: 600 };
+
+        const text = formatSessionUsageSummary(value, [{ model: codex, providerId: "codex" }]);
+
+        expect(text).toContain("Codex\n  GPT-5.6\n    Context: ~600 / 200k · 99.7% left");
+        expect(text).toContain("Session total: 0");
+    });
 });
 
 function summary(): GetSessionUsageResponse {

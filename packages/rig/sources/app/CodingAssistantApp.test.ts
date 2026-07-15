@@ -3436,6 +3436,33 @@ describe("CodingAssistantApp", () => {
         await app.waitForIdle();
         expect(stripAnsi(app.render(100).join("\n"))).toContain("1.6k tokens · 99% left");
 
+        app.applySessionEvent({
+            createdAt: 2,
+            data: { modelId: model.id, snapshot: agent.snapshot() },
+            id: "model-changed",
+            sessionId: "session-1",
+            type: "model_changed",
+        });
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("0 tokens · 100% left");
+
+        app.applySessionEvent({
+            createdAt: 3,
+            data: {
+                event: {
+                    compactedMessageCount: 4,
+                    estimatedTokensAfter: 600,
+                    estimatedTokensBefore: 4_200,
+                    reason: "threshold",
+                    type: "context_compacted",
+                },
+                runId: "run-1",
+            },
+            id: "context-compacted",
+            sessionId: "session-1",
+            type: "agent_event",
+        });
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("600 tokens · 100% left");
+
         submit(app, "/usage");
         const report = stripAnsi(app.render(100).join("\n"));
         expect(report).toContain("Input: 1.2k");
