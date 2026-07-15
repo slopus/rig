@@ -43,8 +43,11 @@ export interface GymOptions {
     providerOverrides?: readonly ("claude-sdk" | "codex")[];
     rows?: number;
     startupText?: string;
+    terminalColorScheme?: TerminalColorScheme;
     timeoutMs?: number;
 }
+
+export type TerminalColorScheme = "dark" | "light";
 
 export interface TerminalCursorSnapshot {
     visible: boolean;

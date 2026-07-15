@@ -41,7 +41,11 @@ export async function createGym(options: GymOptions): Promise<Gym> {
     let ghostty: GhosttyTerminal | undefined;
     let gym: Gym | undefined;
     try {
-        const startedGhostty = await GhosttyTerminal.create(cols, rows);
+        const startedGhostty = await GhosttyTerminal.create(
+            cols,
+            rows,
+            options.terminalColorScheme,
+        );
         ghostty = startedGhostty;
         const [imageId] = await Promise.all([
             buildGymImage(image, repositoryRoot),

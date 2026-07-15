@@ -20,6 +20,7 @@ import {
 } from "../providers/types.js";
 import { CodingAssistantApp } from "./CodingAssistantApp.js";
 import { createSerialTaskQueue } from "./createSerialTaskQueue.js";
+import { DEFAULT_TERMINAL_THEME } from "./defaultTerminalTheme.js";
 
 describe("CodingAssistantApp", () => {
     it("renders the startup frame and Codex-style empty composer", () => {
@@ -206,6 +207,51 @@ describe("CodingAssistantApp", () => {
         await vi.waitFor(() =>
             expect(stripAnsi(app.render(80).join("\n"))).toContain("Stopped 1 background process."),
         );
+    });
+
+    it("repaints retained input and the composer when the terminal theme changes", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream: () => streamText("Theme response."),
+        });
+        const harness = createJustBashToolHarness();
+        const tui = fakeTui();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            theme: DEFAULT_TERMINAL_THEME,
+            tui,
+        });
+
+        submit(app, "Change the palette.");
+        await app.waitForIdle();
+        expect(app.render(80).join("\n")).toContain("\x1b[48;5;235m");
+        vi.mocked(tui.requestRender).mockClear();
+
+        app.setTheme({
+            ...DEFAULT_TERMINAL_THEME,
+            inputBackground: "\x1b[48;5;254m",
+            isLight: true,
+        });
+
+        const updated = app.render(80).join("\n");
+        expect(updated).toContain("Change the palette.");
+        expect(updated).toContain("\x1b[48;5;254m");
+        expect(updated).not.toContain("\x1b[48;5;235m");
+        expect(tui.requestRender).toHaveBeenCalledWith(true);
     });
 
     it("opens Codex-style backtracking on Escape and restores the selected prompt", async () => {

@@ -100,6 +100,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         version: readPackageVersion(),
     });
     startup.start();
+    tui.setTerminalColorSchemeNotifications(true);
     terminal.write("\x1b[?1004h");
     const terminalBackground = tui.queryTerminalBackgroundColor({ timeoutMs: 250 });
 
@@ -258,6 +259,22 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         tui,
         version: readPackageVersion(),
     });
+    let terminalThemeRefresh = 0;
+    const stopWatchingTerminalTheme = tui.onTerminalColorSchemeChange((colorScheme) => {
+        const refresh = ++terminalThemeRefresh;
+        void tui.queryTerminalBackgroundColor({ timeoutMs: 250 }).then((background) => {
+            if (refresh !== terminalThemeRefresh) return;
+            app.setTheme(
+                resolveTerminalTheme(
+                    loadedConfig.config.theme,
+                    background ??
+                        (colorScheme === "light"
+                            ? { r: 0xff, g: 0xff, b: 0xff }
+                            : { r: 0x0d, g: 0x0d, b: 0x0d }),
+                ),
+            );
+        });
+    });
     startup.stop();
     const followController = new AbortController();
     const lastHistoryEventId = history.events.at(-1)?.id ?? session.session.lastEventId;
@@ -291,6 +308,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         app.start({ tuiAlreadyStarted: true });
         await app.waitForExit();
     } finally {
+        stopWatchingTerminalTheme();
         process.off("SIGINT", stop);
         process.off("SIGTERM", stop);
         followController.abort();

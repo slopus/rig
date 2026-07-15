@@ -2,7 +2,7 @@ import type { IPty } from "@lydell/node-pty";
 
 import { GhosttyTerminal } from "./GhosttyTerminal.js";
 import { renderTerminalSnapshotPng } from "./renderTerminalSnapshotPng.js";
-import type { TerminalScreenshotOptions, TerminalSnapshot } from "./types.js";
+import type { TerminalColorScheme, TerminalScreenshotOptions, TerminalSnapshot } from "./types.js";
 
 const KEYS = {
     backspace: "\x7f",
@@ -62,6 +62,10 @@ export class GymTerminal {
 
     onOutput(handler: (data: string) => void): () => void {
         return this.#ghostty.onOutput(handler);
+    }
+
+    setColorScheme(colorScheme: TerminalColorScheme): void {
+        this.#ghostty.setColorScheme(colorScheme);
     }
 
     snapshot(): Promise<TerminalSnapshot> {

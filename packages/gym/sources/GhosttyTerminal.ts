@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import type { TerminalSnapshot } from "./types.js";
+import type { TerminalColorScheme, TerminalSnapshot } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -59,13 +59,18 @@ export class GhosttyTerminal {
         });
     }
 
-    static async create(cols: number, rows: number): Promise<GhosttyTerminal> {
+    static async create(
+        cols: number,
+        rows: number,
+        colorScheme: TerminalColorScheme = "dark",
+    ): Promise<GhosttyTerminal> {
         build ??= execFileAsync("cargo", ["build", "--manifest-path", manifestPath], {
             maxBuffer: 100 * 1024 * 1024,
         }).then(() => undefined);
         await build;
         const terminal = new GhosttyTerminal(spawn(binaryPath, [], { stdio: "pipe" }));
         terminal.resize(cols, rows);
+        terminal.setColorScheme(colorScheme);
         return terminal;
     }
 
@@ -99,6 +104,10 @@ export class GhosttyTerminal {
 
     scrollToTop(): void {
         this.#send({ type: "scroll_top" });
+    }
+
+    setColorScheme(colorScheme: TerminalColorScheme): void {
+        this.#send({ type: "set_color_scheme", color_scheme: colorScheme });
     }
 
     snapshot(): Promise<TerminalSnapshot> {

@@ -21,6 +21,7 @@ export type {
     GymMockResponse,
     GymOptions,
     TerminalCellSnapshot,
+    TerminalColorScheme,
     TerminalColorSnapshot,
     TerminalCursorSnapshot,
     TerminalScrollSnapshot,

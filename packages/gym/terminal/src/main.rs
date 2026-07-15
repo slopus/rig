@@ -33,8 +33,16 @@ enum Command {
     ScrollBottom,
     ScrollBy { rows: isize },
     ScrollTop,
+    SetColorScheme { color_scheme: ColorScheme },
     Snapshot { id: u64 },
     Write { data: String },
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ColorScheme {
+    Dark,
+    Light,
 }
 
 #[derive(Serialize)]
@@ -84,22 +92,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stdin = io::stdin();
     let mut stdout = io::BufWriter::new(io::stdout().lock());
     let pty_writes = RefCell::new(Vec::<Vec<u8>>::new());
+    let mut color_scheme_notifications_enabled = false;
+    let mut default_fg = RgbColor {
+        r: 0xee,
+        g: 0xee,
+        b: 0xee,
+    };
+    let mut default_bg = RgbColor {
+        r: 0x0d,
+        g: 0x0d,
+        b: 0x0d,
+    };
     let mut terminal = Terminal::new(TerminalOptions {
         cols: 80,
         rows: 24,
         max_scrollback: 10_000,
     })?;
     terminal
-        .set_default_fg_color(Some(RgbColor {
-            r: 0xee,
-            g: 0xee,
-            b: 0xee,
-        }))?
-        .set_default_bg_color(Some(RgbColor {
-            r: 0x0d,
-            g: 0x0d,
-            b: 0x0d,
-        }))?
+        .set_default_fg_color(Some(default_fg))?
+        .set_default_bg_color(Some(default_bg))?
         .on_pty_write({
             let pty_writes = &pty_writes;
             move |_terminal, data| pty_writes.borrow_mut().push(data.to_vec())
@@ -124,18 +135,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 terminal.scroll_viewport(ScrollViewport::Top);
                 scroll_tracker.observe(&terminal)?;
             }
+            Command::SetColorScheme { color_scheme } => {
+                (default_fg, default_bg) = default_colors(color_scheme);
+                terminal
+                    .set_default_fg_color(Some(default_fg))?
+                    .set_default_bg_color(Some(default_bg))?;
+                if color_scheme_notifications_enabled {
+                    let report = match color_scheme {
+                        ColorScheme::Dark => b"\x1b[?997;1n".to_vec(),
+                        ColorScheme::Light => b"\x1b[?997;2n".to_vec(),
+                    };
+                    pty_writes.borrow_mut().push(report);
+                }
+            }
             Command::Write { data } => {
                 let decoded = STANDARD.decode(data)?;
                 terminal.vt_write(&decoded);
+                if contains(&decoded, b"\x1b[?2031h") {
+                    color_scheme_notifications_enabled = true;
+                }
+                if contains(&decoded, b"\x1b[?2031l") {
+                    color_scheme_notifications_enabled = false;
+                }
                 if decoded.windows(6).any(|window| window == b"\x1b]10;?") {
                     pty_writes
                         .borrow_mut()
-                        .push(b"\x1b]10;rgb:eeee/eeee/eeee\x1b\\".to_vec());
+                        .push(osc_color_response(10, default_fg));
                 }
                 if decoded.windows(6).any(|window| window == b"\x1b]11;?") {
                     pty_writes
                         .borrow_mut()
-                        .push(b"\x1b]11;rgb:0d0d/0d0d/0d0d\x1b\\".to_vec());
+                        .push(osc_color_response(11, default_bg));
                 }
                 scroll_tracker.observe(&terminal)?;
                 for data in pty_writes.borrow_mut().drain(..) {
@@ -158,6 +188,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn contains(data: &[u8], needle: &[u8]) -> bool {
+    data.windows(needle.len()).any(|window| window == needle)
+}
+
+fn default_colors(color_scheme: ColorScheme) -> (RgbColor, RgbColor) {
+    match color_scheme {
+        ColorScheme::Dark => (
+            RgbColor {
+                r: 0xee,
+                g: 0xee,
+                b: 0xee,
+            },
+            RgbColor {
+                r: 0x0d,
+                g: 0x0d,
+                b: 0x0d,
+            },
+        ),
+        ColorScheme::Light => (
+            RgbColor {
+                r: 0x0d,
+                g: 0x0d,
+                b: 0x0d,
+            },
+            RgbColor {
+                r: 0xee,
+                g: 0xee,
+                b: 0xee,
+            },
+        ),
+    }
+}
+
+fn osc_color_response(slot: u8, color: RgbColor) -> Vec<u8> {
+    format!(
+        "\x1b]{slot};rgb:{red:02x}{red:02x}/{green:02x}{green:02x}/{blue:02x}{blue:02x}\x1b\\",
+        red = color.r,
+        green = color.g,
+        blue = color.b,
+    )
+    .into_bytes()
 }
 
 impl ScrollTracker {

@@ -363,7 +363,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#workflowsEnabled = options.workflowsEnabled ?? true;
         this.#slashCommands = createSlashCommands({ workflowsEnabled: this.#workflowsEnabled });
         this.#tui = options.tui;
-        this.#theme = options.theme ?? DEFAULT_TERMINAL_THEME;
+        this.#theme = { ...(options.theme ?? DEFAULT_TERMINAL_THEME) };
         this.#version = options.version ?? "0.0.0";
         this.#editor = new Editor(this.#tui, createEditorTheme(this.#theme), { paddingX: 0 });
         this.#fileMentionAutocomplete =
@@ -1017,6 +1017,13 @@ export class CodingAssistantApp implements Component, Focusable {
 
     invalidate(): void {
         this.#editor.invalidate();
+    }
+
+    setTheme(theme: TerminalTheme): void {
+        Object.assign(this.#theme, theme);
+        this.#entryRenderCache.clear();
+        this.invalidate();
+        this.#requestRender(true);
     }
 
     render(width: number): string[] {
