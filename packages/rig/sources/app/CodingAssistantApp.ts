@@ -3610,19 +3610,24 @@ export class CodingAssistantApp implements Component, Focusable {
         const call = entry.mcpToolCall;
         if (call === undefined) return [];
         const stopped = this.#stoppedToolCallIds.has(entry.id);
-        const result: string[] = [];
-        if (call.result !== undefined) {
-            result.push(...(typeof call.result === "string" ? [call.result] : call.result));
-        } else if (entry.detail !== undefined && call.status === "active" && !stopped) {
-            result.push(entry.detail);
+        let result = call.result;
+        if (
+            result === undefined &&
+            entry.detail !== undefined &&
+            call.status === "active" &&
+            !stopped
+        ) {
+            result = entry.detail;
         }
-        if (stopped && result.length === 0) result.push("Interrupted.");
+        if (stopped && (result === undefined || (Array.isArray(result) && result.length === 0))) {
+            result = "Interrupted.";
+        }
 
         return renderCodexMcpToolCall(
             {
                 invocation: call.invocation,
                 ...(entry.permissionReview === undefined ? {} : { review: entry.permissionReview }),
-                ...(result.length === 0 ? {} : { result }),
+                ...(result === undefined ? {} : { result }),
                 status: stopped ? "error" : call.status,
             },
             {

@@ -18,4 +18,16 @@ describe("formatCodexMcpToolResult", () => {
         expect(formatCodexMcpToolResult([])).toBeUndefined();
         expect(formatCodexMcpToolResult(undefined)).toBeUndefined();
     });
+
+    it("bounds the number of result blocks retained for rendering", () => {
+        const result = formatCodexMcpToolResult(
+            Array.from({ length: 10_000 }, (_, index) => ({
+                type: "text" as const,
+                text: `result ${String(index)}`,
+            })),
+        );
+
+        expect(result).toHaveLength(129);
+        expect(result?.at(-1)).toBe("... [truncated]");
+    });
 });

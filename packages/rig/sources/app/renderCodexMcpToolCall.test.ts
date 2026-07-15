@@ -1,6 +1,8 @@
 /* eslint-disable no-control-regex -- Tests intentionally inspect terminal ANSI controls. */
 
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { CodexMcpToolCall } from "./CodexMcpToolCall.js";
@@ -175,5 +177,55 @@ describe("renderCodexMcpToolCall", () => {
             "    third...",
         ]);
         expect(rendered.join("\n")).not.toContain("]8;;");
+    });
+
+    it("bounds large invocation and result payloads before serialization and wrapping", async () => {
+        const payloadCharacters = 5_000_000;
+        const maximumElapsedMilliseconds = 500;
+        const largeArguments = `ARGUMENT_START_${"a".repeat(payloadCharacters)}_ARGUMENT_END`;
+        const largeResult = `RESULT_START_${"r".repeat(payloadCharacters)}_RESULT_END`;
+        const startedAt = performance.now();
+        const rendered = renderCodexMcpToolCall(
+            {
+                invocation: {
+                    server: "large_payload",
+                    tool: "echo",
+                    arguments: { payload: largeArguments },
+                },
+                result: largeResult,
+                status: "success",
+            },
+            { width: 80 },
+        );
+        const elapsedMilliseconds = performance.now() - startedAt;
+        const plain = rendered.map(stripAnsi);
+
+        expect(elapsedMilliseconds).toBeLessThan(maximumElapsedMilliseconds);
+        expect(rendered.length).toBeLessThanOrEqual(20);
+        expect(plain.join("\n")).toContain("ARGUMENT_START_");
+        expect(plain.join("\n")).toContain("RESULT_START_");
+        expect(plain.join("\n")).toContain("[truncated]");
+        expect(plain.join("\n")).not.toContain("ARGUMENT_END");
+        expect(plain.join("\n")).not.toContain("RESULT_END");
+
+        const proofPath = process.env.RIG_MCP_RENDER_PROOF_PATH;
+        if (proofPath !== undefined) {
+            await mkdir(dirname(proofPath), { recursive: true });
+            await writeFile(
+                proofPath,
+                `${JSON.stringify(
+                    {
+                        argumentCharacters: largeArguments.length,
+                        elapsedMilliseconds: Math.round(elapsedMilliseconds * 100) / 100,
+                        maximumElapsedMilliseconds,
+                        renderedRows: rendered.length,
+                        resultCharacters: largeResult.length,
+                        rows: plain,
+                    },
+                    null,
+                    2,
+                )}\n`,
+            );
+        }
     });
 });

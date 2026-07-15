@@ -6,13 +6,19 @@ import type {
     CodexMcpToolRenderOptions,
 } from "./CodexMcpToolCall.js";
 import { DEFAULT_CODEX_MCP_TOOL_PALETTE } from "./CodexMcpToolCall.js";
+import { boundedJsonStringify } from "./boundedJsonStringify.js";
 import { sanitizeTerminalText } from "./sanitizeTerminalText.js";
+import { truncateTextForDisplay } from "./truncateTextForDisplay.js";
 
 const BOLD = "\x1b[1m";
 const DIM = "\x1b[2m";
 const NOT_BOLD_OR_DIM = "\x1b[22m";
 const DEFAULT_MAX_REVIEW_ROWS = 3;
 const DEFAULT_MAX_RESULT_ROWS = 5;
+const MAXIMUM_ARGUMENT_BYTES = 4_096;
+const MAXIMUM_INVOCATION_ROWS = 8;
+const MAXIMUM_NAME_CHARACTERS = 128;
+const MAXIMUM_RESULT_BLOCKS = 128;
 const MINIMUM_WRAPPED_WIDTH = 20;
 
 interface InvocationLayout {
@@ -45,7 +51,7 @@ export function renderCodexMcpToolCall(
     const maxReviewRows = Math.max(0, Math.floor(options.maxReviewRows ?? DEFAULT_MAX_REVIEW_ROWS));
     const maxResultRows = Math.max(0, Math.floor(options.maxResultRows ?? DEFAULT_MAX_RESULT_ROWS));
     const palette = options.palette ?? DEFAULT_CODEX_MCP_TOOL_PALETTE;
-    const invocation = invocationLayout(call);
+    const invocation = invocationLayout(call, width);
     const header = renderHeader(call.status, palette);
     if (width < MINIMUM_WRAPPED_WIDTH) {
         return renderNarrowCall(call, invocation, header, palette, width, {
@@ -91,19 +97,17 @@ export function renderCodexMcpToolCall(
     return lines.map((line) => truncateToWidth(line, width, "", false));
 }
 
-function compactArguments(value: unknown): string {
+function compactArguments(value: unknown, width: number): string {
     if (value === undefined) return "";
-    try {
-        return sanitizeTerminalText(JSON.stringify(value) ?? "");
-    } catch {
-        return sanitizeTerminalText(JSON.stringify(String(value)));
-    }
+    const serialized = boundedJsonStringify(value, MAXIMUM_ARGUMENT_BYTES);
+    const maximumCharacters = Math.max(64, width * MAXIMUM_INVOCATION_ROWS);
+    return sanitizeTerminalText(truncateTextForDisplay(serialized, maximumCharacters).text);
 }
 
-function invocationLayout(call: CodexMcpToolCall): InvocationLayout {
+function invocationLayout(call: CodexMcpToolCall, width: number): InvocationLayout {
     const server = sanitizeName(call.invocation.server);
     const tool = sanitizeName(call.invocation.tool);
-    const argumentsText = compactArguments(call.invocation.arguments);
+    const argumentsText = compactArguments(call.invocation.arguments, width);
     const toolStart = server.length + 1;
     const toolEnd = toolStart + tool.length;
     const argumentsStart = toolEnd + 1;
@@ -198,14 +202,38 @@ function renderResultLines(
 ): string[] {
     if (result === undefined || maxRows === 0) return [];
     const blocks = typeof result === "string" ? [result] : result;
-    const wrapped = blocks.flatMap((block) =>
-        wrapTextWithAnsi(sanitizeTerminalText(block).replaceAll("\t", "    "), width),
-    );
-    if (wrapped.length <= maxRows) return wrapped;
+    const maximumCharacters = Math.max(64, width * maxRows * 2);
+    const wrapped: string[] = [];
+    let consumedCharacters = 0;
+    let preWrapTruncated = false;
+    for (let index = 0; index < blocks.length; index += 1) {
+        if (index >= MAXIMUM_RESULT_BLOCKS) {
+            preWrapTruncated = true;
+            break;
+        }
+        const remainingCharacters = Math.max(0, maximumCharacters - consumedCharacters);
+        if (remainingCharacters === 0) {
+            preWrapTruncated = true;
+            break;
+        }
+        const bounded = truncateTextForDisplay(blocks[index] ?? "", remainingCharacters);
+        consumedCharacters += bounded.text.length;
+        preWrapTruncated ||= bounded.truncated;
+        wrapped.push(
+            ...wrapTextWithAnsi(sanitizeTerminalText(bounded.text).replaceAll("\t", "    "), width),
+        );
+        if (wrapped.length > maxRows) {
+            break;
+        }
+    }
+    if (wrapped.length <= maxRows && !preWrapTruncated) return wrapped;
 
     const visible = wrapped.slice(0, maxRows);
+    if (visible.length === 0) return [];
     const lastIndex = visible.length - 1;
-    const ellipsis = width >= 3 ? "..." : ".".repeat(width);
+    const fullEllipsis = preWrapTruncated ? "... [truncated]" : "...";
+    const ellipsis =
+        width >= visibleWidth(fullEllipsis) ? fullEllipsis : ".".repeat(Math.min(3, width));
     visible[lastIndex] = `${truncateToWidth(
         visible[lastIndex] ?? "",
         Math.max(0, width - visibleWidth(ellipsis)),
@@ -215,7 +243,9 @@ function renderResultLines(
 }
 
 function sanitizeName(value: string): string {
-    return sanitizeTerminalText(value).replace(/\s+/gu, "_");
+    return sanitizeTerminalText(
+        truncateTextForDisplay(value, MAXIMUM_NAME_CHARACTERS).text,
+    ).replace(/\s+/gu, "_");
 }
 
 function wrapWithHangingIndent(
