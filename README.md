@@ -2,10 +2,11 @@
 
 <p><img src="./logo.png" alt="Rig" width="400" /></p>
 
-<h3>One coding-agent harness. Codex and Claude behavior. Pi foundations.</h3>
+<h3>The best of Pi, Codex, and Claude Code—unified in one coding-agent harness.</h3>
 
 <p>
-  Run a polished local coding agent in your terminal, or use the same harness from
+  Use Rig interactively in your terminal, run it headlessly, or integrate through
+  its durable API. Built by the authors of
   <a href="https://github.com/slopus/happy">Happy</a> and
   <a href="https://github.com/slopus/happy2">Happy 2</a>.
 </p>
@@ -30,9 +31,9 @@ parts of [Codex](https://github.com/openai/codex) and
 runtime: the right prompts and tools for each model, useful defaults, safe
 execution, durable sessions, subagents, MCP, and a friendly terminal interface.
 
-The result is one harness that works well on its own and can also power clients
-such as Happy and Happy 2. Apps can integrate once instead of maintaining a
-different adapter for every coding agent.
+The result is one harness that works well on its own and exposes a stable layer
+for future client integrations. Apps can integrate once instead of maintaining
+a different adapter for every coding agent.
 
 ## Quick start
 
@@ -79,7 +80,7 @@ without making you rebuild the setup for every model, machine, or repository.
 - **Thoughtful defaults.** A fresh install is useful immediately, while global
   and project-local configuration remain available when you need them.
 - **Ready for other clients.** A local daemon, persisted sessions, and a durable
-  event stream let Happy, Happy 2, and other clients build on the same runtime.
+  event stream let terminal, mobile, and web clients build on the same runtime.
 - **Open and local.** Rig is MIT licensed, runs beside your code, and keeps its
   execution boundaries visible.
 
@@ -97,7 +98,7 @@ It shares a common runtime while preserving the behavior each model expects.
 | Terminal experience | Pi's terminal UI primitives            | A stable activity timeline, permissions, session controls, background work, and polished defaults |
 | GPT behavior        | Codex                                  | Codex-aligned prompts, tools, planning, collaboration, sandbox reviews, code review, and rewind   |
 | Claude behavior     | Claude Code                            | Claude-aligned prompts, tools, tasks, subagents, background commands, and structured questions    |
-| App integration     | Rig's local daemon and protocol        | Durable sessions and lifecycle events that can be consumed by Happy, Happy 2, or another client   |
+| App integration     | Rig's local daemon and protocol        | Durable sessions and lifecycle events that can be consumed by external clients                    |
 
 ## How Rig compares
 
@@ -400,6 +401,12 @@ Rig aims for the best common coding-agent workflows, not exhaustive parity with
 every upstream option. It intentionally keeps planning in the normal agent flow,
 uses standard terminal editing instead of modal editing, follows Codex skill
 semantics, and relies on the existing Codex and Claude Code login flows.
+
+Rig also draws a clear boundary around the terminal UI. The terminal is for a
+focused, linear agent workflow. Features that need a richer interaction model—
+such as drag-and-drop, multiple independently scrolling panes, or complex visual
+workspaces—belong in a dedicated UI built on Rig's durable API. Rig provides the
+harness; it does not squeeze desktop-app interactions into a terminal.
 
 It does not add a separate Plan mode, Vim mode, notebook editor, durable command
 allow/deny history, dedicated IDE integration, or a separate Rig account. These
