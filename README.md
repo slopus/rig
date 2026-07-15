@@ -129,7 +129,7 @@ Codex, or Claude Code. This table focuses on the local coding-agent experience.
 |                        | Rig                                                                   | [Pi](https://github.com/earendil-works/pi)                   | [Codex](https://github.com/openai/codex)  | [Claude Code](https://code.claude.com/docs/en/overview) |
 | ---------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------- | ------------------------------------------------------- |
 | Primary role           | Opinionated multi-model harness                                       | Minimal, highly extensible agent toolkit                     | OpenAI's native coding agent              | Anthropic's native coding agent                         |
-| Model access           | Codex, Claude SDK, and optional Bedrock models                        | Broad multi-provider catalog                                 | OpenAI models                             | Claude models, including supported cloud platforms      |
+| Model access           | Codex, Claude Code, and optional Bedrock models                       | Broad multi-provider catalog                                 | OpenAI models                             | Claude models, including supported cloud platforms      |
 | Authentication         | Reuses Codex and Claude Code credentials                              | Pi logins or provider API keys                               | ChatGPT sign-in or API key                | Claude sign-in, API, or supported cloud provider        |
 | Tool behavior          | Switches between model-native Codex and Claude toolsets               | Small generic core, replaceable with extensions              | Codex-native                              | Claude Code-native                                      |
 | Subagents              | Built in, with provider-aligned controls and saved transcripts        | Intentionally extension-driven                               | Built-in multi-agent tools                | Built-in subagents and agent teams                      |
@@ -265,6 +265,66 @@ brand = "ansi:202"
 accent = "cyan"
 ```
 
+Provider availability is machine-wide because the local daemon owns the model
+catalog and authentication paths. Configure it in `~/.config/rig/config.toml`:
+
+```toml
+[providers.codex]
+enabled = true
+
+[providers.claude]
+enabled = true
+
+[providers.bedrock]
+enabled = true
+```
+
+These three built-in instances use the normal Codex, Claude Code, and Bedrock
+credential locations, so their `type` is inferred. Disabling Codex or Claude
+Code removes that provider and its native authentication path from the model
+picker.
+
+Add any number of named instances when you need separate accounts. For custom
+instances, the section suffix is the provider ID shown in the model picker and
+accepted by `defaults.provider` and `RIG_PROVIDER`. Custom instances must set
+`type`; all parameters stay flat in the same section. The built-in Claude Code
+instance retains `claude-sdk` as its provider ID for compatibility:
+
+```toml
+[providers.work_codex]
+type = "codex"
+auth_file = "/Users/me/.codex-work/auth.json"
+transport = "auto"
+include_models = ["openai/gpt-5.6-sol", "openai/gpt-5.6-terra"]
+
+[providers.personal_claude]
+type = "claude"
+config_dir = "/Users/me/.claude-personal"
+exclude_models = ["anthropic/haiku-4-5"]
+
+[providers.west_bedrock]
+type = "bedrock"
+region = "us-west-2"
+bearer_token_env_var = "WEST_BEDROCK_TOKEN"
+
+[providers.west_bedrock.model_overrides]
+"openai/gpt-5.6-sol" = { region = "us-east-1", endpoint = "https://bedrock-mantle.example/openai/v1" }
+"anthropic/opus-4-8" = { endpoint = "https://bedrock-runtime.example" }
+```
+
+Every provider accepts `enabled`, `include_models`, and `exclude_models`.
+Filters use exact Rig model IDs; exclusions win when a model appears in both
+lists. Codex instances also accept `auth_file`, `base_url`, and `transport`.
+Claude Code instances accept `config_dir` and `executable`. Bedrock instances
+accept `region`, `model_overrides`, and `bearer_token_env_var`. `region` is the
+provider default. Each exact Rig model ID under `model_overrides` may set
+`region`, `endpoint`, or both. A full `endpoint` URL overrides the Mantle or
+Bedrock Runtime endpoint selected for that model and bypasses Rig's regional
+availability list. The resolved region is still used for regional
+inference-profile IDs and request metadata. Restart the local daemon after
+changing providers. Repository `rig.toml` files cannot change these
+machine-level choices or credential paths.
+
 Use `/configure` for common settings. Environment variables such as `RIG_MODEL`,
 `RIG_PROVIDER`, `RIG_EFFORT`, and `RIG_PERMISSION_MODE` override the corresponding
 default for a newly created session.
@@ -361,9 +421,32 @@ export RIG_PROVIDER="bedrock"
 rig
 ```
 
+To use Bedrock exclusively, disable the two native authentication paths in the
+machine-wide config and select a Bedrock default:
+
+```toml
+[defaults]
+provider = "bedrock"
+model = "openai/gpt-5.6-sol"
+
+[providers.codex]
+enabled = false
+
+[providers.claude]
+enabled = false
+
+[providers.bedrock]
+enabled = true
+```
+
 Rig uses `AWS_REGION`, then `AWS_DEFAULT_REGION`, and otherwise defaults to
 `us-east-1`. Restart an already-running daemon after changing these variables.
-The available model list follows AWS regional availability.
+The available model list follows AWS regional availability. GPT-5.6 Sol, Terra,
+and Luna use Amazon Bedrock's Responses API and its 272,000-token context limit.
+Sol is available in `us-east-1` and `us-east-2`; Terra and Luna are also
+available in `us-west-2`. See the current
+[OpenAI Bedrock guide](https://developers.openai.com/api/docs/guides/amazon-bedrock)
+and [AWS launch announcement](https://aws.amazon.com/about-aws/whats-new/2026/07/openai-gpt-sol-terra/).
 
 </details>
 

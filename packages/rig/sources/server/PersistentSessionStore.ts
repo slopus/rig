@@ -22,6 +22,7 @@ import type { SessionGoal } from "../goals/index.js";
 import { parsePermissionMode } from "../permissions/index.js";
 import {
     InMemorySession,
+    type InMemorySessionOptions,
     type InMemorySessionPersistence,
     type PersistedQueuedRun,
     type PersistedSessionMessage,
@@ -38,6 +39,7 @@ import type { DockerExecutionConfig } from "../execution/index.js";
 import { summarizeDockerExecution } from "../execution/index.js";
 
 export interface PersistentSessionStoreOptions {
+    createRuntime?: InMemorySessionOptions["createRuntime"];
     databasePath: string;
     durableGlobalEventQueue?: boolean;
     mcpToolProvider?: McpToolProvider;
@@ -48,6 +50,7 @@ export interface PersistentSessionStoreOptions {
 export class PersistentSessionStore implements SessionStore, InMemorySessionPersistence {
     #agentManager: AgentSessionManager;
     #createEventId = createEventIdFactory();
+    #createRuntime: InMemorySessionOptions["createRuntime"];
     #database: DatabaseSync;
     #modelCatalog: ModelCatalog;
     #mcpToolProvider: McpToolProvider | undefined;
@@ -57,6 +60,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
 
     constructor(options: PersistentSessionStoreOptions) {
         this.#modelCatalog = options.modelCatalog ?? createModelCatalog();
+        this.#createRuntime = options.createRuntime;
         this.#mcpToolProvider = options.mcpToolProvider;
         this.#now = options.now ?? Date.now;
         if (options.databasePath !== ":memory:") {
@@ -139,6 +143,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         const session = new InMemorySession({
             agentManager: this.#agentManager,
             createEventId: this.#createEventId,
+            ...(this.#createRuntime === undefined ? {} : { createRuntime: this.#createRuntime }),
             emitCreatedEvent: false,
             modelCatalog: this.#modelCatalog,
             ...(this.#mcpToolProvider !== undefined
@@ -166,6 +171,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         const session = new InMemorySession({
             agentManager: this.#agentManager,
             createEventId: this.#createEventId,
+            ...(this.#createRuntime === undefined ? {} : { createRuntime: this.#createRuntime }),
             emitCreatedEvent: false,
             modelCatalog: this.#modelCatalog,
             ...(this.#mcpToolProvider !== undefined
@@ -867,6 +873,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         return new InMemorySession({
             agentManager: this.#agentManager,
             createEventId: this.#createEventId,
+            ...(this.#createRuntime === undefined ? {} : { createRuntime: this.#createRuntime }),
             events: this.#loadEvents(sessionId),
             modelCatalog: this.#modelCatalog,
             ...(this.#mcpToolProvider !== undefined

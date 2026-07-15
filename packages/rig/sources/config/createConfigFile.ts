@@ -4,6 +4,7 @@ import { stringify } from "smol-toml";
 
 import { DEFAULT_RIG_CONFIG } from "./defaultConfig.js";
 import { serializeMcpServers } from "./serializeMcpServers.js";
+import { serializeProviders } from "./serializeProviders.js";
 import type { RigConfig } from "./types.js";
 
 export async function createConfigFile(
@@ -36,6 +37,7 @@ export async function createConfigFile(
             features: {
                 workflows: config.features.workflows,
             },
+            providers: serializeProviders(config.providers),
             theme: config.theme,
             ...(config.docker === undefined
                 ? {}

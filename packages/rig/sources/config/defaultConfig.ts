@@ -9,6 +9,20 @@ export const DEFAULT_RIG_CONFIG: RigConfig = {
         workflows: true,
     },
     mcpServers: {},
+    providers: {
+        codex: {
+            enabled: true,
+            type: "codex",
+        },
+        claude: {
+            enabled: true,
+            type: "claude",
+        },
+        bedrock: {
+            enabled: true,
+            type: "bedrock",
+        },
+    },
     settings: {
         durableGlobalEventQueue: false,
         showReasoning: false,

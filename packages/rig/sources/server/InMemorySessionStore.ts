@@ -10,12 +10,13 @@ import type {
     SubagentSummary,
 } from "../protocol/index.js";
 import { AgentSessionManager } from "./AgentSessionManager.js";
-import { InMemorySession } from "./InMemorySession.js";
+import { InMemorySession, type InMemorySessionOptions } from "./InMemorySession.js";
 import { createModelCatalog } from "./createModelCatalog.js";
 import type { SessionStore } from "./SessionStore.js";
 import type { McpToolProvider } from "../mcp/index.js";
 
 export interface InMemorySessionStoreOptions {
+    createRuntime?: InMemorySessionOptions["createRuntime"];
     mcpToolProvider?: McpToolProvider;
     modelCatalog?: ModelCatalog;
 }
@@ -23,12 +24,14 @@ export interface InMemorySessionStoreOptions {
 export class InMemorySessionStore implements SessionStore {
     #agentManager: AgentSessionManager;
     #createEventId = createEventIdFactory();
+    #createRuntime: InMemorySessionOptions["createRuntime"];
     #modelCatalog: ModelCatalog;
     #mcpToolProvider: McpToolProvider | undefined;
     #sessions = new Map<string, InMemorySession>();
 
     constructor(options: InMemorySessionStoreOptions = {}) {
         this.#modelCatalog = options.modelCatalog ?? createModelCatalog();
+        this.#createRuntime = options.createRuntime;
         this.#mcpToolProvider = options.mcpToolProvider;
         this.#agentManager = new AgentSessionManager({
             repository: {
@@ -75,6 +78,7 @@ export class InMemorySessionStore implements SessionStore {
         const session = new InMemorySession({
             agentManager: this.#agentManager,
             createEventId: this.#createEventId,
+            ...(this.#createRuntime === undefined ? {} : { createRuntime: this.#createRuntime }),
             modelCatalog: this.#modelCatalog,
             ...(this.#mcpToolProvider !== undefined
                 ? { mcpToolProvider: this.#mcpToolProvider }
@@ -94,6 +98,7 @@ export class InMemorySessionStore implements SessionStore {
         const session = new InMemorySession({
             agentManager: this.#agentManager,
             createEventId: this.#createEventId,
+            ...(this.#createRuntime === undefined ? {} : { createRuntime: this.#createRuntime }),
             modelCatalog: this.#modelCatalog,
             ...(this.#mcpToolProvider !== undefined
                 ? { mcpToolProvider: this.#mcpToolProvider }

@@ -2,6 +2,7 @@ import type { PermissionMode } from "../permissions/index.js";
 import type { McpServerConfig } from "../mcp/types.js";
 import type { DockerExecutionConfig } from "../execution/index.js";
 import type { ServiceTier } from "../providers/types.js";
+import type { BedrockModelOverrides } from "../providers/bedrock-model-overrides.js";
 
 export interface ConfigDefaults {
     effort?: string;
@@ -41,6 +42,38 @@ export interface PartialConfigFeatures {
     workflows?: boolean;
 }
 
+interface ConfigProviderBase {
+    enabled: boolean;
+    excludeModels?: readonly string[];
+    includeModels?: readonly string[];
+}
+
+export interface ConfigBedrockProvider extends ConfigProviderBase {
+    bearerTokenEnvVar?: string;
+    modelOverrides?: BedrockModelOverrides;
+    region?: string;
+    type: "bedrock";
+}
+
+export interface ConfigClaudeProvider extends ConfigProviderBase {
+    configDir?: string;
+    executable?: string;
+    type: "claude";
+}
+
+export interface ConfigCodexProvider extends ConfigProviderBase {
+    authFile?: string;
+    baseUrl?: string;
+    transport?: "auto" | "sse" | "websocket" | "websocket-cached";
+    type: "codex";
+}
+
+export type ConfigProvider = ConfigBedrockProvider | ConfigClaudeProvider | ConfigCodexProvider;
+
+export type ConfigProviders = Readonly<Record<string, ConfigProvider>>;
+
+export type PartialConfigProviders = ConfigProviders;
+
 export interface ConfigTheme {
     accent: string;
     brand: string;
@@ -58,6 +91,7 @@ export interface RigConfig {
     defaults: ConfigDefaults;
     features: ConfigFeatures;
     mcpServers: Readonly<Record<string, McpServerConfig>>;
+    providers: ConfigProviders;
     settings: ConfigSettings;
     theme: ConfigTheme;
 }
@@ -67,6 +101,7 @@ export interface PartialRigConfig {
     defaults?: PartialConfigDefaults;
     features?: PartialConfigFeatures;
     mcpServers?: Readonly<Record<string, McpServerConfig>>;
+    providers?: PartialConfigProviders;
     settings?: PartialConfigSettings;
     theme?: PartialConfigTheme;
 }

@@ -13,6 +13,9 @@ import {
     type UserInputContext,
 } from "../agent/index.js";
 import type { DockerExecutionConfig } from "../execution/index.js";
+import { DEFAULT_RIG_CONFIG } from "../config/defaultConfig.js";
+import { findConfiguredProvider } from "../config/findConfiguredProvider.js";
+import type { ConfigCodexProvider, ConfigProviders } from "../config/types.js";
 import type { WorkflowContext } from "../workflows/index.js";
 import type { Message } from "../agent/types.js";
 import { NativeProxessManager } from "../processes/index.js";
@@ -21,9 +24,11 @@ import { createClaudeSdkProvider } from "../providers/claude-sdk.js";
 import { createClaudeSessionId } from "../providers/createClaudeSessionId.js";
 import { createCodexProvider, type CodexProviderOptions } from "../providers/codex.js";
 import { createGymProvider } from "../providers/createGymProvider.js";
+import { filterConfiguredProviderModels } from "../providers/filterConfiguredProviderModels.js";
 import { getBedrockModelRoute } from "../providers/getBedrockModelRoute.js";
 import { modelOpenaiGpt56Sol } from "../providers/models.js";
 import { readGymContextWindow } from "../providers/readGymContextWindow.js";
+import { readConfiguredBedrockBearerToken } from "../providers/readConfiguredBedrockBearerToken.js";
 import type { ServiceTier } from "../providers/types.js";
 import { claudeCodeTools, claudeCollaborationTools } from "../tools/claude/index.js";
 import { codexCollaborationTools, codexTools } from "../tools/codex/index.js";
@@ -49,6 +54,7 @@ export interface CreateCodingAssistantAgentOptions {
     providerId?: string;
     processManager?: NativeProxessManager;
     permissionMode?: PermissionMode;
+    providers?: ConfigProviders;
     serviceTier?: ServiceTier;
     subagents?: SubagentContext;
     tasks?: TaskContext;
@@ -97,10 +103,18 @@ export function createCodingAssistantAgent(
               : getBedrockModelRoute(modelId) !== undefined
                 ? "bedrock"
                 : "codex");
-    const bedrockRoute = providerId === "bedrock" ? getBedrockModelRoute(modelId) : undefined;
-    const usesClaudeTools = providerId === "claude-sdk" || bedrockRoute?.provider === "anthropic";
+    const providerConfig =
+        providerId === "gym"
+            ? undefined
+            : findConfiguredProvider(options.providers ?? DEFAULT_RIG_CONFIG.providers, providerId);
+    if (providerId !== "gym" && (providerConfig === undefined || !providerConfig.enabled)) {
+        throw new Error(`Unknown or disabled inference provider '${providerId}'.`);
+    }
+    const providerType = providerId === "gym" ? "gym" : providerConfig?.type;
+    const bedrockRoute = providerType === "bedrock" ? getBedrockModelRoute(modelId) : undefined;
+    const usesClaudeTools = providerType === "claude" || bedrockRoute?.provider === "anthropic";
     const usesCodexTools =
-        providerId === "codex" || providerId === "gym" || bedrockRoute?.provider === "openai";
+        providerType === "codex" || providerType === "gym" || bedrockRoute?.provider === "openai";
     const baseTools: readonly AnyDefinedTool[] = usesClaudeTools
         ? claudeCodeTools
         : usesCodexTools
@@ -130,22 +144,57 @@ export function createCodingAssistantAgent(
             : [...baseTools, ...collaborationTools];
     const tools =
         options.goals === undefined ? toolsWithoutGoals : [...toolsWithoutGoals, ...goalTools];
-    const provider =
-        providerId === "bedrock"
-            ? createBedrockProvider({ env: options.env ?? process.env })
-            : providerId === "claude-sdk"
-              ? createClaudeSdkProvider({
+    const env = options.env ?? process.env;
+    const provider = (() => {
+        if (providerType === "gym") return createGymProviderFromEnvironment(env);
+        if (providerConfig?.type === "bedrock") {
+            const bearerToken = readConfiguredBedrockBearerToken(providerConfig, env);
+            if (bearerToken === undefined) {
+                throw new Error(
+                    `Inference provider '${providerId}' requires the ${providerConfig.bearerTokenEnvVar ?? "AWS_BEARER_TOKEN_BEDROCK"} environment variable.`,
+                );
+            }
+            return filterConfiguredProviderModels(
+                createBedrockProvider({
+                    bearerToken,
+                    env,
+                    id: providerId,
+                    ...(providerConfig.modelOverrides === undefined
+                        ? {}
+                        : { modelOverrides: providerConfig.modelOverrides }),
+                    ...(providerConfig.region === undefined
+                        ? {}
+                        : { region: providerConfig.region }),
+                }),
+                providerConfig,
+            );
+        }
+        if (providerConfig?.type === "claude") {
+            return filterConfiguredProviderModels(
+                createClaudeSdkProvider({
                     agentContext: context,
+                    env:
+                        providerConfig.configDir === undefined
+                            ? env
+                            : { ...env, CLAUDE_CONFIG_DIR: providerConfig.configDir },
+                    id: providerId,
+                    ...(providerConfig.executable === undefined
+                        ? {}
+                        : { pathToClaudeCodeExecutable: providerConfig.executable }),
                     sessionId: createClaudeSessionId(agentId),
                     tools,
-                })
-              : providerId === "codex"
-                ? createCodexProvider(toCodexProviderOptions(options))
-                : providerId === "gym"
-                  ? createGymProviderFromEnvironment(options.env ?? process.env)
-                  : (() => {
-                        throw new Error(`Unknown inference provider '${providerId}'.`);
-                    })();
+                }),
+                providerConfig,
+            );
+        }
+        if (providerConfig?.type === "codex") {
+            return filterConfiguredProviderModels(
+                createCodexProvider(toCodexProviderOptions(options, providerId, providerConfig)),
+                providerConfig,
+            );
+        }
+        throw new Error(`Unknown inference provider '${providerId}'.`);
+    })();
     const agentOptions: AgentOptions = {
         provider,
         modelId,
@@ -188,17 +237,31 @@ function createGymProviderFromEnvironment(env: NodeJS.ProcessEnv) {
     });
 }
 
-function toCodexProviderOptions(options: CreateCodingAssistantAgentOptions): CodexProviderOptions {
-    const providerOptions: CodexProviderOptions = {};
+function toCodexProviderOptions(
+    options: CreateCodingAssistantAgentOptions,
+    providerId: string,
+    config: ConfigCodexProvider,
+): CodexProviderOptions {
+    const providerOptions: CodexProviderOptions = { id: providerId };
     const env = options.env ?? process.env;
     if (options.apiKey !== undefined) {
         providerOptions.apiKey = options.apiKey;
     }
-    if (env.RIG_CODEX_BASE_URL !== undefined) {
-        providerOptions.baseUrl = env.RIG_CODEX_BASE_URL;
+    if (config.authFile !== undefined) {
+        providerOptions.codexAuthPath = config.authFile;
     }
-    if (env.RIG_CODEX_TRANSPORT === "sse") {
-        providerOptions.transport = "sse";
+    const baseUrl = config.baseUrl ?? env.RIG_CODEX_BASE_URL;
+    if (baseUrl !== undefined) {
+        providerOptions.baseUrl = baseUrl;
+    }
+    const transport = config.transport ?? env.RIG_CODEX_TRANSPORT;
+    if (
+        transport === "auto" ||
+        transport === "sse" ||
+        transport === "websocket" ||
+        transport === "websocket-cached"
+    ) {
+        providerOptions.transport = transport;
     }
 
     return providerOptions;

@@ -40,6 +40,7 @@ export interface CodexProviderOptions {
     resolveApiKey?: () => string | undefined;
     useLocalCodexAuth?: boolean;
     codexAuthPath?: string;
+    id?: string;
     transport?: SimpleStreamOptions["transport"];
 }
 
@@ -70,7 +71,7 @@ export function createCodexProvider(options: CodexProviderOptions = {}): Provide
     const resolveApiKey = buildApiKeyResolver(options);
 
     return defineProvider({
-        id: "codex",
+        id: options.id ?? "codex",
         models: codexModels,
         serviceTiers: ["fast"],
         stream(model, context, streamOptions) {

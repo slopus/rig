@@ -10,6 +10,9 @@ import {
     modelMoonshotKimiK2Thinking,
     modelOpenaiGpt54,
     modelOpenaiGpt55,
+    modelOpenaiGpt56Luna,
+    modelOpenaiGpt56Sol,
+    modelOpenaiGpt56Terra,
     modelZaiGlm47,
     modelZaiGlm47Flash,
     modelZaiGlm5,
@@ -168,6 +171,23 @@ const GLOBAL_HAIKU_45_PROFILES: BedrockRuntimeInferenceProfiles = {
         "eu-": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
         "us-": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     },
+};
+
+const modelBedrockOpenaiGpt56Sol: Model = {
+    ...modelOpenaiGpt56Sol,
+    contextWindow: 272_000,
+    thinkingLevels: modelOpenaiGpt56Sol.thinkingLevels.filter((level) => level !== "ultra"),
+};
+
+const modelBedrockOpenaiGpt56Terra: Model = {
+    ...modelOpenaiGpt56Terra,
+    contextWindow: 272_000,
+    thinkingLevels: modelOpenaiGpt56Terra.thinkingLevels.filter((level) => level !== "ultra"),
+};
+
+const modelBedrockOpenaiGpt56Luna: Model = {
+    ...modelOpenaiGpt56Luna,
+    contextWindow: 272_000,
 };
 
 /**
@@ -330,6 +350,42 @@ export const BEDROCK_MODEL_ROUTES: readonly BedrockModelRoute[] = [
         provider: "zai",
         reasoningMode: "glm-toggle",
         supportedRegions: BEDROCK_GLM_FLASH_IN_REGION_REGIONS,
+    },
+    {
+        apiModelId: "openai.gpt-5.6-sol",
+        contextWindow: 272_000,
+        endpoints: ["bedrock-mantle"],
+        input: ["text", "image"],
+        maxTokens: 128_000,
+        model: modelBedrockOpenaiGpt56Sol,
+        preferredEndpoint: "bedrock-mantle",
+        provider: "openai",
+        reasoningMode: "openai",
+        supportedRegions: ["us-east-1", "us-east-2"],
+    },
+    {
+        apiModelId: "openai.gpt-5.6-terra",
+        contextWindow: 272_000,
+        endpoints: ["bedrock-mantle"],
+        input: ["text", "image"],
+        maxTokens: 128_000,
+        model: modelBedrockOpenaiGpt56Terra,
+        preferredEndpoint: "bedrock-mantle",
+        provider: "openai",
+        reasoningMode: "openai",
+        supportedRegions: ["us-east-1", "us-east-2", "us-west-2"],
+    },
+    {
+        apiModelId: "openai.gpt-5.6-luna",
+        contextWindow: 272_000,
+        endpoints: ["bedrock-mantle"],
+        input: ["text", "image"],
+        maxTokens: 128_000,
+        model: modelBedrockOpenaiGpt56Luna,
+        preferredEndpoint: "bedrock-mantle",
+        provider: "openai",
+        reasoningMode: "openai",
+        supportedRegions: ["us-east-1", "us-east-2", "us-west-2"],
     },
     {
         apiModelId: "openai.gpt-5.5",

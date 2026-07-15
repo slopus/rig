@@ -11,6 +11,9 @@ import {
     modelMoonshotKimiK2Thinking,
     modelOpenaiGpt54,
     modelOpenaiGpt55,
+    modelOpenaiGpt56Luna,
+    modelOpenaiGpt56Sol,
+    modelOpenaiGpt56Terra,
     modelZaiGlm47,
     modelZaiGlm47Flash,
     modelZaiGlm5,
@@ -197,6 +200,16 @@ describe("Amazon Bedrock provider", () => {
         expect(client.baseURL).toBe("https://bedrock-mantle.us-east-1.api.aws/openai/v1");
     });
 
+    it("uses a custom Mantle endpoint verbatim", () => {
+        const client = createBedrockOpenAIClient({
+            bearerToken: "bedrock-token",
+            endpoint: "https://mantle.example/openai/v1",
+            region: "us-west-2",
+        });
+
+        expect(client.baseURL).toBe("https://mantle.example/openai/v1");
+    });
+
     it("sends an explicit none effort when OpenAI thinking is off", () => {
         const modelRoute = getBedrockModelRoute(modelOpenaiGpt55.id);
         expect(modelRoute).toBeDefined();
@@ -209,6 +222,37 @@ describe("Amazon Bedrock provider", () => {
 
         expect(request.reasoning).toEqual({ effort: "none" });
         expect(request.include).toBeUndefined();
+    });
+
+    it("uses the documented GPT-5.6 Bedrock model IDs and limits", () => {
+        for (const [model, apiModelId] of [
+            [modelOpenaiGpt56Sol, "openai.gpt-5.6-sol"],
+            [modelOpenaiGpt56Terra, "openai.gpt-5.6-terra"],
+            [modelOpenaiGpt56Luna, "openai.gpt-5.6-luna"],
+        ] as const) {
+            const route = getBedrockModelRoute(model.id);
+            expect(route).toMatchObject({
+                apiModelId,
+                contextWindow: 272_000,
+                endpoints: ["bedrock-mantle"],
+                maxTokens: 128_000,
+                preferredEndpoint: "bedrock-mantle",
+            });
+            expect(route?.model.contextWindow).toBe(272_000);
+            expect(route?.model.thinkingLevels).toContain("max");
+            expect(route?.model.thinkingLevels).not.toContain("ultra");
+        }
+
+        const solRoute = getBedrockModelRoute(modelOpenaiGpt56Sol.id);
+        const request = createBedrockOpenAIRequest({
+            context: { messages: [] },
+            modelRoute: solRoute!,
+            streamOptions: { thinking: "max" },
+        });
+        expect(request).toMatchObject({
+            model: "openai.gpt-5.6-sol",
+            reasoning: { effort: "max", summary: "auto" },
+        });
     });
 
     it("routes OpenAI models through the official Bedrock OpenAI Responses client", async () => {
@@ -318,6 +362,53 @@ describe("Amazon Bedrock provider", () => {
 
         expect(provider.models).toContain(modelOpenaiGpt54);
         expect(provider.models).not.toContain(modelOpenaiGpt55);
+        expect(provider.models.map((model) => model.id)).toContain(modelOpenaiGpt56Terra.id);
+        expect(provider.models.map((model) => model.id)).toContain(modelOpenaiGpt56Luna.id);
+        expect(provider.models.map((model) => model.id)).not.toContain(modelOpenaiGpt56Sol.id);
+    });
+
+    it("uses model-specific regions and endpoints for availability and routing", () => {
+        const piStream = {} as AssistantMessageEventStream;
+        const streamRuntime = vi.fn(
+            ((..._args: Parameters<PiBedrockRuntimeStream>) => piStream) as PiBedrockRuntimeStream,
+        );
+        const provider = createBedrockProvider({
+            bearerToken: "bedrock-token",
+            modelOverrides: {
+                [modelAnthropicOpus48.id]: { endpoint: "https://runtime.example" },
+                [modelOpenaiGpt56Sol.id]: {
+                    endpoint: "https://mantle.example/openai/v1",
+                },
+                [modelOpenaiGpt56Terra.id]: { region: "us-east-1" },
+            },
+            region: "private-region-1",
+            streamRuntime,
+        });
+
+        expect(provider.models.map((model) => model.id)).toContain(modelOpenaiGpt56Sol.id);
+        expect(provider.models.map((model) => model.id)).toContain(modelOpenaiGpt56Terra.id);
+        provider.stream(modelAnthropicOpus48, { messages: [] });
+        expect(streamRuntime.mock.calls[0]?.[0]).toMatchObject({
+            baseUrl: "https://runtime.example",
+        });
+        expect(streamRuntime.mock.calls[0]?.[2]).toMatchObject({ region: "private-region-1" });
+    });
+
+    it("exposes every GPT-5.6 variant in its documented US East regions", () => {
+        for (const region of ["us-east-1", "us-east-2"]) {
+            const provider = createBedrockProvider({
+                bearerToken: "bedrock-token",
+                region,
+            });
+
+            expect(provider.models.map((model) => model.id)).toEqual(
+                expect.arrayContaining([
+                    modelOpenaiGpt56Sol.id,
+                    modelOpenaiGpt56Terra.id,
+                    modelOpenaiGpt56Luna.id,
+                ]),
+            );
+        }
     });
 
     it("applies the manual in-region availability map for Kimi and GLM", () => {

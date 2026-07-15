@@ -23,6 +23,7 @@ export function createBedrockMantleStream(options: {
     bearerToken: string;
     client?: BedrockOpenAIClient;
     context: Context;
+    endpoint?: string;
     modelRoute: BedrockModelRoute;
     region: string;
     streamOptions?: StreamOptions;
@@ -31,6 +32,7 @@ export function createBedrockMantleStream(options: {
         options.client ??
         createBedrockOpenAIClient({
             bearerToken: options.bearerToken,
+            ...(options.endpoint === undefined ? {} : { endpoint: options.endpoint }),
             region: options.region,
         });
 

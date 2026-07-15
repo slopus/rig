@@ -5,6 +5,7 @@ export function mergeConfigValues(base: RigConfig, ...configs: PartialRigConfig[
     const defaults = { ...base.defaults };
     const features = { ...base.features };
     const mcpServers = { ...base.mcpServers };
+    const providers = { ...base.providers };
     const settings = { ...base.settings };
     const theme = { ...base.theme };
 
@@ -41,6 +42,7 @@ export function mergeConfigValues(base: RigConfig, ...configs: PartialRigConfig[
         if (config.features?.workflows !== undefined) {
             features.workflows = config.features.workflows;
         }
+        if (config.providers !== undefined) Object.assign(providers, config.providers);
         if (config.theme !== undefined) Object.assign(theme, config.theme);
         if (config.mcpServers !== undefined) {
             Object.assign(mcpServers, config.mcpServers);
@@ -51,6 +53,7 @@ export function mergeConfigValues(base: RigConfig, ...configs: PartialRigConfig[
         defaults,
         features,
         mcpServers,
+        providers,
         settings,
         theme,
         ...(docker === undefined ? {} : { docker }),

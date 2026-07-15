@@ -15,13 +15,14 @@ export type PiBedrockRuntimeStream = typeof bedrockProviderModule.stream;
 export function createBedrockRuntimeStream(options: {
     bearerToken: string;
     context: Context;
+    endpoint?: string;
     modelRoute: BedrockModelRoute;
     region: string;
     stream?: PiBedrockRuntimeStream;
     streamOptions?: StreamOptions;
 }): AssistantMessageEventStream {
     const stream = options.stream ?? bedrockProviderModule.stream;
-    const model = createPiBedrockRuntimeModel(options.modelRoute, options.region);
+    const model = createPiBedrockRuntimeModel(options.modelRoute, options.region, options.endpoint);
     const effort = options.streamOptions?.thinking ?? options.modelRoute.model.defaultThinkingLevel;
     const streamOptions: BedrockOptions = {
         bearerToken: options.bearerToken,

@@ -9,6 +9,7 @@ import { readLocalServerToken } from "./readLocalServerToken.js";
 import { removeStaleSocket } from "./removeStaleSocket.js";
 import { McpClientManager } from "../mcp/index.js";
 import { loadConfig, writeDaemonSettings } from "../config/index.js";
+import { createCodingAssistantAgent } from "../app/createCodingAssistantAgent.js";
 
 export interface RunLocalProtocolServerOptions {
     socketPath?: string;
@@ -26,9 +27,17 @@ export async function runLocalProtocolServer(
     await removeStaleSocket(socketPath);
 
     const loadedConfig = await loadConfig({ cwd: process.cwd() });
-    const modelCatalog = createModelCatalog({ cwd: process.cwd() });
+    const modelCatalog = createModelCatalog({
+        cwd: process.cwd(),
+        providers: loadedConfig.config.providers,
+    });
     const mcpToolProvider = new McpClientManager();
     const store = new PersistentSessionStore({
+        createRuntime: (options) =>
+            createCodingAssistantAgent({
+                ...options,
+                providers: loadedConfig.config.providers,
+            }),
         databasePath: paths.databasePath,
         durableGlobalEventQueue: loadedConfig.config.settings.durableGlobalEventQueue,
         mcpToolProvider,

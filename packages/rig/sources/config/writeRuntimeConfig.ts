@@ -3,10 +3,12 @@ import { dirname } from "node:path";
 import { stringify } from "smol-toml";
 
 import type { PartialRigConfig } from "./types.js";
+import { serializeProviders } from "./serializeProviders.js";
 
 export async function writeRuntimeConfig(path: string, config: PartialRigConfig): Promise<void> {
     const defaults = config.defaults;
     const settings = config.settings;
+    const providers = config.providers;
     const theme = config.theme;
     const document: {
         defaults?: {
@@ -23,6 +25,7 @@ export async function writeRuntimeConfig(path: string, config: PartialRigConfig)
             show_reasoning?: boolean;
             show_usage?: boolean;
         };
+        providers?: Record<string, unknown>;
     } = {};
 
     if (defaults !== undefined) {
@@ -56,6 +59,10 @@ export async function writeRuntimeConfig(path: string, config: PartialRigConfig)
             document.settings.show_reasoning = settings.showReasoning;
         }
         if (settings.showUsage !== undefined) document.settings.show_usage = settings.showUsage;
+    }
+
+    if (providers !== undefined) {
+        document.providers = serializeProviders(providers);
     }
 
     if (theme !== undefined) {

@@ -43,6 +43,15 @@ brand = "ansi:202"
 [features]
 workflows = false
 
+[providers.codex]
+enabled = false
+
+[providers.claude]
+enabled = true
+
+[providers.bedrock]
+enabled = true
+
 [docker]
 image = "node:24-bookworm"
 workdir = "/workspace"
@@ -84,7 +93,88 @@ mounts = [
             features: {
                 workflows: false,
             },
+            providers: {
+                bedrock: { enabled: true, type: "bedrock" },
+                claude: { enabled: true, type: "claude" },
+                codex: { enabled: false, type: "codex" },
+            },
         });
+    });
+
+    it("parses built-in and custom provider instances with flat parameters", () => {
+        expect(
+            parseConfigToml(`
+[providers.codex]
+enabled = false
+
+[providers.work_codex]
+type = "codex"
+auth_file = "/Users/me/.codex-work/auth.json"
+base_url = "https://chatgpt.example/backend-api"
+transport = "sse"
+include_models = ["openai/gpt-5.6-sol"]
+exclude_models = ["openai/gpt-5.4"]
+
+[providers.work_claude]
+type = "claude"
+config_dir = "/Users/me/.claude-work"
+executable = "/opt/claude"
+
+[providers.eu_bedrock]
+type = "bedrock"
+region = "eu-west-1"
+bearer_token_env_var = "WORK_BEDROCK_TOKEN"
+
+[providers.eu_bedrock.model_overrides]
+"openai/gpt-5.6-sol" = { endpoint = "https://mantle.example/openai/v1", region = "us-east-1" }
+`),
+        ).toEqual({
+            providers: {
+                codex: { enabled: false, type: "codex" },
+                eu_bedrock: {
+                    bearerTokenEnvVar: "WORK_BEDROCK_TOKEN",
+                    enabled: true,
+                    modelOverrides: {
+                        "openai/gpt-5.6-sol": {
+                            endpoint: "https://mantle.example/openai/v1",
+                            region: "us-east-1",
+                        },
+                    },
+                    region: "eu-west-1",
+                    type: "bedrock",
+                },
+                work_claude: {
+                    configDir: "/Users/me/.claude-work",
+                    enabled: true,
+                    executable: "/opt/claude",
+                    type: "claude",
+                },
+                work_codex: {
+                    authFile: "/Users/me/.codex-work/auth.json",
+                    baseUrl: "https://chatgpt.example/backend-api",
+                    enabled: true,
+                    excludeModels: ["openai/gpt-5.4"],
+                    includeModels: ["openai/gpt-5.6-sol"],
+                    transport: "sse",
+                    type: "codex",
+                },
+            },
+        });
+    });
+
+    it("requires a type for custom providers and rejects parameters from another type", () => {
+        expect(() => parseConfigToml("[providers.work]\nenabled = true\n")).toThrow(
+            'Provider "work" must set type to "codex", "claude", or "bedrock".',
+        );
+        expect(() =>
+            parseConfigToml('[providers.work]\ntype = "codex"\nconfig_dir = "/tmp/work"\n'),
+        ).toThrow("Unknown providers.work.config_dir setting.");
+        expect(() => parseConfigToml('[providers.codex]\ntype = "claude"\n')).toThrow(
+            'Built-in provider "codex" must use type "codex".',
+        );
+        expect(() => parseConfigToml("[providers.codex]\nauth_file = 42\n")).toThrow(
+            "providers.codex.auth_file must be a string.",
+        );
     });
 
     it("persists fast mode and lets runtime defaults turn it off", async () => {
@@ -117,6 +207,24 @@ mounts = [
         expect(() => parseConfigToml('[defaults]\nservice_tier = "turbo"\n')).toThrow(
             'defaults.service_tier must be "fast" or "default".',
         );
+    });
+
+    it("describes only the machine-level project settings that were ignored", () => {
+        const providers = {
+            codex: { enabled: false, type: "codex" as const },
+        };
+        expect(
+            createProjectConfigSecurityNotice({
+                defaults: { permissionMode: "full_access" },
+                providers,
+            }),
+        ).toContain("kept permissions and provider availability");
+        expect(
+            createProjectConfigSecurityNotice({
+                docker: { container: "project-container", workingDirectory: "/workspace" },
+                providers,
+            }),
+        ).toContain("kept container execution and provider availability");
     });
 
     it("applies project preferences without allowing project permission escalation", async () => {
@@ -162,6 +270,12 @@ show_reasoning = true
 show_usage = true
 [features]
 workflows = true
+[providers.codex]
+enabled = false
+[providers.claude]
+enabled = false
+[providers.bedrock]
+enabled = true
 [docker]
 image = "attacker/image"
 `,
@@ -195,12 +309,17 @@ effort = "minimal"
                 showUsage: true,
             });
             expect(loaded.config.features.workflows).toBe(true);
+            expect(loaded.config.providers).toEqual({
+                bedrock: { enabled: true, type: "bedrock" },
+                claude: { enabled: true, type: "claude" },
+                codex: { enabled: true, type: "codex" },
+            });
             expect(loaded.config.docker).toEqual({
                 container: "trusted-development-container",
                 workingDirectory: "/repo",
             });
             expect(createProjectConfigSecurityNotice(loaded.sources.local.values)).toBe(
-                "This project's rig.toml requested a permission mode and Docker environment. Rig applied the other project preferences but kept execution settings under your machine-level control.",
+                "This project's rig.toml requested machine-level settings. Rig applied the other project preferences but kept permissions, container execution, and provider availability under your machine-level control.",
             );
 
             const emptyCwd = join(root, "empty-repo");
@@ -246,6 +365,11 @@ effort = "minimal"
                     workflows: false,
                 },
                 mcpServers: {},
+                providers: {
+                    codex: { enabled: false, type: "codex" },
+                    claude: { enabled: false, type: "claude" },
+                    bedrock: { enabled: true, type: "bedrock" },
+                },
                 theme: DEFAULT_RIG_CONFIG.theme,
             });
             await writeRuntimeConfigDefaults(runtimePath, {
@@ -262,6 +386,11 @@ effort = "minimal"
                 settings: {
                     showReasoning: false,
                     showUsage: false,
+                },
+                providers: {
+                    codex: { enabled: false, type: "codex" },
+                    claude: { enabled: false, type: "claude" },
+                    bedrock: { enabled: true, type: "bedrock" },
                 },
                 theme: DEFAULT_RIG_CONFIG.theme,
             });
@@ -281,6 +410,15 @@ effort = "minimal"
                     "",
                     "[features]",
                     "workflows = false",
+                    "",
+                    "[providers.codex]",
+                    "enabled = false",
+                    "",
+                    "[providers.claude]",
+                    "enabled = false",
+                    "",
+                    "[providers.bedrock]",
+                    "enabled = true",
                     "",
                     "[theme]",
                     'accent = "cyan"',
@@ -305,6 +443,15 @@ effort = "minimal"
                     "show_reasoning = false",
                     "show_usage = false",
                     "",
+                    "[providers.codex]",
+                    "enabled = false",
+                    "",
+                    "[providers.claude]",
+                    "enabled = false",
+                    "",
+                    "[providers.bedrock]",
+                    "enabled = true",
+                    "",
                     "[theme]",
                     'accent = "cyan"',
                     'brand = "ansi:202"',
@@ -316,6 +463,44 @@ effort = "minimal"
                     "",
                 ].join("\n"),
             );
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
+    it("round-trips custom provider sections without nesting their parameters", async () => {
+        const root = await mkdtemp(join(tmpdir(), "rig-config-"));
+        try {
+            const runtimePath = join(root, "runtime.toml");
+            const providers = {
+                work_codex: {
+                    authFile: "/Users/me/.codex-work/auth.json",
+                    enabled: true,
+                    excludeModels: ["openai/gpt-5.4"],
+                    includeModels: ["openai/gpt-5.6-sol"],
+                    transport: "websocket" as const,
+                    type: "codex" as const,
+                },
+                work_bedrock: {
+                    enabled: true,
+                    modelOverrides: {
+                        "openai/gpt-5.6-sol": {
+                            endpoint: "https://mantle.example/openai/v1",
+                            region: "us-east-1",
+                        },
+                    },
+                    region: "us-west-2",
+                    type: "bedrock" as const,
+                },
+            };
+
+            await writeRuntimeConfig(runtimePath, { providers });
+            const source = await readFile(runtimePath, "utf8");
+
+            expect(source).toContain("[providers.work_codex]");
+            expect(source).toContain("[providers.work_bedrock]");
+            expect(source).not.toContain("parameters");
+            expect(parseConfigToml(source)).toEqual({ providers });
         } finally {
             await rm(root, { recursive: true, force: true });
         }
@@ -338,6 +523,15 @@ effort = "minimal"
                     "[settings]",
                     "show_usage = true",
                     "",
+                    "[providers.codex]",
+                    "enabled = false",
+                    "",
+                    "[providers.claude]",
+                    "enabled = false",
+                    "",
+                    "[providers.bedrock]",
+                    "enabled = true",
+                    "",
                 ].join("\n"),
                 "utf8",
             );
@@ -355,6 +549,11 @@ effort = "minimal"
                 settings: {
                     durableGlobalEventQueue: true,
                     showUsage: true,
+                },
+                providers: {
+                    bedrock: { enabled: true, type: "bedrock" },
+                    claude: { enabled: false, type: "claude" },
+                    codex: { enabled: false, type: "codex" },
                 },
             });
         } finally {

@@ -50,6 +50,8 @@ export type ClaudeSdkQuery = typeof defaultClaudeSdkQuery;
 
 export interface ClaudeSdkProviderOptions {
     agentContext: AgentContext;
+    env?: NodeJS.ProcessEnv;
+    id?: string;
     pathToClaudeCodeExecutable?: string;
     sessionId?: string;
     tools?: readonly AnyDefinedTool[];
@@ -65,7 +67,7 @@ export function createClaudeSdkProvider(options: ClaudeSdkProviderOptions) {
         options.pathToClaudeCodeExecutable ?? resolveClaudeCodeExecutablePath();
 
     return defineProvider({
-        id: CLAUDE_SDK_PROVIDER_ID,
+        id: options.id ?? CLAUDE_SDK_PROVIDER_ID,
         models: [
             modelAnthropicFable5,
             modelAnthropicOpus48,
@@ -81,6 +83,7 @@ export function createClaudeSdkProvider(options: ClaudeSdkProviderOptions) {
             const sdkOptions = toClaudeSdkOptions({
                 agentContext: options.agentContext,
                 context,
+                env: options.env ?? process.env,
                 model,
                 pathToClaudeCodeExecutable,
                 sessionId: options.sessionId,
@@ -235,6 +238,7 @@ function toolsForProviderContext(
 function toClaudeSdkOptions(options: {
     agentContext: AgentContext;
     context: Context;
+    env: NodeJS.ProcessEnv;
     model: Model;
     pathToClaudeCodeExecutable: string;
     sessionId: string | undefined;
@@ -263,7 +267,7 @@ function toClaudeSdkOptions(options: {
         model: toClaudeSdkModelId(options.model.id),
         pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
         env: {
-            ...process.env,
+            ...options.env,
             CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: "1",
             CLAUDE_AGENT_SDK_MCP_NO_PREFIX: "1",
             ...(options.streamOptions?.thinking === "ultra"

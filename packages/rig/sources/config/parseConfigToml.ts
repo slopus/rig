@@ -1,6 +1,7 @@
 import { parse, TomlDate, type TomlTable, type TomlValue } from "smol-toml";
 
 import type {
+    ConfigProvider,
     PartialConfigDefaults,
     PartialConfigFeatures,
     PartialConfigSettings,
@@ -9,6 +10,10 @@ import type {
 } from "./types.js";
 import type { McpServerConfig } from "../mcp/types.js";
 import { isPermissionMode, type PermissionMode } from "../permissions/index.js";
+import type {
+    BedrockModelOverride,
+    BedrockModelOverrides,
+} from "../providers/bedrock-model-overrides.js";
 import type { DockerExecutionConfig, DockerMountConfig } from "../execution/index.js";
 
 export function parseConfigToml(source: string): PartialRigConfig {
@@ -82,6 +87,8 @@ export function parseConfigToml(source: string): PartialRigConfig {
         if (showUsage !== undefined) settings.showUsage = showUsage;
     }
 
+    const providers = readProviders(table.providers);
+
     const mcpServers = readMcpServers(table.mcp_servers);
     const featuresTable = table.features;
     if (isTomlTable(featuresTable)) {
@@ -94,9 +101,194 @@ export function parseConfigToml(source: string): PartialRigConfig {
         ...(Object.keys(defaults).length > 0 ? { defaults } : {}),
         ...(Object.keys(features).length > 0 ? { features } : {}),
         ...(mcpServers !== undefined ? { mcpServers } : {}),
+        ...(providers !== undefined ? { providers } : {}),
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
         ...(Object.keys(theme).length > 0 ? { theme } : {}),
     };
+}
+
+function readProviders(value: TomlValue | undefined): Record<string, ConfigProvider> | undefined {
+    if (value === undefined) return undefined;
+    if (!isTomlTable(value)) throw new Error("providers must be a TOML table.");
+
+    const providers: Record<string, ConfigProvider> = {};
+    for (const [id, rawProvider] of Object.entries(value)) {
+        if (!isTomlTable(rawProvider)) {
+            throw new Error(`Provider "${id}" must be a TOML table.`);
+        }
+        const type = readProviderType(id, rawProvider);
+        const enabledValue = rawProvider.enabled;
+        if (enabledValue !== undefined && typeof enabledValue !== "boolean") {
+            throw new Error(`providers.${id}.enabled must be a boolean.`);
+        }
+        const common = {
+            enabled: enabledValue ?? true,
+            ...readOptionalStringArray(rawProvider, "exclude_models", "excludeModels"),
+            ...readOptionalStringArray(rawProvider, "include_models", "includeModels"),
+        };
+        if (type === "codex") {
+            assertKnownKeys(id, rawProvider, [
+                "auth_file",
+                "base_url",
+                "enabled",
+                "exclude_models",
+                "include_models",
+                "transport",
+                "type",
+            ]);
+            const authFile = readProviderString(id, rawProvider, "auth_file");
+            const baseUrl = readProviderString(id, rawProvider, "base_url");
+            const transport = readProviderString(id, rawProvider, "transport");
+            if (
+                transport !== undefined &&
+                !["auto", "sse", "websocket", "websocket-cached"].includes(transport)
+            ) {
+                throw new Error(
+                    `providers.${id}.transport must be "auto", "sse", "websocket", or "websocket-cached".`,
+                );
+            }
+            providers[id] = {
+                ...common,
+                ...(authFile === undefined ? {} : { authFile }),
+                ...(baseUrl === undefined ? {} : { baseUrl }),
+                ...(transport === undefined
+                    ? {}
+                    : {
+                          transport: transport as "auto" | "sse" | "websocket" | "websocket-cached",
+                      }),
+                type,
+            };
+            continue;
+        }
+
+        if (type === "claude") {
+            assertKnownKeys(id, rawProvider, [
+                "config_dir",
+                "enabled",
+                "exclude_models",
+                "executable",
+                "include_models",
+                "type",
+            ]);
+            const configDir = readProviderString(id, rawProvider, "config_dir");
+            const executable = readProviderString(id, rawProvider, "executable");
+            providers[id] = {
+                ...common,
+                ...(configDir === undefined ? {} : { configDir }),
+                ...(executable === undefined ? {} : { executable }),
+                type,
+            };
+            continue;
+        }
+
+        assertKnownKeys(id, rawProvider, [
+            "bearer_token_env_var",
+            "enabled",
+            "exclude_models",
+            "include_models",
+            "model_overrides",
+            "region",
+            "type",
+        ]);
+        const bearerTokenEnvVar = readProviderString(id, rawProvider, "bearer_token_env_var");
+        const modelOverrides = readBedrockModelOverrides(id, rawProvider);
+        const region = readProviderString(id, rawProvider, "region");
+        providers[id] = {
+            ...common,
+            ...(bearerTokenEnvVar === undefined ? {} : { bearerTokenEnvVar }),
+            ...(modelOverrides === undefined ? {} : { modelOverrides }),
+            ...(region === undefined ? {} : { region }),
+            type,
+        };
+    }
+    return providers;
+}
+
+function readProviderType(id: string, table: TomlTable): "bedrock" | "claude" | "codex" {
+    const configuredType = readProviderString(id, table, "type");
+    const builtInType = id === "bedrock" || id === "claude" || id === "codex" ? id : undefined;
+    if (
+        configuredType !== undefined &&
+        builtInType !== undefined &&
+        configuredType !== builtInType
+    ) {
+        throw new Error(`Built-in provider "${id}" must use type "${builtInType}".`);
+    }
+    const type = configuredType ?? builtInType;
+    if (type !== "bedrock" && type !== "claude" && type !== "codex") {
+        throw new Error(`Provider "${id}" must set type to "codex", "claude", or "bedrock".`);
+    }
+    return type;
+}
+
+function readProviderString(id: string, table: TomlTable, key: string): string | undefined {
+    const value = table[key];
+    if (value !== undefined && typeof value !== "string") {
+        throw new Error(`providers.${id}.${key} must be a string.`);
+    }
+    return value;
+}
+
+function assertKnownKeys(id: string, table: TomlTable, keys: readonly string[]): void {
+    const unknownKey = Object.keys(table).find((key) => !keys.includes(key));
+    if (unknownKey !== undefined) {
+        throw new Error(`Unknown providers.${id}.${unknownKey} setting.`);
+    }
+}
+
+function readBedrockModelOverrides(
+    providerId: string,
+    table: TomlTable,
+): BedrockModelOverrides | undefined {
+    const value = table.model_overrides;
+    if (value === undefined) return undefined;
+    if (!isTomlTable(value)) {
+        throw new Error(`providers.${providerId}.model_overrides must be a TOML table.`);
+    }
+
+    const overrides: Record<string, BedrockModelOverride> = {};
+    for (const [modelId, rawOverride] of Object.entries(value)) {
+        if (!isTomlTable(rawOverride)) {
+            throw new Error(
+                `providers.${providerId}.model_overrides.${modelId} must be a TOML table.`,
+            );
+        }
+        const unknownKey = Object.keys(rawOverride).find(
+            (key) => key !== "endpoint" && key !== "region",
+        );
+        if (unknownKey !== undefined) {
+            throw new Error(
+                `Unknown providers.${providerId}.model_overrides.${modelId}.${unknownKey} setting.`,
+            );
+        }
+        const endpoint = readBedrockModelOverrideString(
+            providerId,
+            modelId,
+            rawOverride,
+            "endpoint",
+        );
+        const region = readBedrockModelOverrideString(providerId, modelId, rawOverride, "region");
+        overrides[modelId] = {
+            ...(endpoint === undefined ? {} : { endpoint }),
+            ...(region === undefined ? {} : { region }),
+        };
+    }
+    return overrides;
+}
+
+function readBedrockModelOverrideString(
+    providerId: string,
+    modelId: string,
+    table: TomlTable,
+    key: "endpoint" | "region",
+): string | undefined {
+    const value = table[key];
+    if (value !== undefined && typeof value !== "string") {
+        throw new Error(
+            `providers.${providerId}.model_overrides.${modelId}.${key} must be a string.`,
+        );
+    }
+    return value;
 }
 
 function readDockerConfig(value: TomlValue | undefined): DockerExecutionConfig | undefined {
