@@ -42,24 +42,21 @@ describe("Codex composer and footer visual contract", () => {
             ).toBe(true);
         }
 
-        const footer = "gym off · /workspace · main [default] · full access";
+        const footer = "gym off · /workspace · full access";
         expect(snapshot.text).toContain(footer);
         const footerRow = rowContaining(snapshot, footer);
         expect(footerRow).toBe(inputRow + 2);
         expect(snapshot.rows[footerRow + 1]).toBe("");
-        expect(stylesForText(snapshot, "gym off")).toEqual([
+        expect(stylesForText(snapshot, "gym off", footerRow)).toEqual([
             expect.objectContaining({ foreground: { kind: "palette", index: 3 } }),
         ]);
-        expect(stylesForText(snapshot, "/workspace")).toEqual([
+        expect(stylesForText(snapshot, "/workspace", footerRow)).toEqual([
             expect.objectContaining({ foreground: { kind: "palette", index: 2 } }),
         ]);
-        expect(stylesForText(snapshot, "main [default]")).toEqual([
+        expect(stylesForText(snapshot, "full access", footerRow)).toEqual([
             expect.objectContaining({ dim: true, foreground: null }),
         ]);
-        expect(stylesForText(snapshot, "full access")).toEqual([
-            expect.objectContaining({ dim: true, foreground: null }),
-        ]);
-    });
+    }, 120_000);
 });
 
 function cellsOnRow(snapshot: TerminalSnapshot, row: number): TerminalCellSnapshot[] {
@@ -72,8 +69,11 @@ function rowContaining(snapshot: TerminalSnapshot, text: string): number {
     return row;
 }
 
-function stylesForText(snapshot: TerminalSnapshot, text: string): TerminalCellSnapshot[] {
-    const row = rowContaining(snapshot, text);
+function stylesForText(
+    snapshot: TerminalSnapshot,
+    text: string,
+    row = rowContaining(snapshot, text),
+): TerminalCellSnapshot[] {
     const start = snapshot.rows[row]?.indexOf(text) ?? -1;
     const cells = snapshot.cells.filter(
         (cell) => cell.y === row && cell.x >= start && cell.x < start + text.length,

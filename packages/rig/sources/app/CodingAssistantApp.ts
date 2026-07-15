@@ -137,6 +137,7 @@ const MAX_DIFF_FILES_PER_TOOL = 20;
 const MAX_DIFF_ROWS_PER_TOOL = 120;
 
 export interface CodingAssistantAppOptions {
+    activeAgentLabel?: string;
     agent: CodingAssistantAgentBackend;
     cwd: string;
     initialBackgroundProcesses?: readonly BashSessionActivity[];
@@ -254,6 +255,7 @@ interface FreeformUserInput {
 }
 
 export class CodingAssistantApp implements Component, Focusable {
+    readonly #activeAgentLabel: string | undefined;
     readonly #agent: CodingAssistantAgentBackend;
     readonly #cwd: string;
     readonly #idFactory: () => string;
@@ -360,6 +362,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #replayingInitialSessionEvents = false;
 
     constructor(options: CodingAssistantAppOptions) {
+        this.#activeAgentLabel = options.activeAgentLabel;
         this.#agent = options.agent;
         this.#cwd = options.cwd;
         this.#idFactory = options.idFactory ?? createId;
@@ -388,7 +391,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#theme = { ...(options.theme ?? DEFAULT_TERMINAL_THEME) };
         this.#version = options.version ?? "0.0.0";
         const snapshot = options.agent.snapshot();
-        const startupStatus = {
+        const startupStatus: StartupStatusCardModel = {
             access: humanizePermissionMode(options.agent.permissionMode),
             environment: "Local",
             fast: snapshot.serviceTier === "fast",
@@ -2808,7 +2811,9 @@ export class CodingAssistantApp implements Component, Focusable {
 
         const parts = [`${this.#theme.warning}${this.#modelWithReasoningDisplayName()}${RESET}`];
         parts.push(`${this.#theme.success}${this.#cwdDisplayName()}${RESET}`);
-        parts.push(`${this.#theme.secondary}main [default]${RESET}`);
+        if (this.#activeAgentLabel !== undefined) {
+            parts.push(`${this.#theme.secondary}${this.#activeAgentLabel}${RESET}`);
+        }
         if (this.#pendingPrompts.length > 0) {
             parts.push(`${this.#theme.secondary}queued ${this.#pendingPrompts.length}${RESET}`);
         }

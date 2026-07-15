@@ -114,7 +114,7 @@ function assertCompletePalette(snapshot: TerminalSnapshot, colorScheme: Terminal
     expect(snapshot.text).toContain(prompt);
     expect(snapshot.text).toContain("Working");
     expect(snapshot.text).toContain(composerPlaceholder);
-    expect(snapshot.text).toContain("gym off · /workspace · main [default] · full access");
+    expect(snapshot.text).toContain("gym off · /workspace · full access");
 
     const explicitBackgrounds = snapshot.cells
         .map((cell) => cell.background)

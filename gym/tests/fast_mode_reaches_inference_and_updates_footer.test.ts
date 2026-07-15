@@ -27,7 +27,7 @@ describe("fast inference mode", () => {
 
         submit(gym, "/fast");
         const enabled = await gym.terminal.waitForText("Fast mode is on", 30_000);
-        expect(enabled.text).toContain("gym off fast · /workspace · main [default] · full access");
+        expect(enabled.text).toContain("gym off fast · /workspace · full access");
         expect(enabled.text).toContain("2× plan usage");
 
         submit(gym, "Use fast inference.");
@@ -35,7 +35,7 @@ describe("fast inference mode", () => {
 
         submit(gym, "/fast off");
         const disabled = await gym.terminal.waitForText("Fast mode is off", 30_000);
-        expect(disabled.text).toContain("gym off · /workspace · main [default] · full access");
+        expect(disabled.text).toContain("gym off · /workspace · full access");
         expect(disabled.text).not.toContain("gym off fast ·");
 
         submit(gym, "Use default inference.");

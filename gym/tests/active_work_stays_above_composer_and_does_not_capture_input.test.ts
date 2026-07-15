@@ -76,7 +76,7 @@ describe("passive active-work list", () => {
                 (snapshot) =>
                     snapshot.text.includes("WORKFLOW_RUNNING") &&
                     snapshot.text.includes("1 workflow running · /workflows to view") &&
-                    snapshot.text.includes("gym off · /workspace · main [default] · full access"),
+                    snapshot.text.includes("gym off · /workspace · full access"),
                 "workflow row above the composer",
                 30_000,
             );

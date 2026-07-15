@@ -93,7 +93,7 @@ async function createResumingGym(cols: number, rows: number, marker: string): Pr
         ],
         inference: [],
         rows,
-        startupText: cols === 19 ? "Ask Rig" : undefined,
+        ...(cols === 19 ? { startupText: "Ask Rig" } : {}),
     });
 }
 

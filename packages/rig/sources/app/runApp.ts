@@ -24,6 +24,7 @@ import { readPackageVersion } from "./readPackageVersion.js";
 import { resolveTerminalTheme } from "./resolveTerminalTheme.js";
 import { ScrollbackPreservingTerminal } from "./ScrollbackPreservingTerminal.js";
 import { ScrollbackPreservingTUI } from "./ScrollbackPreservingTUI.js";
+import { sessionAgentFooterLabel } from "./sessionAgentFooterLabel.js";
 import { StartupStatusApp } from "./StartupStatusApp.js";
 
 export interface RunAppOptions {
@@ -170,7 +171,9 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     });
     const resumeCommand = `rig resume ${session.session.id}`;
     const version = readPackageVersion();
+    const activeAgentLabel = sessionAgentFooterLabel(session.session.agent);
     const app = new CodingAssistantApp({
+        ...(activeAgentLabel === undefined ? {} : { activeAgentLabel }),
         agent,
         cwd: sessionCwd,
         initialSessionEvents: history.events,

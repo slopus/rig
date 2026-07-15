@@ -104,7 +104,7 @@ describe("background shell activity stays visible until it really finishes", () 
             "",
             "› Ask Rig to do anything",
             "",
-            "  gym off · /workspace · main [default] · full access",
+            "  gym off · /workspace · full access",
         ]);
         expect(terminalRowStyleRuns(active, summaryRow)).toEqual([
             {

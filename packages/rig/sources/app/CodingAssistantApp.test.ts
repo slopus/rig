@@ -82,9 +82,9 @@ describe("CodingAssistantApp", () => {
         expect(rendered).not.toContain("›  Ask Rig to do anything");
         expect(rendered).toContain("gpt-test off");
         expect(rendered).toContain("/workspace");
-        expect(rendered).toContain("main [default]");
+        expect(rendered).not.toContain("main [default]");
         expect(rendered).toContain("full access");
-        expect(rendered).toContain("gpt-test off · /workspace · main [default] · full access");
+        expect(rendered).toContain("gpt-test off · /workspace · full access");
         expect(rendered).not.toContain("full_access");
         expect(rendered).not.toContain("reasoning off");
         expect(rendered).not.toContain("/clear /abort /quit");
@@ -461,9 +461,7 @@ describe("CodingAssistantApp", () => {
         const codexRaw = codexApp.render(80).join("\n");
         expect(codexRaw).toContain("\x1b[33mgpt-test off");
         expect(codexRaw).toContain("\x1b[32m/workspace");
-        expect(stripAnsi(codexRaw)).toContain(
-            "gpt-test off · /workspace · main [default] · full access",
-        );
+        expect(stripAnsi(codexRaw)).toContain("gpt-test off · /workspace · full access");
 
         const claudeModel = defineModel({
             id: "claude-sonnet-test",
@@ -495,6 +493,39 @@ describe("CodingAssistantApp", () => {
         const claudeRaw = claudeApp.render(80).join("\n");
         expect(claudeRaw).toContain("\x1b[33mclaude-sonnet-test off");
         expect(claudeRaw).toContain("\x1b[32m/workspace");
+    });
+
+    it("keeps a differentiating non-default agent identity in the footer", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            activeAgentLabel: "Audit startup state [subagent]",
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProxessManager(),
+            tui: fakeTui(),
+        });
+
+        expect(stripAnsi(app.render(100).join("\n"))).toContain(
+            "gpt-test off · /workspace · Audit startup state [subagent] · full access",
+        );
     });
 
     it("uses the model id without vendor as the displayed model name", () => {
@@ -1146,9 +1177,7 @@ describe("CodingAssistantApp", () => {
         expect(agent.snapshot().serviceTier).toBe("fast");
         let rendered = stripAnsi(app.render(100).join("\n"));
         expect(rendered).toContain("Fast mode is on. Fast inference uses 2× plan usage.");
-        expect(rendered).toContain(
-            "gpt-test ultra fast · /workspace · main [default] · full access",
-        );
+        expect(rendered).toContain("gpt-test ultra fast · /workspace · full access");
 
         submit(app, "/fast status");
         rendered = stripAnsi(app.render(100).join("\n"));
@@ -1159,7 +1188,7 @@ describe("CodingAssistantApp", () => {
         expect(agent.snapshot().serviceTier).toBeUndefined();
         rendered = stripAnsi(app.render(100).join("\n"));
         expect(rendered).toContain("Fast mode is off.");
-        expect(rendered).toContain("gpt-test ultra · /workspace · main [default] · full access");
+        expect(rendered).toContain("gpt-test ultra · /workspace · full access");
         expect(rendered).not.toContain("gpt-test ultra fast ·");
         submit(app, "/fast turbo");
         rendered = stripAnsi(app.render(100).join("\n"));
