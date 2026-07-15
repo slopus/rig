@@ -9,8 +9,8 @@ afterEach(async () => {
     running.clear();
 });
 
-describe("Auto permission review placement", () => {
-    it("renders the automatic approval with the tool instead of as a separate record", async () => {
+describe("successful Auto permission reviews", () => {
+    it("runs the tool without adding approval details to its history", async () => {
         const gym = await createGym({
             cols: 132,
             inference(request, callIndex) {
@@ -62,12 +62,13 @@ describe("Auto permission review placement", () => {
         );
 
         const toolRow = completed.rows.findIndex((row) => row.includes("INLINE_APPROVAL_MARKER"));
-        const approvalRow = completed.rows.findIndex((row) =>
-            row.includes("Approved automatically"),
-        );
         expect(toolRow).toBeGreaterThanOrEqual(0);
-        expect(approvalRow).toBeGreaterThan(toolRow);
-        expect(approvalRow - toolRow).toBeLessThanOrEqual(2);
+        expect(completed.text).not.toContain("Approved automatically");
+        expect(completed.text).not.toContain("Risk: low");
+        expect(completed.text).not.toContain("User authorization: high");
+        expect(completed.text).not.toContain(
+            "The user explicitly authorized this harmless home-directory check.",
+        );
         expect(completed.rows.some((row) => row.includes("Auto permission"))).toBe(false);
     }, 120_000);
 });

@@ -79,7 +79,7 @@ describe("Auto-reviewed AWS commands can use developer credentials", () => {
         );
 
         expect(completed.text).toContain("AWS_PROFILE_AVAILABLE");
-        expect(completed.text).toContain("Approved automatically");
+        expect(completed.text).not.toContain("Approved automatically");
         expect(completed.text).not.toContain("Allow once");
         expect(completed.text).not.toContain("TEST_SECRET");
     }, 120_000);

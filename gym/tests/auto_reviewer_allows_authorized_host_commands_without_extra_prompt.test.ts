@@ -72,7 +72,7 @@ describe("Auto reviewer allows authorized host commands without extra prompts", 
         await expect(gym.readFile("auto-host-observed.txt")).resolves.toBe(
             "auto host access works\n",
         );
-        expect(completed.text).toContain("Approved automatically");
+        expect(completed.text).not.toContain("Approved automatically");
         expect(completed.text).not.toContain("Allow once");
         expect(completed.text).not.toContain("Waiting for approval");
         expect(footer(completed)).toContain("auto");

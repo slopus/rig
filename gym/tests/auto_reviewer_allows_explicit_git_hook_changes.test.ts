@@ -81,7 +81,7 @@ describe("Auto reviewer allows explicit Git hook changes", () => {
         );
 
         await expect(gym.readFile(".git/hooks/pre-commit")).resolves.toBe("#!/bin/sh\npnpm lint");
-        expect(completed.text).toContain("Approved automatically");
+        expect(completed.text).not.toContain("Approved automatically");
         expect(completed.text).not.toContain("full access");
         expect(footer(completed)).toContain("auto");
     }, 120_000);

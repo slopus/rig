@@ -2044,15 +2044,13 @@ export class CodingAssistantApp implements Component, Focusable {
             }
             this.#statusText = "Working";
         } else if (event.type === "permission_review") {
-            const outcome =
-                event.decision === "allow" ? "Approved automatically" : "Needs approval";
             if (event.decision === "ask") {
                 this.#awaitingApprovalToolCallIds.add(event.toolCallId);
                 this.#statusText = "Waiting for approval";
-            }
-            const toolEntry = this.#entries.find((entry) => entry.id === event.toolCallId);
-            if (toolEntry !== undefined) {
-                toolEntry.permissionReview = `${outcome}: ${event.reason} Risk: ${event.risk}. User authorization: ${event.userAuthorization}.`;
+                const toolEntry = this.#entries.find((entry) => entry.id === event.toolCallId);
+                if (toolEntry !== undefined) {
+                    toolEntry.permissionReview = `Needs approval: ${event.reason} Risk: ${event.risk}. User authorization: ${event.userAuthorization}.`;
+                }
             }
         } else if (event.type === "background_processes_changed") {
             const nextProcesses =

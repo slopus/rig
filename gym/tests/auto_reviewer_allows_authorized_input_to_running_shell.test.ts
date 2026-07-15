@@ -81,7 +81,7 @@ describe("Auto reviewer allows authorized input to a running shell", () => {
         );
 
         await expect(gym.readFile("interactive-result.txt")).resolves.toBe("approved input\n");
-        expect(completed.text).toContain("Approved automatically");
+        expect(completed.text).not.toContain("Approved automatically");
         expect(completed.text).not.toContain("Allow once");
         expect(completed.text).not.toContain("Waiting for approval");
     }, 120_000);

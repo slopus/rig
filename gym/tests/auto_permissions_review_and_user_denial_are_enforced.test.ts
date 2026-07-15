@@ -136,9 +136,6 @@ describe("Auto permissions review and user denial are enforced", () => {
         gym.terminal.press("enter");
         const automaticallyApproved = await gym.terminal.waitUntil(
             (snapshot) =>
-                snapshot.text.includes("Approved automatically") &&
-                snapshot.text.includes("Risk: low") &&
-                snapshot.text.includes("User authorization: high") &&
                 snapshot.text.includes("AUTO_APPROVAL_FINISHED") &&
                 snapshot.text.includes("Ask Rig to do anything") &&
                 snapshot.scroll.atBottom,
@@ -148,16 +145,10 @@ describe("Auto permissions review and user denial are enforced", () => {
         expect(automaticallyApproved.rows.some((row) => row.includes("• Auto permission"))).toBe(
             false,
         );
-        expect(
-            automaticallyApproved.rows.some(
-                (row, index) =>
-                    row.includes("Approved automatically") &&
-                    automaticallyApproved.rows
-                        .slice(Math.max(0, index - 2), index)
-                        .some((candidate) => candidate.includes("approved by auto review")),
-            ),
-        ).toBe(true);
-        expect(normalizeWhitespace(automaticallyApproved.text)).toContain(
+        expect(automaticallyApproved.text).not.toContain("Approved automatically");
+        expect(automaticallyApproved.text).not.toContain("Risk: low");
+        expect(automaticallyApproved.text).not.toContain("User authorization: high");
+        expect(automaticallyApproved.text).not.toContain(
             "The user directly requested this local workspace check.",
         );
         expect(automaticallyApproved.text).not.toContain("user_authorization");

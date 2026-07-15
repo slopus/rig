@@ -146,7 +146,7 @@ describe("trusted MCP mutations obey permissions", () => {
         );
         await expect(gym.readFile("trusted-mcp-started.txt")).resolves.toBe("started\n");
         await expect(gym.readFile("trusted-mcp-side-effect.txt")).resolves.toBe("auto approved\n");
-        expect(used.text).toContain("Approved automatically");
+        expect(used.text).not.toContain("Approved automatically");
 
         submit(gym, "/permissions");
         await gym.terminal.waitForText("Choose Permissions");
