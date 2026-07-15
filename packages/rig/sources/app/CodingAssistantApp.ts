@@ -1731,7 +1731,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
     async #drainQueue(): Promise<void> {
         while (!this.#stopped) {
-            const prompt = this.#pendingPrompts.shift();
+            const prompt = this.#pendingPrompts[0];
             if (prompt === undefined) {
                 break;
             }
@@ -1757,16 +1757,21 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#activityStartedAtMs = this.#lastUserInputAtMs ?? this.#now();
         this.#startActivityAnimation();
         this.#requestRender();
-        this.#clearSubmittedImages(prompt.displayText);
-        if (!this.#sessionBacked && prompt.transcriptAppended !== true) {
-            this.#appendEntry({ role: "user", text: prompt.displayText });
-        }
 
         let turnCompleted = false;
         try {
             await this.#refreshSkillCommands({ force: true });
             if (!this.#isCurrentRun(runToken)) {
                 return;
+            }
+
+            if (this.#pendingPrompts[0] !== prompt) {
+                return;
+            }
+            this.#pendingPrompts.shift();
+            this.#clearSubmittedImages(prompt.displayText);
+            if (!this.#sessionBacked && prompt.transcriptAppended !== true) {
+                this.#appendEntry({ role: "user", text: prompt.displayText });
             }
 
             const result = await this.#agent.send(prompt.content, {
