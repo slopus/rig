@@ -30,7 +30,7 @@ describe("renderCodexMcpToolCall", () => {
         expect(rendered[0]).toContain("\x1b[1mCalled\x1b[22m");
         expect(rendered[0]).toContain("\x1b[36mnode_repl\x1b[39m.\x1b[36mjs\x1b[39m(");
         expect(rendered[0]).toContain('\x1b[2m{"title":"List tabs","timeout_ms":30000}\x1b[22m');
-        expect(rendered[1]).toBe("\x1b[2m  └ { ready: true }\x1b[22m");
+        expect(rendered[1]).toBe("  \x1b[2m└\x1b[22m \x1b[2m{ ready: true }\x1b[22m");
     });
 
     it("moves a long invocation below the header and preserves multiline structured output", () => {
@@ -53,7 +53,7 @@ describe("renderCodexMcpToolCall", () => {
 
         expect(plain[0]).toBe("• Called");
         expect(plain[1]).toMatch(/^  └ node_repl\.js\(/u);
-        expect(plain.slice(2, resultStart).every((line) => line.startsWith("        "))).toBe(true);
+        expect(plain.slice(2, resultStart).every((line) => line.startsWith("    "))).toBe(true);
         expect(plain.slice(resultStart)).toEqual([
             "    {",
             "      dialogs: [ 0, 0 ],",
@@ -62,6 +62,8 @@ describe("renderCodexMcpToolCall", () => {
             "    }",
         ]);
         expect(rendered.every((line) => visibleWidth(line) <= 48)).toBe(true);
+        expect(plain.filter((line) => line.includes("└"))).toHaveLength(1);
+        expect(plain.join("\n")).not.toMatch(/[│├↳]/u);
     });
 
     it("uses a red completed bullet for failures without changing Called to Failed", () => {
@@ -143,6 +145,8 @@ describe("renderCodexMcpToolCall", () => {
         expect(
             rendered.filter((line) => line.includes("approval") || line.includes("because")).length,
         ).toBeLessThanOrEqual(2);
+        expect(rendered.filter((line) => line.includes("└"))).toHaveLength(1);
+        expect(rendered.join("\n")).not.toMatch(/[│├↳]/u);
     });
 
     it("sanitizes tool-controlled text and bounds wrapped result rows", () => {

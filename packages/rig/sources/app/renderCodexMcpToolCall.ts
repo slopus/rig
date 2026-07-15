@@ -7,6 +7,7 @@ import type {
 } from "./CodexMcpToolCall.js";
 import { DEFAULT_CODEX_MCP_TOOL_PALETTE } from "./CodexMcpToolCall.js";
 import { boundedJsonStringify } from "./boundedJsonStringify.js";
+import { renderChildRows, type ChildRow } from "./renderChildRows.js";
 import { sanitizeTerminalText } from "./sanitizeTerminalText.js";
 import { truncateTextForDisplay } from "./truncateTextForDisplay.js";
 
@@ -61,6 +62,7 @@ export function renderCodexMcpToolCall(
     }
     const inline = visibleWidth(invocation.plain) <= Math.max(0, width - visibleWidth(header) - 1);
     const lines: string[] = [];
+    const childRows: ChildRow[] = [];
 
     if (inline) {
         lines.push(
@@ -71,28 +73,43 @@ export function renderCodexMcpToolCall(
         const wrappedInvocation = wrapWithHangingIndent(
             invocation.plain,
             Math.max(1, width - 4),
-            Math.max(1, width - 8),
+            Math.max(1, width - 4),
         );
-        for (const [index, segment] of wrappedInvocation.entries()) {
-            const prefix = index === 0 ? `${DIM}  └ ${NOT_BOLD_OR_DIM}` : "        ";
-            lines.push(
-                `${prefix}${renderInvocationSegment(invocation, segment.start, segment.text, palette)}`,
-            );
-        }
+        childRows.push(
+            ...wrappedInvocation.map((segment) => ({
+                text: renderInvocationSegment(invocation, segment.start, segment.text, palette),
+                wrap: false,
+            })),
+        );
     }
 
     const reviewLines = renderResultLines(call.review, Math.max(1, width - 4), maxReviewRows);
-    for (const [index, reviewLine] of reviewLines.entries()) {
-        const prefix =
-            inline && index === 0 ? `  ${call.result === undefined ? "└" : "├"} ` : "    ";
-        lines.push(`${DIM}${prefix}${reviewLine}${NOT_BOLD_OR_DIM}`);
-    }
+    childRows.push(
+        ...reviewLines.map((reviewLine) => ({
+            prefix: DIM,
+            suffix: NOT_BOLD_OR_DIM,
+            text: reviewLine,
+            wrap: false,
+        })),
+    );
 
     const resultLines = renderResultLines(call.result, Math.max(1, width - 4), maxResultRows);
-    for (const [index, resultLine] of resultLines.entries()) {
-        const prefix = inline && index === 0 ? "  └ " : "    ";
-        lines.push(`${DIM}${prefix}${resultLine}${NOT_BOLD_OR_DIM}`);
-    }
+    childRows.push(
+        ...resultLines.map((resultLine) => ({
+            prefix: DIM,
+            suffix: NOT_BOLD_OR_DIM,
+            text: resultLine,
+            wrap: false,
+        })),
+    );
+    lines.push(
+        ...renderChildRows(childRows, {
+            afterMarker: NOT_BOLD_OR_DIM,
+            markerStyle: DIM,
+            pad: false,
+            width,
+        }),
+    );
 
     return lines.map((line) => truncateToWidth(line, width, "", false));
 }
@@ -141,15 +158,26 @@ function renderNarrowCall(
 ): string[] {
     const lines = [header];
     if (width >= 5) {
-        lines.push(
-            `${DIM}  └ ${NOT_BOLD_OR_DIM}${renderInvocationSegment(invocation, 0, invocation.plain, palette)}`,
-        );
         const contentWidth = Math.max(1, width - 4);
         const reviewLines = renderResultLines(call.review, contentWidth, limits.maxReviewRows);
         const resultLines = renderResultLines(call.result, contentWidth, limits.maxResultRows);
-        for (const line of [...reviewLines, ...resultLines]) {
-            lines.push(`${DIM}    ${line}${NOT_BOLD_OR_DIM}`);
-        }
+        lines.push(
+            ...renderChildRows(
+                [
+                    {
+                        text: renderInvocationSegment(invocation, 0, invocation.plain, palette),
+                        wrap: false,
+                    },
+                    ...[...reviewLines, ...resultLines].map((line) => ({
+                        prefix: DIM,
+                        suffix: NOT_BOLD_OR_DIM,
+                        text: line,
+                        wrap: false,
+                    })),
+                ],
+                { afterMarker: NOT_BOLD_OR_DIM, markerStyle: DIM, pad: false, width },
+            ),
+        );
     }
     return lines.map((line) => truncateToWidth(line, width, "", false));
 }

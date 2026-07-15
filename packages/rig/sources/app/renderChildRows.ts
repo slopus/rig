@@ -13,6 +13,7 @@ export function renderChildRows(
     options: {
         afterMarker?: string;
         markerStyle?: string;
+        pad?: boolean;
         width: number;
     },
 ): string[] {
@@ -33,6 +34,11 @@ export function renderChildRows(
     });
 
     return renderedRows.map((row, index) =>
-        truncateToWidth(`${index === 0 ? firstPrefix : continuationPrefix}${row}`, width, "", true),
+        truncateToWidth(
+            `${index === 0 ? firstPrefix : continuationPrefix}${row}`,
+            width,
+            "",
+            options.pad ?? true,
+        ),
     );
 }
