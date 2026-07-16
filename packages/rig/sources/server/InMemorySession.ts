@@ -82,6 +82,7 @@ import {
 } from "../permissions/index.js";
 import { createSessionMetadataTranscript } from "./createSessionMetadataTranscript.js";
 import { generateSessionMetadata } from "./generateSessionMetadata.js";
+import { createAbortRequestKey } from "./createAbortRequestKey.js";
 import { createGoalTitle } from "./createGoalTitle.js";
 import { getProviderIdForModel } from "./getProviderIdForModel.js";
 import { resolveInitialModelSelection } from "./resolveInitialModelSelection.js";
@@ -248,7 +249,7 @@ export class InMemorySession {
 
     #activePartial: PartialMessageState | undefined;
     #activeRun: ActiveRun | undefined;
-    #abortInFlight: Promise<AbortRunResponse> | undefined;
+    #abortInFlight: { key: string; promise: Promise<AbortRunResponse> } | undefined;
     #agentManager: AgentSessionManager | undefined;
     #agentMetadata: SessionAgentMetadata;
     #agentId: string;
@@ -497,12 +498,20 @@ export class InMemorySession {
         ) {
             return Promise.resolve({ aborted: false });
         }
-        if (this.#abortInFlight !== undefined) return this.#abortInFlight;
+        const key = createAbortRequestKey(options);
+        if (this.#abortInFlight !== undefined) {
+            if (this.#abortInFlight.key !== key) {
+                return Promise.reject(
+                    new Error("An abort request with different options is already in progress."),
+                );
+            }
+            return this.#abortInFlight.promise;
+        }
         const operation = this.#performAbort(options);
         const tracked = operation.finally(() => {
-            if (this.#abortInFlight === tracked) this.#abortInFlight = undefined;
+            if (this.#abortInFlight?.promise === tracked) this.#abortInFlight = undefined;
         });
-        this.#abortInFlight = tracked;
+        this.#abortInFlight = { key, promise: tracked };
         return tracked;
     }
 

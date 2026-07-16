@@ -307,7 +307,7 @@ describe("InMemorySession abort", () => {
         expect(appliedIds).toEqual(["applied-first", "pending-second"]);
     });
 
-    it("coalesces overlapping interrupts and retains steering submitted during settlement", async () => {
+    it("coalesces matching interrupts and rejects conflicting abort semantics", async () => {
         const started = deferred<void>();
         const releaseDescendants = deferred<number>();
         const contexts: Context[] = [];
@@ -356,6 +356,9 @@ describe("InMemorySession abort", () => {
         const secondAbort = session.abort({ continuePendingSteering: true });
         expect(secondAbort).toBe(firstAbort);
         expect(pauseDescendants).toHaveBeenCalledOnce();
+        await expect(session.abort()).rejects.toThrow(
+            "An abort request with different options is already in progress.",
+        );
         session.steer({ text: "Submitted while interrupt settles." });
         releaseDescendants.resolve(1);
 
