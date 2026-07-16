@@ -1,10 +1,10 @@
 import { isAbsolute, join, normalize } from "node:path";
 
 export function resolveWorkspacePath(workspacePath: string, path: string): string {
-    const relative = path.replace(/^\/+/, "");
-    const normalized = normalize(relative);
+    const normalized = normalize(path);
     if (
-        relative.length === 0 ||
+        path.length === 0 ||
+        isAbsolute(path) ||
         isAbsolute(normalized) ||
         normalized === ".." ||
         normalized.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)
