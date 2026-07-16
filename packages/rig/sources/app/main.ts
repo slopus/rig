@@ -9,7 +9,7 @@ import { parseSessionCommand } from "./parseSessionCommand.js";
 import { resolveSessionCommand } from "./resolveSessionCommand.js";
 import { parseSessionEnvironmentOptions } from "./parseSessionEnvironmentOptions.js";
 import { formatCliHelp } from "./formatCliHelp.js";
-import { readPackageVersion } from "./readPackageVersion.js";
+import { readPackageVersion } from "../readPackageVersion.js";
 
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
     if (argv.length === 1 && argv[0] === "--server") {

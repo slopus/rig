@@ -9,6 +9,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { ElicitRequestSchema, ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 import { createShellEnvironment } from "../agent/context/createShellEnvironment.js";
+import { readPackageVersion } from "../readPackageVersion.js";
 import { handleMcpElicitation } from "./handleMcpElicitation.js";
 import type { McpServerConfig } from "./types.js";
 
@@ -25,7 +26,7 @@ export async function connectMcpServer(
     env: NodeJS.ProcessEnv = process.env,
 ): Promise<ConnectedMcpServer> {
     const client = new Client(
-        { name: "rig", version: "0.0.6" },
+        { name: "rig", version: readPackageVersion() },
         { capabilities: { elicitation: { form: {} }, roots: { listChanged: false } } },
     );
     client.setRequestHandler(ElicitRequestSchema, (request) =>

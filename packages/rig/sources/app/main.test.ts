@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { main } from "./main.js";
-import { readPackageVersion } from "./readPackageVersion.js";
+import { readPackageVersion } from "../readPackageVersion.js";
 import { runApp } from "./runApp.js";
 import { runExec } from "./runExec.js";
 import { runLocalProtocolServer } from "../server/index.js";
 
 vi.mock("./runApp.js", () => ({ runApp: vi.fn() }));
 vi.mock("./runExec.js", () => ({ runExec: vi.fn() }));
-vi.mock("./readPackageVersion.js", () => ({ readPackageVersion: vi.fn(() => "1.2.3") }));
+vi.mock("../readPackageVersion.js", () => ({ readPackageVersion: vi.fn(() => "1.2.3") }));
 vi.mock("../server/index.js", () => ({ runLocalProtocolServer: vi.fn() }));
 
 describe("main command dispatch", () => {

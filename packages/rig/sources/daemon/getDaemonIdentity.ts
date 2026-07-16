@@ -1,4 +1,4 @@
-import { readPackageVersion } from "../app/readPackageVersion.js";
+import { readPackageVersion } from "../readPackageVersion.js";
 import type { DaemonIdentity } from "../protocol/index.js";
 
 export function getDaemonIdentity(

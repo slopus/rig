@@ -21,7 +21,7 @@ import { createStopOnceHandler } from "./createStopOnceHandler.js";
 import { createStartupStatusCardModel } from "./createStartupStatusCardModel.js";
 import { ensureSessionCanResume } from "./ensureSessionCanResume.js";
 import { providerQuotaToStartupStatusUsage } from "./providerQuotaToStartupStatusUsage.js";
-import { readPackageVersion } from "./readPackageVersion.js";
+import { readPackageVersion } from "../readPackageVersion.js";
 import { resolveTerminalTheme } from "./resolveTerminalTheme.js";
 import { resolveStartupProviderQuota } from "./resolveStartupProviderQuota.js";
 import { ScrollbackPreservingTerminal } from "./ScrollbackPreservingTerminal.js";
