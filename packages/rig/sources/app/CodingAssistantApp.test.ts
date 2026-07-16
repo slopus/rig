@@ -167,6 +167,20 @@ describe("CodingAssistantApp", () => {
 
         app.applySessionEvent({
             createdAt: 2,
+            data: {
+                message: {
+                    blocks: [{ text: "Rendered while steering was pending", type: "text" }],
+                    id: "assistant-after-steering-submission",
+                    role: "agent",
+                },
+                runId: "run-1",
+            },
+            id: "assistant-event",
+            sessionId: "session-1",
+            type: "agent_message",
+        });
+        app.applySessionEvent({
+            createdAt: 3,
             data: { messageIds: [message.id], runId: "run-1" },
             id: "event-applied",
             sessionId: "session-1",
@@ -175,6 +189,9 @@ describe("CodingAssistantApp", () => {
         const applied = stripAnsi(app.render(100).join("\n"));
         expect(applied).not.toContain("Messages to be submitted after next tool call");
         expect(applied).toContain("› Pending direction");
+        expect(applied.indexOf("Rendered while steering was pending")).toBeLessThan(
+            applied.indexOf("› Pending direction"),
+        );
     });
 
     it("uses pending-aware abort without stopping the local run on Escape", async () => {

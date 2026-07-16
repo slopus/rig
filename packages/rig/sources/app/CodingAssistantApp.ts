@@ -3952,7 +3952,7 @@ export class CodingAssistantApp implements Component, Focusable {
             if (index < 0) continue;
             const [pending] = this.#pendingSteeringMessages.splice(index, 1);
             if (pending !== undefined) {
-                this.#entries.splice(pending.transcriptIndex, 0, {
+                this.#entries.push({
                     id: pending.id,
                     role: "user",
                     text: pending.displayText,
