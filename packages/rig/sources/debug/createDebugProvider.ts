@@ -23,32 +23,38 @@ export function createDebugProvider(
             const inferenceId = `${options.source}-${String(++inference).padStart(4, "0")}`;
             return createInferenceStream(async function* () {
                 try {
-                    await options.log.record("inference-request", {
-                        context,
-                        inferenceId,
-                        model,
-                        options: serializableStreamOptions(streamOptions),
-                        providerId: provider.id,
-                        runId: options.runId,
-                        source: options.source,
-                    });
-                    const stream = provider.stream(model, context, streamOptions);
-                    for await (const event of stream) {
-                        await options.log.record("inference-event", {
-                            event,
+                    await options.log
+                        .record("inference-request", {
+                            context,
                             inferenceId,
+                            model,
+                            options: serializableStreamOptions(streamOptions),
+                            providerId: provider.id,
                             runId: options.runId,
                             source: options.source,
-                        });
+                        })
+                        .catch(() => undefined);
+                    const stream = provider.stream(model, context, streamOptions);
+                    for await (const event of stream) {
+                        await options.log
+                            .record("inference-event", {
+                                event,
+                                inferenceId,
+                                runId: options.runId,
+                                source: options.source,
+                            })
+                            .catch(() => undefined);
                         yield event;
                     }
                     const message = await stream.result();
-                    await options.log.record("inference-response", {
-                        inferenceId,
-                        message,
-                        runId: options.runId,
-                        source: options.source,
-                    });
+                    await options.log
+                        .record("inference-response", {
+                            inferenceId,
+                            message,
+                            runId: options.runId,
+                            source: options.source,
+                        })
+                        .catch(() => undefined);
                     return message;
                 } catch (error) {
                     await options.log

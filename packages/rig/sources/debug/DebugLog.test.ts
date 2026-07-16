@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
@@ -66,5 +66,22 @@ describe("DebugLog", () => {
             name: "Error",
         });
         expect(record.data.error.stack).toContain("outer failure");
+    });
+
+    it("recovers after a transient record write failure", async () => {
+        const root = await mkdtemp(join(tmpdir(), "rig-debug-log-"));
+        directories.add(root);
+        const directory = join(root, ".rig", "debug", "request-recovery");
+        const log = new DebugLog({ directory });
+        await log.flush();
+
+        await rm(directory, { recursive: true });
+        await writeFile(directory, "temporarily blocked", "utf8");
+        await expect(log.record("failed", { attempt: 1 })).rejects.toThrow();
+
+        await rm(directory);
+        await mkdir(directory);
+        await expect(log.record("recovered", { attempt: 2 })).resolves.toBeUndefined();
+        await expect(readdir(directory)).resolves.toEqual(["0000000002-recovered.json"]);
     });
 });

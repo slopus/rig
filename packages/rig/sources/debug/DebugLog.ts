@@ -42,9 +42,9 @@ export class DebugLog {
             createDebugJsonReplacer(),
             2,
         )}\n`;
-        const operation = this.#pending.then(() =>
-            writeFile(join(this.directory, fileName), body, { mode: 0o600 }),
-        );
+        const operation = this.#pending
+            .catch(() => undefined)
+            .then(() => writeFile(join(this.directory, fileName), body, { mode: 0o600 }));
         this.#pending = operation;
         void operation.catch(() => undefined);
         return operation;
