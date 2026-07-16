@@ -54,6 +54,10 @@ Always use `pnpm` for this project. Do not use `npm`, `npx`, or `yarn` for insta
 
 Favor one function per file when adding or reshaping source code.
 
+## One feature per worktree
+
+Working on multiple features in the same worktree is prohibited until the current feature has been merged into `main`. If the user asks to begin another feature before that merge, do not start it in the current worktree. Instruct the user to create a new Conductor workspace/worktree for the additional feature and continue there instead.
+
 ## Gym end-to-end tests
 
 The gym exercises the built Rig agent through a real PTY in a fresh Docker container. Only model inference is mocked; the filesystem, shell, processes, daemon, tools, and terminal behavior remain real, with `libghostty-vt` providing user-visible screen and scroll state.
