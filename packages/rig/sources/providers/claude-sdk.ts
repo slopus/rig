@@ -289,7 +289,7 @@ function toClaudeSdkOptions(options: {
                 alwaysLoad: true,
             }),
         },
-        model: toClaudeSdkModelId(options.model.id),
+        model: toClaudeSdkModelId(options.model),
         pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
         env: {
             ...options.env,
@@ -591,13 +591,20 @@ function isClaudeSdkEffortLevel(thinking: string): thinking is EffortLevel {
     );
 }
 
-function toClaudeSdkModelId(modelId: string): string {
-    if (modelId === "anthropic/fable-5") return "claude-fable-5[1m]";
-    if (modelId === "anthropic/opus-4-8") return "opus[1m]";
-    if (modelId === "anthropic/sonnet-5") return "sonnet";
-    return modelId.startsWith("anthropic/")
-        ? `claude-${modelId.slice("anthropic/".length)}`
-        : modelId;
+function toClaudeSdkModelId(model: Model): string {
+    const baseModelId =
+        model.id === "anthropic/opus-4-8"
+            ? "opus"
+            : model.id === "anthropic/sonnet-5"
+              ? "sonnet"
+              : model.id === "anthropic/sonnet-4-6-1m"
+                ? "claude-sonnet-4-6"
+                : model.id.startsWith("anthropic/")
+                  ? `claude-${model.id.slice("anthropic/".length)}`
+                  : model.id;
+    return model.id.startsWith("anthropic/") && model.contextWindow === 1_000_000
+        ? `${baseModelId}[1m]`
+        : baseModelId;
 }
 
 interface ClaudeTextStreamBlock {

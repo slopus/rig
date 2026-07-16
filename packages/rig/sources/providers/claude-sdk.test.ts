@@ -5,7 +5,15 @@ import { runAgentLoop } from "../agent/loop.js";
 import { defineTool } from "../agent/types.js";
 import { createJustBashToolHarness } from "../tools/testing/createJustBashToolHarness.js";
 import { validPng32Base64 } from "../tools/testing/validImageFixtures.js";
-import { modelAnthropicFable5, modelAnthropicOpus48, modelAnthropicSonnet5 } from "./models.js";
+import {
+    modelAnthropicFable5,
+    modelAnthropicOpus46,
+    modelAnthropicOpus47,
+    modelAnthropicOpus48,
+    modelAnthropicSonnet5,
+    modelAnthropicSonnet46,
+    modelAnthropicSonnet461m,
+} from "./models.js";
 import { createClaudeSdkProvider, type ClaudeSdkQuery } from "./claude-sdk.js";
 import type { Context } from "./types.js";
 
@@ -590,15 +598,39 @@ describe("Claude SDK provider", () => {
                 messages: [{ role: "user", content: "Say ok.", timestamp: 4 }],
             })
             .result();
+        await provider
+            .stream(modelAnthropicOpus47, {
+                messages: [{ role: "user", content: "Say ok.", timestamp: 5 }],
+            })
+            .result();
+        await provider
+            .stream(modelAnthropicOpus46, {
+                messages: [{ role: "user", content: "Say ok.", timestamp: 6 }],
+            })
+            .result();
+        await provider
+            .stream(modelAnthropicSonnet461m, {
+                messages: [{ role: "user", content: "Say ok.", timestamp: 7 }],
+            })
+            .result();
+        await provider
+            .stream(modelAnthropicSonnet46, {
+                messages: [{ role: "user", content: "Say ok.", timestamp: 8 }],
+            })
+            .result();
 
-        expect(calls[0]?.options?.model).toBe("sonnet");
+        expect(calls[0]?.options?.model).toBe("sonnet[1m]");
         expect(calls[0]?.options?.effort).toBe("xhigh");
         expect(calls[0]?.options?.thinking).toEqual({ type: "adaptive" });
-        expect(calls[1]?.options?.model).toBe("sonnet");
+        expect(calls[1]?.options?.model).toBe("sonnet[1m]");
         expect(calls[1]?.options?.effort).toBe("xhigh");
         expect(calls[1]?.options?.env?.CLAUDE_CODE_EFFORT_LEVEL).toBe("ultracode");
         expect(calls[2]?.options?.model).toBe("opus[1m]");
         expect(calls[3]?.options?.model).toBe("claude-fable-5[1m]");
+        expect(calls[4]?.options?.model).toBe("claude-opus-4-7[1m]");
+        expect(calls[5]?.options?.model).toBe("claude-opus-4-6[1m]");
+        expect(calls[6]?.options?.model).toBe("claude-sonnet-4-6[1m]");
+        expect(calls[7]?.options?.model).toBe("claude-sonnet-4-6");
     });
 
     it("resolves a result when callers do not consume stream events", async () => {
