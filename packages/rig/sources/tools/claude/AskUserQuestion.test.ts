@@ -39,6 +39,12 @@ describe("Claude AskUserQuestion tool", () => {
             },
             questions,
         });
+        expect(claudeAskUserQuestionTool.toTrustedUserEvidence?.(result, { questions })).toEqual([
+            {
+                type: "text",
+                text: '{"answers":["Email, Push notifications"]}',
+            },
+        ]);
     });
 
     it("rejects duplicate question text before answers can overwrite each other", async () => {

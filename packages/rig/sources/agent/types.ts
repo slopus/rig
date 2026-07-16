@@ -53,6 +53,8 @@ export interface ToolResultBlock {
     isError?: boolean;
     /** Durable model-invisible data used for rich transcript rendering. */
     presentation?: ToolResultPresentation;
+    /** Exact user-authored or user-selected content that Auto review may trust. */
+    trustedUserEvidence?: readonly ContentBlock[];
 }
 
 /** Blocks allowed on agent messages. */
@@ -131,6 +133,10 @@ export interface DefinedTool<
         result: Static<TReturnSchema>,
         args: Static<TArgsSchema>,
     ) => ToolResultPresentation | undefined;
+    toTrustedUserEvidence?: (
+        result: Static<TReturnSchema>,
+        args: Static<TArgsSchema>,
+    ) => readonly ContentBlock[];
     toUI: (result: Static<TReturnSchema>, args: Static<TArgsSchema>) => string;
     /** Provider-specific Auto-mode guidance included only while this tool is active. */
     autoPermissionInstructions?: string;
@@ -157,6 +163,7 @@ export interface AnyDefinedTool {
     isError?: (result: never) => boolean;
     toLLM: (result: never) => readonly ContentBlock[];
     toPresentation?: (result: never, args: never) => ToolResultPresentation | undefined;
+    toTrustedUserEvidence?: (result: never, args: never) => readonly ContentBlock[];
     toUI: (result: never, args: never) => string;
     autoPermissionInstructions?: string;
     describeAutoPermissionAction?: AutoPermissionActionDescriber<never>;
@@ -195,6 +202,10 @@ export function defineTool<
         result: Static<TReturnSchema>,
         args: Static<TArgsSchema>,
     ) => ToolResultPresentation | undefined;
+    toTrustedUserEvidence?: (
+        result: Static<TReturnSchema>,
+        args: Static<TArgsSchema>,
+    ) => readonly ContentBlock[];
     toUI: (result: Static<TReturnSchema>, args: Static<TArgsSchema>) => string;
     autoPermissionInstructions?: string;
     describeAutoPermissionAction?: AutoPermissionActionDescriber<Static<TArgsSchema>>;

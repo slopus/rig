@@ -38,5 +38,11 @@ describe("Codex request_user_input tool", () => {
                 text: '{"answers":{"database":{"answers":["PostgreSQL"]}}}',
             },
         ]);
+        expect(codexRequestUserInputTool.toTrustedUserEvidence?.(result, { questions })).toEqual([
+            {
+                type: "text",
+                text: '{"answers":[["PostgreSQL"]]}',
+            },
+        ]);
     });
 });

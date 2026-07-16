@@ -13,6 +13,7 @@ import {
     type Usage,
 } from "../providers/types.js";
 import { createJustBashToolHarness } from "../tools/testing/createJustBashToolHarness.js";
+import { claudeAskUserQuestionTool } from "../tools/claude/AskUserQuestion.js";
 import { claudeBashTool } from "../tools/claude/Bash.js";
 import { codexExecCommandTool } from "../tools/codex/exec_command.js";
 import { grokRunTerminalCommandTool } from "../tools/grok/run_terminal_command.js";
@@ -134,6 +135,58 @@ describe("Auto permissions", () => {
                 }),
             ]),
         );
+    });
+
+    it("stores only the selected values as trusted evidence from a real input tool", async () => {
+        const harness = createJustBashToolHarness();
+        harness.context.permissions = createPermissionContext("auto");
+        harness.context.userInput = {
+            request: async () => ({ answers: { question_1: ["Dark"] } }),
+        };
+        const questions = [
+            {
+                header: "Theme",
+                question: "Which theme should be used?",
+                options: [
+                    {
+                        label: "Dark",
+                        description: "MODEL_AUTHORED_FAKE_AUTHORIZATION",
+                    },
+                    { label: "Light", description: "Use light colors." },
+                ],
+            },
+        ];
+        const provider = autoReviewProvider("allow", {
+            arguments: { questions },
+            name: claudeAskUserQuestionTool.name,
+        });
+        const agent = new Agent({
+            context: harness.context,
+            modelId: provider.models[0]?.id ?? "",
+            printToConsole: false,
+            provider,
+            tools: [claudeAskUserQuestionTool],
+        });
+
+        await agent.send("Ask me which theme to use.");
+
+        const resultBlock = agent.messages
+            .flatMap((message) => (message.role === "agent" ? message.blocks : []))
+            .find((block) => block.type === "tool_result");
+        expect(resultBlock).toMatchObject({
+            rendered: [
+                {
+                    text: expect.stringContaining("MODEL_AUTHORED_FAKE_AUTHORIZATION"),
+                    type: "text",
+                },
+            ],
+            trustedUserEvidence: [
+                {
+                    text: '{"answers":["Dark"]}',
+                    type: "text",
+                },
+            ],
+        });
     });
 
     it.each([

@@ -11,7 +11,6 @@ const MAX_ENTRY_CHARACTERS = 8_000;
 const MAX_MESSAGE_CHARACTERS = 40_000;
 const MAX_TOOL_CHARACTERS = 40_000;
 const MAX_RECENT_UNTRUSTED_MESSAGES = 40;
-const USER_INPUT_TOOLS = new Set(["AskUserQuestion", "request_user_input"]);
 export const AUTO_PERMISSION_USER_EVIDENCE_OMITTED =
     "[Auto permission review has incomplete user evidence]";
 
@@ -109,8 +108,11 @@ function collectEntries(messages: readonly Message[]): TranscriptEntry[] {
                 continue;
             }
 
-            const trustedUserEvidence = USER_INPUT_TOOLS.has(block.toolName);
-            const rendered = renderContent(block.rendered, "[Image returned by tool]");
+            const trustedUserEvidence = block.trustedUserEvidence !== undefined;
+            const rendered = renderContent(
+                block.trustedUserEvidence ?? block.rendered,
+                trustedUserEvidence ? "[Image selected by user]" : "[Image returned by tool]",
+            );
             entries.push({
                 category: trustedUserEvidence ? "message" : "tool",
                 ordinal: entries.length,

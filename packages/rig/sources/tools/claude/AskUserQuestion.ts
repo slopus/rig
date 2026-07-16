@@ -69,6 +69,12 @@ export const claudeAskUserQuestionTool = defineTool({
         };
     },
     toLLM: (result) => [{ type: "text", text: JSON.stringify(result) }],
+    toTrustedUserEvidence: (result) => [
+        {
+            type: "text",
+            text: JSON.stringify({ answers: Object.values(result.answers) }),
+        },
+    ],
     toUI: (_result, args) =>
         `Answered ${args.questions.length} question${args.questions.length === 1 ? "" : "s"}`,
     locks: ["user_input"],

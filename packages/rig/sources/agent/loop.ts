@@ -936,6 +936,9 @@ async function executeToolCall(
         const toPresentation = tool.toPresentation as
             | ((result: unknown, args: unknown) => ToolResultBlock["presentation"])
             | undefined;
+        const toTrustedUserEvidence = tool.toTrustedUserEvidence as
+            | ((result: unknown, args: unknown) => readonly ContentBlock[])
+            | undefined;
         const toUI = tool.toUI as (result: unknown, args: unknown) => string;
         const executionOptions: {
             messages?: readonly Message[];
@@ -959,6 +962,10 @@ async function executeToolCall(
         const resultIsError = isError?.(result);
         const presentation =
             resultIsError === true ? undefined : toPresentation?.(result, toolCall.arguments);
+        const trustedUserEvidence =
+            resultIsError === true
+                ? undefined
+                : toTrustedUserEvidence?.(result, toolCall.arguments);
 
         return {
             type: "tool_result",
@@ -968,6 +975,7 @@ async function executeToolCall(
             display: toUI(result, toolCall.arguments),
             ...(resultIsError === undefined ? {} : { isError: resultIsError }),
             ...(presentation === undefined ? {} : { presentation }),
+            ...(trustedUserEvidence === undefined ? {} : { trustedUserEvidence }),
         };
     } catch (error) {
         await options.onError?.(error);
