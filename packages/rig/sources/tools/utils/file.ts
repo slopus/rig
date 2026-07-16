@@ -122,7 +122,6 @@ export interface EditFileOptions {
     oldString: string;
     newString: string;
     replaceAll?: boolean;
-    lineNumber?: number;
     cwd?: string;
     fuzzy?: boolean;
 }
@@ -247,12 +246,13 @@ function findExactEditMatch(content: string, options: EditFileOptions): EditMatc
         };
     }
 
-    const selected = selectOccurrenceByLine(content, positions, options);
-    if (selected === undefined) {
+    if (positions.length > 1) {
         throw new Error(
-            `old_string appears ${positions.length} times; provide line_number or set replace_all`,
+            `The text to replace appears ${positions.length} times; include more surrounding context to make it unique.`,
         );
     }
+    const selected = positions[0];
+    if (selected === undefined) return undefined;
 
     return {
         start: selected,
@@ -268,21 +268,13 @@ function findFuzzyEditMatch(content: string, options: EditFileOptions): EditMatc
         return undefined;
     }
 
-    const selected = selectOccurrenceByLine(
-        content,
-        candidates.map((candidate) => candidate.start),
-        options,
-    );
-    const candidate =
-        selected === undefined
-            ? candidates.length === 1
-                ? candidates[0]
-                : undefined
-            : candidates.find((item) => item.start === selected);
-
-    if (!candidate) {
-        throw new Error(`old_string has ${candidates.length} fuzzy matches; provide line_number`);
+    if (candidates.length > 1) {
+        throw new Error(
+            `The text to replace has ${candidates.length} fuzzy matches; include more surrounding context to make it unique.`,
+        );
     }
+    const candidate = candidates[0];
+    if (!candidate) return undefined;
 
     return {
         start: candidate.start,
@@ -346,24 +338,6 @@ function findAllOccurrences(haystack: string, needle: string): number[] {
         index = haystack.indexOf(needle, index + Math.max(1, needle.length));
     }
     return positions;
-}
-
-function selectOccurrenceByLine(
-    content: string,
-    positions: readonly number[],
-    options: EditFileOptions,
-): number | undefined {
-    if (positions.length === 1 && options.lineNumber === undefined) {
-        return positions[0];
-    }
-
-    if (options.lineNumber === undefined) {
-        return undefined;
-    }
-
-    return positions.find(
-        (position) => lineNumberAtOffset(content, position) === options.lineNumber,
-    );
 }
 
 function normalizeForEditMatch(value: string): string {
@@ -535,14 +509,4 @@ function lineRanges(content: string): { start: number; end: number }[] {
         }
     }
     return ranges;
-}
-
-function lineNumberAtOffset(content: string, offset: number): number {
-    let line = 1;
-    for (let i = 0; i < offset; i++) {
-        if (content[i] === "\n") {
-            line++;
-        }
-    }
-    return line;
 }

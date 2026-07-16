@@ -28,4 +28,20 @@ describe("Claude Code Edit tool", () => {
         expect(result.replacements).toBe(1);
         expect(await harness.readFile("/workspace/edit.txt")).toBe("gamma\nbeta\n");
     });
+
+    it("gives actionable guidance when the exact text is ambiguous", async () => {
+        const harness = createJustBashToolHarness({
+            files: { "/workspace/edit.txt": "same\nsame\n" },
+        });
+        await harness.runTool(claudeReadTool, { file_path: "/workspace/edit.txt" });
+
+        const edit = harness.runTool(claudeEditTool, {
+            file_path: "/workspace/edit.txt",
+            old_string: "same",
+            new_string: "changed",
+        });
+
+        await expect(edit).rejects.toThrow("include more surrounding context to make it unique");
+        await expect(edit).rejects.not.toThrow("line_number");
+    });
 });

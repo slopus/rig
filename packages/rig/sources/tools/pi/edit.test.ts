@@ -37,4 +37,19 @@ describe("pi edit tool", () => {
         ).rejects.toThrow("oldText for edit 1 must not be empty.");
         expect(await harness.readFile("/workspace/sample.txt")).toBe("unchanged\n");
     });
+
+    it("gives actionable guidance when fuzzy text is ambiguous", async () => {
+        const harness = createJustBashToolHarness({
+            files: { "/workspace/sample.txt": "alpha  \nbeta\nmiddle\nalpha  \nbeta\n" },
+        });
+        await harness.runTool(piReadTool, { path: "/workspace/sample.txt" });
+
+        const edit = harness.runTool(piEditTool, {
+            path: "/workspace/sample.txt",
+            edits: [{ oldText: "alpha\nbeta", newText: "gamma\nbeta" }],
+        });
+
+        await expect(edit).rejects.toThrow("include more surrounding context to make it unique");
+        await expect(edit).rejects.not.toThrow("line_number");
+    });
 });
