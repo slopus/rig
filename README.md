@@ -275,7 +275,8 @@ to compact immediately.
 Use `/goal` to check it, `/goal pause`, `/goal resume`, or `/goal clear` to manage
 it. Goals survive daemon restarts and resumed sessions.
 
-`/review` performs a read-only review of staged, unstaged, and untracked changes.
+`/review` asks the agent to review staged, unstaged, and untracked changes and
+instructs it not to modify files.
 Add a focus when useful, for example `/review focus on concurrency`.
 
 ## Permissions
