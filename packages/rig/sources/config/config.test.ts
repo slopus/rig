@@ -571,6 +571,10 @@ effort = "minimal"
                     "[providers.bedrock]",
                     "enabled = true",
                     "",
+                    "[theme]",
+                    'primary = "#123456"',
+                    'warning = "ansi:202"',
+                    "",
                 ].join("\n"),
                 "utf8",
             );
@@ -593,6 +597,10 @@ effort = "minimal"
                     bedrock: { enabled: true, type: "bedrock" },
                     claude: { enabled: false, type: "claude" },
                     codex: { enabled: false, type: "codex" },
+                },
+                theme: {
+                    primary: "#123456",
+                    warning: "ansi:202",
                 },
             });
         } finally {

@@ -11,6 +11,7 @@ export async function writeDaemonSettings(
     const updated: PartialRigConfig = {
         ...(runtime.defaults === undefined ? {} : { defaults: runtime.defaults }),
         ...(runtime.providers === undefined ? {} : { providers: runtime.providers }),
+        ...(runtime.theme === undefined ? {} : { theme: runtime.theme }),
         settings: {
             ...runtime.settings,
             durableGlobalEventQueue: settings.durableGlobalEventQueue,
