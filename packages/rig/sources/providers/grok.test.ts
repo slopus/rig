@@ -258,6 +258,36 @@ describe("Grok Build provider", () => {
             stopReason: "error",
         });
     });
+
+    it("attributes fallback failures to the selected Grok model", async () => {
+        const response = {
+            error: null,
+            incomplete_details: null,
+            model: "grok-composer-2.5-fast",
+            status: "failed",
+        } as unknown as OpenAIResponse;
+        const responseStream = {
+            async *[Symbol.asyncIterator]() {
+                yield { type: "response.failed" as const, response };
+            },
+        };
+        const provider = createGrokProvider({
+            client: {
+                responses: { create: vi.fn(() => responseStream) },
+            } as unknown as GrokOpenAIClient,
+            resolveCredential: async () => ({ source: "session", token: "session-token" }),
+        });
+
+        const message = await provider
+            .stream(modelXaiGrokComposer25Fast, { messages: [] })
+            .result();
+
+        expect(message).toMatchObject({
+            errorMessage: "Composer 2.5 failed to generate a response.",
+            model: modelXaiGrokComposer25Fast.id,
+            stopReason: "error",
+        });
+    });
 });
 
 describe("Grok Build authentication", () => {

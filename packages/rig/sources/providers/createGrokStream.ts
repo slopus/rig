@@ -56,7 +56,7 @@ export function createGrokStream(options: {
                     : [{ signal: options.streamOptions.signal }]),
             );
         },
-        failureMessage: "Grok Build failed to generate a response.",
+        failureMessage: `${options.model.name} failed to generate a response.`,
         modelId: options.modelId,
         providerId: options.providerId,
         ...(options.streamOptions?.signal === undefined
