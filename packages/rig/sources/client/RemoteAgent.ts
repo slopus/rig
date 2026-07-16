@@ -267,7 +267,9 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
         const abort = () => {
             if (aborted) return;
             aborted = true;
-            void this.#client.abort(this.#session.id, { expectedRunId: submitted.runId });
+            void this.#client
+                .abort(this.#session.id, { expectedRunId: submitted.runId })
+                .catch(() => undefined);
         };
         options.signal?.addEventListener("abort", abort, { once: true });
         if (options.signal?.aborted === true) abort();
@@ -345,9 +347,12 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
             },
         };
         const request = effort !== undefined ? { effort } : {};
-        void this.#client.changeEffort(this.#session.id, request).then((response) => {
-            this.#replaceSession(response.session);
-        });
+        void this.#client
+            .changeEffort(this.#session.id, request)
+            .then((response) => {
+                this.#replaceSession(response.session);
+            })
+            .catch(() => undefined);
     }
 
     setModel(
