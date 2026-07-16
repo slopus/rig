@@ -32,9 +32,7 @@ export async function reviewAutoPermission(options: {
     toolName: string;
 }): Promise<AutoPermissionReview> {
     const transcript = createAutoPermissionTranscript(options.messages);
-    if (transcript.includes(AUTO_PERMISSION_USER_EVIDENCE_OMITTED)) {
-        return incompleteUserEvidenceReview();
-    }
+    const incompleteUserEvidence = transcript.includes(AUTO_PERMISSION_USER_EVIDENCE_OMITTED);
     const action = safeJson({ tool: options.toolName, arguments: options.args });
     try {
         const stream = options.provider.stream(
@@ -67,8 +65,15 @@ export async function reviewAutoPermission(options: {
             .map((block) => block.text)
             .join("\n");
         const review = parseAutoPermissionReview(text);
-        if (review?.decision === "allow" && !shouldAllowAutoPermissionReview(review)) {
-            return { ...review, decision: "ask" };
+        if (review?.decision === "allow") {
+            // Routine low-risk work does not depend on historical authorization. Actions with
+            // meaningful impact must still fail closed when that evidence is incomplete.
+            if (incompleteUserEvidence && review.risk !== "low") {
+                return incompleteUserEvidenceReview(review.risk);
+            }
+            if (!shouldAllowAutoPermissionReview(review)) {
+                return { ...review, decision: "ask" };
+            }
         }
         return (
             review ?? {
@@ -101,11 +106,11 @@ function unavailableReview(): AutoPermissionReview {
     };
 }
 
-function incompleteUserEvidenceReview(): AutoPermissionReview {
+function incompleteUserEvidenceReview(risk: AutoPermissionReview["risk"]): AutoPermissionReview {
     return {
         decision: "ask",
         reason: "The full user authorization history did not fit in the automatic review.",
-        risk: "medium",
+        risk,
         userAuthorization: "low",
     };
 }
