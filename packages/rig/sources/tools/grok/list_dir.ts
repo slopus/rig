@@ -5,6 +5,7 @@ import { defineTool } from "../../agent/types.js";
 import { resolveFileSystemPath } from "../../agent/context/resolveFileSystemPath.js";
 import { shouldReviewPathInAutoMode } from "../../permissions/shouldReviewPathInAutoMode.js";
 import { countTextLines, textOutputSchema, toTextBlocks } from "../utils/index.js";
+import { formatDirectoryEntryName } from "../utils/formatDirectoryEntryName.js";
 
 const MAX_ENTRIES = 500;
 
@@ -34,10 +35,7 @@ Other details:
             .sort((left, right) => left.localeCompare(right));
         const output: string[] = [];
         for (const entry of entries.slice(0, MAX_ENTRIES)) {
-            const stats = await context.fs.stat(
-                resolveFileSystemPath(entry, path, context.fs.home),
-            );
-            output.push(stats.isDirectory ? `${entry}/` : entry);
+            output.push(await formatDirectoryEntryName(entry, path, context));
         }
         if (entries.length > MAX_ENTRIES) output.push("... (directory listing truncated)");
         return { text: output.length === 0 ? "(empty directory)" : output.join("\n") };

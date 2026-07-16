@@ -4,6 +4,7 @@ import { defineTool } from "../../agent/types.js";
 import { resolveFileSystemPath } from "../../agent/context/resolveFileSystemPath.js";
 import { shouldReviewPathInAutoMode } from "../../permissions/shouldReviewPathInAutoMode.js";
 import { countTextLines, textOutputSchema, toTextBlocks } from "../utils/index.js";
+import { formatDirectoryEntryName } from "../utils/formatDirectoryEntryName.js";
 
 const DEFAULT_LIMIT = 500;
 const DEFAULT_MAX_BYTES = 50 * 1024;
@@ -31,10 +32,7 @@ export const piLsTool = defineTool({
         entries.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
         const output: string[] = [];
         for (const entry of entries.slice(0, limit ?? DEFAULT_LIMIT)) {
-            const entryStats = await context.fs.stat(
-                resolveFileSystemPath(entry, dirPath, context.fs.home),
-            );
-            output.push(entryStats.isDirectory ? `${entry}/` : entry);
+            output.push(await formatDirectoryEntryName(entry, dirPath, context));
         }
         return { text: output.length > 0 ? output.join("\n") : "(empty directory)" };
     },
