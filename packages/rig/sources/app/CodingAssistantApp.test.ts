@@ -3253,6 +3253,7 @@ describe("CodingAssistantApp", () => {
 
         const rendered = stripAnsi(app.render(100).join("\n"));
         expect(rendered).toContain("› /skill:review inspect this diff");
+        expect(rendered.match(/› \/skill:review inspect this diff/gu)).toHaveLength(1);
         expect(rendered).toContain("• skill used");
         expect(rendered).not.toContain("Use the word cobalt.");
     });

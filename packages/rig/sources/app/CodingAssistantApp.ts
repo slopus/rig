@@ -1562,19 +1562,20 @@ export class CodingAssistantApp implements Component, Focusable {
             parseSkillFrontmatter(content).body,
             parsed[2] ?? "",
         );
+        const submission: PromptSubmission = {
+            content: expandedPrompt,
+            displayText: prompt,
+        };
 
         if (!this.#sessionBacked) this.#recordUserInput(this.#now());
         this.#modelLocked = true;
         if (this.#running) {
             if (this.#sessionBacked && this.#activeSessionRunId === undefined) {
-                this.#pendingPrompts.push({ content: expandedPrompt, displayText: prompt });
+                this.#pendingPrompts.push(submission);
                 this.#requestRender();
                 return;
             }
-            const localSteering = this.#trackLocalSteeringSubmission({
-                content: expandedPrompt,
-                displayText: prompt,
-            });
+            const localSteering = this.#trackLocalSteeringSubmission(submission);
             try {
                 const response = await this.#agent.steer(expandedPrompt, {
                     ...(localSteering === undefined
@@ -1598,6 +1599,7 @@ export class CodingAssistantApp implements Component, Focusable {
         }
         if (!this.#sessionBacked) {
             this.#appendEntry({ role: "user", text: prompt });
+            submission.transcriptAppended = true;
         }
         if (this.#running && !this.#sessionBacked) {
             this.#appendEntry({
@@ -1607,7 +1609,7 @@ export class CodingAssistantApp implements Component, Focusable {
             });
         }
 
-        this.#pendingPrompts.push({ content: expandedPrompt, displayText: prompt });
+        this.#pendingPrompts.push(submission);
         this.#startDrainQueue();
     }
 
