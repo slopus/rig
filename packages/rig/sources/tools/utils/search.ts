@@ -2,6 +2,9 @@ import { join, relative, sep } from "node:path";
 
 import type { AgentContext } from "../../agent/context/AgentContext.js";
 import { resolveFileSystemPath } from "../../agent/context/resolveFileSystemPath.js";
+import { isGitIgnored } from "./isGitIgnored.js";
+import { loadGitIgnoreScope } from "./loadGitIgnoreScope.js";
+import { loadInitialGitIgnoreScopes } from "./loadInitialGitIgnoreScopes.js";
 import { runCommand } from "./shell.js";
 
 export interface GrepOptions {
@@ -87,6 +90,7 @@ export interface GlobOptions {
     path?: string;
     cwd?: string;
     limit?: number;
+    respectGitIgnore?: boolean;
     signal?: AbortSignal;
 }
 
@@ -98,12 +102,18 @@ export async function globFiles(
     const root = options.path ? resolveFileSystemPath(options.path, cwd, context.fs.home) : cwd;
     const regex = globToRegExp(options.pattern);
     const files: { path: string; mtimeMs: number }[] = [];
-    await walkFiles(root, context, options.signal, async (filePath, mtimeMs) => {
-        const rel = relative(root, filePath).split(sep).join("/");
-        if (regex.test(rel) || regex.test(filePath.split(sep).join("/"))) {
-            files.push({ path: filePath, mtimeMs });
-        }
-    });
+    await walkFiles(
+        root,
+        context,
+        options.signal,
+        options.respectGitIgnore === true,
+        async (filePath, mtimeMs) => {
+            const rel = relative(root, filePath).split(sep).join("/");
+            if (regex.test(rel) || regex.test(filePath.split(sep).join("/"))) {
+                files.push({ path: filePath, mtimeMs });
+            }
+        },
+    );
     files.sort(
         (left, right) => right.mtimeMs - left.mtimeMs || left.path.localeCompare(right.path),
     );
@@ -114,15 +124,18 @@ async function walkFiles(
     root: string,
     context: AgentContext,
     signal: AbortSignal | undefined,
+    respectGitIgnore: boolean,
     onFile: (path: string, mtimeMs: number) => Promise<void> | void,
 ): Promise<void> {
-    const directories = [root];
+    const initialScopes = respectGitIgnore ? await loadInitialGitIgnoreScopes(root, context) : [];
+    const directories = [{ directory: root, ignoreScopes: initialScopes }];
     while (directories.length > 0) {
         if (signal?.aborted) {
             throw new Error("Search aborted.");
         }
-        const directory = directories.pop();
-        if (directory === undefined) break;
+        const entry = directories.pop();
+        if (entry === undefined) break;
+        const { directory, ignoreScopes } = entry;
         let entries: readonly string[];
         try {
             entries = await context.fs.readdir(directory);
@@ -144,9 +157,15 @@ async function walkFiles(
             } catch {
                 continue;
             }
+            if (respectGitIgnore && isGitIgnored(full, stats.isDirectory, ignoreScopes)) continue;
             if (stats.isSymbolicLink) continue;
             if (stats.isDirectory) {
-                directories.push(full);
+                const childScope = await loadGitIgnoreScope(full, context);
+                directories.push({
+                    directory: full,
+                    ignoreScopes:
+                        childScope === undefined ? ignoreScopes : [...ignoreScopes, childScope],
+                });
             } else if (stats.isFile) {
                 await onFile(full, stats.mtimeMs);
             }

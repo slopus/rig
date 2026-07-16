@@ -46,6 +46,7 @@
         "@pydantic/monty": "0.0.18",
         "@sinclair/typebox": "^0.34.49",
         "dockerode": "^5.0.1",
+        "ignore": "^7.0.6",
         "lru-cache": "^11.5.2",
         "openai": "6.46.0",
         "sharp": "^0.35.3",
