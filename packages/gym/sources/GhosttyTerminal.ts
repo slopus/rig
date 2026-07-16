@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import { createRetryableMemo } from "./createRetryableMemo.js";
 import type { TerminalColorScheme, TerminalSnapshot } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -15,7 +16,11 @@ const binaryPath = join(
     "debug",
     process.platform === "win32" ? "rig-gym-terminal.exe" : "rig-gym-terminal",
 );
-let build: Promise<void> | undefined;
+const buildTerminalHelper = createRetryableMemo(() =>
+    execFileAsync("cargo", ["build", "--manifest-path", manifestPath], {
+        maxBuffer: 100 * 1024 * 1024,
+    }).then(() => undefined),
+);
 
 interface HelperSnapshot extends Omit<TerminalSnapshot, "outputRevision"> {
     id: number;
@@ -68,10 +73,7 @@ export class GhosttyTerminal {
         rows: number,
         colorScheme: TerminalColorScheme = "dark",
     ): Promise<GhosttyTerminal> {
-        build ??= execFileAsync("cargo", ["build", "--manifest-path", manifestPath], {
-            maxBuffer: 100 * 1024 * 1024,
-        }).then(() => undefined);
-        await build;
+        await buildTerminalHelper();
         const terminal = new GhosttyTerminal(spawn(binaryPath, [], { stdio: "pipe" }));
         terminal.resize(cols, rows);
         terminal.setColorScheme(colorScheme);
