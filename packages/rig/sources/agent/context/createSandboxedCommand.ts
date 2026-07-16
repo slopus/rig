@@ -1,11 +1,11 @@
-import { createHash } from "node:crypto";
-import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { createSandboxFilesystemConfig } from "./createSandboxFilesystemConfig.js";
+import { materializeSandboxConfig } from "./materializeSandboxConfig.js";
 import type { PermissionMode } from "../../permissions/index.js";
 
 const require = createRequire(import.meta.url);
@@ -35,12 +35,7 @@ export async function createSandboxedCommand(options: {
             sandboxConfigDirectory: configDirectory,
         }),
     };
-    const key = createHash("sha256")
-        .update(`${options.cwd}\0${options.mode}`)
-        .digest("hex")
-        .slice(0, 20);
-    const configPath = join(configDirectory, `${key}.json`);
-    await writeFile(configPath, JSON.stringify(config), { mode: 0o600 });
+    const configPath = await materializeSandboxConfig(configDirectory, config);
 
     const packageEntry = require.resolve("@anthropic-ai/sandbox-runtime");
     const cliPath = join(dirname(packageEntry), "cli.js");
