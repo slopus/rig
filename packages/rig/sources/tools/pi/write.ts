@@ -9,7 +9,7 @@ export const piWriteTool = defineTool({
     name: "write",
     label: "write",
     description:
-        "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+        "Write content to a file. Creates the file if it doesn't exist and automatically creates parent directories. Before overwriting an existing file, use the read tool in the same session. The write will fail if the file has not been read or has changed since it was read.",
     arguments: Type.Object({
         path: Type.String({ description: "Path to the file to write (relative or absolute)" }),
         content: Type.String({ description: "Content to write to the file" }),
