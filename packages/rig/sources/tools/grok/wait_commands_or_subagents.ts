@@ -2,7 +2,7 @@
 import { Type } from "@sinclair/typebox";
 
 import { defineTool } from "../../agent/types.js";
-import { readGrokTask } from "./read_grok_task.js";
+import { waitForGrokTasks } from "./waitForGrokTasks.js";
 
 export const grokWaitCommandsOrSubagentsTool = defineTool({
     name: "wait_commands_or_subagents",
@@ -33,15 +33,15 @@ export const grokWaitCommandsOrSubagentsTool = defineTool({
         ),
     }),
     shouldReviewInAutoMode: () => false,
-    execute: async ({ mode, task_ids, timeout_ms = 30_000 }, context) => {
+    execute: async ({ mode, task_ids, timeout_ms = 30_000 }, context, execution) => {
         const ids = [...new Set(task_ids.map((taskId) => taskId.trim()).filter(Boolean))];
-        const perTaskTimeout = mode === "wait_all" ? timeout_ms : 0;
-        if (mode === "wait_any" && context.subagents !== undefined) {
-            await context.subagents.wait(Math.min(timeout_ms, 60_000));
-        }
-        const results = await Promise.all(
-            ids.map((taskId) => readGrokTask({ context, taskId, timeoutMs: perTaskTimeout })),
-        );
+        const results = await waitForGrokTasks({
+            context,
+            mode,
+            ...(execution.signal === undefined ? {} : { signal: execution.signal }),
+            taskIds: ids,
+            timeoutMs: timeout_ms,
+        });
         return { mode, results };
     },
     toLLM: (result) => [{ type: "text", text: JSON.stringify(result) }],
