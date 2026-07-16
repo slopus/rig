@@ -200,7 +200,7 @@ describe("Amazon Bedrock provider", () => {
         expect(streamRuntime.mock.calls[2]?.[2]?.maxTokens).toBe(32_000);
     });
 
-    it("uses the official OpenAI Bedrock client", () => {
+    it("uses the official OpenAI Bedrock client without automatic request replay", () => {
         const client = createBedrockOpenAIClient({
             bearerToken: "bedrock-token",
             region: "us-east-1",
@@ -208,6 +208,7 @@ describe("Amazon Bedrock provider", () => {
 
         expect(client).toBeInstanceOf(BedrockOpenAI);
         expect(client.baseURL).toBe("https://bedrock-mantle.us-east-1.api.aws/openai/v1");
+        expect(client.maxRetries).toBe(0);
     });
 
     it("uses a custom Mantle endpoint verbatim", () => {

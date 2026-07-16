@@ -10,6 +10,7 @@ export function createBedrockOpenAIClient(options: {
     return new BedrockOpenAI({
         apiKey: options.bearerToken,
         awsRegion: options.region,
+        maxRetries: 0,
         ...(options.endpoint === undefined ? {} : { baseURL: options.endpoint }),
     });
 }
