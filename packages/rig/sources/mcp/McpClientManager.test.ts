@@ -414,6 +414,65 @@ describe("McpClientManager", () => {
         }
     });
 
+    it("keeps superseded connections alive for sessions using their tools", async () => {
+        const root = await mkdtemp(join(tmpdir(), "rig-mcp-reload-"));
+        const cwd = join(root, "workspace");
+        const homeDirectory = join(root, "home");
+        const configPath = join(homeDirectory, ".codex", "config.toml");
+        const fixture = join(
+            dirname(fileURLToPath(import.meta.url)),
+            "testing",
+            "stdioMcpServer.mjs",
+        );
+        const manager = new McpClientManager({
+            env: { RIG_HOME: join(root, "rig-home") } as NodeJS.ProcessEnv,
+            homeDirectory,
+        });
+        await mkdir(dirname(configPath), { recursive: true });
+        await mkdir(cwd, { recursive: true });
+        await writeFile(
+            configPath,
+            `[mcp_servers.shared]\ncommand = "${process.execPath}"\nargs = ["${fixture}"]\n`,
+            "utf8",
+        );
+
+        try {
+            const first = await manager.load(cwd, "full_access", {
+                requestTrust: async () => true,
+            });
+            const originalTool = first.tools.find(
+                (tool) => tool.name === "mcp__shared__echo_value",
+            );
+            if (originalTool === undefined) throw new Error("Expected the original MCP tool.");
+
+            await writeFile(
+                configPath,
+                `[mcp_servers.shared]\ncommand = "${process.execPath}"\nargs = ["${fixture}"]\nenabled_tools = ["echo_value"]\n`,
+                "utf8",
+            );
+            await manager.load(cwd, "full_access", { requestTrust: async () => true });
+
+            const harness = createJustBashToolHarness();
+            const result = await originalTool.execute(
+                { value: "still active" } as never,
+                harness.context,
+                {},
+            );
+            expect(originalTool.toLLM(result as never)).toEqual([
+                { type: "text", text: "Echo: still active" },
+            ]);
+
+            expect(first.release).toBeTypeOf("function");
+            await first.release?.();
+            await expect(
+                originalTool.execute({ value: "released" } as never, harness.context, {}),
+            ).rejects.toThrow();
+        } finally {
+            await manager.close();
+            await rm(root, { force: true, recursive: true });
+        }
+    });
+
     it("keeps an unavailable optional server visible without blocking other tools", async () => {
         const cwd = await mkdtemp(join(tmpdir(), "rig-mcp-client-"));
         const manager = new McpClientManager({

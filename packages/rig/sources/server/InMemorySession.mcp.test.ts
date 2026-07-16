@@ -53,9 +53,11 @@ describe("InMemorySession MCP permissions", () => {
             toUI: () => "changed",
             locks: [],
         });
+        const release = vi.fn(async () => undefined);
         const load = vi.fn<McpToolProvider["load"]>(async (_cwd, permissionMode) =>
             permissionMode === "auto" || permissionMode === "full_access"
                 ? {
+                      release,
                       servers: [{ name: "trusted", status: "connected", toolCount: 1 }],
                       tools: [mcpTool],
                   }
@@ -110,6 +112,7 @@ describe("InMemorySession MCP permissions", () => {
         ]);
 
         await session.changePermissionMode({ permissionMode: "workspace_write" });
+        expect(release).toHaveBeenCalledOnce();
         expect(runtime?.agent.tools.map((tool) => tool.name)).not.toContain(mcpTool.name);
         expect(session.snapshot().mcpServers).toEqual([
             expect.objectContaining({ name: "trusted", status: "blocked" }),

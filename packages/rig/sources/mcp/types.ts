@@ -60,6 +60,8 @@ export interface McpServerSummary {
 }
 
 export interface McpToolLoadResult {
+    /** Release the connection set after these tools are no longer installed in a session. */
+    release?: () => Promise<void>;
     servers: readonly McpServerSummary[];
     tools: readonly AnyDefinedTool[];
 }

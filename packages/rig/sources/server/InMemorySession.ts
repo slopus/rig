@@ -280,6 +280,7 @@ export class InMemorySession {
     #mcpServers: readonly McpServerSummary[] = [];
     #mcpToolNames = new Set<string>();
     #mcpToolProvider: McpToolProvider | undefined;
+    #mcpToolRelease: (() => Promise<void>) | undefined;
     #modelCatalog: ModelCatalog;
     #modelId: string;
     #models: readonly Model[];
@@ -734,6 +735,7 @@ export class InMemorySession {
 
         this.#syncContextMessages();
         void this.#killRuntimeProcesses();
+        this.#releaseMcpToolLease();
         this.#runtime = undefined;
         this.#mcpLoaded = false;
         this.#mcpServers = [];
@@ -1356,6 +1358,7 @@ export class InMemorySession {
     beginShutdown(): Promise<void> {
         if (this.#shutdownCleanup !== undefined) return this.#shutdownCleanup;
         this.#closing = true;
+        this.#releaseMcpToolLease();
         this.#clearMetadataSettlement();
         for (const workflow of this.#workflowRuns.values()) {
             if (workflow.state.status === "running") this.stopWorkflow(workflow.state.runId);
@@ -1525,6 +1528,7 @@ export class InMemorySession {
         }
 
         void this.#killRuntimeProcesses();
+        this.#releaseMcpToolLease();
         this.#runtime = undefined;
         this.#mcpLoaded = false;
         this.#mcpServers = [];
@@ -2144,21 +2148,37 @@ export class InMemorySession {
             permissionMode,
             mcpLoadOptions,
         );
-        if (this.#permissionMode !== permissionMode) return;
-        const baseTools = runtime.agent.tools.filter((tool) => !this.#mcpToolNames.has(tool.name));
-        const baseToolNames = new Set(baseTools.map((tool) => tool.name));
-        const merged = mergeMcpTools(baseTools, loaded);
-        runtime.agent.setTools(merged.tools);
-        this.#mcpToolNames = new Set(
-            merged.tools.filter((tool) => !baseToolNames.has(tool.name)).map((tool) => tool.name),
-        );
-        this.#tools = runtime.agent.tools.map((tool) => tool.name);
-        const serversChanged = JSON.stringify(this.#mcpServers) !== JSON.stringify(merged.servers);
-        this.#mcpServers = merged.servers;
-        this.#mcpLoaded = true;
-        if (serversChanged && merged.servers.length > 0) {
-            this.#append("mcp_servers_changed", { servers: merged.servers });
+        if (this.#permissionMode !== permissionMode) {
+            await loaded.release?.().catch(() => undefined);
+            return;
         }
+        const previousRelease = this.#mcpToolRelease;
+        try {
+            const baseTools = runtime.agent.tools.filter(
+                (tool) => !this.#mcpToolNames.has(tool.name),
+            );
+            const baseToolNames = new Set(baseTools.map((tool) => tool.name));
+            const merged = mergeMcpTools(baseTools, loaded);
+            runtime.agent.setTools(merged.tools);
+            this.#mcpToolNames = new Set(
+                merged.tools
+                    .filter((tool) => !baseToolNames.has(tool.name))
+                    .map((tool) => tool.name),
+            );
+            this.#tools = runtime.agent.tools.map((tool) => tool.name);
+            const serversChanged =
+                JSON.stringify(this.#mcpServers) !== JSON.stringify(merged.servers);
+            this.#mcpServers = merged.servers;
+            this.#mcpLoaded = true;
+            this.#mcpToolRelease = loaded.release;
+            if (serversChanged && merged.servers.length > 0) {
+                this.#append("mcp_servers_changed", { servers: merged.servers });
+            }
+        } catch (error) {
+            await loaded.release?.().catch(() => undefined);
+            throw error;
+        }
+        await previousRelease?.().catch(() => undefined);
     }
 
     async #requestMcpTrust(request: McpServerTrustRequest, signal?: AbortSignal): Promise<boolean> {
@@ -2179,7 +2199,14 @@ export class InMemorySession {
         this.#mcpLoaded = false;
         this.#mcpServers = [];
         this.#mcpToolNames.clear();
+        this.#releaseMcpToolLease();
         this.#append("mcp_servers_changed", { servers: [] });
+    }
+
+    #releaseMcpToolLease(): void {
+        const release = this.#mcpToolRelease;
+        this.#mcpToolRelease = undefined;
+        void release?.().catch(() => undefined);
     }
 
     #append<TType extends SessionEvent["type"]>(

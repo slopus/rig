@@ -52,10 +52,14 @@ export interface McpClientManagerOptions {
 }
 
 export class McpClientManager implements McpToolProvider {
+    #allConnectionSets = new Set<Promise<LoadedConnectionSet>>();
+    #closingConnectionSets = new Map<Promise<LoadedConnectionSet>, Promise<void>>();
+    #connectionReferences = new Map<Promise<LoadedConnectionSet>, number>();
     #connectionSets = new Map<string, Promise<LoadedConnectionSet>>();
     #connectionKeysByCwd = new Map<string, string>();
     #env: NodeJS.ProcessEnv;
     #homeDirectory: string | undefined;
+    #retiredConnectionSets = new Set<Promise<LoadedConnectionSet>>();
     #trustStore: McpTrustStore;
 
     constructor(options: McpClientManagerOptions = {}) {
@@ -89,23 +93,32 @@ export class McpClientManager implements McpToolProvider {
             const previous = this.#connectionSets.get(previousKey);
             this.#connectionSets.delete(previousKey);
             this.#connectionKeysByCwd.delete(cwd);
-            if (previous !== undefined) await closeConnectionSet(previous);
+            if (previous !== undefined) await this.#retireConnectionSet(previous);
         }
         let pending = this.#connectionSets.get(connectionKey);
         if (pending === undefined) {
             pending = this.#loadConnectionSet(cwd, entries, options);
+            this.#allConnectionSets.add(pending);
             this.#connectionSets.set(connectionKey, pending);
             this.#connectionKeysByCwd.set(cwd, connectionKey);
         }
+        const release = this.#retainConnectionSet(pending);
         let loaded: LoadedConnectionSet;
         try {
             loaded = await pending;
         } catch (error) {
             this.#evictConnectionSet(cwd, connectionKey, pending);
+            await release();
+            await this.#closeConnectionSet(pending);
             throw error;
         }
-        if (!loaded.cacheable) this.#evictConnectionSet(cwd, connectionKey, pending);
-        return { servers: loaded.servers, tools: loaded.tools };
+        if (!loaded.cacheable) {
+            this.#evictConnectionSet(cwd, connectionKey, pending);
+            await release();
+            await this.#closeConnectionSet(pending);
+            return { servers: loaded.servers, tools: loaded.tools };
+        }
+        return { release, servers: loaded.servers, tools: loaded.tools };
     }
 
     #evictConnectionSet(
@@ -121,16 +134,52 @@ export class McpClientManager implements McpToolProvider {
     }
 
     async close(): Promise<void> {
-        const sets = await Promise.allSettled(this.#connectionSets.values());
+        const sets = [...this.#allConnectionSets];
         this.#connectionSets.clear();
         this.#connectionKeysByCwd.clear();
-        await Promise.allSettled(
-            sets.flatMap((set) =>
-                set.status === "fulfilled"
-                    ? set.value.connections.map((connection) => connection.close())
-                    : [],
-            ),
-        );
+        await Promise.allSettled(sets.map((set) => this.#closeConnectionSet(set)));
+        this.#connectionReferences.clear();
+        this.#retiredConnectionSets.clear();
+    }
+
+    #retainConnectionSet(pending: Promise<LoadedConnectionSet>): () => Promise<void> {
+        this.#connectionReferences.set(pending, (this.#connectionReferences.get(pending) ?? 0) + 1);
+        let released = false;
+        return async () => {
+            if (released) return;
+            released = true;
+            const remaining = (this.#connectionReferences.get(pending) ?? 1) - 1;
+            if (remaining > 0) {
+                this.#connectionReferences.set(pending, remaining);
+                return;
+            }
+            this.#connectionReferences.delete(pending);
+            if (this.#retiredConnectionSets.delete(pending)) {
+                await this.#closeConnectionSet(pending);
+            }
+        };
+    }
+
+    async #retireConnectionSet(pending: Promise<LoadedConnectionSet>): Promise<void> {
+        if ((this.#connectionReferences.get(pending) ?? 0) > 0) {
+            this.#retiredConnectionSets.add(pending);
+            return;
+        }
+        await this.#closeConnectionSet(pending);
+    }
+
+    async #closeConnectionSet(pending: Promise<LoadedConnectionSet>): Promise<void> {
+        let closing = this.#closingConnectionSets.get(pending);
+        if (closing === undefined) {
+            closing = closeConnectionSet(pending).finally(() => {
+                this.#allConnectionSets.delete(pending);
+                this.#closingConnectionSets.delete(pending);
+                this.#connectionReferences.delete(pending);
+                this.#retiredConnectionSets.delete(pending);
+            });
+            this.#closingConnectionSets.set(pending, closing);
+        }
+        await closing;
     }
 
     async #loadConnectionSet(
