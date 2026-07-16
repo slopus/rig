@@ -1,14 +1,18 @@
 import { humanizeToolName } from "./humanizeToolName.js";
+import type { ToolResultBlock } from "../agent/types.js";
 
-export function formatToolResultForDisplay(display: string, toolName: string): string {
-    if (display === `Unknown tool '${toolName}' requested by model`) {
-        return `The model requested "${humanizeToolName(toolName)}", but that tool is not available in this session.`;
+export function formatToolResultForDisplay(
+    block: Pick<ToolResultBlock, "display" | "failure" | "toolName">,
+): string {
+    if (block.failure?.kind === "tool_unavailable") {
+        return `The model requested "${humanizeToolName(block.toolName)}", but that tool is not available in this session.`;
     }
 
-    if (display === `Invalid arguments for tool '${toolName}'`) {
-        return `The model supplied invalid information for ${humanizeToolName(toolName)}.`;
+    if (block.failure?.kind === "invalid_arguments") {
+        return `The model supplied invalid information for ${humanizeToolName(block.toolName)}.`;
     }
 
-    const failurePrefix = `Tool '${toolName}' failed: `;
-    return display.startsWith(failurePrefix) ? display.slice(failurePrefix.length) : display;
+    return block.failure?.kind === "execution_failed" && block.failure.message !== undefined
+        ? block.failure.message
+        : block.display;
 }

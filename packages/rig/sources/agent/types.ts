@@ -42,6 +42,12 @@ export interface ToolCallBlock {
 }
 
 /** Result of executing a tool call, embedded in an agent message. */
+export interface ToolResultFailure {
+    kind: "execution_failed" | "interrupted" | "invalid_arguments" | "tool_unavailable";
+    /** Human-readable cause for failures whose display includes tool-specific context. */
+    message?: string;
+}
+
 export interface ToolResultBlock {
     type: "tool_result";
     toolCallId: string;
@@ -51,6 +57,8 @@ export interface ToolResultBlock {
     /** Short human-facing tool summary produced by the tool's `toUI` serializer. */
     display: string;
     isError?: boolean;
+    /** Stable failure state used by transcript rendering without parsing display text. */
+    failure?: ToolResultFailure;
     /** Durable model-invisible data used for rich transcript rendering. */
     presentation?: ToolResultPresentation;
     /** Exact user-authored or user-selected content that Auto review may trust. */

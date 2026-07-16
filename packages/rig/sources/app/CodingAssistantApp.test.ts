@@ -5446,6 +5446,26 @@ describe("CodingAssistantApp", () => {
             createdAt: 10,
             data: {
                 event: {
+                    result: {
+                        display: "Cancelled at the user's request.",
+                        failure: { kind: "interrupted" },
+                        isError: true,
+                        toolCallId: interruptedToolCall.id,
+                        toolName: interruptedToolCall.name,
+                        type: "tool_result",
+                    },
+                    type: "tool_execution_end",
+                },
+                runId: "run-2",
+            },
+            id: "event-interrupted-end",
+            sessionId: "session-1",
+            type: "agent_event",
+        });
+        app.applySessionEvent({
+            createdAt: 11,
+            data: {
+                event: {
                     error: {
                         api: "test",
                         content: [],
@@ -5466,7 +5486,7 @@ describe("CodingAssistantApp", () => {
             type: "agent_event",
         });
         app.applySessionEvent({
-            createdAt: 11,
+            createdAt: 12,
             data: {
                 agentRunId: "agent-run-2",
                 modelLocked: false,
@@ -5488,7 +5508,7 @@ describe("CodingAssistantApp", () => {
         );
 
         app.applySessionEvent({
-            createdAt: 12,
+            createdAt: 13,
             data: { runId: "run-3" },
             id: "event-later-run-start",
             sessionId: "session-1",
@@ -5499,7 +5519,7 @@ describe("CodingAssistantApp", () => {
         expect(laterRun).not.toContain("• Running sleep 10");
         expect(laterRun).not.toContain("• Ran sleep 10");
         app.applySessionEvent({
-            createdAt: 13,
+            createdAt: 14,
             data: {
                 agentRunId: "agent-run-3",
                 modelLocked: false,

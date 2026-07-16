@@ -4536,7 +4536,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #finishToolResult(
         block: Pick<
             ToolResultBlock,
-            "display" | "isError" | "presentation" | "toolCallId" | "toolName"
+            "display" | "failure" | "isError" | "presentation" | "toolCallId" | "toolName"
         > &
             Partial<Pick<ToolResultBlock, "rendered">>,
     ): void {
@@ -4545,12 +4545,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#awaitingApprovalToolCallIds.delete(block.toolCallId);
         this.#runningToolCallIds.delete(block.toolCallId);
         this.#toolStatusByCallId.delete(block.toolCallId);
-        if (
-            block.isError === true &&
-            (block.display === "Interrupted by user." ||
-                ((block.toolName === "wait_for_workflow" || block.toolName === "WaitForWorkflow") &&
-                    block.display.includes("workflow wait was cancelled by the user")))
-        ) {
+        if (block.isError === true && block.failure?.kind === "interrupted") {
             this.#stoppedToolCallIds.add(block.toolCallId);
         } else {
             this.#stoppedToolCallIds.delete(block.toolCallId);
@@ -4611,7 +4606,7 @@ export class CodingAssistantApp implements Component, Focusable {
                     status: block.isError === true ? "error" : "success",
                 };
             }
-            if (block.display === `Unknown tool '${block.toolName}' requested by model`) {
+            if (block.failure?.kind === "tool_unavailable") {
                 existing.text = this.#toolDisplayName(block.toolName);
             }
             existing.detail = detail;
@@ -4756,9 +4751,9 @@ export class CodingAssistantApp implements Component, Focusable {
         return humanizeToolName(toolName);
     }
 
-    #formatToolResult(block: Pick<ToolResultBlock, "display" | "toolName">): string {
+    #formatToolResult(block: Pick<ToolResultBlock, "display" | "failure" | "toolName">): string {
         const display = block.display.length > 0 ? block.display : "(empty result)";
-        return this.#singleLine(formatToolResultForDisplay(display, block.toolName));
+        return this.#singleLine(formatToolResultForDisplay({ ...block, display }));
     }
 
     #formatError(error: unknown): string {

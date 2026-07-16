@@ -1115,6 +1115,80 @@ describe("Agent", () => {
         });
     });
 
+    it("emits structured tool failure details independently of display wording", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        let requestCount = 0;
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                requestCount += 1;
+                return streamFor({
+                    role: "assistant",
+                    content:
+                        requestCount === 1
+                            ? [
+                                  {
+                                      type: "toolCall",
+                                      id: "call-failing",
+                                      name: "failing",
+                                      arguments: {},
+                                  },
+                              ]
+                            : [{ type: "text", text: "done" }],
+                    api: "test",
+                    provider: "codex",
+                    model: model.id,
+                    usage: zeroUsage(),
+                    stopReason: requestCount === 1 ? "toolUse" : "stop",
+                    timestamp: requestCount,
+                });
+            },
+        });
+        const failingTool = defineTool({
+            name: "failing",
+            label: "Failing",
+            description: "Fails with a test error.",
+            arguments: Type.Object({}),
+            returnType: Type.Object({}),
+            shouldReviewInAutoMode: () => false,
+            execute() {
+                throw new Error("test cause");
+            },
+            toLLM: () => [],
+            toUI: () => "unused",
+            locks: [],
+        });
+        const toolResults: unknown[] = [];
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            tools: [failingTool],
+            printToConsole: false,
+            onEvent(event) {
+                if (event.type === "tool_execution_end") toolResults.push(event.result);
+            },
+        });
+
+        await agent.send("run the failing tool");
+
+        expect(toolResults).toEqual([
+            expect.objectContaining({
+                display: "Tool 'failing' failed: test cause",
+                failure: { kind: "execution_failed", message: "test cause" },
+                isError: true,
+                toolCallId: "call-failing",
+            }),
+        ]);
+    });
+
     it("commits pending steering when inference is aborted", async () => {
         const model = defineModel({
             id: "openai/gpt-test",

@@ -21,6 +21,7 @@ import type {
     AnyDefinedTool,
     ContentBlock,
     Message,
+    ToolResultFailure,
     ToolResultBlock,
     UserMessage,
 } from "./types.js";
@@ -107,7 +108,13 @@ export type AgentLoopEvent =
           type: "tool_execution_end";
           result: Pick<
               ToolResultBlock,
-              "display" | "isError" | "presentation" | "toolCallId" | "toolName" | "type"
+              | "display"
+              | "failure"
+              | "isError"
+              | "presentation"
+              | "toolCallId"
+              | "toolName"
+              | "type"
           >;
       }
     | {
@@ -526,6 +533,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                             toolCallId: result.toolCallId,
                             toolName: result.toolName,
                             display: result.display,
+                            ...(result.failure === undefined ? {} : { failure: result.failure }),
                             ...(result.isError === undefined ? {} : { isError: result.isError }),
                             ...(result.presentation === undefined
                                 ? {}
@@ -866,11 +874,17 @@ async function executeToolCall(
 ): Promise<ToolResultBlock> {
     const tool = toolsByName.get(toolCall.name);
     if (!tool) {
-        return errorToolResultBlock(toolCall, `Unknown tool '${toolCall.name}' requested by model`);
+        return errorToolResultBlock(
+            toolCall,
+            `Unknown tool '${toolCall.name}' requested by model`,
+            { kind: "tool_unavailable" },
+        );
     }
 
     if (!Value.Check(tool.arguments, toolCall.arguments)) {
-        return errorToolResultBlock(toolCall, `Invalid arguments for tool '${tool.name}'`);
+        return errorToolResultBlock(toolCall, `Invalid arguments for tool '${tool.name}'`, {
+            kind: "invalid_arguments",
+        });
     }
 
     if (
@@ -994,14 +1008,19 @@ async function executeToolCall(
         };
     } catch (error) {
         await options.onError?.(error);
-        return errorToolResultBlock(
-            toolCall,
-            `Tool '${tool.name}' failed: ${errorToMessage(error)}`,
-        );
+        const message = errorToMessage(error);
+        return errorToolResultBlock(toolCall, `Tool '${tool.name}' failed: ${message}`, {
+            kind: "execution_failed",
+            message,
+        });
     }
 }
 
-function errorToolResultBlock(toolCall: ProviderToolCall, message: string): ToolResultBlock {
+function errorToolResultBlock(
+    toolCall: ProviderToolCall,
+    message: string,
+    failure?: ToolResultFailure,
+): ToolResultBlock {
     return {
         type: "tool_result",
         toolCallId: toolCall.id,
@@ -1014,6 +1033,7 @@ function errorToolResultBlock(toolCall: ProviderToolCall, message: string): Tool
         ],
         display: message,
         isError: true,
+        ...(failure === undefined ? {} : { failure }),
     };
 }
 
@@ -1022,9 +1042,10 @@ function interruptedToolResultBlock(toolCall: ProviderToolCall): ToolResultBlock
         return errorToolResultBlock(
             toolCall,
             "The workflow wait was cancelled by the user. The workflow is still running in the background.",
+            { kind: "interrupted" },
         );
     }
-    return errorToolResultBlock(toolCall, "Interrupted by user.");
+    return errorToolResultBlock(toolCall, "Interrupted by user.", { kind: "interrupted" });
 }
 
 function errorToMessage(error: unknown): string {
