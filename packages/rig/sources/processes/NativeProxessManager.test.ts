@@ -59,6 +59,20 @@ describe("NativeProxessManager", () => {
         expect(manager.activeCount()).toBe(0);
     });
 
+    it("retains the newest output when a command exceeds its byte cap", async () => {
+        const cwd = await makeTempDir();
+        const manager = new NativeProxessManager();
+
+        const result = await manager.run({
+            command: "printf 'oldest-newest'",
+            cwd,
+            maxOutputBytes: 6,
+            timeoutMs: 2_000,
+        });
+
+        expect(result.stdout).toBe("newest");
+    });
+
     it("kills timed out commands and removes them from tracking", async () => {
         const cwd = await makeTempDir();
         const manager = new NativeProxessManager();

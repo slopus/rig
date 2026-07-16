@@ -120,6 +120,8 @@ export class ManagedProcess {
     #resolveWait!: (result: ProcessRunResult) => void;
     #stdout: Buffer<ArrayBufferLike> = Buffer.alloc(0);
     #stderr: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+    #stdoutBytes = 0;
+    #stderrBytes = 0;
     #status: ManagedProcessStatus = "running";
     #exitCode: number | null = null;
     #exitSignal: NodeJS.Signals | null = null;
@@ -164,6 +166,34 @@ export class ManagedProcess {
             status: this.#status,
             stdout: this.#stdout.toString("utf8"),
             stderr: this.#stderr.toString("utf8"),
+        };
+    }
+
+    readOutput(
+        stdoutOffset: number,
+        stderrOffset: number,
+    ): ProcessSnapshot & {
+        stderrDelta: string;
+        stderrOffset: number;
+        stdoutDelta: string;
+        stdoutOffset: number;
+    } {
+        const stdoutStartOffset = this.#stdoutBytes - this.#stdout.length;
+        const stderrStartOffset = this.#stderrBytes - this.#stderr.length;
+        const stdoutDeltaOffset = Math.max(
+            0,
+            Math.min(this.#stdout.length, stdoutOffset - stdoutStartOffset),
+        );
+        const stderrDeltaOffset = Math.max(
+            0,
+            Math.min(this.#stderr.length, stderrOffset - stderrStartOffset),
+        );
+        return {
+            ...this.snapshot(),
+            stderrDelta: this.#stderr.subarray(stderrDeltaOffset).toString("utf8"),
+            stderrOffset: this.#stderrBytes,
+            stdoutDelta: this.#stdout.subarray(stdoutDeltaOffset).toString("utf8"),
+            stdoutOffset: this.#stdoutBytes,
         };
     }
 
@@ -232,6 +262,7 @@ export class ManagedProcess {
     }
 
     #onStdoutData = (chunk: Buffer): void => {
+        this.#stdoutBytes += chunk.length;
         this.#stdout = appendCapped(this.#stdout, chunk, this.#maxOutputBytes);
         if (this.#exitCode !== null || this.#exitSignal !== null) {
             this.#armPostExitTimer();
@@ -239,6 +270,7 @@ export class ManagedProcess {
     };
 
     #onStderrData = (chunk: Buffer): void => {
+        this.#stderrBytes += chunk.length;
         this.#stderr = appendCapped(this.#stderr, chunk, this.#maxOutputBytes);
         if (this.#exitCode !== null || this.#exitSignal !== null) {
             this.#armPostExitTimer();
@@ -256,7 +288,9 @@ export class ManagedProcess {
     };
 
     #onError = (error: Error): void => {
-        this.#stderr = appendCapped(this.#stderr, Buffer.from(error.message), this.#maxOutputBytes);
+        const chunk = Buffer.from(error.message);
+        this.#stderrBytes += chunk.length;
+        this.#stderr = appendCapped(this.#stderr, chunk, this.#maxOutputBytes);
         this.#finalize(null, null);
     };
 
@@ -366,7 +400,7 @@ function appendCapped(
     maxBytes: number,
 ): Buffer<ArrayBufferLike> {
     const combined = Buffer.concat([buffer, chunk]);
-    return combined.length <= maxBytes ? combined : combined.subarray(0, maxBytes);
+    return combined.length <= maxBytes ? combined : combined.subarray(combined.length - maxBytes);
 }
 
 function abortedResult(options: ProcessRunOptions): ProcessRunResult {

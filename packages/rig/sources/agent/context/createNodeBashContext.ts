@@ -77,11 +77,12 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
             });
         }
 
-        const processSnapshot = session.result ?? session.process.snapshot();
-        const stdoutDelta = processSnapshot.stdout.slice(session.stdoutOffset);
-        const stderrDelta = processSnapshot.stderr.slice(session.stderrOffset);
-        session.stdoutOffset = processSnapshot.stdout.length;
-        session.stderrOffset = processSnapshot.stderr.length;
+        const processSnapshot = session.process.readOutput(
+            session.stdoutOffset,
+            session.stderrOffset,
+        );
+        session.stdoutOffset = processSnapshot.stdoutOffset;
+        session.stderrOffset = processSnapshot.stderrOffset;
         return {
             command: session.command,
             cwd: session.cwd,
@@ -94,9 +95,9 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
                       ? "killed"
                       : "completed",
             stderr: processSnapshot.stderr,
-            stderrDelta,
+            stderrDelta: processSnapshot.stderrDelta,
             stdout: processSnapshot.stdout,
-            stdoutDelta,
+            stdoutDelta: processSnapshot.stdoutDelta,
             timedOut: session.timedOut,
         };
     };
