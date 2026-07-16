@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 
+import { isAlreadyPublishedError } from "./release/isAlreadyPublishedError.js";
 import { readPackageManifest } from "./release/readPackageManifest.js";
 import { runCommand } from "./release/runCommand.js";
 
@@ -124,11 +125,7 @@ async function release(): Promise<void> {
         cwd: PACKAGE_DIRECTORY,
     });
     if (publishResult.status !== 0) {
-        if (
-            !/cannot publish over|previously published|EPUBLISHCONFLICT|403/.test(
-                publishResult.stderr,
-            )
-        ) {
+        if (!isAlreadyPublishedError(publishResult.stderr)) {
             console.error(publishResult.stderr);
             throw new Error("Command failed: pnpm publish --access public");
         }

@@ -14,9 +14,10 @@
         "release": "tsx scripts/release.ts",
         "start": "node packages/rig/dist/main.js",
         "start:build": "pnpm build && pnpm start",
-        "test": "pnpm --recursive --filter './packages/**' run test",
+        "test": "pnpm run test:scripts && pnpm --recursive --filter './packages/**' run test",
         "test:gym": "pnpm --filter @slopus/rig-gym-tests test",
         "test:live": "pnpm --filter @slopus/rig test:live",
+        "test:scripts": "tsx --test scripts/release/*.test.ts",
         "test:watch": "pnpm --filter @slopus/rig test:watch"
     },
     "devDependencies": {
