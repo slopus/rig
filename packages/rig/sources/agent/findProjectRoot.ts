@@ -9,8 +9,13 @@ export async function findProjectRoot(fs: FileSystemContext): Promise<string | u
 
     for (;;) {
         for (const marker of PROJECT_ROOT_MARKERS) {
-            if (await fs.exists(join(cursor, marker))) {
-                return cursor;
+            try {
+                if (await fs.exists(join(cursor, marker))) {
+                    return cursor;
+                }
+            } catch {
+                // Optional discovery must not fail a turn when an ancestor is outside the
+                // filesystem context's readable boundary.
             }
         }
 
