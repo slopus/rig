@@ -1,9 +1,6 @@
 import type { Message } from "../agent/types.js";
 import type { Model, Provider } from "../providers/types.js";
-import {
-    AUTO_PERMISSION_USER_EVIDENCE_OMITTED,
-    createAutoPermissionTranscript,
-} from "./createAutoPermissionTranscript.js";
+import { createAutoPermissionTranscript } from "./createAutoPermissionTranscript.js";
 import {
     parseAutoPermissionReview,
     type AutoPermissionReview,
@@ -32,7 +29,6 @@ export async function reviewAutoPermission(options: {
     toolName: string;
 }): Promise<AutoPermissionReview> {
     const transcript = createAutoPermissionTranscript(options.messages);
-    const incompleteUserEvidence = transcript.includes(AUTO_PERMISSION_USER_EVIDENCE_OMITTED);
     const action = safeJson({ tool: options.toolName, arguments: options.args });
     try {
         const stream = options.provider.stream(
@@ -42,7 +38,7 @@ export async function reviewAutoPermission(options: {
                 messages: [
                     {
                         role: "user",
-                        content: `<conversation>\n${transcript}\n</conversation>\n\n<proposed_action>\n${action}\n</proposed_action>`,
+                        content: `<conversation>\n${transcript.text}\n</conversation>\n\n<proposed_action>\n${action}\n</proposed_action>`,
                         timestamp: options.now(),
                     },
                 ],
@@ -68,7 +64,7 @@ export async function reviewAutoPermission(options: {
         if (review?.decision === "allow") {
             // Routine low-risk work does not depend on historical authorization. Actions with
             // meaningful impact must still fail closed when that evidence is incomplete.
-            if (incompleteUserEvidence && review.risk !== "low") {
+            if (transcript.userEvidenceOmitted && review.risk !== "low") {
                 return incompleteUserEvidenceReview(review.risk);
             }
             if (!shouldAllowAutoPermissionReview(review)) {

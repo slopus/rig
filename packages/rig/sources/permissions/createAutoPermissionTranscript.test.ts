@@ -83,7 +83,7 @@ describe("createAutoPermissionTranscript", () => {
             },
         ];
 
-        const transcript = createAutoPermissionTranscript(messages);
+        const transcript = createAutoPermissionTranscript(messages).text;
 
         expect(transcript).toContain("DURABLE_USER_AUTHORIZATION");
         expect(transcript).toContain("User response through request_user_input");
@@ -153,7 +153,7 @@ describe("createAutoPermissionTranscript", () => {
             },
         ];
 
-        const transcript = createAutoPermissionTranscript(messages);
+        const transcript = createAutoPermissionTranscript(messages).text;
 
         expect(transcript).toContain(
             'User response through AskUserQuestion:\n{"answers":["Dark"]}',
@@ -177,8 +177,9 @@ describe("createAutoPermissionTranscript", () => {
             ],
         }));
 
-        expect(createAutoPermissionTranscript(messages)).toContain(
-            AUTO_PERMISSION_USER_EVIDENCE_OMITTED,
-        );
+        const transcript = createAutoPermissionTranscript(messages);
+
+        expect(transcript.text).toContain(AUTO_PERMISSION_USER_EVIDENCE_OMITTED);
+        expect(transcript.userEvidenceOmitted).toBe(true);
     });
 });

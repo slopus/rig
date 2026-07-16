@@ -7,6 +7,11 @@ interface TranscriptEntry {
     trustedUserEvidence: boolean;
 }
 
+export interface AutoPermissionTranscript {
+    text: string;
+    userEvidenceOmitted: boolean;
+}
+
 const MAX_ENTRY_CHARACTERS = 8_000;
 const MAX_MESSAGE_CHARACTERS = 40_000;
 const MAX_TOOL_CHARACTERS = 40_000;
@@ -14,7 +19,9 @@ const MAX_RECENT_UNTRUSTED_MESSAGES = 40;
 export const AUTO_PERMISSION_USER_EVIDENCE_OMITTED =
     "[Auto permission review has incomplete user evidence]";
 
-export function createAutoPermissionTranscript(messages: readonly Message[]): string {
+export function createAutoPermissionTranscript(
+    messages: readonly Message[],
+): AutoPermissionTranscript {
     const entries = collectEntries(messages);
     const selected = new Set<number>();
     let messageCharacters = selectTrustedUserEvidence(entries, selected);
@@ -55,7 +62,10 @@ export function createAutoPermissionTranscript(messages: readonly Message[]): st
         );
     }
     if (omittedUserEvidence) retained.push(AUTO_PERMISSION_USER_EVIDENCE_OMITTED);
-    return retained.join("\n\n");
+    return {
+        text: retained.join("\n\n"),
+        userEvidenceOmitted: omittedUserEvidence,
+    };
 }
 
 function collectEntries(messages: readonly Message[]): TranscriptEntry[] {
