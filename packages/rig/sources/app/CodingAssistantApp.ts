@@ -1584,14 +1584,6 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#appendEntry({ role: "user", text: prompt });
             submission.transcriptAppended = true;
         }
-        if (this.#running && !this.#sessionBacked) {
-            this.#appendEntry({
-                role: "event",
-                title: "queue",
-                text: `Queued behind the active run.`,
-            });
-        }
-
         this.#pendingPrompts.push(submission);
         this.#startDrainQueue();
     }
