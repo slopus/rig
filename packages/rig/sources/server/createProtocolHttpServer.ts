@@ -196,7 +196,10 @@ async function handleRequest(
 
     if (request.method === "POST" && route.name === "shutdown") {
         taskDrain?.beginClose();
-        sendJson<ShutdownServerResponse>(response, 202, { shuttingDown: true });
+        sendJson<ShutdownServerResponse>(response, 202, {
+            pid: process.pid,
+            shuttingDown: true,
+        });
         setImmediate(() => onShutdown?.());
         return;
     }

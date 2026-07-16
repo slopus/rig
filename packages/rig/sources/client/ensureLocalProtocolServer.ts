@@ -4,6 +4,7 @@ import { open } from "node:fs/promises";
 import {
     getEnvironmentLocalServerPaths,
     prepareLocalServerDirectory,
+    readLocalServerProcessId,
     readLocalServerToken,
     removeStaleSocket,
     writeLocalServerToken,
@@ -13,6 +14,9 @@ import { daemonIdentitiesMatch, getDaemonIdentity } from "../daemon/index.js";
 import type { DaemonIdentity } from "../protocol/index.js";
 import { ProtocolHttpClient } from "./ProtocolHttpClient.js";
 import { loadDaemonSettings } from "../config/index.js";
+import { waitForProcessExit } from "../processes/index.js";
+
+const DAEMON_SHUTDOWN_TIMEOUT_MS = 10_000;
 
 export interface LocalProtocolServerConnection {
     client: ProtocolHttpClient;
@@ -80,7 +84,7 @@ export async function ensureLocalProtocolServer(
                 }
             }
             options.onStatus?.("Restarting local daemon.");
-            await stopIncompatibleDaemon(client);
+            await stopIncompatibleDaemon(client, paths.registryPath);
         }
     }
 
@@ -111,9 +115,26 @@ async function readHealth(
     }
 }
 
-async function stopIncompatibleDaemon(client: ProtocolHttpClient): Promise<void> {
-    await client.shutdown();
-    await delay(100);
+async function stopIncompatibleDaemon(
+    client: ProtocolHttpClient,
+    registryPath: string,
+): Promise<void> {
+    const registeredProcessId = await readLocalServerProcessId(registryPath);
+    const response = await client.shutdown();
+    const processId =
+        response.pid !== undefined && Number.isSafeInteger(response.pid) && response.pid > 0
+            ? response.pid
+            : registeredProcessId;
+    if (processId === undefined) {
+        throw new Error(
+            "Rig could not identify the running daemon process, so it did not start a replacement. Stop the daemon, then try again.",
+        );
+    }
+    if (!(await waitForProcessExit(processId, DAEMON_SHUTDOWN_TIMEOUT_MS))) {
+        throw new Error(
+            "Timed out while waiting for the existing local daemon to stop. Rig did not start a replacement.",
+        );
+    }
 }
 
 async function spawnLocalServer(paths: LocalServerPaths): Promise<void> {

@@ -336,6 +336,7 @@ export interface SearchFilesResponse {
 }
 
 export interface ShutdownServerResponse {
+    pid?: number;
     shuttingDown: boolean;
 }
 

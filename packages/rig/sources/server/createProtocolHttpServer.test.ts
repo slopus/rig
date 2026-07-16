@@ -1237,7 +1237,10 @@ describe("createProtocolHttpServer", () => {
             },
         });
         try {
-            await expect(client.shutdown()).resolves.toEqual({ shuttingDown: true });
+            await expect(client.shutdown()).resolves.toEqual({
+                pid: process.pid,
+                shuttingDown: true,
+            });
             await new Promise((resolve) => setImmediate(resolve));
 
             expect(shutdownRequested).toBe(true);
@@ -1252,7 +1255,10 @@ describe("createProtocolHttpServer", () => {
         try {
             const created = await client.createSession({ cwd: "/tmp/rig-closing-test" });
 
-            await expect(client.shutdown()).resolves.toEqual({ shuttingDown: true });
+            await expect(client.shutdown()).resolves.toEqual({
+                pid: process.pid,
+                shuttingDown: true,
+            });
             await expect(
                 client.submitMessage(created.session.id, { text: "Too late" }),
             ).rejects.toThrow("local daemon is shutting down");
