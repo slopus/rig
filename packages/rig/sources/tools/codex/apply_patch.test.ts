@@ -731,6 +731,29 @@ describe("codex apply_patch tool", () => {
         expect(result.files[0]?.hunks[0]).toMatchObject({ newStart: 3, oldStart: 3 });
     });
 
+    it("applies hunks by file position when an append precedes an earlier edit", async () => {
+        const harness = createJustBashToolHarness({
+            files: { "/workspace/order.txt": "A\nB\nC\n" },
+        });
+
+        await harness.runTool(codexApplyPatchTool, {
+            workdir: "/workspace",
+            patch: [
+                "*** Begin Patch",
+                "*** Update File: order.txt",
+                "@@",
+                "+X",
+                "@@",
+                "-A",
+                "+A1",
+                "+A2",
+                "*** End Patch",
+            ].join("\n"),
+        });
+
+        expect(await harness.readFile("/workspace/order.txt")).toBe("A1\nA2\nB\nC\nX\n");
+    });
+
     it("resolves a relative workdir inside the filesystem context", async () => {
         const harness = createJustBashToolHarness();
 

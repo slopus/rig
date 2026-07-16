@@ -460,7 +460,10 @@ function simulateUpdateFilePatch(
     }
 
     const contentLines = [...originalLines];
-    for (const replacement of [...replacements].reverse()) {
+    const replacementsByPosition = [...replacements].sort(
+        (left, right) => left.start - right.start,
+    );
+    for (const replacement of replacementsByPosition.reverse()) {
         contentLines.splice(replacement.start, replacement.oldLength, ...replacement.newLines);
     }
     const content = joinContentDocument(contentLines, document.eol, document.hasFinalNewline);
