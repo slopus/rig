@@ -60,7 +60,7 @@ import { parseGlobalEventCursor } from "./parseGlobalEventCursor.js";
 import { parseGlobalEventLimit } from "./parseGlobalEventLimit.js";
 import { sendJson } from "./sendJson.js";
 import { streamGlobalEvents } from "./streamGlobalEvents.js";
-import { isPermissionMode } from "../permissions/index.js";
+import { INVALID_PERMISSION_MODE_MESSAGE, isPermissionMode } from "../permissions/index.js";
 import { isGoalStatus } from "../goals/index.js";
 import { resolveDockerExecutionConfig, validateDockerExecutionConfig } from "../execution/index.js";
 import type { DockerExecutionConfig } from "../execution/index.js";
@@ -346,7 +346,7 @@ async function handleRequest(
         }
         if (body.permissionMode !== undefined && !isPermissionMode(body.permissionMode)) {
             sendJson(response, 400, {
-                error: "Permission mode must be Auto, Workspace write, Read only, or Full access.",
+                error: INVALID_PERMISSION_MODE_MESSAGE,
             });
             return;
         }
@@ -637,7 +637,7 @@ async function handleRequest(
         const body = await readJson<ChangePermissionModeRequest>(request);
         if (!isPermissionMode(body.permissionMode)) {
             sendJson(response, 400, {
-                error: "Permission mode must be Auto, Workspace write, Read only, or Full access.",
+                error: INVALID_PERMISSION_MODE_MESSAGE,
             });
             return;
         }

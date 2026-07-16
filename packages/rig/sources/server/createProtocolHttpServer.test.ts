@@ -980,7 +980,7 @@ describe("createProtocolHttpServer", () => {
                     permissionMode: "unrestricted" as "full_access",
                 }),
             ).rejects.toThrow(
-                "Permission mode must be Auto, Workspace write, Read only, or Full access.",
+                "Permission mode must be one of: auto, workspace_write, read_only, or full_access.",
             );
         } finally {
             await close();
