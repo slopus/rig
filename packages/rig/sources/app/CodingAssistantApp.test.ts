@@ -1482,6 +1482,7 @@ describe("CodingAssistantApp", () => {
             },
         ]);
         expect(rendered).toContain("gpt-pro high");
+        expect(rendered).toContain("• Model Model changed to GPT Pro with High reasoning.");
         expect(rendered).toContain("Model changed to GPT Pro with High reasoning.");
         expect(rendered).toContain("Ask Rig to do anything");
     });
@@ -1958,6 +1959,9 @@ describe("CodingAssistantApp", () => {
 
         expect(agent.snapshot().serviceTier).toBe("fast");
         let rendered = stripAnsi(app.render(100).join("\n"));
+        expect(rendered).toContain(
+            "• Fast mode Fast mode is on. Fast inference uses 2× plan usage.",
+        );
         expect(rendered).toContain("Fast mode is on. Fast inference uses 2× plan usage.");
         expect(rendered).toContain("gpt-test ultra fast · /workspace · full access");
 

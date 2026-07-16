@@ -945,7 +945,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#latestContextTokens = 0;
             this.#appendEntry({
                 role: "event",
-                title: "model",
+                title: "Model",
                 text: `Model changed to ${this.#modelDisplayName()}.`,
             });
             return;
@@ -954,7 +954,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (event.type === "effort_changed") {
             this.#appendEntry({
                 role: "event",
-                title: "reasoning",
+                title: "Reasoning",
                 text: `Reasoning changed to ${humanizeReasoningLevel(event.data.effort ?? "off")}.`,
             });
             return;
@@ -963,7 +963,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (event.type === "service_tier_changed") {
             this.#appendEntry({
                 role: "event",
-                title: "fast",
+                title: "Fast mode",
                 text:
                     event.data.serviceTier === "fast"
                         ? FAST_MODE_ON_MESSAGE
@@ -975,7 +975,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (event.type === "permission_mode_changed") {
             this.#appendEntry({
                 role: "event",
-                title: "permissions",
+                title: "Permissions",
                 text: `Permissions changed to ${humanizePermissionMode(event.data.permissionMode)}.`,
             });
             this.#requestRender();
@@ -1196,7 +1196,7 @@ export class CodingAssistantApp implements Component, Focusable {
             if (image === undefined) {
                 this.#appendEntry({
                     role: "event",
-                    title: "clipboard",
+                    title: "Clipboard",
                     text: "No image found in the clipboard.",
                 });
                 return;
@@ -1206,7 +1206,7 @@ export class CodingAssistantApp implements Component, Focusable {
         } catch (error) {
             this.#appendEntry({
                 role: "error",
-                title: "clipboard",
+                title: "Clipboard",
                 text: `Image paste failed: ${errorToMessage(error)}`,
             });
         }
@@ -1370,7 +1370,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (this.#compacting) {
             this.#appendEntry({
                 role: "event",
-                title: "compact",
+                title: "Compaction",
                 text: "Wait for conversation compaction to finish before submitting.",
             });
             return;
@@ -1510,7 +1510,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (parsed === null) {
             this.#appendEntry({
                 role: "event",
-                title: "skill",
+                title: "Skill",
                 text: "Use /skill:<name> followed by optional instructions.",
             });
             return;
@@ -1522,7 +1522,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (skill === undefined) {
             this.#appendEntry({
                 role: "event",
-                title: "skill",
+                title: "Skill",
                 text: `Skill '${skillName ?? ""}' was not found.`,
             });
             return;
@@ -1534,7 +1534,7 @@ export class CodingAssistantApp implements Component, Focusable {
         } catch (error) {
             this.#appendEntry({
                 role: "error",
-                title: "skill",
+                title: "Skill",
                 text: errorToMessage(error),
             });
             return;
@@ -1722,7 +1722,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (argument === "status") {
             this.#appendEntry({
                 role: "event",
-                title: "fast",
+                title: "Fast mode",
                 text: fastEnabled ? "Fast mode is on." : FAST_MODE_OFF_MESSAGE,
             });
             return;
@@ -1749,7 +1749,7 @@ export class CodingAssistantApp implements Component, Focusable {
             if (!this.#sessionBacked) {
                 this.#appendEntry({
                     role: "event",
-                    title: "fast",
+                    title: "Fast mode",
                     text: serviceTier === "fast" ? FAST_MODE_ON_MESSAGE : FAST_MODE_OFF_MESSAGE,
                 });
             }
@@ -1784,7 +1784,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (argument.length === 0) {
             this.#appendEntry({
                 role: "event",
-                title: "goal",
+                title: "Goal",
                 text:
                     goal === undefined
                         ? "No goal is set. Use /goal followed by an objective to start one."
@@ -1801,7 +1801,7 @@ export class CodingAssistantApp implements Component, Focusable {
             await this.#agent.changeGoalStatus(status);
             this.#appendEntry({
                 role: "event",
-                title: "goal",
+                title: "Goal",
                 text: argument === "pause" ? "Goal paused." : "Goal resumed.",
             });
             return;
@@ -1812,7 +1812,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 throw new Error("Goal controls are unavailable in this session.");
             }
             await this.#agent.clearGoal();
-            this.#appendEntry({ role: "event", title: "goal", text: "Goal cleared." });
+            this.#appendEntry({ role: "event", title: "Goal", text: "Goal cleared." });
             return;
         }
 
@@ -1822,7 +1822,7 @@ export class CodingAssistantApp implements Component, Focusable {
         await this.#agent.setGoal(argument);
         this.#appendEntry({
             role: "event",
-            title: "goal",
+            title: "Goal",
             text: `Goal started: ${argument}`,
         });
     }
@@ -2027,7 +2027,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (this.#compacting || this.#running || this.#pendingPrompts.length > 0) {
             this.#appendEntry({
                 role: "event",
-                title: "compact",
+                title: "Compaction",
                 text: "Wait for the active response to finish before compacting.",
             });
             return;
@@ -2040,7 +2040,7 @@ export class CodingAssistantApp implements Component, Focusable {
             const result = await this.#agent.compact();
             this.#appendEntry({
                 role: "event",
-                title: "compact",
+                title: "Compaction",
                 text: result.compacted
                     ? `Compacted ${result.compactedMessageCount} older messages. The full transcript remains visible.`
                     : "There is not enough conversation history to compact yet.",
@@ -2681,7 +2681,7 @@ export class CodingAssistantApp implements Component, Focusable {
             const stoppedProcesses = response.stoppedProcesses ?? 0;
             this.#appendEntry({
                 role: "event",
-                title: "abort",
+                title: "Session",
                 text:
                     stoppedProcesses === 0
                         ? "No active run."
@@ -2809,7 +2809,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#yieldedBackgroundTerminals.clear();
             this.#appendEntry({
                 role: "event",
-                title: "permissions",
+                title: "Permissions",
                 text: `Stopped ${event.count} running process${event.count === 1 ? "" : "es"} before reducing permissions.`,
             });
         } else if (event.type === "done") {
@@ -3328,12 +3328,12 @@ export class CodingAssistantApp implements Component, Focusable {
                 return renderNoticeWithChildren({
                     children: entry.noticeChildren,
                     color: this.#theme.warning,
-                    title: entry.title ?? "event",
+                    title: entry.title ?? "Event",
                     width,
                 });
             }
             return this.#renderNoticeEntry(
-                entry.title ?? "event",
+                entry.title ?? "Event",
                 entry.text,
                 width,
                 this.#theme.warning,
@@ -3341,7 +3341,7 @@ export class CodingAssistantApp implements Component, Focusable {
             );
         }
 
-        return this.#renderNoticeEntry("system", entry.text, width, this.#theme.secondary);
+        return this.#renderNoticeEntry("System", entry.text, width, this.#theme.secondary);
     }
 
     #renderFooter(
@@ -3573,7 +3573,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 if (this.#modelLocked && item.value !== selectedValue) {
                     this.#appendEntry({
                         role: "event",
-                        title: "model",
+                        title: "Model",
                         text: "Wait for the active response to finish before changing models.",
                     });
                     this.#closeSelectionPanel();
@@ -3629,7 +3629,7 @@ export class CodingAssistantApp implements Component, Focusable {
                     if (!this.#sessionBacked) {
                         this.#appendEntry({
                             role: "event",
-                            title: "reasoning",
+                            title: "Reasoning",
                             text: `Reasoning changed to ${humanizeReasoningLevel(item.value)}.`,
                         });
                     }
@@ -3644,7 +3644,7 @@ export class CodingAssistantApp implements Component, Focusable {
                         if (!this.#sessionBacked) {
                             this.#appendEntry({
                                 role: "event",
-                                title: "model",
+                                title: "Model",
                                 text: `Model changed to ${model.name} with ${humanizeReasoningLevel(item.value)} reasoning.`,
                             });
                         }
@@ -3738,7 +3738,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 }
                 this.#appendEntry({
                     role: "event",
-                    title: "settings",
+                    title: "Settings",
                     text,
                 });
                 this.#requestRender();
@@ -3794,7 +3794,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 if (!this.#sessionBacked) {
                     this.#appendEntry({
                         role: "event",
-                        title: "permissions",
+                        title: "Permissions",
                         text: `Permissions changed to ${humanizePermissionMode(mode)}.`,
                     });
                 }
@@ -4845,7 +4845,7 @@ export class CodingAssistantApp implements Component, Focusable {
             }
             this.#appendEntry({
                 role: "event",
-                title: "config",
+                title: "Configuration",
                 text: "Could not update the config file.",
             });
             this.#requestRender();
@@ -4870,7 +4870,7 @@ export class CodingAssistantApp implements Component, Focusable {
             }
             this.#appendEntry({
                 role: "event",
-                title: "config",
+                title: "Configuration",
                 text: "Could not update the config file.",
             });
             this.#requestRender();
