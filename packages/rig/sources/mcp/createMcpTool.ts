@@ -2,6 +2,7 @@ import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Type } from "@sinclair/typebox";
 
 import { defineTool, type AnyDefinedTool } from "../agent/types.js";
+import { humanizeMcpName } from "./humanizeMcpName.js";
 import { mcpResultToContentBlocks } from "./mcpResultToContentBlocks.js";
 import { isMcpErrorResult } from "./isMcpErrorResult.js";
 import { normalizeMcpName } from "./normalizeMcpName.js";
@@ -47,14 +48,11 @@ export function createMcpTool(options: {
         },
         isError: isMcpErrorResult,
         toLLM: (result) => mcpResultToContentBlocks(result),
-        toUI: () => `${humanizeName(options.serverName)} · ${humanizeName(options.tool.name)}`,
+        toUI: () =>
+            `${humanizeMcpName(options.serverName)} · ${humanizeMcpName(options.tool.name)}`,
         locks: [`mcp:${options.serverName}`],
     });
     return tool as AnyDefinedTool;
-}
-
-function humanizeName(value: string): string {
-    return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

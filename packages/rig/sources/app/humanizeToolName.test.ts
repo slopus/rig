@@ -17,5 +17,8 @@ describe("humanizeToolName", () => {
         expect(humanizeToolName("mcp__issue_tracker__create_ticket")).toBe(
             "Issue Tracker · Create Ticket",
         );
+        expect(humanizeToolName("mcp__openaiDeveloper_docs__publishRelease")).toBe(
+            "OpenAI Developer Docs · Publish Release",
+        );
     });
 });

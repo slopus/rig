@@ -5,6 +5,19 @@ import { createJustBashToolHarness } from "../tools/testing/createJustBashToolHa
 import { createMcpTool } from "./createMcpTool.js";
 
 describe("createMcpTool", () => {
+    it("uses readable MCP names in the user-facing result label", () => {
+        const tool = createMcpTool({
+            client: {} as Client,
+            serverName: "openaiDeveloper_docs",
+            tool: {
+                inputSchema: { properties: {}, type: "object" },
+                name: "publishRelease",
+            },
+        });
+
+        expect(tool.toUI({} as never, {} as never)).toBe("OpenAI Developer Docs · Publish Release");
+    });
+
     it.each([true, false, undefined])(
         "reviews direct MCP tools when readOnlyHint is %s",
         async (readOnlyHint) => {

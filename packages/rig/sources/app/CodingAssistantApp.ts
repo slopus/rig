@@ -29,6 +29,7 @@ import type { BashSessionActivity } from "../agent/context/BashContext.js";
 import { parseSkillFrontmatter } from "../agent/skills/parseSkillFrontmatter.js";
 import type { FileDiff } from "../agent/ToolResultPresentation.js";
 import type { NativeProxessManager } from "../processes/index.js";
+import { humanizeMcpName } from "../mcp/humanizeMcpName.js";
 import type { ServiceTier, Usage } from "../providers/types.js";
 import type {
     FileSearchResult,
@@ -76,7 +77,6 @@ import { humanizePermissionMode } from "./humanizePermissionMode.js";
 import { humanizeProviderId } from "./humanizeProviderId.js";
 import { humanizeGoalStatus } from "./humanizeGoalStatus.js";
 import { humanizeToolName } from "./humanizeToolName.js";
-import { humanizeMcpServerName } from "./humanizeMcpServerName.js";
 import { parseCodexMcpToolInvocation } from "./parseCodexMcpToolInvocation.js";
 import {
     readClipboardImage,
@@ -723,7 +723,7 @@ export class CodingAssistantApp implements Component, Focusable {
                         blockedServers.length === 1 ? "MCP server blocked" : "MCP servers blocked",
                     text: "",
                     noticeChildren: blockedServers.map((server) => ({
-                        label: humanizeMcpServerName(server.name),
+                        label: humanizeMcpName(server.name, "MCP server"),
                         reason:
                             server.errorMessage ??
                             "This server is blocked by the current security boundary.",

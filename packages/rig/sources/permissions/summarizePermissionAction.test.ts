@@ -76,7 +76,7 @@ printf VISIBLE_COMMAND_SUFFIX`;
                 version: "1.2.3",
             }),
         ).toBe(
-            'calling "publish release" from "Deployment Service" with arguments "{\\"channel\\":\\"production\\",\\"version\\":\\"1.2.3\\"}". Access: the MCP server can perform actions outside Rig’s filesystem sandbox',
+            'calling "Publish Release" from "Deployment Service" with arguments "{\\"channel\\":\\"production\\",\\"version\\":\\"1.2.3\\"}". Access: the MCP server can perform actions outside Rig’s filesystem sandbox',
         );
         expect(
             summarizePermissionAction("call_mcp_tool", {
@@ -85,7 +85,7 @@ printf VISIBLE_COMMAND_SUFFIX`;
                 server: "Deployment Service",
             }),
         ).toBe(
-            'calling "publish_release" from "Deployment Service" with arguments "{\\"channel\\":\\"production\\"}". Access: the MCP server can perform actions outside Rig’s filesystem sandbox',
+            'calling "Publish Release" from "Deployment Service" with arguments "{\\"channel\\":\\"production\\"}". Access: the MCP server can perform actions outside Rig’s filesystem sandbox',
         );
     });
 
@@ -96,7 +96,7 @@ printf VISIBLE_COMMAND_SUFFIX`;
             server: "Deployment\u001bService",
         });
 
-        expect(action).toContain('calling "publish\\nrelease"');
+        expect(action).toContain('calling "Publish\\nRelease"');
         expect(action).toContain('from "Deployment\\u{001b}Service"');
         expect(action).toContain("safe\\\\u0007\\u{202e}masked");
         expect(action).not.toContain("\u001b");

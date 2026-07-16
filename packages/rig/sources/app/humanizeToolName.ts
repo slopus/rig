@@ -1,3 +1,5 @@
+import { humanizeMcpName } from "../mcp/humanizeMcpName.js";
+
 export function humanizeToolName(name: string): string {
     if (name === "Agent") return "Subagent";
     const normalized = name.toLowerCase();
@@ -22,7 +24,7 @@ export function humanizeToolName(name: string): string {
     if (normalized === "stop_workflow") return "Stop workflow";
     const parts = name.startsWith("mcp__") ? name.slice("mcp__".length).split("__") : [];
     if (parts.length >= 2) {
-        return `${humanizeWords(parts[0] ?? "MCP")} · ${humanizeWords(parts.slice(1).join("__"))}`;
+        return `${humanizeMcpName(parts[0] ?? "MCP")} · ${humanizeMcpName(parts.slice(1).join("__"))}`;
     }
     return humanizeIdentifier(name);
 }
@@ -34,11 +36,4 @@ function humanizeIdentifier(value: string): string {
         .trim()
         .toLowerCase();
     return words.replace(/^./u, (character) => character.toUpperCase());
-}
-
-function humanizeWords(value: string): string {
-    return value
-        .replace(/[_-]+/g, " ")
-        .trim()
-        .replace(/\b\w/g, (character) => character.toUpperCase());
 }

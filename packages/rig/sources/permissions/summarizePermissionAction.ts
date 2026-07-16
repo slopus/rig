@@ -1,3 +1,5 @@
+import { humanizeMcpName } from "../mcp/humanizeMcpName.js";
+
 export function summarizePermissionAction(toolName: string, args: unknown): string {
     if (args !== null && typeof args === "object") {
         const record = args as Record<string, unknown>;
@@ -37,14 +39,14 @@ function summarizeMcpAction(toolName: string, record: Record<string, unknown>): 
         const server = readString(record, "server");
         const name = readString(record, "name");
         if (server === undefined || name === undefined) return undefined;
-        return mcpAction(server, name, record.arguments);
+        return mcpAction(humanizeMcpName(server), humanizeMcpName(name), record.arguments);
     }
     if (!toolName.startsWith("mcp__")) return undefined;
     const separator = toolName.indexOf("__", "mcp__".length);
     if (separator < 0) return undefined;
     const server = toolName.slice("mcp__".length, separator);
     const name = toolName.slice(separator + 2);
-    return mcpAction(humanizeName(server), humanizeName(name), record);
+    return mcpAction(humanizeMcpName(server), humanizeMcpName(name), record);
 }
 
 function mcpAction(server: string, name: string, args: unknown): string {
@@ -62,14 +64,6 @@ function humanize(value: string): string {
         .replaceAll("_", " ")
         .replace(/([a-z])([A-Z])/gu, "$1 $2")
         .toLowerCase();
-}
-
-function humanizeName(value: string): string {
-    return value
-        .replaceAll("_", " ")
-        .replace(/([a-z])([A-Z])/gu, "$1 $2")
-        .replace(/\s+/gu, " ")
-        .trim();
 }
 
 function readString(record: Record<string, unknown>, key: string): string | undefined {
