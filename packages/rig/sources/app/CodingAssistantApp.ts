@@ -325,8 +325,6 @@ export class CodingAssistantApp implements Component, Focusable {
     readonly #thinkingStreamingRender = new AppendOnlyStreamingRender<AppTranscriptEntry>();
     readonly #entryRenderCache = new TranscriptEntryRenderCache();
     readonly #headerLinesByWidth = new Map<number, readonly string[]>();
-    #showHeaderInFrame = true;
-    #transcriptStartIndex = 0;
     #exiting = false;
     #exitResolve: (() => void) | undefined;
     #focused = false;
@@ -917,7 +915,6 @@ export class CodingAssistantApp implements Component, Focusable {
                 (entry) => entry.id === event.data.messageId,
             );
             if (targetIndex >= 0) this.#entries = this.#entries.slice(0, targetIndex);
-            this.#transcriptStartIndex = Math.min(this.#transcriptStartIndex, this.#entries.length);
             this.#modelLocked = false;
             this.#statusText = "Idle";
             this.#streamEntryId = undefined;
@@ -1284,7 +1281,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
     render(width: number): string[] {
         const safeWidth = Math.max(1, width);
-        const header = this.#showHeaderInFrame ? this.#renderHeader(safeWidth) : [];
+        const header = this.#renderHeader(safeWidth);
         const transcript = this.#renderTranscript(safeWidth);
         if (this.#exiting) return [...header, ...transcript];
         return [...header, ...transcript, ...this.#renderLiveTail(safeWidth)];
@@ -2474,7 +2471,6 @@ export class CodingAssistantApp implements Component, Focusable {
     #finishBacktrack(messageId: string, message: UserMessage): void {
         const targetIndex = this.#entries.findIndex((entry) => entry.id === messageId);
         if (targetIndex >= 0) this.#entries = this.#entries.slice(0, targetIndex);
-        this.#transcriptStartIndex = Math.min(this.#transcriptStartIndex, this.#entries.length);
         this.#editor.setText(
             message.blocks
                 .filter((block) => block.type === "text")
@@ -2788,7 +2784,6 @@ export class CodingAssistantApp implements Component, Focusable {
                 (entry) => !this.#streamedToolCallEntries.has(entry),
             );
             this.#streamedToolCallEntries.clear();
-            this.#transcriptStartIndex = Math.min(this.#transcriptStartIndex, this.#entries.length);
             for (const toolCallId of rejectedIds) {
                 this.#activeToolCallIds.delete(toolCallId);
                 this.#awaitingApprovalToolCallIds.delete(toolCallId);
@@ -3090,34 +3085,25 @@ export class CodingAssistantApp implements Component, Focusable {
         if (index < 0) return;
         this.#entries.splice(index, 1);
         this.#streamedToolCallEntries.delete(entry);
-        if (index < this.#transcriptStartIndex) this.#transcriptStartIndex -= 1;
         this.#removeOrphanedSeparators();
     }
 
     #removeOrphanedSeparators(): void {
         const retained: AppTranscriptEntry[] = [];
-        let removedBeforeStart = 0;
-        for (const [index, entry] of this.#entries.entries()) {
+        for (const entry of this.#entries) {
             if (entry.role === "separator" && retained.at(-1)?.role === "separator") {
                 if (entry.turnElapsedMs !== undefined) {
                     retained[retained.length - 1]!.turnElapsedMs = entry.turnElapsedMs;
                 }
-                if (index < this.#transcriptStartIndex) removedBeforeStart += 1;
                 continue;
             }
             retained.push(entry);
         }
         const trailing = retained.at(-1);
         if (trailing?.role === "separator" && trailing.turnElapsedMs === undefined) {
-            const index = this.#entries.indexOf(trailing);
-            if (index >= 0 && index < this.#transcriptStartIndex) removedBeforeStart += 1;
             retained.pop();
         }
         this.#entries = retained;
-        this.#transcriptStartIndex = Math.max(
-            0,
-            Math.min(this.#transcriptStartIndex - removedBeforeStart, this.#entries.length),
-        );
     }
 
     #finishThinkingMessage(messageId: string, contentIndex: number, text: string): void {
@@ -3195,7 +3181,6 @@ export class CodingAssistantApp implements Component, Focusable {
 
     #clearEntries(): void {
         this.#entries = [];
-        this.#transcriptStartIndex = 0;
         this.#streamedToolCallEntries.clear();
         this.#stoppedToolCallIds.clear();
         this.#observedShellProcesses = [];
@@ -3205,19 +3190,13 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #discardPendingToolCallEntries(): void {
-        let removedBeforeStart = 0;
-        this.#entries = this.#entries.filter((entry, index) => {
+        this.#entries = this.#entries.filter((entry) => {
             const pending =
                 this.#streamedToolCallEntries.has(entry) &&
                 entry.title === PENDING_TOOL_CALL_TITLE &&
                 entry.text === PENDING_TOOL_CALL_TITLE;
-            if (pending && index < this.#transcriptStartIndex) removedBeforeStart += 1;
             return !pending;
         });
-        this.#transcriptStartIndex = Math.max(
-            0,
-            Math.min(this.#transcriptStartIndex - removedBeforeStart, this.#entries.length),
-        );
         this.#streamedToolCallEntries.clear();
         this.#removeOrphanedSeparators();
     }
@@ -3261,9 +3240,9 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #visibleTranscriptEntries(): AppTranscriptEntry[] {
-        const sourceEntries = this.#entries
-            .slice(this.#transcriptStartIndex)
-            .filter((entry) => !this.#activeToolCallIds.has(entry.id));
+        const sourceEntries = this.#entries.filter(
+            (entry) => !this.#activeToolCallIds.has(entry.id),
+        );
         return this.#showReasoning
             ? [...sourceEntries]
             : sourceEntries.filter((entry) => entry.role !== "thinking");
@@ -4198,9 +4177,6 @@ export class CodingAssistantApp implements Component, Focusable {
         if (index < 0 || index === this.#entries.length - 1) return;
         const [entry] = this.#entries.splice(index, 1);
         if (entry !== undefined) this.#entries.push(entry);
-        if (index < this.#transcriptStartIndex) {
-            this.#transcriptStartIndex = Math.max(0, this.#transcriptStartIndex - 1);
-        }
     }
 
     #formatToolCall(toolName: string, args: unknown): string {
