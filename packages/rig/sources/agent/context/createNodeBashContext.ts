@@ -10,6 +10,7 @@ import type { BashContext, BashSessionSnapshot } from "./BashContext.js";
 import { assertCanUseCustomShell } from "./assertCanUseCustomShell.js";
 import { createSandboxedCommand } from "./createSandboxedCommand.js";
 import { createToolEnvironment } from "./createToolEnvironment.js";
+import { waitForBashSessionCompletion } from "./waitForBashSessionCompletion.js";
 import { createCommandEnvironment, type SessionSecretContext } from "../../secrets/index.js";
 
 export interface CreateNodeBashContextOptions {
@@ -21,7 +22,7 @@ export interface CreateNodeBashContextOptions {
 
 interface NodeBashSession {
     command: string;
-    completion: Promise<ProcessRunResult>;
+    completionWaiters: Set<() => void>;
     cwd: string;
     process: ManagedProcess;
     result?: ProcessRunResult;
@@ -60,21 +61,11 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
         if (session === undefined) return undefined;
         const waitMs = Math.max(0, readOptions.waitMs ?? 0);
         if (session.result === undefined && waitMs > 0 && !readOptions.signal?.aborted) {
-            await new Promise<void>((resolveWait) => {
-                let settled = false;
-                let timer: NodeJS.Timeout | undefined;
-                const finish = () => {
-                    if (settled) return;
-                    settled = true;
-                    if (timer !== undefined) clearTimeout(timer);
-                    readOptions.signal?.removeEventListener("abort", finish);
-                    resolveWait();
-                };
-                timer = setTimeout(finish, waitMs);
-                readOptions.signal?.addEventListener("abort", finish, { once: true });
-                void session.completion.then(finish);
-                if (readOptions.signal?.aborted) finish();
-            });
+            await waitForBashSessionCompletion(
+                session.completionWaiters,
+                waitMs,
+                readOptions.signal,
+            );
         }
 
         const processSnapshot = session.process.readOutput(
@@ -193,11 +184,12 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
                 processStartOptions.shell = "/bin/sh";
             }
             const process = options.processManager.start(processStartOptions);
+            const completion = process.wait();
             const sessionId = nextSessionId;
             nextSessionId += 1;
             const session: NodeBashSession = {
                 command: runOptions.command,
-                completion: process.wait(),
+                completionWaiters: new Set(),
                 cwd,
                 process,
                 sessionId,
@@ -214,9 +206,10 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
                 }, runOptions.timeoutMs);
                 session.timeout.unref();
             }
-            void session.completion.then((result) => {
+            void completion.then((result) => {
                 session.result = result;
                 if (session.timeout !== undefined) clearTimeout(session.timeout);
+                for (const finish of session.completionWaiters) finish();
                 onActiveSessionCountChange?.(activeSessionCount());
             });
             if (sessions.size > MAX_RETAINED_SESSIONS) {

@@ -1,11 +1,15 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createNodeBashContext } from "./createNodeBashContext.js";
 import { createPermissionContext } from "../../permissions/index.js";
-import { NativeProxessManager } from "../../processes/index.js";
+import {
+    type ManagedProcess,
+    NativeProxessManager,
+    type ProcessRunResult,
+} from "../../processes/index.js";
 
 const tempDirs: string[] = [];
 
@@ -13,7 +17,70 @@ afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((path) => rm(path, { force: true, recursive: true })));
 });
 
-describe("createNodeBashContext output retention", () => {
+describe("createNodeBashContext", () => {
+    it("observes background process completion only once across repeated polls", async () => {
+        const cwd = await makeTempDir();
+        let resolveCompletion!: (result: ProcessRunResult) => void;
+        const completion = new Promise<ProcessRunResult>((resolve) => {
+            resolveCompletion = resolve;
+        });
+        const completionThen = vi.spyOn(completion, "then");
+        const result: ProcessRunResult = {
+            aborted: false,
+            command: "long-running",
+            cwd,
+            exitCode: 0,
+            id: "process-1",
+            killed: false,
+            pid: 1,
+            signal: null,
+            status: "exited",
+            stderr: "",
+            stdout: "",
+            timedOut: false,
+        };
+        const process = {
+            async kill() {
+                resolveCompletion(result);
+            },
+            readOutput(stdoutOffset: number, stderrOffset: number) {
+                return {
+                    ...result,
+                    status: "running" as const,
+                    stderrDelta: "",
+                    stderrOffset,
+                    stdoutDelta: "",
+                    stdoutOffset,
+                };
+            },
+            wait() {
+                return completion;
+            },
+            writeStdin() {
+                return false;
+            },
+        } as unknown as ManagedProcess;
+        const processManager = {
+            start() {
+                return process;
+            },
+        } as unknown as NativeProxessManager;
+        const context = createNodeBashContext({
+            cwd,
+            permissions: createPermissionContext("full_access"),
+            processManager,
+        });
+        const sessionId = await context.startSession({ command: "long-running" });
+
+        await context.readSession(sessionId, { waitMs: 1 });
+        await context.readSession(sessionId, { waitMs: 1 });
+        await context.readSession(sessionId, { waitMs: 1 });
+
+        expect(completionThen).toHaveBeenCalledTimes(1);
+        resolveCompletion(result);
+        await completion;
+    });
+
     it("continues returning background output after the retained buffer fills", async () => {
         const cwd = await makeTempDir();
         const processManager = new NativeProxessManager();
