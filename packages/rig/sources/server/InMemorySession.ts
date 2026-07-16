@@ -75,6 +75,7 @@ import type {
     UpdateTaskRequest,
     UpdateTaskResult,
 } from "../tasks/index.js";
+import { SessionTaskList } from "../tasks/index.js";
 import {
     DEFAULT_PERMISSION_MODE,
     isPermissionReduction,
@@ -286,7 +287,6 @@ export class InMemorySession {
     #modelCatalog: ModelCatalog;
     #modelId: string;
     #models: readonly Model[];
-    #nextTaskId = 1;
     #now: () => number;
     #partialPositions = new Set<number>();
     #pendingSteeringMessages = new Map<string, PendingSteeringMessage>();
@@ -305,7 +305,7 @@ export class InMemorySession {
     #suspendedRunIds = new Set<string>();
     #suspendOnAbort = false;
     #shutdownCleanup: Promise<void> | undefined;
-    #tasks: SessionTask[] = [];
+    #taskList: SessionTaskList;
     #taskDrain: TaskDrain | undefined;
     #title: string | undefined;
     #titleError: string | undefined;
@@ -418,9 +418,7 @@ export class InMemorySession {
             options.restore?.titleStatus ??
             (this.#agentMetadata.description !== undefined ? "ready" : "idle");
         this.#totalTokens = options.restore?.totalTokens ?? 0;
-        this.#tasks =
-            options.restore?.tasks === undefined ? [] : options.restore.tasks.map(cloneTask);
-        this.#nextTaskId = options.restore?.nextTaskId ?? nextTaskId(this.#tasks);
+        this.#taskList = new SessionTaskList(options.restore?.tasks, options.restore?.nextTaskId);
         this.#tools = options.restore?.tools ?? [];
         this.#interruption = options.restore?.interruption;
         this.#queue = [...(options.restore?.queuedRuns ?? [])];
@@ -1074,88 +1072,23 @@ export class InMemorySession {
     }
 
     createTask(request: CreateTaskRequest): SessionTask {
-        const task: SessionTask = {
-            blockedBy: [],
-            blocks: [],
-            description: request.description,
-            id: String(this.#nextTaskId),
-            status: "pending",
-            subject: request.subject,
-            ...(request.activeForm !== undefined ? { activeForm: request.activeForm } : {}),
-            ...(request.metadata !== undefined ? { metadata: { ...request.metadata } } : {}),
-        };
-        this.#nextTaskId += 1;
-        this.#tasks.push(task);
+        const task = this.#taskList.create(request);
         this.#recordTasksChanged();
-        return cloneTask(task);
+        return task;
     }
 
     getTask(taskId: string): SessionTask | undefined {
-        const task = this.#tasks.find((candidate) => candidate.id === taskId);
-        return task === undefined ? undefined : cloneTask(task);
+        return this.#taskList.get(taskId);
     }
 
     listTasks(): readonly SessionTask[] {
-        return this.#tasks.map(cloneTask);
+        return this.#taskList.list();
     }
 
     updateTask(taskId: string, request: UpdateTaskRequest): UpdateTaskResult {
-        const index = this.#tasks.findIndex((candidate) => candidate.id === taskId);
-        const existing = this.#tasks[index];
-        if (existing === undefined) {
-            return { error: "Task not found", success: false, taskId, updatedFields: [] };
-        }
-        if (request.status === "deleted") {
-            this.#tasks.splice(index, 1);
-            this.#tasks = this.#tasks.map((task) => ({
-                ...task,
-                blockedBy: task.blockedBy.filter((dependency) => dependency !== taskId),
-                blocks: task.blocks.filter((dependency) => dependency !== taskId),
-            }));
-            this.#recordTasksChanged();
-            return {
-                statusChange: { from: existing.status, to: "deleted" },
-                success: true,
-                taskId,
-                updatedFields: ["deleted"],
-            };
-        }
-
-        const dependencyError = this.#validateTaskDependencies(taskId, request);
-        if (dependencyError !== undefined) {
-            return { error: dependencyError, success: false, taskId, updatedFields: [] };
-        }
-
-        const task = cloneTask(existing);
-        const updatedFields: string[] = [];
-        updateTaskString(task, "subject", request.subject, updatedFields);
-        updateTaskString(task, "description", request.description, updatedFields);
-        updateTaskString(task, "activeForm", request.activeForm, updatedFields);
-        updateTaskString(task, "owner", request.owner, updatedFields);
-        if (request.metadata !== undefined) {
-            const metadata = { ...task.metadata };
-            for (const [key, value] of Object.entries(request.metadata)) {
-                if (value === null) delete metadata[key];
-                else metadata[key] = value;
-            }
-            task.metadata = metadata;
-            updatedFields.push("metadata");
-        }
-        let statusChange: UpdateTaskResult["statusChange"];
-        if (request.status !== undefined && request.status !== task.status) {
-            statusChange = { from: task.status, to: request.status };
-            task.status = request.status;
-            updatedFields.push("status");
-        }
-        this.#tasks[index] = task;
-        this.#addTaskDependencies(taskId, request, updatedFields);
-        if (updatedFields.length > 0) this.#recordTasksChanged();
-        return {
-            success: true,
-            taskId,
-            updatedFields,
-            ...(statusChange !== undefined ? { statusChange } : {}),
-        };
+        const result = this.#taskList.update(taskId, request);
+        if (result.success && result.updatedFields.length > 0) this.#recordTasksChanged();
+        return result;
     }
 
     getWorkflow(runId: string): WorkflowRun | undefined {
@@ -1514,11 +1447,9 @@ export class InMemorySession {
         this.#activePartial = undefined;
         this.#pendingSteeringMessages.clear();
         this.#suspendedRunIds.clear();
-        const hadTasks = this.#tasks.length > 0;
+        const hadTasks = this.#taskList.reset();
         const hadGoal = this.#goal !== undefined;
         this.#goal = undefined;
-        this.#tasks = [];
-        this.#nextTaskId = 1;
         this.#persistence?.clearMessages(this.id);
         if (hadTasks) this.#recordTasksChanged();
         if (hadGoal) this.#append("goal_changed", { goal: null });
@@ -1750,7 +1681,7 @@ export class InMemorySession {
             secretIds: this.#secrets.sessionIds(),
             queuedRuns: [...this.#queue],
             ...(this.#recap !== undefined ? { recap: this.#recap } : {}),
-            nextTaskId: this.#nextTaskId,
+            nextTaskId: this.#taskList.nextId,
             status: this.#status,
             tasks: this.listTasks(),
             ...(this.#title !== undefined ? { title: this.#title } : {}),
@@ -2085,47 +2016,6 @@ export class InMemorySession {
             return "aborted";
         }
         return "idle";
-    }
-
-    #validateTaskDependencies(taskId: string, request: UpdateTaskRequest): string | undefined {
-        for (const dependency of [...(request.addBlocks ?? []), ...(request.addBlockedBy ?? [])]) {
-            if (dependency === taskId) return "A task cannot depend on itself.";
-            if (!this.#tasks.some((task) => task.id === dependency)) {
-                return `Task ${dependency} was not found.`;
-            }
-        }
-        return undefined;
-    }
-
-    #addTaskDependencies(
-        taskId: string,
-        request: UpdateTaskRequest,
-        updatedFields: string[],
-    ): void {
-        const task = this.#tasks.find((candidate) => candidate.id === taskId);
-        if (task === undefined) return;
-        for (const blockedTaskId of request.addBlocks ?? []) {
-            const blockedTask = this.#tasks.find((candidate) => candidate.id === blockedTaskId);
-            if (blockedTask === undefined) continue;
-            if (!task.blocks.includes(blockedTaskId)) {
-                task.blocks = [...task.blocks, blockedTaskId];
-                pushUnique(updatedFields, "blocks");
-            }
-            if (!blockedTask.blockedBy.includes(taskId)) {
-                blockedTask.blockedBy = [...blockedTask.blockedBy, taskId];
-            }
-        }
-        for (const blockingTaskId of request.addBlockedBy ?? []) {
-            const blockingTask = this.#tasks.find((candidate) => candidate.id === blockingTaskId);
-            if (blockingTask === undefined) continue;
-            if (!task.blockedBy.includes(blockingTaskId)) {
-                task.blockedBy = [...task.blockedBy, blockingTaskId];
-                pushUnique(updatedFields, "blockedBy");
-            }
-            if (!blockingTask.blocks.includes(taskId)) {
-                blockingTask.blocks = [...blockingTask.blocks, taskId];
-            }
-        }
     }
 
     #recordTasksChanged(): void {
@@ -3031,24 +2921,6 @@ function isSignalAborted(signal: AbortSignal | undefined): boolean {
     return signal?.aborted === true;
 }
 
-function cloneTask(task: SessionTask): SessionTask {
-    return {
-        ...task,
-        blockedBy: [...task.blockedBy],
-        blocks: [...task.blocks],
-        ...(task.metadata !== undefined ? { metadata: { ...task.metadata } } : {}),
-    };
-}
-
-function nextTaskId(tasks: readonly SessionTask[]): number {
-    return (
-        tasks.reduce((highest, task) => {
-            const value = Number.parseInt(task.id, 10);
-            return Number.isSafeInteger(value) ? Math.max(highest, value) : highest;
-        }, 0) + 1
-    );
-}
-
 function findLatestForegroundRunBoundary(
     events: readonly SessionEvent[],
     retainedRunIds?: ReadonlySet<string>,
@@ -3063,19 +2935,4 @@ function findLatestForegroundRunBoundary(
         }
     }
     return undefined;
-}
-
-function updateTaskString<TKey extends "activeForm" | "description" | "owner" | "subject">(
-    task: SessionTask,
-    key: TKey,
-    value: string | undefined,
-    updatedFields: string[],
-): void {
-    if (value === undefined || task[key] === value) return;
-    task[key] = value;
-    updatedFields.push(key);
-}
-
-function pushUnique(values: string[], value: string): void {
-    if (!values.includes(value)) values.push(value);
 }

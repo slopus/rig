@@ -5,3 +5,4 @@ export type {
     UpdateTaskRequest,
     UpdateTaskResult,
 } from "./types.js";
+export { SessionTaskList } from "./SessionTaskList.js";
