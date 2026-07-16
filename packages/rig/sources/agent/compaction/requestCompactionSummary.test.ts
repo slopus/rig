@@ -103,6 +103,7 @@ function messagesToCompact() {
 }
 
 function streamThrowingBeforeContent(error: Error): InferenceStream {
+    // eslint-disable-next-line require-yield -- This fixture fails before emitting content.
     return createInferenceStream(async function* () {
         throw error;
     });
