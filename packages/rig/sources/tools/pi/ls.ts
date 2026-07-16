@@ -4,11 +4,17 @@ import { defineTool } from "../../agent/types.js";
 import { resolveFileSystemPath } from "../../agent/context/resolveFileSystemPath.js";
 import { describeFileAutoPermissionAction } from "../../permissions/describeFileAutoPermissionAction.js";
 import { shouldReviewPathInAutoMode } from "../../permissions/shouldReviewPathInAutoMode.js";
-import { countTextLines, textOutputSchema, toTextBlocks } from "../utils/index.js";
+import { toTextBlocks } from "../utils/index.js";
 import { formatDirectoryEntryName } from "../utils/formatDirectoryEntryName.js";
+import { boundDirectoryListing } from "./boundDirectoryListing.js";
 
 const DEFAULT_LIMIT = 500;
 const DEFAULT_MAX_BYTES = 50 * 1024;
+const lsOutputSchema = Type.Object({
+    text: Type.String(),
+    numEntries: Type.Integer({ minimum: 0 }),
+    truncated: Type.Boolean(),
+});
 
 export const piLsTool = defineTool({
     name: "ls",
@@ -19,10 +25,13 @@ export const piLsTool = defineTool({
             Type.String({ description: "Directory to list (default: current directory)" }),
         ),
         limit: Type.Optional(
-            Type.Number({ description: "Maximum number of entries to return (default: 500)" }),
+            Type.Integer({
+                description: "Maximum number of entries to return (default: 500)",
+                minimum: 0,
+            }),
         ),
     }),
-    returnType: textOutputSchema,
+    returnType: lsOutputSchema,
     describeAutoPermissionAction: ({ path }, context) =>
         describeFileAutoPermissionAction(path ?? ".", context, "listing"),
     shouldReviewInAutoMode: ({ path }, context) =>
@@ -33,16 +42,24 @@ export const piLsTool = defineTool({
         const dirPath = resolveFileSystemPath(path || ".", context.fs.cwd, context.fs.home);
         const entries = [...(await context.fs.readdir(dirPath))];
         entries.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+        if (entries.length === 0) {
+            return { numEntries: 0, text: "(empty directory)", truncated: false };
+        }
         const output: string[] = [];
         for (const entry of entries.slice(0, limit ?? DEFAULT_LIMIT)) {
             output.push(await formatDirectoryEntryName(entry, dirPath, context));
         }
-        return { text: output.length > 0 ? output.join("\n") : "(empty directory)" };
+        const bounded = boundDirectoryListing(output, entries.length, DEFAULT_MAX_BYTES);
+        return {
+            numEntries: bounded.entries.length,
+            text: bounded.text,
+            truncated: bounded.truncated,
+        };
     },
     toLLM: toTextBlocks,
     toUI: (result, args) =>
         result.text === "(empty directory)"
             ? `Listed ${args.path ?? "."} (empty)`
-            : `Listed ${args.path ?? "."} (${countTextLines(result.text)} entries)`,
+            : `Listed ${args.path ?? "."} (${result.numEntries} ${result.numEntries === 1 ? "entry" : "entries"}${result.truncated ? "; truncated" : ""})`,
     locks: [],
 });
