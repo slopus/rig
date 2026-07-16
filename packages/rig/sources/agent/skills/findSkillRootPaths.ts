@@ -2,11 +2,11 @@ import { join, resolve } from "node:path";
 
 import { buildAncestorDirs } from "../buildAncestorDirs.js";
 import type { FileSystemContext } from "../context/FileSystemContext.js";
+import { createUserSkillRootPaths } from "../context/createUserSkillRootPaths.js";
 import { findProjectRoot } from "../findProjectRoot.js";
 import { isDirectoryAtPath } from "./isDirectoryAtPath.js";
 
 // Match Codex discovery roots only. Rig intentionally does not interpret Claude or Pi skill trees.
-const USER_SKILL_DIRS = [".codex/skills", ".agents/skills"] as const;
 const PROJECT_SKILL_DIRS = [".agents/skills"] as const;
 
 export async function findSkillRootPaths(fs: FileSystemContext): Promise<readonly string[]> {
@@ -16,9 +16,7 @@ export async function findSkillRootPaths(fs: FileSystemContext): Promise<readonl
     const paths: string[] = [];
 
     if (fs.home !== undefined) {
-        const home = resolve(fs.home);
-        for (const skillDir of USER_SKILL_DIRS) {
-            const candidate = join(home, skillDir);
+        for (const candidate of createUserSkillRootPaths(resolve(fs.home))) {
             if (await isDirectoryAtPath(fs, candidate)) {
                 paths.push(candidate);
             }

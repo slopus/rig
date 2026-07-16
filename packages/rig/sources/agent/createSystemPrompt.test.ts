@@ -13,7 +13,7 @@ import { GPT_5_6_SOL_SYSTEM_PROMPT } from "./prompts/gpt56SolSystemPrompt.js";
 import { GPT_5_6_TERRA_SYSTEM_PROMPT } from "./prompts/gpt56TerraSystemPrompt.js";
 import { KIMI_SYSTEM_PROMPT } from "./prompts/kimiSystemPrompt.js";
 import type { Message } from "./types.js";
-import { createPermissionContext } from "../permissions/index.js";
+import { createPermissionContext, type PermissionMode } from "../permissions/index.js";
 import { defineModel, defineProvider, type Model, type Provider } from "../providers/types.js";
 import { SecretRegistry, SessionSecretContext } from "../secrets/index.js";
 import { claudeBashTool } from "../tools/claude/Bash.js";
@@ -397,7 +397,7 @@ describe("createSystemPrompt", () => {
             provider: providerFor("mock", model),
             model,
             messages: [],
-            context: contextFor(nested, home),
+            context: contextFor(nested, home, "workspace_write"),
         });
 
         expect(prompt).toContain("# Skills");
@@ -498,9 +498,13 @@ function providerFor(id: string, model: Model): Provider {
     });
 }
 
-function contextFor(cwd: string, home = join(cwd, ".home")): AgentContext {
+function contextFor(
+    cwd: string,
+    home = join(cwd, ".home"),
+    permissionMode: PermissionMode = "full_access",
+): AgentContext {
     return {
-        fs: createNodeFileSystemContext(cwd, { home }),
+        fs: createNodeFileSystemContext(cwd, { home, permissionMode: () => permissionMode }),
         bash: {
             cwd,
             async killSession() {

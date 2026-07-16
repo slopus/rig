@@ -3,6 +3,7 @@ import { join, sep } from "node:path";
 
 import type { PermissionMode } from "../../permissions/index.js";
 import { createSensitiveReadPaths } from "./createSensitiveReadPaths.js";
+import { createUserSkillRootPaths } from "./createUserSkillRootPaths.js";
 import { findExecutableSearchPaths } from "./findExecutableSearchPaths.js";
 import { findGitWritablePaths } from "./findGitWritablePaths.js";
 import { resolvePotentialPath } from "./resolvePotentialPath.js";
@@ -62,7 +63,11 @@ export async function createSandboxFilesystemConfig(options: {
 
     return {
         denyRead,
-        allowRead: [options.cwd, ...readableHomeToolPaths],
+        allowRead: [
+            options.cwd,
+            ...createUserSkillRootPaths(homeDirectory),
+            ...readableHomeToolPaths,
+        ],
         allowWrite: writablePaths,
         denyWrite,
     };

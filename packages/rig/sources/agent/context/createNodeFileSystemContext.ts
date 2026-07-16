@@ -16,6 +16,7 @@ import { isAbsolute, resolve } from "node:path";
 
 import { assertCanReadPath } from "./assertCanReadPath.js";
 import { assertCanWritePath } from "./assertCanWritePath.js";
+import { createUserSkillRootPaths } from "./createUserSkillRootPaths.js";
 import type { FileSystemContext } from "./FileSystemContext.js";
 import { toFileSystemStat } from "./toFileSystemStat.js";
 import type { PermissionMode } from "../../permissions/index.js";
@@ -31,10 +32,14 @@ export function createNodeFileSystemContext(
 ): FileSystemContext {
     const permissionMode = options.permissionMode ?? (() => "full_access" as const);
     const resolvePath = (path: string) => (isAbsolute(path) ? path : resolve(cwd, path));
-    const readPathOptions = options.home === undefined ? {} : { homeDirectory: options.home };
+    const home = options.home ?? homedir();
+    const readPathOptions = {
+        allowedPaths: createUserSkillRootPaths(home),
+        homeDirectory: home,
+    };
     return {
         cwd,
-        home: options.home ?? homedir(),
+        home,
         async chmod(path, mode) {
             const target = resolvePath(path);
             await assertCanWritePath(cwd, target, permissionMode());

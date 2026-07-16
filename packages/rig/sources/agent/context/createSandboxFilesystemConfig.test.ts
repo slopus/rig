@@ -25,6 +25,8 @@ describe("createSandboxFilesystemConfig", () => {
         });
 
         expect(config.allowRead).toContain("/home/tester/projects/rig");
+        expect(config.allowRead).toContain("/home/tester/.codex/skills");
+        expect(config.allowRead).toContain("/home/tester/.agents/skills");
         if (process.platform !== "win32") {
             expect(config.allowRead.some((path) => path.endsWith("/home/tester/.cargo/bin"))).toBe(
                 true,

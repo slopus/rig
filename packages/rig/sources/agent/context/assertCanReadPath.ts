@@ -9,11 +9,25 @@ export async function assertCanReadPath(
     cwd: string,
     targetPath: string,
     mode: PermissionMode,
-    options: { environment?: NodeJS.ProcessEnv; homeDirectory?: string } = {},
+    options: {
+        allowedPaths?: readonly string[];
+        environment?: NodeJS.ProcessEnv;
+        homeDirectory?: string;
+    } = {},
 ): Promise<void> {
     if (mode === "full_access" || (await isPathInsideWorkspace(cwd, targetPath))) return;
 
     const canonicalTarget = await resolvePotentialPath(targetPath);
+    for (const allowedPath of options.allowedPaths ?? []) {
+        const canonicalAllowedPath = await resolvePotentialPath(allowedPath);
+        const pathFromAllowedRoot = relative(canonicalAllowedPath, canonicalTarget);
+        if (
+            pathFromAllowedRoot === "" ||
+            (!pathFromAllowedRoot.startsWith("..") && !isAbsolute(pathFromAllowedRoot))
+        ) {
+            return;
+        }
+    }
     for (const sensitivePath of createSensitiveReadPaths(options)) {
         const canonicalSensitivePath = await resolvePotentialPath(sensitivePath);
         const pathFromSensitiveRoot = relative(canonicalSensitivePath, canonicalTarget);
