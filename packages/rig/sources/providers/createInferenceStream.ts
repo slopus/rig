@@ -34,13 +34,24 @@ export function createInferenceStream(
                 throw new Error("Inference streams can only be consumed once.");
             }
             started = true;
+            let resultSettled = false;
 
             try {
                 const result = yield* run();
+                resultSettled = true;
                 resolveResult(result);
             } catch (error) {
+                resultSettled = true;
                 rejectResult(error);
                 throw error;
+            } finally {
+                if (!resultSettled) {
+                    rejectResult(
+                        new Error(
+                            "Inference stream iteration ended before a result was available.",
+                        ),
+                    );
+                }
             }
         },
         result: async () => {
