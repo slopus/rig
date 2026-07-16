@@ -15,7 +15,7 @@ import type { SessionEvent } from "../protocol/index.js";
 import { resolveDockerExecutionConfig } from "../execution/index.js";
 import type { DockerExecutionConfig } from "../execution/index.js";
 import { CodingAssistantApp } from "./CodingAssistantApp.js";
-import { type CreateCodingAssistantAgentOptions } from "./createCodingAssistantAgent.js";
+import { type CreateCodingAssistantAgentOptions } from "../runtime/createCodingAssistantAgent.js";
 import { createSerialTaskQueue } from "./createSerialTaskQueue.js";
 import { createStopOnceHandler } from "./createStopOnceHandler.js";
 import { createStartupStatusCardModel } from "./createStartupStatusCardModel.js";

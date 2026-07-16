@@ -1,6 +1,6 @@
-import { createGymProvider } from "../providers/createGymProvider.js";
-import { readGymContextWindow } from "../providers/readGymContextWindow.js";
-import type { Provider } from "../providers/types.js";
+import { createGymProvider } from "./createGymProvider.js";
+import { readGymContextWindow } from "./readGymContextWindow.js";
+import type { Provider } from "./types.js";
 
 export function routeProviderThroughGym(provider: Provider, env: NodeJS.ProcessEnv): Provider {
     const overrides = new Set(

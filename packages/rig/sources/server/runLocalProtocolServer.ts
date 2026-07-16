@@ -11,7 +11,7 @@ import { removeStaleSocket } from "./removeStaleSocket.js";
 import { McpClientManager } from "../mcp/index.js";
 import { loadConfig, writeDaemonSettings } from "../config/index.js";
 import { createProviderQuotaService } from "../providers/createProviderQuotaService.js";
-import { createCodingAssistantAgent } from "../app/createCodingAssistantAgent.js";
+import { createCodingAssistantAgent } from "../runtime/createCodingAssistantAgent.js";
 
 export interface RunLocalProtocolServerOptions {
     socketPath?: string;

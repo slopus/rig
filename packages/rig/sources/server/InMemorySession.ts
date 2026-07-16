@@ -19,11 +19,11 @@ import {
     type CreateGoalRequest,
     type SessionGoal,
 } from "../goals/index.js";
-import type { CodingAssistantRuntime } from "../app/CodingAssistantRuntime.js";
+import type { CodingAssistantRuntime } from "../runtime/CodingAssistantRuntime.js";
 import {
     createCodingAssistantAgent,
     type CreateCodingAssistantAgentOptions,
-} from "../app/createCodingAssistantAgent.js";
+} from "../runtime/createCodingAssistantAgent.js";
 import type {
     ChangeEffortRequest,
     AbortRunResponse,

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { Agent, createNodeAgentContext } from "../agent/index.js";
-import type { CreateCodingAssistantAgentOptions } from "../app/createCodingAssistantAgent.js";
+import type { CreateCodingAssistantAgentOptions } from "../runtime/createCodingAssistantAgent.js";
 import { createEventIdFactory, type ModelCatalog } from "../protocol/index.js";
 import { NativeProxessManager } from "../processes/index.js";
 import {
@@ -13,7 +13,7 @@ import {
     type Usage,
 } from "../providers/types.js";
 import { goalTools } from "../tools/goals/index.js";
-import type { CodingAssistantRuntime } from "../app/CodingAssistantRuntime.js";
+import type { CodingAssistantRuntime } from "../runtime/CodingAssistantRuntime.js";
 import { InMemorySession } from "./InMemorySession.js";
 
 describe("InMemorySession goals", () => {

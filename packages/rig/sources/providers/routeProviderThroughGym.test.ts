@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { defineModel, defineProvider } from "../providers/types.js";
+import { defineModel, defineProvider } from "./types.js";
 import { routeProviderThroughGym } from "./routeProviderThroughGym.js";
 
 describe("routeProviderThroughGym", () => {

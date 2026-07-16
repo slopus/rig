@@ -2844,7 +2844,7 @@ describe("CodingAssistantApp", () => {
             },
             {
                 fileName: "createCodingAssistantAgent.ts",
-                path: "packages/rig/sources/app/createCodingAssistantAgent.ts",
+                path: "packages/rig/sources/runtime/createCodingAssistantAgent.ts",
             },
         ]);
         const app = new CodingAssistantApp({
@@ -2888,7 +2888,7 @@ describe("CodingAssistantApp", () => {
         app.handleInput("\x1b[B");
         app.handleInput("\t");
         expect(stripAnsi(app.render(100).join("\n"))).toContain(
-            "Review @packages/rig/sources/app/createCodingAssistantAgent.ts ",
+            "Review @packages/rig/sources/runtime/createCodingAssistantAgent.ts ",
         );
     });
 

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Agent, createNodeAgentContext } from "../agent/index.js";
-import type { CreateCodingAssistantAgentOptions } from "../app/createCodingAssistantAgent.js";
-import type { CodingAssistantRuntime } from "../app/CodingAssistantRuntime.js";
+import type { CodingAssistantRuntime } from "../runtime/CodingAssistantRuntime.js";
+import type { CreateCodingAssistantAgentOptions } from "../runtime/createCodingAssistantAgent.js";
 import { NativeProxessManager } from "../processes/index.js";
 import {
     createEventIdFactory,

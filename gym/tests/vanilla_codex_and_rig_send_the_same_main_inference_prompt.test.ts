@@ -8,7 +8,7 @@ import { GPT_5_5_SYSTEM_PROMPT } from "../../packages/rig/sources/agent/prompts/
 import { GPT_5_6_SOL_SYSTEM_PROMPT } from "../../packages/rig/sources/agent/prompts/gpt56SolSystemPrompt.js";
 import { GPT_5_6_TERRA_SYSTEM_PROMPT } from "../../packages/rig/sources/agent/prompts/gpt56TerraSystemPrompt.js";
 import type { AnyDefinedTool } from "../../packages/rig/sources/agent/types.js";
-import { createDefaultInstructions } from "../../packages/rig/sources/app/createDefaultInstructions.js";
+import { createDefaultInstructions } from "../../packages/rig/sources/runtime/createDefaultInstructions.js";
 import { CODEX_ULTRA_INSTRUCTIONS } from "../../packages/rig/sources/providers/codexUltraInstructions.js";
 import {
     codexCollaborationTools,

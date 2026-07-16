@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createDefaultInstructions } from "../../packages/rig/sources/app/createDefaultInstructions.js";
+import { createDefaultInstructions } from "../../packages/rig/sources/runtime/createDefaultInstructions.js";
 import { createPermissionInstructions } from "../../packages/rig/sources/agent/createPermissionInstructions.js";
 import { CLAUDE_CODE_SYSTEM_PROMPT } from "../../packages/rig/sources/agent/prompts/claudeCodeSystemPrompt.js";
 import type { AnyDefinedTool } from "../../packages/rig/sources/agent/types.js";
