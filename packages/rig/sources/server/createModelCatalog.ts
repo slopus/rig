@@ -3,21 +3,14 @@ import { DEFAULT_RIG_CONFIG } from "../config/defaultConfig.js";
 import type { ConfigProviders } from "../config/types.js";
 import { NativeProxessManager } from "../processes/index.js";
 import type { ModelCatalog } from "../protocol/index.js";
-import { createBedrockProvider } from "../providers/bedrock.js";
-import { createClaudeSdkProvider } from "../providers/claude-sdk.js";
-import { createCodexProvider } from "../providers/codex.js";
-import { createGymProvider } from "../providers/createGymProvider.js";
-import { createGrokProvider } from "../providers/grok.js";
-import { filterConfiguredProviderModels } from "../providers/filterConfiguredProviderModels.js";
+import { createConfiguredProvider } from "../providers/createConfiguredProvider.js";
+import { createGymProviderFromEnvironment } from "../providers/createGymProviderFromEnvironment.js";
 import {
     modelOpenaiGpt56Luna,
     modelOpenaiGpt56Sol,
     modelOpenaiGpt56Terra,
 } from "../providers/models.js";
-import { readConfiguredBedrockBearerToken } from "../providers/readConfiguredBedrockBearerToken.js";
-import { readGymContextWindow } from "../providers/readGymContextWindow.js";
 import type { Provider } from "../providers/types.js";
-import { claudeCodeTools } from "../tools/claude/index.js";
 import { uniqueModelsById } from "./uniqueModelsById.js";
 
 export interface CreateModelCatalogOptions {
@@ -37,18 +30,9 @@ export function createModelCatalog(options: CreateModelCatalogOptions = {}): Mod
     const providers: Provider[] = [];
     const emptyModelProviderIds: string[] = [];
     const missingCredentialVariables = new Set<string>();
-    const gymEndpoint = env.RIG_GYM_INFERENCE_URL;
-    const gymEnabled = gymEndpoint !== undefined && gymEndpoint.trim().length > 0;
-    if (gymEnabled) {
-        const contextWindow = readGymContextWindow(env);
-        providers.unshift(
-            createGymProvider({
-                ...(contextWindow === undefined ? {} : { contextWindow }),
-                endpoint: gymEndpoint,
-                ...(env.RIG_GYM_TOKEN === undefined ? {} : { token: env.RIG_GYM_TOKEN }),
-            }),
-        );
-    }
+    const gymProvider = createGymProviderFromEnvironment(env);
+    const gymEnabled = gymProvider !== undefined;
+    if (gymProvider !== undefined) providers.unshift(gymProvider);
     for (const [configuredId, config] of Object.entries(providerSettings)) {
         if (!config.enabled) continue;
         const id = configuredId;
@@ -56,62 +40,23 @@ export function createModelCatalog(options: CreateModelCatalogOptions = {}): Mod
             throw new Error(`Inference provider '${id}' is configured more than once.`);
         }
 
-        let provider: Provider;
-        if (config.type === "codex") {
-            provider = createCodexProvider({
-                env,
-                id,
-                ...(config.authFile === undefined ? {} : { codexAuthPath: config.authFile }),
-                ...(config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl }),
-                ...(config.transport === undefined ? {} : { transport: config.transport }),
-            });
-        } else if (config.type === "claude") {
-            provider = createClaudeSdkProvider({
-                agentContext: context,
-                env:
-                    config.configDir === undefined
-                        ? env
-                        : { ...env, CLAUDE_CONFIG_DIR: config.configDir },
-                id,
-                ...(config.executable === undefined
-                    ? {}
-                    : { pathToClaudeCodeExecutable: config.executable }),
-                tools: claudeCodeTools,
-            });
-        } else if (config.type === "grok") {
-            const baseUrl = config.baseUrl ?? env.RIG_GROK_BASE_URL;
-            provider = createGrokProvider({
-                env,
-                id,
-                ...(config.authFile === undefined ? {} : { authFile: config.authFile }),
-                ...(baseUrl === undefined ? {} : { baseUrl }),
-            });
-        } else {
-            const bearerToken = readConfiguredBedrockBearerToken(config, env);
-            if (bearerToken === undefined) {
-                missingCredentialVariables.add(
-                    config.bearerTokenEnvVar ?? "AWS_BEARER_TOKEN_BEDROCK",
-                );
-                continue;
-            }
-            provider = createBedrockProvider({
-                bearerToken,
-                env,
-                id,
-                ...(config.modelOverrides === undefined
-                    ? {}
-                    : { modelOverrides: config.modelOverrides }),
-                ...(config.region === undefined ? {} : { region: config.region }),
-            });
-        }
-        const filteredProvider = filterConfiguredProviderModels(provider, config, {
-            allowEmpty: true,
+        const result = createConfiguredProvider({
+            agentContext: context,
+            allowEmptyModels: true,
+            config,
+            env,
+            id,
         });
-        if (filteredProvider.models.length === 0) {
+        if (result.status === "missing_credential") {
+            missingCredentialVariables.add(result.variable);
+            continue;
+        }
+        const provider = result.provider;
+        if (provider.models.length === 0) {
             emptyModelProviderIds.push(id);
             continue;
         }
-        providers.push(filteredProvider);
+        providers.push(provider);
     }
 
     const defaultProvider = providers[0];

@@ -16,21 +16,14 @@ import {
 import type { DockerExecutionConfig } from "../execution/index.js";
 import { DEFAULT_RIG_CONFIG } from "../config/defaultConfig.js";
 import { findConfiguredProvider } from "../config/findConfiguredProvider.js";
-import type { ConfigCodexProvider, ConfigGrokProvider, ConfigProviders } from "../config/types.js";
+import type { ConfigProviders } from "../config/types.js";
 import type { WorkflowContext } from "../workflows/index.js";
 import type { Message } from "../agent/types.js";
 import { NativeProxessManager } from "../processes/index.js";
-import { createBedrockProvider } from "../providers/bedrock.js";
-import { createClaudeSdkProvider } from "../providers/claude-sdk.js";
-import { createClaudeSessionId } from "../providers/createClaudeSessionId.js";
-import { createCodexProvider, type CodexProviderOptions } from "../providers/codex.js";
-import { createGymProvider } from "../providers/createGymProvider.js";
-import { createGrokProvider, type GrokProviderOptions } from "../providers/grok.js";
-import { filterConfiguredProviderModels } from "../providers/filterConfiguredProviderModels.js";
+import { createConfiguredProvider } from "../providers/createConfiguredProvider.js";
+import { createGymProviderFromEnvironment } from "../providers/createGymProviderFromEnvironment.js";
 import { getBedrockModelRoute } from "../providers/getBedrockModelRoute.js";
 import { modelOpenaiGpt56Sol } from "../providers/models.js";
-import { readGymContextWindow } from "../providers/readGymContextWindow.js";
-import { readConfiguredBedrockBearerToken } from "../providers/readConfiguredBedrockBearerToken.js";
 import type { ServiceTier } from "../providers/types.js";
 import { claudeCollaborationTools } from "../tools/claude/index.js";
 import { codexCollaborationTools } from "../tools/codex/index.js";
@@ -117,63 +110,31 @@ export function createCodingAssistantAgent(
     if (providerId !== "gym" && (providerConfig === undefined || !providerConfig.enabled)) {
         throw new Error(`Unknown or disabled inference provider '${providerId}'.`);
     }
-    const providerType = providerId === "gym" ? "gym" : providerConfig?.type;
     const env = options.env ?? process.env;
     const nativeProvider = (() => {
-        if (providerType === "gym") return createGymProviderFromEnvironment(env);
-        if (providerConfig?.type === "bedrock") {
-            const bearerToken = readConfiguredBedrockBearerToken(providerConfig, env);
-            if (bearerToken === undefined) {
-                throw new Error(
-                    `Inference provider '${providerId}' requires the ${providerConfig.bearerTokenEnvVar ?? "AWS_BEARER_TOKEN_BEDROCK"} environment variable.`,
-                );
+        if (providerId === "gym") {
+            const provider = createGymProviderFromEnvironment(env);
+            if (provider === undefined) {
+                throw new Error("RIG_GYM_INFERENCE_URL is required for the gym provider.");
             }
-            return filterConfiguredProviderModels(
-                createBedrockProvider({
-                    bearerToken,
-                    env,
-                    id: providerId,
-                    ...(providerConfig.modelOverrides === undefined
-                        ? {}
-                        : { modelOverrides: providerConfig.modelOverrides }),
-                    ...(providerConfig.region === undefined
-                        ? {}
-                        : { region: providerConfig.region }),
-                }),
-                providerConfig,
+            return provider;
+        }
+        if (providerConfig === undefined)
+            throw new Error(`Unknown inference provider '${providerId}'.`);
+        const result = createConfiguredProvider({
+            agentContext: context,
+            ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
+            config: providerConfig,
+            env,
+            id: providerId,
+            sessionId: agentId,
+        });
+        if (result.status === "missing_credential") {
+            throw new Error(
+                `Inference provider '${providerId}' requires the ${result.variable} environment variable.`,
             );
         }
-        if (providerConfig?.type === "claude") {
-            const executable = providerConfig.executable ?? env.RIG_CLAUDE_CODE_EXECUTABLE;
-            return filterConfiguredProviderModels(
-                createClaudeSdkProvider({
-                    agentContext: context,
-                    env:
-                        providerConfig.configDir === undefined
-                            ? env
-                            : { ...env, CLAUDE_CONFIG_DIR: providerConfig.configDir },
-                    id: providerId,
-                    ...(executable === undefined ? {} : { pathToClaudeCodeExecutable: executable }),
-                    sessionId: createClaudeSessionId(agentId),
-                }),
-                providerConfig,
-            );
-        }
-        if (providerConfig?.type === "codex") {
-            return filterConfiguredProviderModels(
-                createCodexProvider(toCodexProviderOptions(options, providerId, providerConfig)),
-                providerConfig,
-            );
-        }
-        if (providerConfig?.type === "grok") {
-            return filterConfiguredProviderModels(
-                createGrokProvider(
-                    toGrokProviderOptions(options, providerId, providerConfig, agentId),
-                ),
-                providerConfig,
-            );
-        }
-        throw new Error(`Unknown inference provider '${providerId}'.`);
+        return result.provider;
     })();
     const provider = routeProviderThroughGym(nativeProvider, env);
     const model = provider.models.find((candidate) => candidate.id === modelId);
@@ -238,65 +199,4 @@ export function createCodingAssistantAgent(
         processManager,
         provider,
     };
-}
-
-function toGrokProviderOptions(
-    options: CreateCodingAssistantAgentOptions,
-    providerId: string,
-    config: ConfigGrokProvider,
-    sessionId: string,
-): GrokProviderOptions {
-    const env = options.env ?? process.env;
-    const baseUrl = config.baseUrl ?? env.RIG_GROK_BASE_URL;
-    return {
-        id: providerId,
-        env,
-        sessionId,
-        ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
-        ...(config.authFile === undefined ? {} : { authFile: config.authFile }),
-        ...(baseUrl === undefined ? {} : { baseUrl }),
-    };
-}
-
-function createGymProviderFromEnvironment(env: NodeJS.ProcessEnv) {
-    const endpoint = env.RIG_GYM_INFERENCE_URL;
-    if (endpoint === undefined || endpoint.trim().length === 0) {
-        throw new Error("RIG_GYM_INFERENCE_URL is required for the gym provider.");
-    }
-    const contextWindow = readGymContextWindow(env);
-    return createGymProvider({
-        ...(contextWindow === undefined ? {} : { contextWindow }),
-        endpoint,
-        ...(env.RIG_GYM_TOKEN === undefined ? {} : { token: env.RIG_GYM_TOKEN }),
-    });
-}
-
-function toCodexProviderOptions(
-    options: CreateCodingAssistantAgentOptions,
-    providerId: string,
-    config: ConfigCodexProvider,
-): CodexProviderOptions {
-    const env = options.env ?? process.env;
-    const providerOptions: CodexProviderOptions = { env, id: providerId };
-    if (options.apiKey !== undefined) {
-        providerOptions.apiKey = options.apiKey;
-    }
-    if (config.authFile !== undefined) {
-        providerOptions.codexAuthPath = config.authFile;
-    }
-    const baseUrl = config.baseUrl ?? env.RIG_CODEX_BASE_URL;
-    if (baseUrl !== undefined) {
-        providerOptions.baseUrl = baseUrl;
-    }
-    const transport = config.transport ?? env.RIG_CODEX_TRANSPORT;
-    if (
-        transport === "auto" ||
-        transport === "sse" ||
-        transport === "websocket" ||
-        transport === "websocket-cached"
-    ) {
-        providerOptions.transport = transport;
-    }
-
-    return providerOptions;
 }
