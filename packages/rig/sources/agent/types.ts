@@ -146,6 +146,8 @@ export interface DefinedTool<
         args: Static<TArgsSchema>,
     ) => readonly ContentBlock[];
     toUI: (result: Static<TReturnSchema>, args: Static<TArgsSchema>) => string;
+    /** Model- and user-facing result text when the tool invocation is interrupted. */
+    interruptionMessage?: string;
     /** Provider-specific Auto-mode guidance included only while this tool is active. */
     autoPermissionInstructions?: string;
     /** Describes the exact reviewed boundary in permission events and approval prompts. */
@@ -173,6 +175,7 @@ export interface AnyDefinedTool {
     toPresentation?: (result: never, args: never) => ToolResultPresentation | undefined;
     toTrustedUserEvidence?: (result: never, args: never) => readonly ContentBlock[];
     toUI: (result: never, args: never) => string;
+    interruptionMessage?: string;
     autoPermissionInstructions?: string;
     describeAutoPermissionAction?: AutoPermissionActionDescriber<never>;
     requiresAutoOrFullAccess: boolean;
@@ -215,6 +218,7 @@ export function defineTool<
         args: Static<TArgsSchema>,
     ) => readonly ContentBlock[];
     toUI: (result: Static<TReturnSchema>, args: Static<TArgsSchema>) => string;
+    interruptionMessage?: string;
     autoPermissionInstructions?: string;
     describeAutoPermissionAction?: AutoPermissionActionDescriber<Static<TArgsSchema>>;
     requiresAutoOrFullAccess?: boolean;

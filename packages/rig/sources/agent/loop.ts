@@ -455,6 +455,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         if (options.signal?.aborted) {
             const interrupted = await appendInterruptedToolResults({
                 toolCalls,
+                toolsByName,
                 transcript,
                 contextTranscript,
                 providerMessages,
@@ -472,7 +473,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                     if (options.signal?.aborted) {
                         return {
                             completedBeforeAbort: false,
-                            result: interruptedToolResultBlock(toolCall),
+                            result: interruptedToolResultBlock(toolCall, toolsByName),
                             toolCall,
                         };
                     }
@@ -552,7 +553,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
 
         const toolResultBlocks = toolExecutionOutcomes.map((outcome) =>
             options.signal?.aborted && !outcome.completedBeforeAbort
-                ? interruptedToolResultBlock(outcome.toolCall)
+                ? interruptedToolResultBlock(outcome.toolCall, toolsByName)
                 : outcome.result,
         );
 
@@ -632,6 +633,7 @@ async function appendSteering(
 
 async function appendInterruptedToolResults(options: {
     toolCalls: readonly ProviderToolCall[];
+    toolsByName: ReadonlyMap<string, AnyDefinedTool>;
     transcript: Message[];
     contextTranscript: Message[];
     providerMessages: ProviderMessage[];
@@ -639,7 +641,9 @@ async function appendInterruptedToolResults(options: {
     now: () => number;
     onMessage: ((message: Message) => void | Promise<void>) | undefined;
 }): Promise<AgentLoopResult> {
-    const toolResultBlocks = options.toolCalls.map(interruptedToolResultBlock);
+    const toolResultBlocks = options.toolCalls.map((toolCall) =>
+        interruptedToolResultBlock(toolCall, options.toolsByName),
+    );
     for (const resultBlock of toolResultBlocks) {
         options.providerMessages.push(toProviderToolResultMessage(resultBlock, options.now));
     }
@@ -1037,15 +1041,12 @@ function errorToolResultBlock(
     };
 }
 
-function interruptedToolResultBlock(toolCall: ProviderToolCall): ToolResultBlock {
-    if (toolCall.name === "wait_for_workflow" || toolCall.name === "WaitForWorkflow") {
-        return errorToolResultBlock(
-            toolCall,
-            "The workflow wait was cancelled by the user. The workflow is still running in the background.",
-            { kind: "interrupted" },
-        );
-    }
-    return errorToolResultBlock(toolCall, "Interrupted by user.", { kind: "interrupted" });
+function interruptedToolResultBlock(
+    toolCall: ProviderToolCall,
+    toolsByName: ReadonlyMap<string, AnyDefinedTool>,
+): ToolResultBlock {
+    const message = toolsByName.get(toolCall.name)?.interruptionMessage ?? "Interrupted by user.";
+    return errorToolResultBlock(toolCall, message, { kind: "interrupted" });
 }
 
 function errorToMessage(error: unknown): string {
