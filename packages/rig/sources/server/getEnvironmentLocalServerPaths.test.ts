@@ -1,9 +1,18 @@
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { getEnvironmentLocalServerPaths } from "./getEnvironmentLocalServerPaths.js";
 
 describe("getEnvironmentLocalServerPaths", () => {
+    it("uses RIG_HOME for durable state and the temporary directory for daemon files", () => {
+        const paths = getEnvironmentLocalServerPaths({ RIG_HOME: "/home/tester/custom-rig" }, 501);
+
+        expect(paths.databasePath).toBe("/home/tester/custom-rig/sessions.sqlite");
+        expect(paths.directory).toBe(join(tmpdir(), "rig-501"));
+        expect(paths.socketPath).toBe(join(tmpdir(), "rig-501", "server.sock"));
+    });
+
     it("keeps every development daemon file in the configured directory", () => {
         const directory = resolve("workspace/.rig-dev");
 

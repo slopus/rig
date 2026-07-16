@@ -18,7 +18,7 @@ describe("blocked MCP servers render as stable child rows", () => {
         const gym = await createGym({
             cols: 120,
             homeFiles: {
-                ".config/rig/config.toml": [
+                ".rig/config.toml": [
                     "[mcp_servers.openai_developer_docs]",
                     'command = "must-not-start"',
                     "",

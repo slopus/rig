@@ -306,9 +306,16 @@ permission_mode = "workspace_write"
 
 ## Configuration
 
-Rig reads user-wide settings from `~/.config/rig/config.toml` and repository
+Rig reads user-wide settings from `~/.rig/config.toml` and repository
 settings from `rig.toml`. Repository values win where both are allowed. It also
 understands Codex MCP entries from `~/.codex/config.toml` and `.codex/config.toml`.
+
+Rig keeps its durable user files together in `~/.rig`: configuration,
+runtime settings, MCP trust decisions, the saved-session database, and binary
+files returned by web fetches. Temporary daemon control files remain in the
+system temporary directory. Set `RIG_HOME` to an absolute path to use a
+different durable directory. Rig does not search or migrate older XDG config
+or state locations.
 
 A small project configuration might look like this:
 
@@ -325,7 +332,7 @@ accent = "cyan"
 ```
 
 Provider availability is machine-wide because the local daemon owns the model
-catalog and authentication paths. Configure it in `~/.config/rig/config.toml`:
+catalog and authentication paths. Configure it in `~/.rig/config.toml`:
 
 ```toml
 [providers.codex]
@@ -420,7 +427,7 @@ The same options work with `rig exec`. `--docker-socket`, `--docker-name`, and
 repeated `--docker-env` or `--docker-mount` options provide additional control.
 Use `--local` to ignore a configured Docker default for one new session.
 
-Machine-wide Docker defaults belong in `~/.config/rig/config.toml`:
+Machine-wide Docker defaults belong in `~/.rig/config.toml`:
 
 ```toml
 [docker]

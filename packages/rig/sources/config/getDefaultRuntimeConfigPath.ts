@@ -1,10 +1,10 @@
-import { homedir } from "node:os";
 import { join } from "node:path";
+
+import { getRigHome } from "./getRigHome.js";
 
 export function getDefaultRuntimeConfigPath(
     env: NodeJS.ProcessEnv = process.env,
-    homeDirectory: string = homedir(),
+    homeDirectory?: string,
 ): string {
-    const configHome = env.XDG_CONFIG_HOME ?? join(homeDirectory, ".config");
-    return join(configHome, "rig", "runtime.toml");
+    return join(getRigHome(env, homeDirectory), "runtime.toml");
 }

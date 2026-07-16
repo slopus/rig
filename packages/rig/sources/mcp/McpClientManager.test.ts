@@ -17,7 +17,7 @@ describe("McpClientManager", () => {
             const homeDirectory = join(root, "home");
             const marker = join(root, "server-started.txt");
             const manager = new McpClientManager({
-                env: { XDG_CONFIG_HOME: join(root, "config") } as NodeJS.ProcessEnv,
+                env: { RIG_HOME: join(root, "rig-home") } as NodeJS.ProcessEnv,
                 homeDirectory,
             });
             try {
@@ -73,7 +73,7 @@ describe("McpClientManager", () => {
         );
         let prompts = 0;
         const first = new McpClientManager({
-            env: { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv,
+            env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
             homeDirectory,
         });
         try {
@@ -99,7 +99,7 @@ describe("McpClientManager", () => {
         }
 
         const second = new McpClientManager({
-            env: { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv,
+            env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
             homeDirectory,
         });
         try {
@@ -136,7 +136,7 @@ describe("McpClientManager", () => {
         const homeMarker = join(root, "home-server-started.txt");
         const workspaceMarker = join(root, "workspace-shadow-started.txt");
         const manager = new McpClientManager({
-            env: { XDG_CONFIG_HOME: join(root, "config") } as NodeJS.ProcessEnv,
+            env: { RIG_HOME: join(root, "rig-home") } as NodeJS.ProcessEnv,
             homeDirectory,
         });
         try {
@@ -184,7 +184,7 @@ describe("McpClientManager", () => {
         const configHome = join(cwd, "config-home");
         const homeDirectory = join(cwd, "home");
         const manager = new McpClientManager({
-            env: { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv,
+            env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
             homeDirectory,
         });
         try {
@@ -195,15 +195,15 @@ describe("McpClientManager", () => {
             );
             const projectMarker = join(cwd, "project-server-started.txt");
             const projectServer = join(cwd, "project-server.mjs");
-            await mkdir(join(configHome, "rig"), { recursive: true });
+            await mkdir(configHome, { recursive: true });
             await mkdir(homeDirectory, { recursive: true });
             await writeFile(
-                join(configHome, "rig", "config.toml"),
+                join(configHome, "config.toml"),
                 `[mcp_servers."Global Docs"]\ncommand = "${process.execPath}"\nargs = ["${fixture}"]\n`,
                 "utf8",
             );
             await writeFile(
-                join(configHome, "rig", "runtime.toml"),
+                join(configHome, "runtime.toml"),
                 `[mcp_servers."Runtime Docs"]\ncommand = "${process.execPath}"\nargs = ["${fixture}"]\n`,
                 "utf8",
             );
@@ -271,7 +271,7 @@ describe("McpClientManager", () => {
     it("discovers and calls tools over a stdio MCP connection", async () => {
         const cwd = await mkdtemp(join(tmpdir(), "rig-mcp-client-"));
         const manager = new McpClientManager({
-            env: { XDG_CONFIG_HOME: join(cwd, "empty-config") } as NodeJS.ProcessEnv,
+            env: { RIG_HOME: join(cwd, "empty-rig-home") } as NodeJS.ProcessEnv,
             homeDirectory: join(cwd, "empty-home"),
         });
         try {
@@ -371,7 +371,7 @@ describe("McpClientManager", () => {
     it("keeps an unavailable optional server visible without blocking other tools", async () => {
         const cwd = await mkdtemp(join(tmpdir(), "rig-mcp-client-"));
         const manager = new McpClientManager({
-            env: { XDG_CONFIG_HOME: join(cwd, "empty-config") } as NodeJS.ProcessEnv,
+            env: { RIG_HOME: join(cwd, "empty-rig-home") } as NodeJS.ProcessEnv,
             homeDirectory: join(cwd, "empty-home"),
         });
         try {
@@ -404,7 +404,7 @@ describe("McpClientManager", () => {
     it("enforces tool allowlists through live list and call tools", async () => {
         const cwd = await mkdtemp(join(tmpdir(), "rig-mcp-client-"));
         const manager = new McpClientManager({
-            env: { XDG_CONFIG_HOME: join(cwd, "empty-config") } as NodeJS.ProcessEnv,
+            env: { RIG_HOME: join(cwd, "empty-rig-home") } as NodeJS.ProcessEnv,
             homeDirectory: join(cwd, "empty-home"),
         });
         try {

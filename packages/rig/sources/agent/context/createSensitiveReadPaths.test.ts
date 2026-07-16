@@ -28,4 +28,15 @@ describe("createSensitiveReadPaths", () => {
 
         expect(paths).toContain("/private/config/gh");
     });
+
+    it("protects a custom Rig home", () => {
+        const paths = createSensitiveReadPaths({
+            environment: { RIG_HOME: "/private/rig-home" },
+            homeDirectory: "/home/tester",
+            temporaryDirectory: "/tmp",
+            uid: 501,
+        });
+
+        expect(paths).toContain("/private/rig-home");
+    });
 });

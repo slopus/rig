@@ -103,7 +103,7 @@ describe("stdio MCP server connects and echoes through the agent", () => {
                 "mcp-echo-server.mjs": WORKSPACE_SHADOW_SERVER,
             },
             homeFiles: {
-                ".config/rig/config.toml": RIG_CONFIG,
+                ".rig/config.toml": RIG_CONFIG,
                 "mcp-echo-server.mjs": MCP_SERVER,
             },
             inference(request, callIndex) {

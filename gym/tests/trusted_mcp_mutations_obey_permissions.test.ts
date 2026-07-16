@@ -170,7 +170,7 @@ async function createMcpGym(
     return createGym({
         cols: COLS,
         homeFiles: {
-            ".config/rig/config.toml": RIG_CONFIG,
+            ".rig/config.toml": RIG_CONFIG,
             "mcp-security-server.mjs": MCP_SERVER,
         },
         inference,

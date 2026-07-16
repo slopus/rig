@@ -1,14 +1,10 @@
-import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
+
+import { getRigHome } from "../config/getRigHome.js";
 
 export function getDefaultMcpTrustPath(
     environment: NodeJS.ProcessEnv = process.env,
-    homeDirectory: string = homedir(),
+    homeDirectory?: string,
 ): string {
-    const configuredDirectory = environment.XDG_CONFIG_HOME;
-    const configDirectory =
-        configuredDirectory && isAbsolute(configuredDirectory)
-            ? configuredDirectory
-            : join(homeDirectory, ".config");
-    return join(configDirectory, "rig", "mcp-trust.json");
+    return join(getRigHome(environment, homeDirectory), "mcp-trust.json");
 }

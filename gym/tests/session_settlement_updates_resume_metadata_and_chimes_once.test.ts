@@ -37,7 +37,7 @@ describe("settled session metadata", () => {
                 ].join("; "),
             ],
             homeFiles: {
-                ".config/rig/config.toml": "[settings]\ncompletion_chime = true\n",
+                ".rig/config.toml": "[settings]\ncompletion_chime = true\n",
             },
             inference(request, callIndex) {
                 if (request.options.sessionId?.endsWith(":title")) {

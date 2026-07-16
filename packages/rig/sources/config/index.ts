@@ -5,6 +5,7 @@ export { DEFAULT_RIG_CONFIG } from "./defaultConfig.js";
 export { getDefaultGlobalConfigPath } from "./getDefaultGlobalConfigPath.js";
 export { getDefaultLocalConfigPath } from "./getDefaultLocalConfigPath.js";
 export { getDefaultRuntimeConfigPath } from "./getDefaultRuntimeConfigPath.js";
+export { getRigHome } from "./getRigHome.js";
 export { loadConfig } from "./loadConfig.js";
 export { loadDaemonSettings } from "./loadDaemonSettings.js";
 export { mergeConfigValues } from "./mergeConfigValues.js";

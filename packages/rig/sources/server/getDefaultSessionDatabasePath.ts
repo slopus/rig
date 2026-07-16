@@ -1,10 +1,10 @@
-import { homedir } from "node:os";
 import { join } from "node:path";
+
+import { getRigHome } from "../config/getRigHome.js";
 
 export function getDefaultSessionDatabasePath(
     env: NodeJS.ProcessEnv = process.env,
-    homeDirectory: string = homedir(),
+    homeDirectory?: string,
 ): string {
-    const stateHome = env.XDG_STATE_HOME ?? join(homeDirectory, ".local", "state");
-    return join(stateHome, "rig", "sessions.sqlite");
+    return join(getRigHome(env, homeDirectory), "sessions.sqlite");
 }

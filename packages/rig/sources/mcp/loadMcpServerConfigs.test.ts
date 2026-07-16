@@ -12,12 +12,12 @@ describe("loadMcpServerConfigs", () => {
         try {
             const cwd = join(root, "repo");
             const configHome = join(root, "config-home");
-            await mkdir(join(configHome, "rig"), { recursive: true });
+            await mkdir(configHome, { recursive: true });
             await mkdir(join(root, "home", ".codex"), { recursive: true });
             await mkdir(join(cwd, ".codex"), { recursive: true });
             await mkdir(cwd, { recursive: true });
             await writeFile(
-                join(configHome, "rig", "config.toml"),
+                join(configHome, "config.toml"),
                 `
 [mcp_servers.docs]
 command = "docs-server"
@@ -56,7 +56,7 @@ enabled = false
 
             await expect(
                 loadMcpServerConfigs(cwd, {
-                    env: { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv,
+                    env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
                     homeDirectory: join(root, "home"),
                 }),
             ).resolves.toEqual({
@@ -78,7 +78,7 @@ enabled = false
                 },
             });
             const entries = await loadMcpServerConfigEntries(cwd, {
-                env: { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv,
+                env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
                 homeDirectory: join(root, "home"),
             });
             expect(Object.fromEntries(entries.map((entry) => [entry.name, entry.source]))).toEqual({

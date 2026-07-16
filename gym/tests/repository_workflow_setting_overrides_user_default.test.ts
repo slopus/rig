@@ -60,7 +60,7 @@ async function createWorkflowSettingGym(options: {
             "rig.toml": `[features]\nworkflows = ${String(options.projectSetting)}\n`,
         },
         homeFiles: {
-            ".config/rig/config.toml": `[features]\nworkflows = ${String(options.globalSetting)}\n`,
+            ".rig/config.toml": `[features]\nworkflows = ${String(options.globalSetting)}\n`,
         },
         inference(request) {
             if (request.options.sessionId?.endsWith(":title")) {

@@ -62,7 +62,7 @@ describe("parallel MCP reverse completion", () => {
         const gym = await createGym({
             cols: 110,
             homeFiles: {
-                ".config/rig/config.toml": `[mcp_servers."Slow Service"]\ncommand = "node"\nargs = ["parallel-mcp.mjs", "slow"]\nstartup_timeout_sec = 10\ntool_timeout_sec = 30\n\n[mcp_servers."Fast Service"]\ncommand = "node"\nargs = ["parallel-mcp.mjs", "fast"]\nstartup_timeout_sec = 10\ntool_timeout_sec = 30\n`,
+                ".rig/config.toml": `[mcp_servers."Slow Service"]\ncommand = "node"\nargs = ["parallel-mcp.mjs", "slow"]\nstartup_timeout_sec = 10\ntool_timeout_sec = 30\n\n[mcp_servers."Fast Service"]\ncommand = "node"\nargs = ["parallel-mcp.mjs", "fast"]\nstartup_timeout_sec = 10\ntool_timeout_sec = 30\n`,
                 "parallel-mcp.mjs": MCP_SERVER,
             },
             inference(request, callIndex) {

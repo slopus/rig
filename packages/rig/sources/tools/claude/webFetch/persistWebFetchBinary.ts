@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
+
+import { getRigHome } from "../../../config/getRigHome.js";
 
 const EXTENSIONS = new Map<string, string>([
     ["application/pdf", "pdf"],
@@ -20,8 +21,7 @@ export async function persistWebFetchBinary(
 ): Promise<string | undefined> {
     const mediaType = (contentType.split(";")[0] ?? "").trim().toLowerCase();
     const extension = EXTENSIONS.get(mediaType) ?? "bin";
-    const stateHome = process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state");
-    const directory = join(stateHome, "rig", "tool-results");
+    const directory = join(getRigHome(), "tool-results");
     const path = join(
         directory,
         `webfetch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`,

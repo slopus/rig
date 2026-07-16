@@ -110,7 +110,7 @@ async function readSubmissionCounts(
 ): Promise<{ eventCount: number; messageCount: number }> {
     const script = `
 const { DatabaseSync } = require("node:sqlite");
-const database = new DatabaseSync("/home/rig/.local/state/rig/sessions.sqlite");
+const database = new DatabaseSync("/home/rig/.rig/sessions.sqlite");
 const session = database.prepare(
   "SELECT id FROM sessions WHERE parent_session_id IS NULL ORDER BY created_at_ms DESC LIMIT 1"
 ).get();

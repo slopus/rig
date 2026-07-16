@@ -200,13 +200,13 @@ bearer_token_env_var = "WORK_BEDROCK_TOKEN"
         try {
             const configHome = join(root, "config-home");
             const cwd = join(root, "repo");
-            const globalPath = join(configHome, "rig", "config.toml");
-            const runtimePath = join(configHome, "rig", "runtime.toml");
-            await mkdir(join(configHome, "rig"), { recursive: true });
+            const globalPath = join(configHome, "config.toml");
+            const runtimePath = join(configHome, "runtime.toml");
+            await mkdir(configHome, { recursive: true });
             await mkdir(cwd, { recursive: true });
             await writeFile(globalPath, '[defaults]\nservice_tier = "fast"\n', "utf8");
 
-            const environment = { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv;
+            const environment = { RIG_HOME: configHome } as NodeJS.ProcessEnv;
             expect((await loadConfig({ cwd, env: environment })).config.defaults.serviceTier).toBe(
                 "fast",
             );
@@ -250,10 +250,10 @@ bearer_token_env_var = "WORK_BEDROCK_TOKEN"
         try {
             const cwd = join(root, "repo");
             const configHome = join(root, "config-home");
-            const globalPath = join(configHome, "rig", "config.toml");
-            const runtimePath = join(configHome, "rig", "runtime.toml");
+            const globalPath = join(configHome, "config.toml");
+            const runtimePath = join(configHome, "runtime.toml");
             const localPath = join(cwd, "rig.toml");
-            await mkdir(join(configHome, "rig"), { recursive: true });
+            await mkdir(configHome, { recursive: true });
             await mkdir(cwd, { recursive: true });
             await writeFile(
                 globalPath,
@@ -311,7 +311,7 @@ effort = "minimal"
 
             const loaded = await loadConfig({
                 cwd,
-                env: { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv,
+                env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
             });
 
             expect(loaded.config.defaults).toEqual({
@@ -346,7 +346,7 @@ effort = "minimal"
             await mkdir(emptyCwd, { recursive: true });
             const defaultLoaded = await loadConfig({
                 cwd: emptyCwd,
-                env: { XDG_CONFIG_HOME: join(root, "empty-config-home") } as NodeJS.ProcessEnv,
+                env: { RIG_HOME: join(root, "empty-rig-home") } as NodeJS.ProcessEnv,
             });
             expect(defaultLoaded.config.settings).toEqual({
                 completionChime: false,
@@ -541,8 +541,8 @@ effort = "minimal"
         try {
             const configHome = join(root, "config-home");
             const cwd = join(root, "repo");
-            const runtimePath = join(configHome, "rig", "runtime.toml");
-            await mkdir(join(configHome, "rig"), { recursive: true });
+            const runtimePath = join(configHome, "runtime.toml");
+            await mkdir(configHome, { recursive: true });
             await mkdir(cwd, { recursive: true });
             await writeFile(
                 runtimePath,
@@ -570,7 +570,7 @@ effort = "minimal"
                 { durableGlobalEventQueue: true },
                 {
                     cwd,
-                    env: { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv,
+                    env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
                 },
             );
 

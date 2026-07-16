@@ -1,5 +1,6 @@
 import { isAbsolute, join, resolve } from "node:path";
 
+import { getDefaultSessionDatabasePath } from "./getDefaultSessionDatabasePath.js";
 import { getLocalServerPaths, type LocalServerPaths } from "./LocalServerPaths.js";
 
 export function getEnvironmentLocalServerPaths(
@@ -15,7 +16,9 @@ export function getEnvironmentLocalServerPaths(
               : resolve(configuredDirectory);
     const paths =
         directory === undefined
-            ? getLocalServerPaths(uid)
+            ? getLocalServerPaths(uid, {
+                  databasePath: getDefaultSessionDatabasePath(environment),
+              })
             : getLocalServerPaths(uid, {
                   databasePath: join(directory, "sessions.sqlite"),
                   directory,

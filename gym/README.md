@@ -290,7 +290,7 @@ await expect(gym.readFile("src/result.txt")).resolves.toBe("created in Docker\n"
 `gym.workspacePath` exposes the temporary host path for advanced diagnostics. Prefer `gym.readFile` in assertions so tests remain clear and path-safe.
 
 Use `homeFiles` for configuration that must originate from the simulated user's trusted home
-directory, such as `.config/rig/config.toml`. Its keys are relative to `/home/rig`. Keep
+directory, such as `.rig/config.toml`. Its keys are relative to `/home/rig`. Keep
 repository-controlled fixtures in `files` so security tests preserve the source boundary.
 
 For provider-boundary tests that need to compare Rig with a directly invoked SDK in the same
