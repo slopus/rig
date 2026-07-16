@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { createConfigFile } from "./createConfigFile.js";
 import { DEFAULT_RIG_CONFIG } from "./defaultConfig.js";
 import { createProjectConfigSecurityNotice } from "./createProjectConfigSecurityNotice.js";
+import { createProjectConfigSecurityNoticeTitle } from "./createProjectConfigSecurityNoticeTitle.js";
 import { loadConfig } from "./loadConfig.js";
 import { parseConfigToml } from "./parseConfigToml.js";
 import { writeRuntimeConfig } from "./writeRuntimeConfig.js";
@@ -252,6 +253,16 @@ bearer_token_env_var = "WORK_BEDROCK_TOKEN"
                 providers,
             }),
         ).toContain("kept container execution and provider availability");
+        expect(
+            createProjectConfigSecurityNotice({
+                settings: { durableGlobalEventQueue: true },
+            }),
+        ).toContain("kept the durable event queue under your machine-level control");
+        expect(
+            createProjectConfigSecurityNoticeTitle({
+                settings: { durableGlobalEventQueue: true },
+            }),
+        ).toBe("Project daemon setting ignored");
     });
 
     it("applies project preferences without allowing project permission escalation", async () => {
@@ -348,7 +359,7 @@ effort = "minimal"
                 workingDirectory: "/repo",
             });
             expect(createProjectConfigSecurityNotice(loaded.sources.local.values)).toBe(
-                "This project's rig.toml requested machine-level settings. Rig applied the other project preferences but kept permissions, container execution, and provider availability under your machine-level control.",
+                "This project's rig.toml requested machine-level settings. Rig applied the other project preferences but kept permissions, container execution, provider availability, and the durable event queue under your machine-level control.",
             );
 
             const emptyCwd = join(root, "empty-repo");
