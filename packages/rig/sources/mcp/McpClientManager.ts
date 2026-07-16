@@ -2,6 +2,7 @@ import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 
+import { errorToMessage } from "../errorToMessage.js";
 import { connectMcpServer, type ConnectedMcpServer } from "./connectMcpServer.js";
 import { createMcpProtocolTools } from "./createMcpProtocolTools.js";
 import { createMcpTool } from "./createMcpTool.js";
@@ -406,7 +407,7 @@ export class McpClientManager implements McpToolProvider {
         } catch (error) {
             await connection?.close().catch(() => undefined);
             return {
-                errorMessage: error instanceof Error ? error.message : String(error),
+                errorMessage: errorToMessage(error),
                 name,
             };
         }

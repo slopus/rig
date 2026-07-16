@@ -1,4 +1,5 @@
 import { findLastAgentResponseText } from "../agent/findLastAgentResponseText.js";
+import { errorToMessage } from "../errorToMessage.js";
 import { ensureLocalProtocolServer } from "../client/index.js";
 import {
     createProjectConfigSecurityNotice,
@@ -27,7 +28,7 @@ export async function runExec(
         if (options.outputFormat === "text") throw error;
         const payload = {
             ...(debugDirectory === undefined ? {} : { debugDirectory }),
-            error: error instanceof Error ? error.message : String(error),
+            error: errorToMessage(error),
             type: "error",
         };
         process.stdout.write(`${JSON.stringify(payload)}\n`);

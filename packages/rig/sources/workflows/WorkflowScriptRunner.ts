@@ -1,4 +1,5 @@
 import type { AgentContext } from "../agent/index.js";
+import { errorToMessage } from "../errorToMessage.js";
 import type {
     WorkflowAgentCacheEntry,
     WorkflowCheckpoint,
@@ -173,7 +174,7 @@ export class WorkflowScriptRunner {
                     return await this.#runAgent(request.prompt, request, callIndices[index]!);
                 } catch (error) {
                     this.#onLog(
-                        `${request.label ?? "Workflow agent"} failed: ${error instanceof Error ? error.message : String(error)}`,
+                        `${request.label ?? "Workflow agent"} failed: ${errorToMessage(error)}`,
                     );
                     return null;
                 }
@@ -210,9 +211,7 @@ export class WorkflowScriptRunner {
                     }
                     return result;
                 } catch (error) {
-                    this.#onLog(
-                        `Pipeline item ${index + 1} failed: ${error instanceof Error ? error.message : String(error)}`,
-                    );
+                    this.#onLog(`Pipeline item ${index + 1} failed: ${errorToMessage(error)}`);
                     return null;
                 }
             }),

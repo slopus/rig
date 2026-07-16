@@ -9,6 +9,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { ElicitRequestSchema, ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 import { createShellEnvironment } from "../agent/context/createShellEnvironment.js";
+import { errorToMessage } from "../errorToMessage.js";
 import { readPackageVersion } from "../readPackageVersion.js";
 import { handleMcpElicitation } from "./handleMcpElicitation.js";
 import type { McpServerConfig } from "./types.js";
@@ -40,9 +41,7 @@ export async function connectMcpServer(
         await client.connect(transport, { timeout: config.startupTimeoutMs ?? 10_000 });
     } catch (error) {
         await transport.close().catch(() => undefined);
-        throw new Error(
-            `MCP server "${name}" could not connect: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        throw new Error(`MCP server "${name}" could not connect: ${errorToMessage(error)}`);
     }
     return {
         client,

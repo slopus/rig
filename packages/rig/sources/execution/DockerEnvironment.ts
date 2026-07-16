@@ -1,5 +1,6 @@
 import Dockerode from "dockerode";
 
+import { errorToMessage } from "../errorToMessage.js";
 import type { DockerExecutionConfig } from "./DockerExecutionConfig.js";
 import { isDockerNotFoundError } from "./isDockerNotFoundError.js";
 
@@ -98,14 +99,12 @@ export class DockerEnvironment {
             })
             .catch((error: unknown) => {
                 throw new Error(
-                    `Could not create a Docker container from local image '${image}'. Make sure the image exists and the mount paths are available: ${error instanceof Error ? error.message : String(error)}`,
+                    `Could not create a Docker container from local image '${image}'. Make sure the image exists and the mount paths are available: ${errorToMessage(error)}`,
                 );
             });
         await container.start().catch(async (error: unknown) => {
             await container.remove({ force: true }).catch(() => undefined);
-            throw new Error(
-                `Could not start Docker image '${image}': ${error instanceof Error ? error.message : String(error)}`,
-            );
+            throw new Error(`Could not start Docker image '${image}': ${errorToMessage(error)}`);
         });
         return container;
     }

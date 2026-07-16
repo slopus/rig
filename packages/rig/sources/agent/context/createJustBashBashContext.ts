@@ -1,5 +1,6 @@
 import type { Bash } from "just-bash";
 
+import { errorToMessage } from "../../errorToMessage.js";
 import type { BashContext, BashRunResult, BashSessionSnapshot } from "./BashContext.js";
 import { capOutput } from "./capOutput.js";
 
@@ -151,7 +152,7 @@ export function createJustBashBashContext(bash: Bash, cwd: string): BashContext 
                 }))
                 .catch((error: unknown) => ({
                     stdout: "",
-                    stderr: error instanceof Error ? error.message : String(error),
+                    stderr: errorToMessage(error),
                     exitCode: null,
                     timedOut: session.timedOut,
                 }));

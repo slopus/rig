@@ -28,6 +28,7 @@ import {
 import type { BashSessionActivity } from "../agent/context/BashContext.js";
 import { parseSkillFrontmatter } from "../agent/skills/parseSkillFrontmatter.js";
 import type { FileDiff } from "../agent/ToolResultPresentation.js";
+import { errorToMessage } from "../errorToMessage.js";
 import type { NativeProxessManager } from "../processes/index.js";
 import { humanizeMcpName } from "../mcp/humanizeMcpName.js";
 import type { ServiceTier, Usage } from "../providers/types.js";
@@ -1224,7 +1225,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#appendEntry({
                 role: "error",
                 title: "clipboard",
-                text: `Image paste failed: ${this.#formatError(error)}`,
+                text: `Image paste failed: ${errorToMessage(error)}`,
             });
         }
     }
@@ -1374,7 +1375,7 @@ export class CodingAssistantApp implements Component, Focusable {
             return;
         }
         const submission = this.#submitAsync(value).catch((error: unknown) => {
-            this.#appendEntry({ role: "error", text: this.#formatError(error) });
+            this.#appendEntry({ role: "error", text: errorToMessage(error) });
         });
         const trackedSubmission = submission.finally(() => {
             this.#activeSubmissions.delete(trackedSubmission);
@@ -1552,7 +1553,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#appendEntry({
                 role: "error",
                 title: "skill",
-                text: this.#formatError(error),
+                text: errorToMessage(error),
             });
             return;
         }
@@ -1616,7 +1617,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #handleCommand(prompt: string): boolean {
         if (prompt === "/goal" || prompt.startsWith("/goal ")) {
             void this.#handleGoalCommand(prompt).catch((error: unknown) => {
-                this.#appendEntry({ role: "error", text: this.#formatError(error) });
+                this.#appendEntry({ role: "error", text: errorToMessage(error) });
                 this.#requestRender();
             });
             return true;
@@ -1789,14 +1790,14 @@ export class CodingAssistantApp implements Component, Focusable {
             void change.then(completeChange).catch((error: unknown) => {
                 this.#appendEntry({
                     role: "error",
-                    text: `Could not turn fast mode ${serviceTier === "fast" ? "on" : "off"}: ${this.#formatError(error)}`,
+                    text: `Could not turn fast mode ${serviceTier === "fast" ? "on" : "off"}: ${errorToMessage(error)}`,
                 });
                 this.#requestRender();
             });
         } catch (error) {
             this.#appendEntry({
                 role: "error",
-                text: `Could not turn fast mode ${serviceTier === "fast" ? "on" : "off"}: ${this.#formatError(error)}`,
+                text: `Could not turn fast mode ${serviceTier === "fast" ? "on" : "off"}: ${errorToMessage(error)}`,
             });
             this.#requestRender();
         }
@@ -2440,7 +2441,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 this.#appendEntry({
                     role: "error",
                     title: "Background terminals",
-                    text: this.#formatError(error),
+                    text: errorToMessage(error),
                 });
                 this.#requestRender();
             })
@@ -2474,7 +2475,7 @@ export class CodingAssistantApp implements Component, Focusable {
                     } catch (error) {
                         this.#appendEntry({
                             role: "error",
-                            text: error instanceof Error ? error.message : String(error),
+                            text: errorToMessage(error),
                             title: "Workflow",
                         });
                         this.#closeSelectionPanel();
@@ -2556,7 +2557,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 this.#statusText = "Error";
                 this.#appendEntry({
                     role: "error",
-                    text: `The session could not be reset: ${this.#formatError(error)}`,
+                    text: `The session could not be reset: ${errorToMessage(error)}`,
                 });
             })
             .finally(() => {
@@ -2669,7 +2670,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 this.#deferredTurnSeparator = false;
                 this.#workSegmentStartedAtMs = undefined;
                 this.#statusText = "Error";
-                this.#appendEntry({ role: "error", text: this.#formatError(error) });
+                this.#appendEntry({ role: "error", text: errorToMessage(error) });
             }
         } finally {
             if (this.#isCurrentRun(runToken)) {
@@ -2862,7 +2863,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 }
                 this.#interruptSettlementRunId = undefined;
                 this.#statusText = "Error";
-                this.#appendEntry({ role: "error", text: this.#formatError(error) });
+                this.#appendEntry({ role: "error", text: errorToMessage(error) });
             })
             .finally(() => {
                 this.#interruptRequestInFlight = false;
@@ -2903,7 +2904,7 @@ export class CodingAssistantApp implements Component, Focusable {
                         .then((message) => this.#finishBacktrack(item.value, message))
                         .catch((error: unknown) => {
                             this.#statusText = "Error";
-                            this.#appendEntry({ role: "error", text: this.#formatError(error) });
+                            this.#appendEntry({ role: "error", text: errorToMessage(error) });
                         })
                         .finally(() => {
                             this.#sessionMutationInFlight = false;
@@ -3121,7 +3122,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#toolStatusByCallId.clear();
         this.#stopActivityAnimation();
         void this.#processManager.killAll({ forceAfterMs: 500 }).catch((error: unknown) => {
-            this.#appendEntry({ role: "error", text: this.#formatError(error) });
+            this.#appendEntry({ role: "error", text: errorToMessage(error) });
         });
         if (options.silent !== true) {
             this.#appendAbortNotice();
@@ -3150,7 +3151,7 @@ export class CodingAssistantApp implements Component, Focusable {
                         : `Stopped ${String(stoppedProcesses)} background ${stoppedProcesses === 1 ? "process" : "processes"}.`,
             });
         } catch (error) {
-            this.#appendEntry({ role: "error", text: this.#formatError(error) });
+            this.#appendEntry({ role: "error", text: errorToMessage(error) });
         }
         this.#requestRender();
     }
@@ -4137,7 +4138,7 @@ export class CodingAssistantApp implements Component, Focusable {
                             void change.then(completeChange).catch((error: unknown) => {
                                 this.#appendEntry({
                                     role: "error",
-                                    text: `Could not change to ${model.name}: ${this.#formatError(error)}`,
+                                    text: `Could not change to ${model.name}: ${errorToMessage(error)}`,
                                 });
                                 this.#requestRender();
                             });
@@ -4145,7 +4146,7 @@ export class CodingAssistantApp implements Component, Focusable {
                     } catch (error) {
                         this.#appendEntry({
                             role: "error",
-                            text: `Could not change to ${model.name}: ${this.#formatError(error)}`,
+                            text: `Could not change to ${model.name}: ${errorToMessage(error)}`,
                         });
                     }
                 }
@@ -4263,12 +4264,12 @@ export class CodingAssistantApp implements Component, Focusable {
                     const change = this.#agent.setPermissionMode(mode);
                     if (change !== undefined) {
                         void change.catch((error: unknown) => {
-                            this.#appendEntry({ role: "error", text: this.#formatError(error) });
+                            this.#appendEntry({ role: "error", text: errorToMessage(error) });
                             this.#requestRender();
                         });
                     }
                 } catch (error) {
-                    this.#appendEntry({ role: "error", text: this.#formatError(error) });
+                    this.#appendEntry({ role: "error", text: errorToMessage(error) });
                 }
                 if (!this.#sessionBacked) {
                     this.#appendEntry({
@@ -4444,7 +4445,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 this.#answeringUserInputRequestId = undefined;
                 this.#appendEntry({
                     role: "error",
-                    text: `The answer could not be sent: ${this.#formatError(error)}`,
+                    text: `The answer could not be sent: ${errorToMessage(error)}`,
                 });
                 this.#openNextUserInputRequest();
                 this.#requestRender();
@@ -4754,14 +4755,6 @@ export class CodingAssistantApp implements Component, Focusable {
     #formatToolResult(block: Pick<ToolResultBlock, "display" | "failure" | "toolName">): string {
         const display = block.display.length > 0 ? block.display : "(empty result)";
         return this.#singleLine(formatToolResultForDisplay({ ...block, display }));
-    }
-
-    #formatError(error: unknown): string {
-        if (error instanceof Error) {
-            return error.message;
-        }
-
-        return String(error);
     }
 
     #formatImageType(mediaType: string): string {

@@ -15,6 +15,7 @@ import { prepareProviderMessageImages } from "./prepareProviderMessageImages.js"
 import { replaceLastTurnToolResultImages } from "./replaceLastTurnToolResultImages.js";
 import { createSystemPrompt } from "./createSystemPrompt.js";
 import { ToolLockManager } from "./ToolLockManager.js";
+import { errorToMessage } from "../errorToMessage.js";
 import type {
     AgentBlock,
     AgentMessage,
@@ -1047,14 +1048,6 @@ function interruptedToolResultBlock(
 ): ToolResultBlock {
     const message = toolsByName.get(toolCall.name)?.interruptionMessage ?? "Interrupted by user.";
     return errorToolResultBlock(toolCall, message, { kind: "interrupted" });
-}
-
-function errorToMessage(error: unknown): string {
-    if (error instanceof Error) {
-        return error.message;
-    }
-
-    return String(error);
 }
 
 function isProviderToolCall(content: ProviderAssistantContent): content is ProviderToolCall {

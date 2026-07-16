@@ -46,6 +46,7 @@ import type {
     UpdateDaemonConfigResponse,
 } from "../protocol/index.js";
 import { getDaemonIdentity } from "../daemon/index.js";
+import { errorToMessage } from "../errorToMessage.js";
 import { InMemorySessionStore } from "./InMemorySessionStore.js";
 import { latestObservedProviderQuotas } from "./latestObservedProviderQuotas.js";
 import { createModelCatalog } from "./createModelCatalog.js";
@@ -131,11 +132,7 @@ export function createProtocolHttpServer(options: ProtocolHttpServerOptions): Se
                   ? 503
                   : 500;
             sendJson(response, status, {
-                error: invalidJson
-                    ? "Request body must be valid JSON."
-                    : error instanceof Error
-                      ? error.message
-                      : String(error),
+                error: invalidJson ? "Request body must be valid JSON." : errorToMessage(error),
             });
         });
     });
@@ -375,7 +372,7 @@ async function handleRequest(
                 validateDockerExecutionConfig(docker);
             } catch (error) {
                 sendJson(response, 400, {
-                    error: error instanceof Error ? error.message : String(error),
+                    error: errorToMessage(error),
                 });
                 return;
             }
@@ -789,7 +786,7 @@ function createInitializationState(options: ProtocolHttpServerOptions): Initiali
                 state.ready = true;
             },
             (error: unknown) => {
-                state.errorMessage = error instanceof Error ? error.message : String(error);
+                state.errorMessage = errorToMessage(error);
                 state.ready = false;
             },
         );

@@ -15,6 +15,7 @@ import { parseStreamingJson } from "@earendil-works/pi-ai";
 import { z, type ZodTypeAny } from "zod/v4";
 
 import type { AgentContext, AnyDefinedTool } from "../agent/index.js";
+import { errorToMessage } from "../errorToMessage.js";
 import { claudeCodeTools } from "../tools/claude/index.js";
 import {
     modelAnthropicFable5,
@@ -1083,8 +1084,4 @@ function zeroUsage(): Usage {
             total: 0,
         },
     };
-}
-
-function errorToMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
 }

@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 
 import { createId } from "@paralleldrive/cuid2";
 
+import { errorToMessage } from "../errorToMessage.js";
 import { assistantMessageToAgentMessage } from "../agent/assistantMessageToAgentMessage.js";
 import { findFirstUserRequestText, findLastAgentResponseText } from "../agent/index.js";
 import type {
@@ -1302,7 +1303,7 @@ export class InMemorySession {
                 .catch((error: unknown) => {
                     if (this.#workflowRuns.get(runId) !== internal) return;
                     if (state.status !== "stopped") {
-                        state.error = error instanceof Error ? error.message : String(error);
+                        state.error = errorToMessage(error);
                         state.finishedAt = this.#now();
                         state.status = "error";
                         this.#recordWorkflowUpdate({
@@ -2726,7 +2727,7 @@ export class InMemorySession {
         } catch (error) {
             if (controller.signal.aborted || revision !== this.#metadataRevision) return;
             this.#titleStatus = "error";
-            this.#titleError = error instanceof Error ? error.message : String(error);
+            this.#titleError = errorToMessage(error);
             this.#append("session_title_changed", {
                 errorMessage: this.#titleError,
                 status: this.#titleStatus,
@@ -2854,7 +2855,7 @@ export class InMemorySession {
                 ?.record("run-error", { error, runId: queued.runId, sessionId: this.id })
                 .catch(() => undefined);
             this.#append("run_error", {
-                errorMessage: error instanceof Error ? error.message : String(error),
+                errorMessage: errorToMessage(error),
                 modelLocked: this.#modelLocked(),
                 runId: queued.runId,
             });

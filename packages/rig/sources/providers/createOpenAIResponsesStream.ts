@@ -1,5 +1,6 @@
 import type { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 
+import { errorToMessage } from "../errorToMessage.js";
 import { applyOpenAIResponsesResponse } from "./applyOpenAIResponsesResponse.js";
 import { createInferenceStream } from "./createInferenceStream.js";
 import { finishOpenAIResponsesOutputItem } from "./finishOpenAIResponsesOutputItem.js";
@@ -239,7 +240,7 @@ export function createOpenAIResponsesStream(options: {
         } catch (error) {
             const aborted = options.signal?.aborted === true;
             partial.stopReason = aborted ? "aborted" : "error";
-            partial.errorMessage = error instanceof Error ? error.message : String(error);
+            partial.errorMessage = errorToMessage(error);
             yield { type: "error", reason: partial.stopReason, error: partial };
             return partial;
         }
