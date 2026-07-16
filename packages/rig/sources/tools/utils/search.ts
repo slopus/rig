@@ -116,26 +116,40 @@ async function walkFiles(
     signal: AbortSignal | undefined,
     onFile: (path: string, mtimeMs: number) => Promise<void> | void,
 ): Promise<void> {
-    if (signal?.aborted) {
-        throw new Error("Search aborted.");
-    }
-
-    const entries = await context.fs.readdir(root);
-    for (const name of entries) {
+    const directories = [root];
+    while (directories.length > 0) {
         if (signal?.aborted) {
             throw new Error("Search aborted.");
         }
-
-        if (name === ".git" || name === "node_modules") {
+        const directory = directories.pop();
+        if (directory === undefined) break;
+        let entries: readonly string[];
+        try {
+            entries = await context.fs.readdir(directory);
+        } catch (error) {
+            if (directory === root) throw error;
             continue;
         }
 
-        const full = join(root, name);
-        const stats = await context.fs.stat(full);
-        if (stats.isDirectory) {
-            await walkFiles(full, context, signal, onFile);
-        } else if (stats.isFile) {
-            await onFile(full, stats.mtimeMs);
+        for (const name of entries) {
+            if (signal?.aborted) {
+                throw new Error("Search aborted.");
+            }
+            if (name === ".git" || name === "node_modules") continue;
+
+            const full = join(directory, name);
+            let stats;
+            try {
+                stats = await context.fs.lstat(full);
+            } catch {
+                continue;
+            }
+            if (stats.isSymbolicLink) continue;
+            if (stats.isDirectory) {
+                directories.push(full);
+            } else if (stats.isFile) {
+                await onFile(full, stats.mtimeMs);
+            }
         }
     }
 }

@@ -36,4 +36,23 @@ describe("Claude Code Glob tool", () => {
             "/workspace/src/nested/child.ts",
         ]);
     });
+
+    it("keeps results when one child directory cannot be read", async () => {
+        const harness = createJustBashToolHarness({
+            files: {
+                "/workspace/available.ts": "available",
+                "/workspace/unreadable/hidden.ts": "hidden",
+            },
+        });
+        const readdir = harness.context.fs.readdir.bind(harness.context.fs);
+        harness.context.fs.readdir = async (path) => {
+            if (path === "/workspace/unreadable")
+                throw new Error("EACCES: directory is unreadable");
+            return readdir(path);
+        };
+
+        const result = await harness.runTool(claudeGlobTool, { pattern: "**/*.ts" });
+
+        expect(result.text).toBe("/workspace/available.ts");
+    });
 });
