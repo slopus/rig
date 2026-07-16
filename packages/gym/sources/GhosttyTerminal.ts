@@ -35,7 +35,11 @@ export class GhosttyTerminal {
     #outputRevision = 0;
     #pending = new Map<
         number,
-        { reject: (error: unknown) => void; resolve: (snapshot: TerminalSnapshot) => void }
+        {
+            outputRevision: number;
+            reject: (error: unknown) => void;
+            resolve: (snapshot: TerminalSnapshot) => void;
+        }
     >();
     #ptyWriteHandlers = new Set<(data: string) => void>();
     #stderr = "";
@@ -113,7 +117,7 @@ export class GhosttyTerminal {
     snapshot(): Promise<TerminalSnapshot> {
         const id = this.#nextId++;
         return new Promise((resolve, reject) => {
-            this.#pending.set(id, { reject, resolve });
+            this.#pending.set(id, { outputRevision: this.#outputRevision, reject, resolve });
             this.#send({ type: "snapshot", id });
         });
     }
@@ -142,7 +146,7 @@ export class GhosttyTerminal {
             const pending = this.#pending.get(id);
             if (pending === undefined) continue;
             this.#pending.delete(id);
-            pending.resolve({ ...snapshot, outputRevision: this.#outputRevision });
+            pending.resolve({ ...snapshot, outputRevision: pending.outputRevision });
         }
     }
 

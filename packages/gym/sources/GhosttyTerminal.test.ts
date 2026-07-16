@@ -142,6 +142,26 @@ describe("GhosttyTerminal cell styles", () => {
     });
 });
 
+describe("GhosttyTerminal snapshot revisions", () => {
+    it("reports only output queued before the snapshot request", async () => {
+        const terminal = await GhosttyTerminal.create(20, 4);
+        running.add(terminal);
+        terminal.write("before");
+
+        const snapshotPromise = terminal.snapshot();
+        terminal.write("after");
+
+        const snapshot = await snapshotPromise;
+        expect(snapshot.text).toContain("before");
+        expect(snapshot.text).not.toContain("after");
+        expect(snapshot.outputRevision).toBe(1);
+
+        const current = await terminal.snapshot();
+        expect(current.text).toContain("after");
+        expect(current.outputRevision).toBe(2);
+    });
+});
+
 describe("GhosttyTerminal scroll tracking", () => {
     it("reports viewport offsets and retains cumulative top-jump counters", async () => {
         const terminal = await GhosttyTerminal.create(20, 4);
