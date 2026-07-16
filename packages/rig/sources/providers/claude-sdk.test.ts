@@ -29,6 +29,26 @@ describe("Claude SDK provider", () => {
         expect(provider.imageProfile(modelAnthropicOpus48)).toBe("claude");
     });
 
+    it("rejects result when a caller stops consuming the inference stream early", async () => {
+        const harness = createJustBashToolHarness();
+        const provider = createClaudeSdkProvider({
+            agentContext: harness.context,
+            pathToClaudeCodeExecutable: "/test/claude",
+            query: (() => fakeClaudeQuery([successfulResult("unused")])) as ClaudeSdkQuery,
+        });
+        const stream = provider.stream(modelAnthropicFable5, {
+            messages: [{ role: "user", content: "Stop after the first event.", timestamp: 1 }],
+        });
+
+        for await (const _event of stream) {
+            break;
+        }
+
+        await expect(stream.result()).rejects.toThrow(
+            "Inference stream iteration ended before a result was available.",
+        );
+    });
+
     it("maps and caches quota through the documented SDK usage control API", async () => {
         const harness = createJustBashToolHarness();
         const calls: Parameters<ClaudeSdkQuery>[0][] = [];

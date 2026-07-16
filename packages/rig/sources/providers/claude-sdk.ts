@@ -28,6 +28,7 @@ import {
 } from "./models.js";
 import { resolveClaudeCodeExecutablePath } from "./resolveClaudeCodeExecutablePath.js";
 import { createProviderQuotaCache } from "./createProviderQuotaCache.js";
+import { createInferenceStream } from "./createInferenceStream.js";
 import { fetchClaudeProviderQuota } from "./fetchClaudeProviderQuota.js";
 import { idleClaudeSdkPrompt } from "./idleClaudeSdkPrompt.js";
 import { unavailableProviderQuota } from "./unavailableProviderQuota.js";
@@ -37,7 +38,6 @@ import {
     type AssistantMessage,
     type AssistantMessageEvent,
     type Context,
-    type InferenceStream,
     type Model,
     type StopReason,
     type StreamOptions,
@@ -972,56 +972,6 @@ function setPartialContent(
     const nextContent = [...state.partial.content];
     nextContent[contentIndex] = content;
     state.partial.content = nextContent;
-}
-
-function createInferenceStream(
-    run: () => AsyncGenerator<AssistantMessageEvent, AssistantMessage>,
-): InferenceStream {
-    let resultResolve: (message: AssistantMessage) => void;
-    let resultReject: (error: unknown) => void;
-    const resultPromise = new Promise<AssistantMessage>((resolve, reject) => {
-        resultResolve = resolve;
-        resultReject = reject;
-    });
-    let started = false;
-
-    const drain = async () => {
-        try {
-            const generator = run();
-            let next = await generator.next();
-            while (!next.done) {
-                next = await generator.next();
-            }
-            resultResolve(next.value);
-        } catch (error) {
-            resultReject(error);
-        }
-    };
-
-    return {
-        async *[Symbol.asyncIterator]() {
-            if (started) {
-                throw new Error("Claude SDK inference streams can only be consumed once.");
-            }
-            started = true;
-
-            try {
-                const result = yield* run();
-                resultResolve(result);
-            } catch (error) {
-                resultReject(error);
-                throw error;
-            }
-        },
-        result: async () => {
-            if (!started) {
-                started = true;
-                void drain();
-            }
-
-            return resultPromise;
-        },
-    };
 }
 
 function createAssistantMessage(options: {
