@@ -17,6 +17,7 @@ import { grokRunTerminalCommandTool } from "../tools/grok/run_terminal_command.j
 import { grokSearchReplaceTool } from "../tools/grok/search_replace.js";
 import { piBashTool } from "../tools/pi/bash.js";
 import { piReadTool } from "../tools/pi/read.js";
+import { codexWorkflowTool } from "../tools/workflows/workflowTools.js";
 
 describe("tool-owned Auto permission policies", () => {
     const temporaryDirectories: string[] = [];
@@ -122,6 +123,8 @@ describe("tool-owned Auto permission policies", () => {
         const link = join(context.fs.cwd, "outside-link");
         await symlink(outside, link);
         const inside = join(context.fs.cwd, "inside.txt");
+        const insideWorkflow = join(context.fs.cwd, "workflow.py");
+        await writeFile(insideWorkflow, "'done'");
         const hook = join(context.fs.cwd, ".git", "hooks", "pre-commit");
         await mkdir(join(context.fs.cwd, ".git", "hooks"), { recursive: true });
 
@@ -171,6 +174,26 @@ describe("tool-owned Auto permission policies", () => {
                 context,
             ),
         ).resolves.toBe(true);
+        expect(await codexWorkflowTool.shouldReviewInAutoMode({ script: "'done'" }, context)).toBe(
+            false,
+        );
+        expect(
+            await codexWorkflowTool.shouldReviewInAutoMode({ scriptPath: insideWorkflow }, context),
+        ).toBe(false);
+        expect(
+            await codexWorkflowTool.shouldReviewInAutoMode({ scriptPath: outside }, context),
+        ).toBe(true);
+        expect(
+            await codexWorkflowTool.shouldRunInFullAccessInAutoMode(
+                { scriptPath: outside },
+                context,
+            ),
+        ).toBe(true);
+        expect(
+            codexWorkflowTool.describeAutoPermissionAction?.({ scriptPath: outside }, context),
+        ).toBe(
+            `reading workflow script ${JSON.stringify(outside)}. Access: unrestricted filesystem access outside the workspace sandbox`,
+        );
         expect(claudeReadTool.describeAutoPermissionAction?.({ file_path: outside }, context)).toBe(
             `reading ${JSON.stringify(outside)}. Access: unrestricted filesystem access outside the workspace sandbox`,
         );

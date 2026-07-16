@@ -2,7 +2,10 @@ import { basename } from "node:path";
 
 import { Type } from "@sinclair/typebox";
 
+import { resolveFileSystemPath } from "../../agent/context/resolveFileSystemPath.js";
 import { defineTool } from "../../agent/types.js";
+import { describeFileAutoPermissionAction } from "../../permissions/describeFileAutoPermissionAction.js";
+import { shouldReviewPathInAutoMode } from "../../permissions/shouldReviewPathInAutoMode.js";
 import { WorkflowScriptRunner } from "../../workflows/index.js";
 
 const MAX_WORKFLOW_SCRIPT_CHARS = 524_288;
@@ -77,7 +80,18 @@ export function createWorkflowTool(name: "Workflow" | "workflow") {
             status: Type.Literal("async_launched"),
             taskId: Type.String(),
         }),
-        shouldReviewInAutoMode: () => false,
+        describeAutoPermissionAction: ({ scriptPath }, context) =>
+            scriptPath === undefined
+                ? "starting an inline workflow"
+                : describeFileAutoPermissionAction(scriptPath, context, "reading workflow script"),
+        shouldReviewInAutoMode: ({ scriptPath }, context) =>
+            scriptPath === undefined
+                ? false
+                : shouldReviewPathInAutoMode(scriptPath, context, { write: false }),
+        shouldRunInFullAccessInAutoMode: ({ scriptPath }, context) =>
+            scriptPath === undefined
+                ? false
+                : shouldReviewPathInAutoMode(scriptPath, context, { write: false }),
         execute: async (
             { args, description, name: requestedName, resumeFromRunId, script, scriptPath },
             context,
@@ -97,16 +111,22 @@ export function createWorkflowTool(name: "Workflow" | "workflow") {
                     "Provide either an inline script or a saved script path, not both.",
                 );
             }
+            const resolvedScriptPath =
+                scriptPath === undefined
+                    ? undefined
+                    : resolveFileSystemPath(scriptPath, context.fs.cwd, context.fs.home);
             const source =
-                scriptPath === undefined ? (script ?? "") : await context.fs.readFile(scriptPath);
+                resolvedScriptPath === undefined
+                    ? (script ?? "")
+                    : await context.fs.readFile(resolvedScriptPath);
             if (source.length > MAX_WORKFLOW_SCRIPT_CHARS) {
                 throw new Error("Workflow scripts are limited to 524,288 characters.");
             }
             const workflowName =
                 requestedName?.trim() ||
-                (scriptPath === undefined
+                (resolvedScriptPath === undefined
                     ? "dynamic-workflow"
-                    : basename(scriptPath).replace(/\.py$/i, ""));
+                    : basename(resolvedScriptPath).replace(/\.py$/i, ""));
             const workflowDescription = description?.trim() || `Run ${workflowName}`;
             const run = context.workflows.launch({
                 code: source,
