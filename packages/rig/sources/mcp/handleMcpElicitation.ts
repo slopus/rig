@@ -59,7 +59,32 @@ export async function handleMcpElicitation(
             question: property.description ?? message,
         };
     });
-    if (questions.length === 0) return { action: "accept", content: {} };
+    if (questions.length === 0) {
+        const response = await userInput.request({
+            requestId: `mcp:${randomUUID()}`,
+            questions: [
+                {
+                    header: "MCP request",
+                    id: "confirmation",
+                    multiSelect: false,
+                    options: [
+                        {
+                            label: "Continue",
+                            description: "Accept this request without providing additional values.",
+                        },
+                        {
+                            label: "Decline",
+                            description: "Reject this request.",
+                        },
+                    ],
+                    question: message,
+                },
+            ],
+        });
+        return response.answers.confirmation?.includes("Continue") === true
+            ? { action: "accept", content: {} }
+            : { action: "decline" };
+    }
 
     const response = await userInput.request({ requestId: `mcp:${randomUUID()}`, questions });
     const content: Record<string, string | number | boolean | string[]> = {};
