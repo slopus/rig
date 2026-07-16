@@ -242,7 +242,13 @@ export function createGrokStream(options: {
                     continue;
                 }
 
-                if (event.type === "response.completed" || event.type === "response.incomplete") {
+                if (event.type === "response.incomplete") {
+                    const reason = event.response.incomplete_details?.reason ?? "unknown";
+                    partial.errorCode = "incomplete_response";
+                    throw new Error(`Incomplete response returned, reason: ${reason}`);
+                }
+
+                if (event.type === "response.completed") {
                     applyBedrockOpenAIResponse(partial, event.response);
                     yield {
                         type: "done",

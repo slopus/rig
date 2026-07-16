@@ -230,6 +230,34 @@ describe("Grok Build provider", () => {
             usage: { cacheRead: 2, input: 10, output: 3, totalTokens: 15 },
         });
     });
+
+    it("preserves an incomplete response reason as a retryable stream error", async () => {
+        const response = {
+            id: "response-incomplete",
+            incomplete_details: { reason: "max_output_tokens" },
+            model: "grok-build",
+            status: "incomplete",
+        } as unknown as OpenAIResponse;
+        const responseStream = {
+            async *[Symbol.asyncIterator]() {
+                yield { type: "response.incomplete" as const, response };
+            },
+        };
+        const provider = createGrokProvider({
+            client: {
+                responses: { create: vi.fn(() => responseStream) },
+            } as unknown as GrokOpenAIClient,
+            resolveCredential: async () => ({ source: "session", token: "session-token" }),
+        });
+
+        const message = await provider.stream(modelXaiGrokBuild, { messages: [] }).result();
+
+        expect(message).toMatchObject({
+            errorCode: "incomplete_response",
+            errorMessage: "Incomplete response returned, reason: max_output_tokens",
+            stopReason: "error",
+        });
+    });
 });
 
 describe("Grok Build authentication", () => {
