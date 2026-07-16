@@ -132,7 +132,10 @@ describe("InMemorySession abort", () => {
 
         const submitted = session.submit({ text: "Start waiting." });
         await started.promise;
-        session.steer({ text: "Apply this pending direction." });
+        session.steer({
+            clientSubmissionId: "client-pending-steering",
+            text: "Apply this pending direction.",
+        });
 
         await expect(
             session.abort({ continuePendingSteering: true, pauseDescendants: false }),
@@ -151,6 +154,11 @@ describe("InMemorySession abort", () => {
             continuedUserText?.filter((text) => text === "Apply this pending direction."),
         ).toHaveLength(1);
         const events = session.events.since(undefined) ?? [];
+        expect(
+            events.find(
+                (event) => event.type === "message_submitted" && event.data.delivery === "steer",
+            ),
+        ).toMatchObject({ data: { message: { id: "client-pending-steering" } } });
         expect(events.filter((event) => event.type === "steering_applied")).toHaveLength(1);
         expect(events.filter((event) => event.type === "run_finished")).toHaveLength(1);
     });
@@ -236,6 +244,69 @@ describe("InMemorySession abort", () => {
         );
         expect(new Set(appliedIds).size).toBe(2);
         expect(appliedIds).toHaveLength(2);
+    });
+
+    it("does not steer or abort a replacement run when the expected run already finished", async () => {
+        const replacementStarted = deferred<void>();
+        let streams = 0;
+        const model = defineModel({
+            defaultThinkingLevel: "off",
+            id: "test/targeted-abort",
+            name: "Targeted abort",
+            thinkingLevels: ["off"],
+        });
+        const provider = defineProvider({
+            id: "test",
+            models: [model],
+            stream(_model, _context, options) {
+                streams += 1;
+                return streams === 1
+                    ? responseStream("First run finished.")
+                    : abortableStream(options?.signal, replacementStarted.resolve);
+            },
+        });
+        const session = new InMemorySession({
+            createEventId: createEventIdFactory(),
+            createRuntime: (options) => createRuntime(options, provider),
+            modelCatalog: {
+                defaultModelId: model.id,
+                defaultProviderId: provider.id,
+                models: [model],
+                providers: [{ models: [model], providerId: provider.id }],
+            },
+            request: { cwd: "/tmp/rig-targeted-abort", modelId: model.id },
+        });
+
+        const first = session.submit({ text: "Finish first." });
+        await expect(session.waitForRun(first.runId)).resolves.toEqual({ status: "completed" });
+        const replacement = session.submit({ text: "Keep replacement running." });
+        await replacementStarted.promise;
+
+        expect(() =>
+            session.steer({
+                expectedRunId: first.runId,
+                text: "Do not apply this to the replacement.",
+            }),
+        ).toThrow("The intended run is no longer active.");
+        await expect(session.abort({ expectedRunId: first.runId })).resolves.toEqual({
+            aborted: false,
+        });
+        expect(session.summary()).toMatchObject({ status: "running" });
+        expect(
+            session.events.since(undefined)?.filter((event) => event.type === "abort_requested"),
+        ).toHaveLength(0);
+        expect(
+            session.events
+                .since(undefined)
+                ?.filter(
+                    (event) =>
+                        event.type === "message_submitted" && event.data.delivery === "steer",
+                ),
+        ).toHaveLength(0);
+
+        await expect(session.abort({ expectedRunId: replacement.runId })).resolves.toMatchObject({
+            aborted: true,
+        });
     });
 
     it("aborts compaction without overwriting the repaired shutdown state", async () => {

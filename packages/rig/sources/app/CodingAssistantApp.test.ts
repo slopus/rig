@@ -356,7 +356,10 @@ describe("CodingAssistantApp", () => {
         app.handleInput("\x1b");
         app.handleInput("\x1b");
         await vi.waitFor(() =>
-            expect(abort).toHaveBeenCalledWith({ continuePendingSteering: true }),
+            expect(abort).toHaveBeenCalledWith({
+                continuePendingSteering: true,
+                expectedRunId: "run-1",
+            }),
         );
         expect(abort).toHaveBeenCalledTimes(1);
 
@@ -443,7 +446,7 @@ describe("CodingAssistantApp", () => {
         app.handleInput("\x1b");
 
         await vi.waitFor(() => expect(abort).toHaveBeenCalledOnce());
-        expect(abort).toHaveBeenCalledWith();
+        expect(abort).toHaveBeenCalledWith({ expectedRunId: "current-run" });
     });
 
     it("interrupts a running session before an open selection panel handles Escape", async () => {
@@ -490,7 +493,7 @@ describe("CodingAssistantApp", () => {
         app.handleInput("\x1b");
 
         await vi.waitFor(() => expect(abort).toHaveBeenCalledOnce());
-        expect(abort).toHaveBeenCalledWith();
+        expect(abort).toHaveBeenCalledWith({ expectedRunId: "run-1" });
     });
 
     it("treats both rapid Escapes as stop actions while running without pending steering", async () => {
@@ -539,7 +542,7 @@ describe("CodingAssistantApp", () => {
         app.handleInput("\x1b");
 
         await vi.waitFor(() => expect(abort).toHaveBeenCalledTimes(1));
-        expect(abort).toHaveBeenCalledWith();
+        expect(abort).toHaveBeenCalledWith({ expectedRunId: "run-1" });
         expect(stripAnsi(app.render(100).join("\n"))).toContain("› Keep this stopping-run draft");
     });
 

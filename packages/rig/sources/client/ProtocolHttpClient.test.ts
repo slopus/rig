@@ -9,6 +9,35 @@ import type { SessionEvent } from "../protocol/index.js";
 import { ProtocolHttpClient } from "./ProtocolHttpClient.js";
 
 describe("ProtocolHttpClient", () => {
+    it("targets abort requests to the expected run", async () => {
+        const directory = await mkdtemp(join(tmpdir(), "rig-client-test-"));
+        const socketPath = join(directory, "server.sock");
+        let requestedUrl: URL | undefined;
+        const server = createServer((request, response) => {
+            requestedUrl = new URL(request.url ?? "/", "http://unix");
+            response.writeHead(200, { "content-type": "application/json" });
+            response.end('{"aborted":false}');
+        });
+
+        try {
+            await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+            const client = new ProtocolHttpClient({ socketPath, token: "test-token" });
+
+            await expect(
+                client.abort("session-1", {
+                    continuePendingSteering: true,
+                    expectedRunId: "run/replaced 1",
+                }),
+            ).resolves.toEqual({ aborted: false });
+            expect(requestedUrl?.pathname).toBe("/sessions/session-1/abort");
+            expect(requestedUrl?.searchParams.get("continuePendingSteering")).toBe("1");
+            expect(requestedUrl?.searchParams.get("expectedRunId")).toBe("run/replaced 1");
+        } finally {
+            await new Promise<void>((resolve) => server.close(() => resolve()));
+            await rm(directory, { recursive: true, force: true });
+        }
+    });
+
     it("surfaces a rejected session cursor without retrying forever", async () => {
         const directory = await mkdtemp(join(tmpdir(), "rig-client-test-"));
         const socketPath = join(directory, "server.sock");
