@@ -178,13 +178,6 @@ export type InferModel<TModels extends readonly Model[]> = TModels[number];
 export type InferModelThinkingLevel<T extends Model> =
     T extends Model<infer TThinkingLevel> ? TThinkingLevel : never;
 
-/** Tool definition helper for provider contexts. */
-export function defineProviderTool<const TParameters extends TSchema>(
-    tool: Tool<TParameters>,
-): Tool<TParameters> {
-    return tool;
-}
-
 /** Statically typed helper for constructing a model definition. */
 export function defineModel<const TThinkingLevel extends string>(model: {
     id: string;
