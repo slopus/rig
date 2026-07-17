@@ -79,7 +79,171 @@ describe("ScrollbackPreservingTUI", () => {
         expect(output).not.toContain("\x1b[2J");
         tui.stop();
     });
+
+    it("keeps the viewport in place after growth when the terminal keeps rows fixed", async () => {
+        const terminal = new ProbeAnsweringTerminal(30, 5);
+        const tui = new ScrollbackPreservingTUI(terminal, false);
+        tui.addChild(overflowingComponent());
+        tui.start();
+        await renderCycle();
+        terminal.output.length = 0;
+
+        terminal.rows = 8;
+        terminal.cursorReportRow = 4;
+        tui.requestRender();
+        await renderCycle();
+
+        const output = terminal.output.join("");
+        expect(output).toContain("\x1b[6n");
+        expect(output).not.toContain("history 9");
+        expect(output).toContain("\x1b[3;1H\x1b[2Kinput");
+        expect(output).toContain("\x1b[5;1H\x1b[2Kfooter");
+        expect(output).toContain("\x1b[8;1H\x1b[2K");
+        expect(output).toContain("\x1b[5;1H\x1b[?2026l");
+        expect(output).not.toContain("\x1b[3J");
+        expect(output).not.toContain("\x1b[2J");
+        tui.stop();
+    });
+
+    it("bottom-anchors after growth when the terminal pulls history back on screen", async () => {
+        const terminal = new ProbeAnsweringTerminal(30, 5);
+        const tui = new ScrollbackPreservingTUI(terminal, false);
+        tui.addChild(overflowingComponent());
+        tui.start();
+        await renderCycle();
+        terminal.output.length = 0;
+
+        terminal.rows = 8;
+        terminal.cursorReportRow = 7;
+        tui.requestRender();
+        await renderCycle();
+
+        const output = terminal.output.join("");
+        expect(output).not.toContain("history");
+        expect(output).toContain("\x1b[6;1H\x1b[2Kinput");
+        expect(output).toContain("\x1b[8;1H\x1b[2Kfooter");
+        expect(output).not.toContain("\x1b[3;1H\x1b[2Kinput");
+        expect(output).toContain("\x1b[8;1H\x1b[?2026l");
+        expect(output).not.toContain("\x1b[3J");
+        expect(output).not.toContain("\x1b[2J");
+        tui.stop();
+    });
+
+    it("falls back to a fixed-row repaint when the cursor probe goes unanswered", async () => {
+        const terminal = new ProbeAnsweringTerminal(30, 5);
+        const tui = new ScrollbackPreservingTUI(terminal, false);
+        tui.addChild(overflowingComponent());
+        tui.start();
+        await renderCycle();
+        terminal.output.length = 0;
+
+        terminal.rows = 8;
+        tui.requestRender();
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        const output = terminal.output.join("");
+        expect(output).toContain("\x1b[3;1H\x1b[2Kinput");
+        expect(output).toContain("\x1b[5;1H\x1b[2Kfooter");
+        expect(output).toContain("\x1b[5;1H\x1b[?2026l");
+        tui.stop();
+    });
+
+    it("retains a short session without replaying scrolled history after vertical growth", async () => {
+        const terminal = new ProbeAnsweringTerminal(30, 5);
+        const tui = new ScrollbackPreservingTUI(terminal, false);
+        const component = {
+            invalidate: () => {},
+            render: () => ["header", "status", "user", "reply", "", "input", "footer"],
+            resizeLiveTailLineCount: () => 3,
+        };
+        tui.addChild(component);
+        tui.start();
+        await renderCycle();
+        terminal.output.length = 0;
+
+        terminal.rows = 10;
+        terminal.cursorReportRow = 4;
+        tui.requestRender();
+        await renderCycle();
+
+        const output = terminal.output.join("");
+        expect(output).not.toContain("header");
+        expect(output).toContain("\x1b[4;1H\x1b[2Kinput");
+        expect(output).toContain("\x1b[5;1H\x1b[2Kfooter");
+        expect(output).toContain("\x1b[10;1H\x1b[2K");
+        expect(output).toContain("\x1b[5;1H\x1b[?2026l");
+        expect(output).not.toContain("\x1b[3J");
+        expect(output).not.toContain("\x1b[2J");
+        tui.stop();
+    });
+
+    it("aligns a short session with history the terminal pulled back after growth", async () => {
+        const terminal = new ProbeAnsweringTerminal(30, 5);
+        const tui = new ScrollbackPreservingTUI(terminal, false);
+        const component = {
+            invalidate: () => {},
+            render: () => ["header", "status", "user", "reply", "", "input", "footer"],
+            resizeLiveTailLineCount: () => 3,
+        };
+        tui.addChild(component);
+        tui.start();
+        await renderCycle();
+        terminal.output.length = 0;
+
+        terminal.rows = 10;
+        terminal.cursorReportRow = 6;
+        tui.requestRender();
+        await renderCycle();
+
+        const output = terminal.output.join("");
+        expect(output).not.toContain("header");
+        expect(output).toContain("\x1b[6;1H\x1b[2Kinput");
+        expect(output).toContain("\x1b[7;1H\x1b[2Kfooter");
+        expect(output).toContain("\x1b[7;1H\x1b[?2026l");
+        tui.stop();
+    });
+
+    it("keeps the live tail at the bottom when shrinking pushes rows into scrollback", async () => {
+        const terminal = new ProbeAnsweringTerminal(30, 8);
+        const tui = new ScrollbackPreservingTUI(terminal, false);
+        tui.addChild(overflowingComponent());
+        tui.start();
+        await renderCycle();
+        terminal.output.length = 0;
+
+        terminal.rows = 5;
+        terminal.cursorReportRow = 4;
+        tui.requestRender();
+        await renderCycle();
+
+        const output = terminal.output.join("");
+        expect(output).toContain("\x1b[3;1H\x1b[2Kinput");
+        expect(output).toContain("\x1b[5;1H\x1b[2Kfooter");
+        expect(output).toContain("\x1b[5;1H\x1b[?2026l");
+        tui.stop();
+    });
 });
+
+function overflowingComponent() {
+    return {
+        invalidate: () => {},
+        render: () => [
+            "history 1",
+            "history 2",
+            "history 3",
+            "history 4",
+            "history 5",
+            "history 6",
+            "history 7",
+            "history 8",
+            "history 9",
+            "input",
+            "status",
+            "footer",
+        ],
+        resizeLiveTailLineCount: () => 3,
+    };
+}
 
 class RecordingTerminal implements Terminal {
     readonly output: string[] = [];
@@ -92,7 +256,11 @@ class RecordingTerminal implements Terminal {
         this.rows = rows;
     }
 
-    start(): void {}
+    protected onInput: ((data: string) => void) | undefined;
+
+    start(onInput?: (data: string) => void): void {
+        this.onInput = onInput;
+    }
     stop(): void {}
     async drainInput(): Promise<void> {}
     write(data: string): void {
@@ -106,6 +274,18 @@ class RecordingTerminal implements Terminal {
     clearScreen(): void {}
     setTitle(): void {}
     setProgress(): void {}
+}
+
+class ProbeAnsweringTerminal extends RecordingTerminal {
+    cursorReportRow: number | undefined;
+
+    override write(data: string): void {
+        super.write(data);
+        if (data.includes("\x1b[6n") && this.cursorReportRow !== undefined) {
+            const reply = `\x1b[${this.cursorReportRow + 1};1R`;
+            queueMicrotask(() => this.onInput?.(reply));
+        }
+    }
 }
 
 async function renderCycle(): Promise<void> {
