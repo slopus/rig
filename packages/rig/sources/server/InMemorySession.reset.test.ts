@@ -101,6 +101,7 @@ function createRuntime(
 
 function abortableStream(signal: AbortSignal | undefined, onStart: () => void): InferenceStream {
     return {
+        // eslint-disable-next-line require-yield -- This fixture fails after abort without emitting content.
         async *[Symbol.asyncIterator]() {
             onStart();
             await new Promise<void>((resolve) => {
