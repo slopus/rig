@@ -10,11 +10,12 @@ Rig is a pnpm TypeScript workspace.
 
 - `packages/rig` contains the published `@slopus/rig` CLI, agent runtime, and
   local daemon. Its entry point is `packages/rig/sources/main.ts`.
+- `packages/rig-dev` contains the private live-source `rig-dev` launcher.
 - `packages/gym` contains the host-side end-to-end harness, PTY integration,
   fixtures, and Docker image definition.
-- `gym/tests` contains black-box terminal scenarios that exercise the built Rig
-  agent in fresh containers.
-- `scripts` contains the isolated development launcher and release automation.
+- `packages/gym-tests` contains black-box terminal scenarios that exercise the
+  built Rig agent in fresh containers.
+- `scripts` contains repository release automation.
 
 Shared TypeScript and code-quality configuration lives at the workspace root.
 Root commands run the relevant package scripts.
@@ -33,10 +34,22 @@ Start the development CLI in its own terminal:
 pnpm dev
 ```
 
-The development launcher keeps its daemon socket, token, logs, registry, and
-session database in the ignored `.rig-dev` directory. It does not reuse or
-replace the installed Rig daemon. When runtime source changes, the CLI
-fingerprints it and asks before restarting an older workspace daemon.
+To make the development CLI available as `rig-dev` from any directory, link its
+private package once:
+
+```sh
+pnpm link:dev
+```
+
+Use `pnpm unlink:dev` to remove the global link. The released `rig` command is
+unaffected because the two commands come from separate packages.
+
+Both development commands run live source from this checkout. They keep their
+daemon socket, token, logs, registry, and session database in the checkout's
+ignored `.rig-dev` directory while using the directory where `rig-dev` was
+invoked as the session workspace. They do not reuse or replace the installed
+Rig daemon. When runtime source changes, the CLI fingerprints it and asks before
+restarting an older workspace daemon.
 
 ## Validation
 
@@ -59,9 +72,10 @@ The gym runs the built Rig CLI and daemon through a real PTY in a fresh Docker
 container. Only inference is mocked; shell processes, tools, files, daemon
 behavior, terminal rendering, interruption, and concurrency are real.
 
-Read [gym/README.md](gym/README.md) before creating or debugging a gym test. It
-is the source of truth for prerequisites, `createGym`, fixtures, terminal
-snapshots, scroll tracking, targeted commands, and cleanup.
+Read [packages/gym-tests/README.md](packages/gym-tests/README.md) before creating
+or debugging a gym test. It is the source of truth for prerequisites,
+`createGym`, fixtures, terminal snapshots, scroll tracking, targeted commands,
+and cleanup.
 
 Run the complete suite with:
 
@@ -69,10 +83,11 @@ Run the complete suite with:
 pnpm test:gym
 ```
 
-For a behavior regression, first reproduce the failure in `gym/tests`, then make
-the same scenario pass without weakening it. Name scenarios for the behavior
-they prove, interact at the terminal boundary, wait for observable state instead
-of sleeping, and dispose every gym instance.
+For a behavior regression, first reproduce the failure in
+`packages/gym-tests/tests`, then make the same scenario pass without weakening
+it. Name scenarios for the behavior they prove, interact at the terminal
+boundary, wait for observable state instead of sleeping, and dispose every gym
+instance.
 
 ## Provider reference sources
 

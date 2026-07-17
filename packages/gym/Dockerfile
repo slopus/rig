@@ -35,7 +35,8 @@ RUN corepack enable
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json tsconfig.base.json ./
-COPY gym/package.json gym/package.json
+COPY packages/gym/package.json packages/gym/package.json
+COPY packages/gym-tests/package.json packages/gym-tests/package.json
 COPY packages/rig/package.json packages/rig/package.json
 RUN pnpm install --frozen-lockfile
 

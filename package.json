@@ -5,20 +5,22 @@
     "scripts": {
         "build": "pnpm --filter @slopus/rig build",
         "build:gym": "docker build --file packages/gym/Dockerfile --tag rig-gym:local .",
-        "check": "pnpm run check:root && pnpm --recursive --filter './packages/**' run check && pnpm --filter @slopus/rig-gym-tests check",
+        "check": "pnpm run check:root && pnpm --recursive --filter './packages/**' run check",
         "check:root": "tsc --noEmit -p tsconfig.json",
-        "dev": "tsx scripts/dev.ts",
+        "dev": "pnpm --filter @slopus/rig-dev dev",
         "format": "oxfmt --write .",
         "format:check": "oxfmt --check .",
+        "link:dev": "cd packages/rig-dev && pnpm link --global",
         "lint": "oxlint .",
         "release": "tsx scripts/release.ts",
         "start": "node packages/rig/dist/main.js",
         "start:build": "pnpm build && pnpm start",
         "test": "pnpm run test:scripts && pnpm --recursive --filter './packages/**' run test",
-        "test:gym": "pnpm --filter @slopus/rig-gym-tests test",
+        "test:gym": "pnpm --filter @slopus/rig-gym-tests test:gym",
         "test:live": "pnpm --filter @slopus/rig test:live",
         "test:scripts": "tsx --test scripts/release/*.test.ts",
-        "test:watch": "pnpm --filter @slopus/rig test:watch"
+        "test:watch": "pnpm --filter @slopus/rig test:watch",
+        "unlink:dev": "pnpm remove --global @slopus/rig-dev"
     },
     "devDependencies": {
         "@types/node": "^24.0.10",

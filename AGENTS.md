@@ -72,9 +72,9 @@ Working on multiple features in the same worktree is prohibited until the curren
 
 The gym exercises the built Rig agent through a real PTY in a fresh Docker container. Only model inference is mocked; the filesystem, shell, processes, daemon, tools, and terminal behavior remain real, with `libghostty-vt` providing user-visible screen and scroll state.
 
-Use gym tests for behavior spanning terminal input or rendering, inference, tools, processes, filesystem effects, interruption, or concurrency. Put them in `gym/tests` with descriptive behavior-based file names. Always use `createGym`, interact at the terminal boundary, wait for observable state instead of sleeping, dispose every instance, and keep scenarios isolated. When fixing a bug, reproduce it in the gym before changing production code, then make the same test pass unchanged.
+Use gym tests for behavior spanning terminal input or rendering, inference, tools, processes, filesystem effects, interruption, or concurrency. Put them in `packages/gym-tests/tests` with descriptive behavior-based file names. Always use `createGym`, interact at the terminal boundary, wait for observable state instead of sleeping, dispose every instance, and keep scenarios isolated. When fixing a bug, reproduce it in the gym before changing production code, then make the same test pass unchanged.
 
-Run the suite with `pnpm test:gym`. Read [`gym/README.md`](gym/README.md) before writing or debugging a gym test; it is the source of truth for architecture, APIs, inference scripts, fixtures, terminal snapshots, scroll tracking, examples, and targeted test commands.
+Run the suite with `pnpm test:gym`. Read [`packages/gym-tests/README.md`](packages/gym-tests/README.md) before writing or debugging a gym test; it is the source of truth for architecture, APIs, inference scripts, fixtures, terminal snapshots, scroll tracking, examples, and targeted test commands.
 
 ## User-facing text
 

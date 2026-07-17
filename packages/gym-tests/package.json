@@ -1,0 +1,19 @@
+{
+    "name": "@slopus/rig-gym-tests",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "check": "tsc --noEmit",
+        "test:gym": "vitest run --no-file-parallelism --testTimeout=120000"
+    },
+    "dependencies": {
+        "@openai/codex": "0.144.3"
+    },
+    "devDependencies": {
+        "@earendil-works/pi-tui": "^0.80.3",
+        "@slopus/rig-gym": "workspace:*",
+        "@types/node": "^24.0.10",
+        "typescript": "^5.8.3",
+        "vitest": "^3.2.4"
+    }
+}

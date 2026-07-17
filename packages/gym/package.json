@@ -2,7 +2,10 @@
     "name": "@slopus/rig-gym",
     "private": true,
     "type": "module",
-    "exports": "./sources/index.ts",
+    "exports": {
+        ".": "./sources/index.ts",
+        "./types": "./sources/types.ts"
+    },
     "scripts": {
         "check": "tsc --noEmit",
         "test": "vitest run --passWithNoTests"

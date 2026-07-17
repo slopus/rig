@@ -1,0 +1,21 @@
+{
+    "name": "@slopus/rig-dev",
+    "private": true,
+    "bin": {
+        "rig-dev": "./bin/rig-dev.js"
+    },
+    "type": "module",
+    "scripts": {
+        "check": "tsc --noEmit",
+        "dev": "tsx sources/main.ts",
+        "test": "vitest run"
+    },
+    "dependencies": {
+        "tsx": "^4.23.0"
+    },
+    "devDependencies": {
+        "@types/node": "^24.0.10",
+        "typescript": "^5.8.3",
+        "vitest": "^3.2.4"
+    }
+}

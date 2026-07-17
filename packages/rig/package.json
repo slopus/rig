@@ -28,7 +28,7 @@
     "scripts": {
         "build": "tsc -p tsconfig.build.json",
         "check": "tsc --noEmit",
-        "dev": "tsx ../../scripts/dev.ts",
+        "dev": "pnpm --filter @slopus/rig-dev dev",
         "start": "node dist/main.js",
         "test": "vitest run",
         "test:live": "RIG_LIVE_TEST=1 vitest run -c vitest.live.config.ts",

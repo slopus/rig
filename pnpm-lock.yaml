@@ -24,25 +24,6 @@ importers:
         specifier: ^5.8.3
         version: 5.9.3
 
-  gym:
-    dependencies:
-      '@openai/codex':
-        specifier: 0.144.3
-        version: 0.144.3
-    devDependencies:
-      '@earendil-works/pi-tui':
-        specifier: ^0.80.3
-        version: 0.80.3
-      '@types/node':
-        specifier: ^24.0.10
-        version: 24.13.2
-      typescript:
-        specifier: ^5.8.3
-        version: 5.9.3
-      vitest:
-        specifier: ^3.2.4
-        version: 3.2.6(@types/debug@4.1.13)(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)(yaml@2.9.0)
-
   packages/gym:
     dependencies:
       '@lydell/node-pty':
@@ -58,6 +39,28 @@ importers:
       tsx:
         specifier: ^4.23.0
         version: 4.23.0
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)(yaml@2.9.0)
+
+  packages/gym-tests:
+    dependencies:
+      '@openai/codex':
+        specifier: 0.144.3
+        version: 0.144.3
+    devDependencies:
+      '@earendil-works/pi-tui':
+        specifier: ^0.80.3
+        version: 0.80.3
+      '@slopus/rig-gym':
+        specifier: workspace:*
+        version: link:../gym
+      '@types/node':
+        specifier: ^24.0.10
+        version: 24.13.2
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
@@ -198,6 +201,22 @@ importers:
       '@anthropic-ai/claude-agent-sdk-win32-x64':
         specifier: ^0.3.201
         version: 0.3.201
+
+  packages/rig-dev:
+    dependencies:
+      tsx:
+        specifier: ^4.23.0
+        version: 4.23.0
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.10
+        version: 24.13.2
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)(yaml@2.9.0)
 
 packages:
 
