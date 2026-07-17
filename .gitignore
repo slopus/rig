@@ -1,4 +1,7 @@
 .DS_Store
+# Local notes and debugging artifacts kept with this checkout but never pushed,
+# such as bug screenshots, investigation files, and draft notes.
+/.local/
 .context/
 .rig-dev/
 .terminal-target/

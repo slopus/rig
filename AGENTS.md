@@ -64,6 +64,18 @@ Always use `pnpm` for this project. Do not use `npm`, `npx`, or `yarn` for insta
 
 Favor one function per file when adding or reshaping source code.
 
+## Change discipline
+
+Treat behavior that crosses the TUI, protocol, daemon, persistence, and provider layers as one end-to-end contract. Trace the full path before editing, keep stable run, message, tool-call, and event identities across asynchronous boundaries, and test delayed, duplicated, reordered, rejected, and already-applied outcomes. Model multi-step asynchronous behavior with explicit states and terminal transitions instead of accumulating loosely related booleans and best-effort callbacks.
+
+Compatibility migrations and startup repair must be atomic, idempotent, and selective at the storage boundary. Filter to the required rows in SQL before deserializing payloads, do not materialize unrelated or potentially large historical events, and derive ordering or cursor provenance independently when filtering would otherwise hide the true latest event. Publish external or in-memory notifications only after the durable transaction commits.
+
+Keep optional work off correctness and interaction critical paths. Telemetry, quota observation, debug logging, metadata, discovery, and status enrichment must have explicit time and size bounds, must release listeners and resources, and must not turn a successful agent run into a failure. Do not create unbounded promise chains, event buffers, transcript caches, image stores, debug directories, or live-work rows without an explicit retention, compaction, or backpressure strategy.
+
+Keep provider discovery and runtime construction on one shared path, so every model shown as available can actually be instantiated with the same configuration, credentials, filters, and routing. Provider-native prompts, tools, and schemas may differ, but lifecycle, persistence, permissions, retry safety, and error semantics remain shared contracts. Never retry inference after user-visible content or tool effects have begun unless the protocol proves the continuation is idempotent and tests prove no output or action can be duplicated.
+
+For bug fixes, first add the smallest deterministic test that reproduces the failure at the layer where the broken contract is observable. Preserve that test unchanged while fixing production code, then add lower-level tests only where they clarify an invariant. Keep each commit coherent and green; avoid follow-up commits whose only purpose is repairing timing assumptions, lint, or incomplete coverage that could have shipped with the original change.
+
 ## One feature per worktree
 
 Working on multiple features in the same worktree is prohibited until the current feature has been merged into `main`. If the user asks to begin another feature before that merge, do not start it in the current worktree. Instruct the user to create a new Conductor workspace/worktree for the additional feature and continue there instead.
