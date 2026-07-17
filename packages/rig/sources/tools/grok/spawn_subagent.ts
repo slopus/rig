@@ -2,6 +2,7 @@
 import { Type } from "@sinclair/typebox";
 
 import { defineTool } from "../../agent/types.js";
+import { humanizeTaskName } from "../codex/humanizeTaskName.js";
 import { requireSubagentContext } from "../codex/requireSubagentContext.js";
 
 export const grokSpawnSubagentTool = defineTool({
@@ -53,7 +54,11 @@ export const grokSpawnSubagentTool = defineTool({
         };
     },
     toLLM: (result) => [{ type: "text", text: JSON.stringify(result) }],
-    toUI: (result) => `Started subagent ${result.task_name}.`,
+    toUI: (result, args) => {
+        const description = args.description.trim() || humanizeTaskName(result.task_name);
+        const punctuation = /[.!?]$/u.test(description) ? "" : ".";
+        return `Started a subagent: ${description}${punctuation}`;
+    },
     locks: [],
 });
 
