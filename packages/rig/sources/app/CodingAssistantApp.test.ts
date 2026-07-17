@@ -5334,7 +5334,7 @@ describe("CodingAssistantApp", () => {
             createdAt: 3,
             data: {
                 event: {
-                    status: "Awaiting for workflow to complete",
+                    status: "Waiting for the workflow to complete",
                     toolCallId: toolCall.id,
                     type: "tool_execution_status",
                 },
@@ -5348,7 +5348,7 @@ describe("CodingAssistantApp", () => {
         const active = stripAnsi(app.render(80).join("\n"));
         expect(active).toContain("• Running printf progress");
         expect(active).toContain("└ Processed 5 rows");
-        expect(active).toContain("Awaiting for workflow to complete");
+        expect(active).toContain("Waiting for the workflow to complete");
         expect(active).not.toContain("Running 1 tool");
         expect(active).not.toContain("• Ran printf progress");
 

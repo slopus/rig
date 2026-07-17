@@ -114,7 +114,7 @@ describe("waiting for a long workflow", () => {
         submit(gym, "Run the long workflow and wait until it is completely finished.");
 
         const waiting = await gym.terminal.waitForText("Wait for workflow", 30_000);
-        expect(waiting.text).toContain("Awaiting for workflow to complete");
+        expect(waiting.text).toContain("Waiting for the workflow to complete");
         expect(waiting.text).not.toContain("Running 1 tool");
         expect(waiting.text).not.toContain("LONG_WORKFLOW_WAIT_FINISHED");
 

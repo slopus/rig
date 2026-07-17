@@ -33,7 +33,7 @@ export function createWaitForWorkflowTool(name: "WaitForWorkflow" | "wait_for_wo
             if (context.workflows === undefined) {
                 throw new Error("Workflows are unavailable in this session.");
             }
-            execution.onStatus?.("Awaiting for workflow to complete");
+            execution.onStatus?.("Waiting for the workflow to complete");
             const run = await context.workflows.wait(run_id, execution.signal);
             if (run === undefined) throw new Error("The workflow run was not found.");
             if (run.status === "running") {
