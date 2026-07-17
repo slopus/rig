@@ -72,7 +72,6 @@ import type { SecretRegistration } from "../secrets/index.js";
 export interface ProtocolHttpServerOptions {
     defaultDocker?: DockerExecutionConfig;
     identity?: DaemonIdentity;
-    initialization?: Promise<ModelCatalog>;
     modelCatalog?: ModelCatalog;
     fileSearchService?: FileSearchServiceContract;
     globalEventQueue?: GlobalEventQueue;
@@ -95,7 +94,7 @@ export function createProtocolHttpServer(options: ProtocolHttpServerOptions): Se
             modelCatalog,
             ...(options.secrets === undefined ? {} : { secrets: options.secrets }),
         });
-    const state = createInitializationState({ ...options, modelCatalog });
+    const identity = options.identity ?? getDaemonIdentity();
     const fileSearchService = options.fileSearchService ?? new FileSearchService();
     const runtimeConfig: ProtocolServerRuntimeConfig = {
         globalEventQueue: options.globalEventQueue,
@@ -113,7 +112,8 @@ export function createProtocolHttpServer(options: ProtocolHttpServerOptions): Se
                 request,
                 response,
                 store,
-                state,
+                modelCatalog,
+                identity,
                 fileSearchService,
                 runtimeConfig,
                 options.token,
@@ -140,13 +140,6 @@ export function createProtocolHttpServer(options: ProtocolHttpServerOptions): Se
     return server;
 }
 
-interface InitializationState {
-    catalog: ModelCatalog | undefined;
-    errorMessage: string | undefined;
-    identity: DaemonIdentity;
-    ready: boolean;
-}
-
 interface ProtocolServerRuntimeConfig {
     globalEventQueue: GlobalEventQueue | undefined;
     onDurableGlobalEventQueueChange:
@@ -160,7 +153,8 @@ async function handleRequest(
     request: IncomingMessage,
     response: ServerResponse,
     store: SessionStore,
-    initialization: InitializationState,
+    modelCatalog: ModelCatalog,
+    identity: DaemonIdentity,
     fileSearchService: FileSearchServiceContract,
     runtimeConfig: ProtocolServerRuntimeConfig,
     token: string,
@@ -185,7 +179,7 @@ async function handleRequest(
         sendJson<HealthResponse>(
             response,
             200,
-            healthResponse(initialization, runtimeConfig.globalEventQueue !== undefined),
+            healthResponse(modelCatalog, identity, runtimeConfig.globalEventQueue !== undefined),
         );
         return;
     }
@@ -200,17 +194,8 @@ async function handleRequest(
         return;
     }
 
-    if (!initialization.ready || initialization.catalog === undefined) {
-        sendJson(
-            response,
-            503,
-            healthResponse(initialization, runtimeConfig.globalEventQueue !== undefined),
-        );
-        return;
-    }
-
     if (request.method === "GET" && route.name === "models") {
-        sendJson<ListModelsResponse>(response, 200, { catalog: initialization.catalog });
+        sendJson<ListModelsResponse>(response, 200, { catalog: modelCatalog });
         return;
     }
 
@@ -771,60 +756,18 @@ async function handleRequest(
     sendJson(response, 405, { error: "Method not allowed" });
 }
 
-function createInitializationState(options: ProtocolHttpServerOptions): InitializationState {
-    const state: InitializationState = {
-        catalog: options.modelCatalog,
-        errorMessage: undefined,
-        identity: options.identity ?? getDaemonIdentity(),
-        ready: options.initialization === undefined,
-    };
-    if (options.initialization !== undefined) {
-        void options.initialization.then(
-            (catalog) => {
-                state.catalog = catalog;
-                state.errorMessage = undefined;
-                state.ready = true;
-            },
-            (error: unknown) => {
-                state.errorMessage = errorToMessage(error);
-                state.ready = false;
-            },
-        );
-    }
-    return state;
-}
-
 function healthResponse(
-    initialization: InitializationState,
+    catalog: ModelCatalog,
+    identity: DaemonIdentity,
     durableGlobalEventQueue: boolean,
 ): HealthResponse {
-    if (initialization.ready && initialization.catalog !== undefined) {
-        return {
-            catalog: initialization.catalog,
-            durableGlobalEventQueue,
-            healthy: true,
-            identity: initialization.identity,
-            ready: true,
-            status: "ready",
-        };
-    }
-    if (initialization.errorMessage !== undefined) {
-        return {
-            durableGlobalEventQueue,
-            errorMessage: initialization.errorMessage,
-            healthy: false,
-            identity: initialization.identity,
-            ready: false,
-            status: "error",
-        };
-    }
-
     return {
+        catalog,
         durableGlobalEventQueue,
         healthy: true,
-        identity: initialization.identity,
-        ready: false,
-        status: "starting",
+        identity,
+        ready: true,
+        status: "ready",
     };
 }
 

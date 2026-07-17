@@ -52,23 +52,20 @@ export async function ensureLocalProtocolServer(
             health !== undefined && daemonIdentitiesMatch(currentIdentity, health.identity);
         if (identityMatches) {
             if (health.durableGlobalEventQueue === daemonSettings.durableGlobalEventQueue) {
-                await waitForReady(client, options);
                 return { client, paths, token: existingToken };
             }
-            if (health.ready) {
-                const updated = await client.updateDaemonConfig({
-                    settings: {
-                        durableGlobalEventQueue: daemonSettings.durableGlobalEventQueue,
-                    },
-                });
-                if (
-                    updated.config.settings.durableGlobalEventQueue !==
-                    daemonSettings.durableGlobalEventQueue
-                ) {
-                    throw new Error("The local daemon did not apply the requested configuration.");
-                }
-                return { client, paths, token: existingToken };
+            const updated = await client.updateDaemonConfig({
+                settings: {
+                    durableGlobalEventQueue: daemonSettings.durableGlobalEventQueue,
+                },
+            });
+            if (
+                updated.config.settings.durableGlobalEventQueue !==
+                daemonSettings.durableGlobalEventQueue
+            ) {
+                throw new Error("The local daemon did not apply the requested configuration.");
             }
+            return { client, paths, token: existingToken };
         }
         if (health !== undefined) {
             if (!identityMatches) {
@@ -93,7 +90,7 @@ export async function ensureLocalProtocolServer(
     const token = await writeLocalServerToken(paths.tokenPath);
     await spawnLocalServer(paths);
     const client = new ProtocolHttpClient({ socketPath: paths.socketPath, token });
-    await waitForReady(client, options);
+    await waitForReady(client);
     return { client, paths, token };
 }
 
@@ -160,22 +157,12 @@ async function spawnLocalServer(paths: LocalServerPaths): Promise<void> {
     }
 }
 
-async function waitForReady(
-    client: ProtocolHttpClient,
-    options: EnsureLocalProtocolServerOptions,
-): Promise<void> {
+async function waitForReady(client: ProtocolHttpClient): Promise<void> {
     const deadline = Date.now() + 5_000;
-    let reportedInitializing = false;
     while (Date.now() < deadline) {
         try {
-            const health = await client.health();
-            if (health.ready) {
-                return;
-            }
-            if (!reportedInitializing) {
-                options.onStatus?.("Waiting for daemon initialization.");
-                reportedInitializing = true;
-            }
+            await client.health();
+            return;
         } catch {
             // The socket may not be accepting connections yet.
         }

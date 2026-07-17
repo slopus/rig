@@ -70,21 +70,18 @@ export interface ModelCatalog {
     providers: readonly ProviderModelCatalog[];
 }
 
-export type ServerInitializationStatus = "starting" | "ready" | "error";
-
 export interface DaemonIdentity {
     version: string;
     developmentBuildId?: string;
 }
 
 export interface HealthResponse {
-    catalog?: ModelCatalog;
+    catalog: ModelCatalog;
     durableGlobalEventQueue: boolean;
-    errorMessage?: string;
-    healthy: boolean;
+    healthy: true;
     identity: DaemonIdentity;
-    ready: boolean;
-    status: ServerInitializationStatus;
+    ready: true;
+    status: "ready";
 }
 
 export interface ListModelsResponse {

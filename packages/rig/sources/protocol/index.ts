@@ -63,7 +63,6 @@ export type {
     SecretSummary,
     SecretsChangedEvent,
     SetGoalRequest,
-    ServerInitializationStatus,
     SessionCreatedEvent,
     SessionContextUsage,
     SessionProviderQuota,

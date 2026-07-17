@@ -51,8 +51,8 @@ async function connectToExistingDaemon(): Promise<
         token,
     });
     try {
-        const health = await client.health();
-        return health.healthy && health.ready ? { client } : undefined;
+        await client.health();
+        return { client };
     } catch {
         return undefined;
     }
