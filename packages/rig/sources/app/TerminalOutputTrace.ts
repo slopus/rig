@@ -1,3 +1,4 @@
+/* eslint-disable no-control-regex -- Terminal output tracing intentionally parses ANSI controls. */
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -31,7 +32,7 @@ export class TerminalOutputTrace {
         this.#recordDimensions("input", dimensions);
         this.#append({
             bytes: Buffer.byteLength(data),
-            controlOnly: /^[\x00-\x1f\x7f-\x9f]*$/u.test(data),
+            controlOnly: /^[\u0000-\u001f\u007f-\u009f]*$/u.test(data),
             event: "input",
         });
     }
@@ -40,12 +41,12 @@ export class TerminalOutputTrace {
         this.#recordDimensions("output", dimensions);
         this.#append({
             bytes: Buffer.byteLength(data),
-            cursorControls: matches(data, /\x1b\[[0-9;?]*[ABCDEFGHf]/gu),
+            cursorControls: matches(data, /\u001b\[[0-9;?]*[ABCDEFGHf]/gu),
             dataBase64: Buffer.from(data).toString("base64"),
-            eraseControls: matches(data, /\x1b\[[0-9;?]*[JK]/gu),
+            eraseControls: matches(data, /\u001b\[[0-9;?]*[JK]/gu),
             event: "output",
             lineFeeds: count(data, "\n"),
-            oscCommands: matches(data, /\x1b\][^\x07\x1b]*/gu),
+            oscCommands: matches(data, /\u001b\][^\u0007\u001b]*/gu),
             synchronizedOutputBegin: count(data, "\x1b[?2026h"),
             synchronizedOutputEnd: count(data, "\x1b[?2026l"),
         });
