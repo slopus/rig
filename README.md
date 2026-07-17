@@ -308,8 +308,9 @@ permission_mode = "workspace_write"
 ## Configuration
 
 Rig reads user-wide settings from `~/.rig/config.toml` and repository
-settings from `rig.toml`. Repository values win where both are allowed. It also
-understands Codex MCP entries from `~/.codex/config.toml` and `.codex/config.toml`.
+settings from `rig.toml`. Repository values win where both are allowed. MCP
+servers use these same Rig-owned configuration layers; provider configuration
+files are not imported.
 
 Rig keeps its durable user files together in `~/.rig`: configuration,
 runtime settings, MCP trust decisions, the saved-session database, and binary

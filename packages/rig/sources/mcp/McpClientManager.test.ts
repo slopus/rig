@@ -15,16 +15,18 @@ describe("McpClientManager", () => {
             const root = await mkdtemp(join(tmpdir(), "rig-mcp-restricted-"));
             const cwd = join(root, "workspace");
             const homeDirectory = join(root, "home");
+            const configHome = join(root, "rig-home");
             const marker = join(root, "server-started.txt");
             const manager = new McpClientManager({
-                env: { RIG_HOME: join(root, "rig-home") } as NodeJS.ProcessEnv,
+                env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
                 homeDirectory,
             });
             try {
-                await mkdir(join(homeDirectory, ".codex"), { recursive: true });
+                await mkdir(configHome, { recursive: true });
+                await mkdir(homeDirectory, { recursive: true });
                 await mkdir(cwd, { recursive: true });
                 await writeFile(
-                    join(homeDirectory, ".codex", "config.toml"),
+                    join(configHome, "config.toml"),
                     `[mcp_servers.trusted]\ncommand = "${process.execPath}"\nargs = ["server.mjs"]\n`,
                     "utf8",
                 );
@@ -64,10 +66,11 @@ describe("McpClientManager", () => {
             "testing",
             "stdioMcpServer.mjs",
         );
-        await mkdir(join(homeDirectory, ".codex"), { recursive: true });
+        await mkdir(configHome, { recursive: true });
+        await mkdir(homeDirectory, { recursive: true });
         await mkdir(cwd, { recursive: true });
         await writeFile(
-            join(homeDirectory, ".codex", "config.toml"),
+            join(configHome, "config.toml"),
             `[mcp_servers.trusted]\ncommand = "${process.execPath}"\nargs = ["${fixture}"]\n`,
             "utf8",
         );
@@ -112,7 +115,7 @@ describe("McpClientManager", () => {
             expect(loaded.tools.map((tool) => tool.name)).toContain("mcp__trusted__echo_value");
             expect(prompts).toBe(1);
             await writeFile(
-                join(homeDirectory, ".codex", "config.toml"),
+                join(configHome, "config.toml"),
                 `[mcp_servers.trusted]\ncommand = "${process.execPath}"\nargs = ["${fixture}"]\nenabled_tools = ["echo_value"]\n`,
                 "utf8",
             );
@@ -133,19 +136,21 @@ describe("McpClientManager", () => {
         const root = await mkdtemp(join(tmpdir(), "rig-mcp-cancelled-trust-"));
         const cwd = join(root, "workspace");
         const homeDirectory = join(root, "home");
+        const configHome = join(root, "rig-home");
         const fixture = join(
             dirname(fileURLToPath(import.meta.url)),
             "testing",
             "stdioMcpServer.mjs",
         );
         const manager = new McpClientManager({
-            env: { RIG_HOME: join(root, "rig-home") } as NodeJS.ProcessEnv,
+            env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
             homeDirectory,
         });
-        await mkdir(join(homeDirectory, ".codex"), { recursive: true });
+        await mkdir(configHome, { recursive: true });
+        await mkdir(homeDirectory, { recursive: true });
         await mkdir(cwd, { recursive: true });
         await writeFile(
-            join(homeDirectory, ".codex", "config.toml"),
+            join(configHome, "config.toml"),
             `[mcp_servers.trusted]\ncommand = "${process.execPath}"\nargs = ["${fixture}"]\n`,
             "utf8",
         );
@@ -179,10 +184,11 @@ describe("McpClientManager", () => {
         const root = await mkdtemp(join(tmpdir(), "rig-mcp-cwd-"));
         const cwd = join(root, "workspace");
         const homeDirectory = join(root, "home");
+        const configHome = join(root, "rig-home");
         const homeMarker = join(root, "home-server-started.txt");
         const workspaceMarker = join(root, "workspace-shadow-started.txt");
         const manager = new McpClientManager({
-            env: { RIG_HOME: join(root, "rig-home") } as NodeJS.ProcessEnv,
+            env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
             homeDirectory,
         });
         try {
@@ -191,10 +197,11 @@ describe("McpClientManager", () => {
                 "testing",
                 "stdioMcpServer.mjs",
             );
-            await mkdir(join(homeDirectory, ".codex"), { recursive: true });
+            await mkdir(configHome, { recursive: true });
+            await mkdir(homeDirectory, { recursive: true });
             await mkdir(cwd, { recursive: true });
             await writeFile(
-                join(homeDirectory, ".codex", "config.toml"),
+                join(configHome, "config.toml"),
                 `[mcp_servers.trusted]\ncommand = "${process.execPath}"\nargs = ["server.mjs"]\n`,
                 "utf8",
             );
@@ -316,9 +323,11 @@ describe("McpClientManager", () => {
 
     it("discovers and calls tools over a stdio MCP connection", async () => {
         const cwd = await mkdtemp(join(tmpdir(), "rig-mcp-client-"));
+        const configHome = join(cwd, "empty-rig-home");
+        const homeDirectory = join(cwd, "empty-home");
         const manager = new McpClientManager({
-            env: { RIG_HOME: join(cwd, "empty-rig-home") } as NodeJS.ProcessEnv,
-            homeDirectory: join(cwd, "empty-home"),
+            env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
+            homeDirectory,
         });
         try {
             const fixture = join(
@@ -326,9 +335,10 @@ describe("McpClientManager", () => {
                 "testing",
                 "stdioMcpServer.mjs",
             );
-            await mkdir(join(cwd, "empty-home", ".codex"), { recursive: true });
+            await mkdir(configHome, { recursive: true });
+            await mkdir(homeDirectory, { recursive: true });
             await writeFile(
-                join(cwd, "empty-home", ".codex", "config.toml"),
+                join(configHome, "config.toml"),
                 `[mcp_servers."test server"]\ncommand = "${process.execPath}"\nargs = ["${fixture}"]\n`,
                 "utf8",
             );
@@ -418,17 +428,19 @@ describe("McpClientManager", () => {
         const root = await mkdtemp(join(tmpdir(), "rig-mcp-reload-"));
         const cwd = join(root, "workspace");
         const homeDirectory = join(root, "home");
-        const configPath = join(homeDirectory, ".codex", "config.toml");
+        const configHome = join(root, "rig-home");
+        const configPath = join(configHome, "config.toml");
         const fixture = join(
             dirname(fileURLToPath(import.meta.url)),
             "testing",
             "stdioMcpServer.mjs",
         );
         const manager = new McpClientManager({
-            env: { RIG_HOME: join(root, "rig-home") } as NodeJS.ProcessEnv,
+            env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
             homeDirectory,
         });
         await mkdir(dirname(configPath), { recursive: true });
+        await mkdir(homeDirectory, { recursive: true });
         await mkdir(cwd, { recursive: true });
         await writeFile(
             configPath,
@@ -475,14 +487,17 @@ describe("McpClientManager", () => {
 
     it("keeps an unavailable optional server visible without blocking other tools", async () => {
         const cwd = await mkdtemp(join(tmpdir(), "rig-mcp-client-"));
+        const configHome = join(cwd, "empty-rig-home");
+        const homeDirectory = join(cwd, "empty-home");
         const manager = new McpClientManager({
-            env: { RIG_HOME: join(cwd, "empty-rig-home") } as NodeJS.ProcessEnv,
-            homeDirectory: join(cwd, "empty-home"),
+            env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
+            homeDirectory,
         });
         try {
-            await mkdir(join(cwd, "empty-home", ".codex"), { recursive: true });
+            await mkdir(configHome, { recursive: true });
+            await mkdir(homeDirectory, { recursive: true });
             await writeFile(
-                join(cwd, "empty-home", ".codex", "config.toml"),
+                join(configHome, "config.toml"),
                 '[mcp_servers.missing]\ncommand = "rig-command-that-does-not-exist"\n',
                 "utf8",
             );
@@ -508,9 +523,11 @@ describe("McpClientManager", () => {
 
     it("enforces tool allowlists through live list and call tools", async () => {
         const cwd = await mkdtemp(join(tmpdir(), "rig-mcp-client-"));
+        const configHome = join(cwd, "empty-rig-home");
+        const homeDirectory = join(cwd, "empty-home");
         const manager = new McpClientManager({
-            env: { RIG_HOME: join(cwd, "empty-rig-home") } as NodeJS.ProcessEnv,
-            homeDirectory: join(cwd, "empty-home"),
+            env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
+            homeDirectory,
         });
         try {
             const fixture = join(
@@ -518,9 +535,10 @@ describe("McpClientManager", () => {
                 "testing",
                 "stdioMcpServer.mjs",
             );
-            await mkdir(join(cwd, "empty-home", ".codex"), { recursive: true });
+            await mkdir(configHome, { recursive: true });
+            await mkdir(homeDirectory, { recursive: true });
             await writeFile(
-                join(cwd, "empty-home", ".codex", "config.toml"),
+                join(configHome, "config.toml"),
                 `[mcp_servers.restricted]\ncommand = "${process.execPath}"\nargs = ["${fixture}"]\nenabled_tools = ["echo_value"]\n`,
                 "utf8",
             );
