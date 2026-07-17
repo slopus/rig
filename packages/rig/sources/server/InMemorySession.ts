@@ -98,6 +98,12 @@ import { aggregateSessionUsage, type SessionUsageSummary } from "./sessionUsage/
 import { createRequestDebugDirectory, DebugLog } from "../debug/index.js";
 import { SecretRegistry, SessionSecretContext } from "../secrets/index.js";
 import type { SecretAttachmentScope } from "../secrets/index.js";
+import {
+    createRemoteTerminalManager,
+    type CreateRemoteTerminalRequest,
+    type RemoteTerminal,
+    type RemoteTerminalManager,
+} from "../terminal/index.js";
 
 export interface PersistedSessionMessage {
     isPartial: boolean;
@@ -307,6 +313,7 @@ export class InMemorySession {
     #shutdownCleanup: Promise<void> | undefined;
     #taskList: SessionTaskList;
     #taskDrain: TaskDrain | undefined;
+    #terminalManager: RemoteTerminalManager | undefined;
     #title: string | undefined;
     #titleError: string | undefined;
     #titleStatus: SessionTitleStatus = "idle";
@@ -1314,8 +1321,23 @@ export class InMemorySession {
         }
         this.#activeRun?.controller.abort();
         this.#compactionController?.abort();
-        this.#shutdownCleanup = this.#killRuntimeProcesses(5_000);
+        this.#shutdownCleanup = Promise.all([
+            this.#killRuntimeProcesses(5_000),
+            this.#terminalManager?.close() ?? Promise.resolve(),
+        ]).then(() => undefined);
         return this.#shutdownCleanup;
+    }
+
+    createRemoteTerminal(request: CreateRemoteTerminalRequest): Promise<RemoteTerminal> {
+        return this.#remoteTerminals().create(request);
+    }
+
+    remoteTerminal(terminalId: string): RemoteTerminal | undefined {
+        return this.#terminalManager?.get(terminalId);
+    }
+
+    remoteTerminals(): readonly RemoteTerminal[] {
+        return this.#terminalManager?.list() ?? [];
     }
 
     isClosing(): boolean {
@@ -2379,6 +2401,15 @@ export class InMemorySession {
         this.#tools = snapshot.tools;
         this.#saveSession();
         return runtime;
+    }
+
+    #remoteTerminals(): RemoteTerminalManager {
+        this.#terminalManager ??= createRemoteTerminalManager({
+            cwd: this.#request.cwd,
+            sessionId: this.id,
+            ...(this.#request.docker === undefined ? {} : { docker: this.#request.docker }),
+        });
+        return this.#terminalManager;
     }
 
     #taskSession(): InMemorySession {

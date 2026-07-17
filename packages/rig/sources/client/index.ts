@@ -11,5 +11,6 @@ export {
     type WatchGlobalEventsOptions,
     type WatchSessionEventsOptions,
 } from "./ProtocolHttpClient.js";
+export type { WatchRemoteTerminalOptions } from "../terminal/index.js";
 export { RemoteAgent, type RemoteAgentOptions } from "./RemoteAgent.js";
 export { RemoteAgentRunError } from "./RemoteAgentRunError.js";

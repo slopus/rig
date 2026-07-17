@@ -48,6 +48,16 @@ import type {
 import type { SecretAttachmentScope } from "../secrets/index.js";
 import { parseGlobalSseEvent } from "./parseGlobalSseEvent.js";
 import { EventStreamHttpError } from "./EventStreamHttpError.js";
+import type {
+    CreateRemoteTerminalRequest,
+    CreateRemoteTerminalResponse,
+    ListRemoteTerminalsResponse,
+    RemoteTerminalResponse,
+    RemoteTerminalScrollbackResponse,
+    ResizeRemoteTerminalRequest,
+    WatchRemoteTerminalOptions,
+} from "../terminal/index.js";
+import { parseRemoteTerminalSseEvent } from "./parseRemoteTerminalSseEvent.js";
 
 export interface ProtocolHttpClientOptions {
     socketPath: string;
@@ -230,6 +240,64 @@ export class ProtocolHttpClient {
         return this.#requestJson("POST", "/sessions", request);
     }
 
+    createRemoteTerminal(
+        sessionId: string,
+        request: CreateRemoteTerminalRequest = {},
+    ): Promise<CreateRemoteTerminalResponse> {
+        return this.#requestJson(
+            "POST",
+            `/sessions/${encodeURIComponent(sessionId)}/terminals`,
+            request,
+        );
+    }
+
+    getRemoteTerminal(sessionId: string, terminalId: string): Promise<RemoteTerminalResponse> {
+        return this.#requestJson("GET", this.#remoteTerminalPath(sessionId, terminalId));
+    }
+
+    getRemoteTerminalScrollback(
+        sessionId: string,
+        terminalId: string,
+        options: { limit?: number; start?: number } = {},
+    ): Promise<RemoteTerminalScrollbackResponse> {
+        const parameters = new URLSearchParams();
+        if (options.start !== undefined) parameters.set("start", String(options.start));
+        if (options.limit !== undefined) parameters.set("limit", String(options.limit));
+        const query = parameters.size === 0 ? "" : `?${parameters.toString()}`;
+        return this.#requestJson(
+            "GET",
+            `${this.#remoteTerminalPath(sessionId, terminalId)}/scrollback${query}`,
+        );
+    }
+
+    listRemoteTerminals(sessionId: string): Promise<ListRemoteTerminalsResponse> {
+        return this.#requestJson("GET", `/sessions/${encodeURIComponent(sessionId)}/terminals`);
+    }
+
+    resizeRemoteTerminal(
+        sessionId: string,
+        terminalId: string,
+        request: ResizeRemoteTerminalRequest,
+    ): Promise<RemoteTerminalResponse> {
+        return this.#requestJson("PATCH", this.#remoteTerminalPath(sessionId, terminalId), request);
+    }
+
+    stopRemoteTerminal(sessionId: string, terminalId: string): Promise<RemoteTerminalResponse> {
+        return this.#requestJson("DELETE", this.#remoteTerminalPath(sessionId, terminalId));
+    }
+
+    writeRemoteTerminal(
+        sessionId: string,
+        terminalId: string,
+        data: string,
+    ): Promise<{ accepted: true }> {
+        return this.#requestJson(
+            "POST",
+            `${this.#remoteTerminalPath(sessionId, terminalId)}/input`,
+            { data },
+        );
+    }
+
     forkSession(sessionId: string): Promise<ForkSessionResponse> {
         return this.#requestJson("POST", `/sessions/${encodeURIComponent(sessionId)}/fork`);
     }
@@ -392,6 +460,37 @@ export class ProtocolHttpClient {
         }
     }
 
+    async watchRemoteTerminal(
+        sessionId: string,
+        terminalId: string,
+        options: WatchRemoteTerminalOptions,
+    ): Promise<void> {
+        let after = options.after;
+        let exited = false;
+        while (!exited && options.signal?.aborted !== true) {
+            try {
+                after = await this.#watchRemoteTerminalOnce(sessionId, terminalId, after, {
+                    ...options,
+                    onFrame: async (frame) => {
+                        await options.onFrame(frame);
+                        after = frame.revision;
+                        exited = frame.status === "exited";
+                    },
+                });
+            } catch (error) {
+                if (options.signal?.aborted) return;
+                if (
+                    error instanceof EventStreamHttpError &&
+                    error.statusCode >= 400 &&
+                    error.statusCode < 500
+                ) {
+                    throw error;
+                }
+                await delay(50, options.signal);
+            }
+        }
+    }
+
     async #requestJson<T>(method: string, path: string, body?: unknown): Promise<T> {
         const payload = body === undefined ? undefined : JSON.stringify(body);
         const headers: Record<string, string | number> = {
@@ -512,6 +611,87 @@ export class ProtocolHttpClient {
             request.on("error", settle);
             request.end();
         });
+    }
+
+    #watchRemoteTerminalOnce(
+        sessionId: string,
+        terminalId: string,
+        after: number | undefined,
+        options: WatchRemoteTerminalOptions,
+    ): Promise<number | undefined> {
+        return new Promise((resolve, reject) => {
+            let application = Promise.resolve();
+            let cursor = after;
+            let removeAbort: () => void = () => undefined;
+            let settled = false;
+            const settle = (error?: unknown) => {
+                if (settled) return;
+                settled = true;
+                removeAbort();
+                void application.then(
+                    () => (error === undefined ? resolve(cursor) : reject(error)),
+                    reject,
+                );
+            };
+            const query = after === undefined ? "" : `?after=${encodeURIComponent(after)}`;
+            const request = httpRequest(
+                {
+                    headers: {
+                        accept: "text/event-stream",
+                        authorization: `Bearer ${this.token}`,
+                    },
+                    method: "GET",
+                    path: `${this.#remoteTerminalPath(sessionId, terminalId)}/stream${query}`,
+                    socketPath: this.socketPath,
+                },
+                (response) => {
+                    if ((response.statusCode ?? 500) >= 400) {
+                        settle(new EventStreamHttpError(response.statusCode ?? 500));
+                        response.resume();
+                        return;
+                    }
+                    let buffer = "";
+                    response.setEncoding("utf8");
+                    response.on("data", (chunk: string) => {
+                        if (settled) return;
+                        buffer += chunk;
+                        for (;;) {
+                            const boundary = buffer.indexOf("\n\n");
+                            if (boundary < 0) break;
+                            const rawEvent = buffer.slice(0, boundary);
+                            buffer = buffer.slice(boundary + 2);
+                            const frame = parseRemoteTerminalSseEvent(rawEvent);
+                            if (frame === undefined) continue;
+                            application = application.then(async () => {
+                                await options.onFrame(frame);
+                                cursor = frame.revision;
+                            });
+                            void application.catch((error: unknown) => {
+                                response.destroy();
+                                settle(error);
+                            });
+                        }
+                    });
+                    response.on("end", () => settle());
+                    response.on("error", settle);
+                },
+            );
+            const abort = () => {
+                request.destroy();
+                settle();
+            };
+            if (options.signal?.aborted) abort();
+            else {
+                options.signal?.addEventListener("abort", abort, { once: true });
+                removeAbort = () => options.signal?.removeEventListener("abort", abort);
+            }
+            request.on("error", settle);
+            request.end();
+        });
+    }
+
+    #remoteTerminalPath(sessionId: string, terminalId: string): string {
+        return `/sessions/${encodeURIComponent(sessionId)}/terminals/${encodeURIComponent(terminalId)}`;
     }
 
     #watchGlobalEventsOnce(

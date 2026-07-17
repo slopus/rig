@@ -1,6 +1,25 @@
 export type { EventId } from "./EventId.js";
 export type { McpServerSummary } from "../mcp/index.js";
 export type { SessionTask, TaskStatus } from "../tasks/index.js";
+export type {
+    CreateRemoteTerminalRequest,
+    CreateRemoteTerminalResponse,
+    ListRemoteTerminalsResponse,
+    RemoteTerminalCell,
+    RemoteTerminalColor,
+    RemoteTerminalCursor,
+    RemoteTerminalFrame,
+    RemoteTerminalResponse,
+    RemoteTerminalRow,
+    RemoteTerminalScrollbackResponse,
+    RemoteTerminalStatus,
+    RemoteTerminalStyle,
+    RemoteTerminalUnderline,
+    RemoteTerminalViewport,
+    ResizeRemoteTerminalRequest,
+    WatchRemoteTerminalOptions,
+    WriteRemoteTerminalRequest,
+} from "../terminal/index.js";
 export type { GoalStatus, SessionGoal } from "../goals/index.js";
 export type { WorkflowRun, WorkflowRunStatus, WorkflowRunUpdate } from "../workflows/index.js";
 export {

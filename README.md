@@ -88,6 +88,10 @@ without making you rebuild the setup for every model, machine, or repository.
   and project-local configuration remain available when you need them.
 - **Ready for other clients.** A local daemon, persisted sessions, and a durable
   event stream let terminal, mobile, and web clients build on the same runtime.
+  The [remote terminal API](REMOTE_TERMINALS.md) adds Ghostty-backed PTYs with
+  paged scrollback and revisioned screen frames; the isolated
+  [hybrid client/server protocol](packages/remote-terminal/README.md) uses raw VT replay with
+  semantic-grid recovery for efficient remote rendering.
 - **Open and local.** Rig is MIT licensed, runs beside your code, and keeps its
   execution boundaries visible.
 

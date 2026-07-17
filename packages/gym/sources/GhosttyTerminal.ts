@@ -125,8 +125,13 @@ export class GhosttyTerminal {
     }
 
     write(data: string): void {
+        this.writeBytes(Buffer.from(data));
+    }
+
+    writeBytes(data: Uint8Array): void {
         this.#outputRevision += 1;
-        for (const handler of this.#outputHandlers) handler(data);
+        const text = Buffer.from(data).toString("utf8");
+        for (const handler of this.#outputHandlers) handler(text);
         this.#send({ type: "write", data: Buffer.from(data).toString("base64") });
     }
 

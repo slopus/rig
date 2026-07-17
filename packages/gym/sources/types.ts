@@ -61,11 +61,19 @@ export type TerminalColorSnapshot =
 
 export interface TerminalCellSnapshot {
     background: TerminalColorSnapshot | null;
+    blink?: boolean;
     bold: boolean;
     dim: boolean;
     foreground: TerminalColorSnapshot | null;
+    invisible?: boolean;
+    inverse?: boolean;
     italic: boolean;
+    overline?: boolean;
+    strikethrough?: boolean;
     text: string;
+    underline?: "curly" | "dashed" | "dotted" | "double" | "none" | "single";
+    underlineColor?: TerminalColorSnapshot | null;
+    width?: 1 | 2;
     x: number;
     y: number;
 }
@@ -91,6 +99,7 @@ export interface TerminalSnapshot {
     synchronizedOutputActive: boolean;
     text: string;
     title: string;
+    wrappedRows?: readonly boolean[];
 }
 
 export interface TerminalScreenshotOptions {

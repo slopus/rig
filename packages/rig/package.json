@@ -17,6 +17,7 @@
     },
     "files": [
         "dist",
+        "terminal",
         "LICENSE-GROK-BUILD",
         "THIRD-PARTY-NOTICES.md"
     ],
@@ -40,6 +41,7 @@
         "@earendil-works/pi-ai": "^0.80.6",
         "@earendil-works/pi-tui": "^0.80.3",
         "@ff-labs/fff-node": "^0.9.6",
+        "@lydell/node-pty": "1.2.0-beta.12",
         "@mariozechner/clipboard": "^0.3.9",
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@paralleldrive/cuid2": "^3.3.0",

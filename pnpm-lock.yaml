@@ -65,6 +65,21 @@ importers:
         specifier: ^3.2.4
         version: 3.2.6(@types/debug@4.1.13)(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)(yaml@2.9.0)
 
+  packages/remote-terminal:
+    devDependencies:
+      '@slopus/rig-gym':
+        specifier: workspace:*
+        version: link:../gym
+      '@types/node':
+        specifier: ^24.0.10
+        version: 24.13.2
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)(yaml@2.9.0)
+
   packages/rig:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
@@ -85,6 +100,9 @@ importers:
       '@ff-labs/fff-node':
         specifier: ^0.9.6
         version: 0.9.6
+      '@lydell/node-pty':
+        specifier: 1.2.0-beta.12
+        version: 1.2.0-beta.12
       '@mariozechner/clipboard':
         specifier: ^0.3.9
         version: 0.3.9

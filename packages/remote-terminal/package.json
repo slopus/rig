@@ -1,19 +1,17 @@
 {
-    "name": "@slopus/rig-gym",
+    "name": "@slopus/remote-terminal",
+    "version": "0.0.1",
     "private": true,
     "type": "module",
     "exports": "./sources/index.ts",
     "scripts": {
+        "build": "tsc -p tsconfig.build.json",
         "check": "tsc --noEmit",
-        "test": "vitest run --passWithNoTests"
-    },
-    "dependencies": {
-        "@lydell/node-pty": "1.2.0-beta.12"
+        "test": "vitest run"
     },
     "devDependencies": {
+        "@slopus/rig-gym": "workspace:*",
         "@types/node": "^24.0.10",
-        "sharp": "^0.35.3",
-        "tsx": "^4.23.0",
         "typescript": "^5.8.3",
         "vitest": "^3.2.4"
     }

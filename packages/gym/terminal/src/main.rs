@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
-use libghostty_vt::style::{RgbColor, StyleColor};
+use libghostty_vt::style::{RgbColor, StyleColor, Underline};
 use libghostty_vt::terminal::{Point, PointCoordinate, ScrollViewport};
 use libghostty_vt::{Terminal, TerminalOptions};
 use serde::{Deserialize, Serialize};
@@ -15,15 +15,35 @@ enum Color {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Cell {
     background: Option<Color>,
+    blink: bool,
     bold: bool,
     dim: bool,
     foreground: Option<Color>,
+    invisible: bool,
+    inverse: bool,
     italic: bool,
+    overline: bool,
+    strikethrough: bool,
     text: String,
+    underline: UnderlineStyle,
+    underline_color: Option<Color>,
+    width: u8,
     x: u16,
     y: u16,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+enum UnderlineStyle {
+    Curly,
+    Dashed,
+    Dotted,
+    Double,
+    None,
+    Single,
 }
 
 #[derive(Deserialize)]
@@ -79,6 +99,8 @@ struct Snapshot {
     synchronized_output_active: bool,
     text: String,
     title: String,
+    #[serde(rename = "wrappedRows")]
+    wrapped_rows: Vec<bool>,
 }
 
 #[derive(Serialize)]
@@ -379,13 +401,24 @@ fn snapshot(
     let row_count = terminal.rows()?;
     let mut cells = Vec::new();
     let mut rows = Vec::with_capacity(usize::from(row_count));
+    let mut wrapped_rows = Vec::with_capacity(usize::from(row_count));
     for y in 0..row_count {
+        wrapped_rows.push(
+            terminal
+                .grid_ref(Point::Viewport(PointCoordinate {
+                    x: 0,
+                    y: u32::from(y),
+                }))?
+                .row()?
+                .is_wrapped()?,
+        );
         let mut line = String::new();
         for x in 0..cols {
             let cell =
                 terminal.grid_ref(Point::Viewport(PointCoordinate { x, y: u32::from(y) }))?;
             let value = cell.cell()?;
             let style = cell.style()?;
+            let wide = value.wide()?;
             let background = color(style.bg_color);
             let foreground = color(style.fg_color);
             if value.has_text()? {
@@ -395,11 +428,23 @@ fn snapshot(
                 line.push_str(&text);
                 cells.push(Cell {
                     background,
+                    blink: style.blink,
                     bold: style.bold,
                     dim: style.faint,
                     foreground,
+                    invisible: style.invisible,
+                    inverse: style.inverse,
                     italic: style.italic,
+                    overline: style.overline,
+                    strikethrough: style.strikethrough,
                     text,
+                    underline: underline_style(style.underline),
+                    underline_color: color(style.underline_color),
+                    width: if matches!(wide, libghostty_vt::screen::CellWide::Wide) {
+                        2
+                    } else {
+                        1
+                    },
                     x,
                     y,
                 });
@@ -413,11 +458,19 @@ fn snapshot(
                 {
                     cells.push(Cell {
                         background,
+                        blink: style.blink,
                         bold: style.bold,
                         dim: style.faint,
                         foreground,
+                        invisible: style.invisible,
+                        inverse: style.inverse,
                         italic: style.italic,
+                        overline: style.overline,
+                        strikethrough: style.strikethrough,
                         text: " ".to_owned(),
+                        underline: underline_style(style.underline),
+                        underline_color: color(style.underline_color),
+                        width: 1,
                         x,
                         y,
                     });
@@ -451,7 +504,20 @@ fn snapshot(
         synchronized_output_active: synchronized_output_tracker.active,
         text,
         title: terminal.title()?.to_owned(),
+        wrapped_rows,
     })
+}
+
+fn underline_style(value: Underline) -> UnderlineStyle {
+    match value {
+        Underline::None => UnderlineStyle::None,
+        Underline::Single => UnderlineStyle::Single,
+        Underline::Double => UnderlineStyle::Double,
+        Underline::Curly => UnderlineStyle::Curly,
+        Underline::Dotted => UnderlineStyle::Dotted,
+        Underline::Dashed => UnderlineStyle::Dashed,
+        _ => UnderlineStyle::None,
+    }
 }
 
 fn rgb_color(value: RgbColor) -> Color {

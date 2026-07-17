@@ -68,6 +68,16 @@ import type { DockerExecutionConfig } from "../execution/index.js";
 import type { TaskDrain } from "./TrackedTaskDrain.js";
 import type { ProviderQuota } from "../providers/providerQuota.js";
 import type { SecretRegistration } from "../secrets/index.js";
+import type {
+    CreateRemoteTerminalRequest,
+    CreateRemoteTerminalResponse,
+    ListRemoteTerminalsResponse,
+    RemoteTerminalResponse,
+    RemoteTerminalScrollbackResponse,
+    ResizeRemoteTerminalRequest,
+    WriteRemoteTerminalRequest,
+} from "../terminal/index.js";
+import { streamRemoteTerminalFrames } from "./streamRemoteTerminalFrames.js";
 
 export interface ProtocolHttpServerOptions {
     defaultDocker?: DockerExecutionConfig;
@@ -391,6 +401,98 @@ async function handleRequest(
     const session = store.get(sessionId);
     if (session === undefined) {
         sendJson(response, 404, { error: "Session not found" });
+        return;
+    }
+
+    if (route.name === "terminals") {
+        if (request.method === "GET") {
+            sendJson<ListRemoteTerminalsResponse>(response, 200, {
+                terminals: session.remoteTerminals().map((terminal) => terminal.frame()),
+            });
+            return;
+        }
+        if (request.method === "POST") {
+            const body = await readJson<CreateRemoteTerminalRequest | null>(request);
+            if (body === null || typeof body !== "object" || Array.isArray(body)) {
+                sendJson(response, 400, { error: "Terminal settings must be a JSON object." });
+                return;
+            }
+            try {
+                const terminal = await session.createRemoteTerminal(body);
+                sendJson<CreateRemoteTerminalResponse>(response, 201, {
+                    terminal: terminal.frame(),
+                });
+            } catch (error) {
+                sendJson(response, 400, {
+                    error: error instanceof Error ? error.message : String(error),
+                });
+            }
+            return;
+        }
+        sendJson(response, 405, { error: "Method not allowed" });
+        return;
+    }
+
+    if ("terminalId" in route) {
+        const terminal = session.remoteTerminal(route.terminalId);
+        if (terminal === undefined) {
+            sendJson(response, 404, { error: "Terminal not found" });
+            return;
+        }
+        if (request.method === "GET" && route.name === "terminal") {
+            sendJson<RemoteTerminalResponse>(response, 200, { terminal: terminal.frame() });
+            return;
+        }
+        if (request.method === "DELETE" && route.name === "terminal") {
+            sendJson<RemoteTerminalResponse>(response, 200, { terminal: await terminal.stop() });
+            return;
+        }
+        if (request.method === "PATCH" && route.name === "terminal") {
+            const body = await readJson<ResizeRemoteTerminalRequest>(request);
+            try {
+                sendJson<RemoteTerminalResponse>(response, 200, {
+                    terminal: await terminal.resize(body.cols, body.rows),
+                });
+            } catch (error) {
+                sendJson(response, 400, {
+                    error: error instanceof Error ? error.message : String(error),
+                });
+            }
+            return;
+        }
+        if (request.method === "POST" && route.name === "terminal-input") {
+            const body = await readJson<WriteRemoteTerminalRequest>(request);
+            if (typeof body.data !== "string") {
+                sendJson(response, 400, { error: "Terminal input must be text." });
+                return;
+            }
+            const written = await terminal.write(body.data);
+            if (!written) {
+                sendJson(response, 409, { error: "The terminal has exited." });
+                return;
+            }
+            sendJson(response, 202, { accepted: true });
+            return;
+        }
+        if (request.method === "GET" && route.name === "terminal-scrollback") {
+            const startRow = parseBoundedWholeNumber(url.searchParams.get("start"), 0, 0, 100_000);
+            const rowCount = parseBoundedWholeNumber(url.searchParams.get("limit"), 200, 1, 500);
+            if (startRow === undefined || rowCount === undefined) {
+                sendJson(response, 400, {
+                    error: "Terminal scrollback start and limit must be whole numbers in range.",
+                });
+                return;
+            }
+            sendJson<RemoteTerminalScrollbackResponse>(response, 200, {
+                viewport: await terminal.scrollback(startRow, rowCount),
+            });
+            return;
+        }
+        if (request.method === "GET" && route.name === "terminal-stream") {
+            streamRemoteTerminalFrames(request, response, terminal, url.searchParams.get("after"));
+            return;
+        }
+        sendJson(response, 405, { error: "Method not allowed" });
         return;
     }
 
@@ -844,8 +946,14 @@ function matchRoute(pathname: string):
               | "stream"
               | "steer"
               | "subagents"
+              | "terminals"
               | "usage";
           sessionId: string;
+      }
+    | {
+          name: "terminal" | "terminal-input" | "terminal-scrollback" | "terminal-stream";
+          sessionId: string;
+          terminalId: string;
       }
     | { name: "user-input"; requestId: string; sessionId: string }
     | { name: "secret"; secretId: string; sessionId: string }
@@ -876,6 +984,31 @@ function matchRoute(pathname: string):
 
     const sessionId = decodeURIComponent(parts[1]);
     if (parts.length === 2) return { name: "session", sessionId };
+    if (parts.length === 4 && parts[2] === "terminals" && parts[3] !== undefined) {
+        return {
+            name: "terminal",
+            sessionId,
+            terminalId: decodeURIComponent(parts[3]),
+        };
+    }
+    if (
+        parts.length === 5 &&
+        parts[2] === "terminals" &&
+        parts[3] !== undefined &&
+        ["input", "scrollback", "stream"].includes(parts[4] ?? "")
+    ) {
+        const suffix = parts[4];
+        return {
+            name:
+                suffix === "input"
+                    ? "terminal-input"
+                    : suffix === "scrollback"
+                      ? "terminal-scrollback"
+                      : "terminal-stream",
+            sessionId,
+            terminalId: decodeURIComponent(parts[3]),
+        };
+    }
     if (parts.length === 4 && parts[2] === "user-input" && parts[3] !== undefined) {
         return {
             name: "user-input",
@@ -924,6 +1057,7 @@ function matchRoute(pathname: string):
     if (parts[2] === "stream") return { name: "stream", sessionId };
     if (parts[2] === "steer") return { name: "steer", sessionId };
     if (parts[2] === "subagents") return { name: "subagents", sessionId };
+    if (parts[2] === "terminals") return { name: "terminals", sessionId };
     if (parts[2] === "usage") return { name: "usage", sessionId };
     return undefined;
 }
@@ -942,11 +1076,14 @@ function isSessionMutation(routeName: string, method: string | undefined): boole
                 "rewind",
                 "secrets",
                 "steer",
+                "terminal-input",
+                "terminals",
             ].includes(routeName)) ||
         (method === "POST" && routeName === "workflow-stop") ||
         (["DELETE", "PATCH", "POST"].includes(method ?? "") && routeName === "goal") ||
         (method === "POST" && routeName === "user-input") ||
         (method === "DELETE" && routeName === "secret") ||
+        (["DELETE", "PATCH"].includes(method ?? "") && routeName === "terminal") ||
         (method === "PATCH" &&
             ["effort", "model", "permissions", "service-tier"].includes(routeName))
     );
@@ -963,6 +1100,20 @@ function isMutatingProtocolRequest(request: IncomingMessage): boolean {
     if (route.name === "sessions") return request.method === "POST";
     if (route.sessionId === undefined) return false;
     return isSessionMutation(route.name, request.method);
+}
+
+function parseBoundedWholeNumber(
+    value: string | null,
+    fallback: number,
+    minimum: number,
+    maximum: number,
+): number | undefined {
+    if (value === null) return fallback;
+    if (!/^\d+$/.test(value)) return undefined;
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum
+        ? parsed
+        : undefined;
 }
 
 async function readJson<T>(request: IncomingMessage): Promise<T> {

@@ -2,6 +2,7 @@ export { createGym } from "./createGym.js";
 export { captureScrollback } from "./captureScrollback.js";
 export { Gym } from "./Gym.js";
 export { GymTerminal, type GymKey } from "./GymTerminal.js";
+export { GhosttyTerminal } from "./GhosttyTerminal.js";
 export {
     InterceptingHttpProxy,
     type HttpInterceptAction,
