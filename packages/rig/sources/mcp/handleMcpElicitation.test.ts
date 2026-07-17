@@ -71,6 +71,50 @@ describe("handleMcpElicitation", () => {
         expect(result).toEqual({ action: "accept", content: { action: "Skip" } });
     });
 
+    it("presents boolean choices as Yes and No while preserving boolean values", async () => {
+        const client = {} as Client;
+        const harness = createJustBashToolHarness();
+        const requests: unknown[] = [];
+        harness.context.userInput = {
+            request: async (request) => {
+                requests.push(request);
+                return { answers: { confirmed: ["Yes"] } };
+            },
+        };
+        const request = {
+            method: "elicitation/create",
+            params: {
+                message: "Confirm the deployment.",
+                requestedSchema: {
+                    type: "object",
+                    properties: {
+                        confirmed: { type: "boolean", title: "Confirm" },
+                    },
+                    required: ["confirmed"],
+                },
+            },
+        } as ElicitRequest;
+
+        const result = await runMcpClientCall(client, harness.context, () =>
+            handleMcpElicitation(client, request),
+        );
+
+        expect(requests).toMatchObject([
+            {
+                questions: [
+                    {
+                        id: "confirmed",
+                        options: [
+                            { description: "Answer Yes.", label: "Yes" },
+                            { description: "Answer No.", label: "No" },
+                        ],
+                    },
+                ],
+            },
+        ]);
+        expect(result).toEqual({ action: "accept", content: { confirmed: true } });
+    });
+
     it("asks for confirmation before accepting an empty schema", async () => {
         const client = {} as Client;
         const harness = createJustBashToolHarness();

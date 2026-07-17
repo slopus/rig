@@ -36,7 +36,9 @@ export async function handleMcpElicitation(
                   ? property.oneOf.map((item) => item.title)
                   : property.type === "array" && "items" in property && "anyOf" in property.items
                     ? property.items.anyOf.map((item) => item.title)
-                    : enumValues;
+                    : property.type === "boolean"
+                      ? ["Yes", "No"]
+                      : enumValues;
         valuesByLabel.set(
             id,
             new Map(enumValues.map((value, index) => [enumNames[index] ?? value, value])),
@@ -49,7 +51,11 @@ export async function handleMcpElicitation(
             multiSelect: property.type === "array",
             options: enumValues.map((value, index) => ({
                 label: enumNames[index] ?? value,
-                description: property.description ?? `Use ${value}.`,
+                description:
+                    property.description ??
+                    (property.type === "boolean"
+                        ? `Answer ${enumNames[index] ?? value}.`
+                        : `Use ${value}.`),
             })),
             question: property.description ?? message,
             required,
