@@ -8,7 +8,6 @@ export {
     MCP_TRUST_ANSWER,
 } from "./createMcpTrustUserInputRequest.js";
 export { loadMcpServerConfigEntries } from "./loadMcpServerConfigEntries.js";
-export { loadMcpServerConfigs } from "./loadMcpServerConfigs.js";
 export { mergeMcpTools } from "./mergeMcpTools.js";
 export type {
     McpHttpServerConfig,

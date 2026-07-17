@@ -4,9 +4,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { loadMcpServerConfigEntries } from "./loadMcpServerConfigEntries.js";
-import { loadMcpServerConfigs } from "./loadMcpServerConfigs.js";
 
-describe("loadMcpServerConfigs", () => {
+describe("loadMcpServerConfigEntries", () => {
     it("merges Codex global and project configuration with Rig overrides", async () => {
         const root = await mkdtemp(join(tmpdir(), "rig-mcp-config-"));
         try {
@@ -54,12 +53,11 @@ enabled = false
                 "utf8",
             );
 
-            await expect(
-                loadMcpServerConfigs(cwd, {
-                    env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
-                    homeDirectory: join(root, "home"),
-                }),
-            ).resolves.toEqual({
+            const entries = await loadMcpServerConfigEntries(cwd, {
+                env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
+                homeDirectory: join(root, "home"),
+            });
+            expect(Object.fromEntries(entries.map((entry) => [entry.name, entry.config]))).toEqual({
                 docs: {
                     args: ["--stdio"],
                     command: "docs-server",
@@ -76,10 +74,6 @@ enabled = false
                     transport: "http",
                     url: "https://example.com/mcp",
                 },
-            });
-            const entries = await loadMcpServerConfigEntries(cwd, {
-                env: { RIG_HOME: configHome } as NodeJS.ProcessEnv,
-                homeDirectory: join(root, "home"),
             });
             expect(Object.fromEntries(entries.map((entry) => [entry.name, entry.source]))).toEqual({
                 docs: "global",
@@ -107,8 +101,8 @@ enabled = false
                 "utf8",
             );
             await expect(
-                loadMcpServerConfigs(cwd, { homeDirectory: join(cwd, "home") }),
-            ).resolves.toEqual({});
+                loadMcpServerConfigEntries(cwd, { homeDirectory: join(cwd, "home") }),
+            ).resolves.toEqual([]);
         } finally {
             await rm(cwd, { force: true, recursive: true });
         }
