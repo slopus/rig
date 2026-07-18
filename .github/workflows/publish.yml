@@ -62,7 +62,11 @@ jobs:
               run: pnpm run check
 
             - name: Run tests
+              env:
+                  # Keep Sandbox Runtime's home-directory mask away from the checkout.
+                  HOME: ${{ runner.temp }}/rig-test-home
               run: |
+                  mkdir -p "$HOME"
                   pnpm run test:scripts
                   pnpm --recursive --filter './packages/**' --filter '!@slopus/rig-dev' run test
 
