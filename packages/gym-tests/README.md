@@ -1,6 +1,6 @@
 # Rig gym
 
-The Rig gym is the end-to-end test harness for the complete terminal agent experience. It runs the built Rig CLI inside a fresh Docker container, drives it through a real pseudo-terminal, supplies deterministic model responses from the host, and interprets terminal output with `libghostty-vt`.
+The Rig gym is the end-to-end test harness for the complete terminal agent experience. It runs the built Rig CLI inside a fresh Docker container, drives it through a real pseudo-terminal, supplies deterministic model responses from the host, and interprets terminal output with the prebuilt `@slopus/ghostty-wasm` package.
 
 The goal is to test the product at the same boundary a user experiences while keeping model behavior deterministic. A gym test can exercise terminal rendering, multiline input, tool calls, real processes, filesystem changes, interactive questions, interruptions, provider failures, and concurrency without calling a live model.
 
@@ -24,7 +24,7 @@ The goal is to test the product at the same boundary a user experiences while ke
 | Shell and child processes | Real processes inside the container                            |
 | Filesystem                | Real temporary workspace bind-mounted at `/workspace`          |
 | Terminal input            | Real PTY input sent through `node-pty`                         |
-| Terminal output           | Real PTY output interpreted by `libghostty-vt`                 |
+| Terminal output           | Real PTY output interpreted by `@slopus/ghostty-wasm`          |
 | Model/provider inference  | Mocked by a test-owned HTTP server on the host                 |
 | Provider transport        | Real authenticated HTTP request from the container to the host |
 | Credentials               | Not used; the gym provider is selected explicitly              |
@@ -46,7 +46,7 @@ Vitest scenario on the host
     │          │                         ├── real agent loop and tools
     │          │ PTY output              ├── bash and child processes
     │          ▼                         └── /workspace bind mount
-    └── libghostty-vt helper
+    └── @slopus/ghostty-wasm emulator
                └── visible rows, cursor, title, scrollback, viewport offset
 ```
 
@@ -55,12 +55,12 @@ Vitest scenario on the host
 1. Creates a unique temporary workspace and writes fixture files.
 2. Starts a token-protected mock inference HTTP server on an ephemeral host port.
 3. Builds the default Docker image once per host test process unless image building is skipped.
-4. Starts a persistent `libghostty-vt` helper for the requested terminal dimensions.
+4. Starts a persistent `@slopus/ghostty-wasm` emulator for the requested terminal dimensions.
 5. Runs the container through `node-pty` with a unique name and the workspace mounted at `/workspace`.
 6. Configures Rig to use the `gym` provider, `openai/gym` model, and full-access permissions.
 7. Feeds every PTY output chunk into the Ghostty terminal state.
 8. Waits until the Rig composer is visible before returning the `Gym` instance.
-9. On disposal, kills the PTY, force-removes the container, closes the terminal helper and inference server, and deletes the temporary workspace.
+9. On disposal, kills the PTY, force-removes the container, closes the terminal emulator and inference server, and deletes the temporary workspace.
 
 Restricted-command scenarios run Sandbox Runtime inside the disposable Gym container. Gym removes Docker's seccomp filter so Bubblewrap can create nested user and PID namespaces, but adds no host capabilities; `RIG_GYM_OUTER_ISOLATION=docker` enables Sandbox Runtime's documented nested-container mode only when `/.dockerenv` is also present. The outer unprivileged container and its temporary workspace remain the host boundary.
 
@@ -69,8 +69,7 @@ Restricted-command scenarios run Sandbox Runtime inside the disposable Gym conta
 ```text
 packages/gym/
 ├── Dockerfile                 Builds the production-like Rig image
-├── sources/                   Host runner, PTY, fixtures, and inference server
-└── terminal/                  Rust libghostty-vt helper
+└── sources/                   Host runner, PTY, fixtures, and inference server
 
 packages/gym-tests/
 ├── README.md                  This guide
@@ -84,7 +83,7 @@ packages/rig/sources/providers/
 ```
 
 All end-to-end scenarios belong directly in `packages/gym-tests/tests`. Unit
-tests for the host runner or terminal helper belong beside their source in
+tests for the host runner or terminal emulator belong beside their source in
 `packages/gym/sources`.
 
 ## Prerequisites
@@ -93,7 +92,6 @@ Running the gym requires:
 
 - Docker with a working Linux container runtime.
 - `pnpm`, using the version configured by the repository.
-- Rust and Cargo, used to build the host-side `libghostty-vt` helper.
 - A supported `node-pty` environment.
 
 No Codex, Claude, OpenAI, or Anthropic credentials are required. The container always uses the local gym provider.
@@ -139,7 +137,7 @@ RIG_GYM_IMAGE=rig-gym:my-workspace RIG_GYM_SKIP_BUILD=1 \
   pnpm --filter @slopus/rig-gym-tests test:gym
 ```
 
-Rebuild the Docker image whenever production Rig code, package dependencies, or `packages/gym/Dockerfile` changes. Changes limited to `packages/gym-tests/tests`, the host runner in `packages/gym/sources`, or the Rust terminal helper do not require an image rebuild. The Rust helper is compiled on the host when the gym starts.
+Rebuild the Docker image whenever production Rig code, package dependencies, or `packages/gym/Dockerfile` changes. Changes limited to `packages/gym-tests/tests` or the host runner in `packages/gym/sources` do not require an image rebuild. The terminal emulator is loaded from the prebuilt npm package, so Gym does not need Rust, Cargo, or Zig.
 
 ## Naming and organizing scenarios
 
@@ -610,7 +608,7 @@ Snapshots represent interpreted terminal state, not raw ANSI output. This lets t
 
 ## Scrollback and viewport tracking
 
-The Ghostty helper keeps up to 10,000 scrollback rows. It exposes the scrollbar values maintained by `libghostty-vt`:
+The Ghostty WASM emulator keeps up to 10,000 scrollback rows. Gym exposes its scrollbar values through the terminal snapshot API:
 
 - `totalRows`: total rows in the scrollable area, including visible rows.
 - `visibleRows`: length of the visible viewport.
@@ -663,7 +661,7 @@ gym.terminal.scrollBy(5);
 gym.terminal.scrollToBottom();
 ```
 
-These methods manipulate the `libghostty-vt` viewport. They simulate a user scrolling the terminal emulator; they do not send Page Up, mouse-wheel, or keyboard bytes to Rig. A later snapshot is ordered after the scroll command, so no separate delay is needed.
+These methods manipulate Gym's Ghostty viewport. They simulate a user scrolling the terminal emulator; they do not send Page Up, mouse-wheel, or keyboard bytes to Rig. A later snapshot is ordered after the scroll command, so no separate delay is needed.
 
 For `scrollBy`, positive values move down toward live output and negative values move up into history.
 

@@ -93,6 +93,28 @@ describe("GhosttyTerminal cell styles", () => {
         expect(output.join("")).not.toContain("rgb:");
     });
 
+    it("returns primary device attributes to the PTY", async () => {
+        const terminal = await GhosttyTerminal.create(20, 4);
+        running.add(terminal);
+        const responses: string[] = [];
+        terminal.onPtyWrite((data) => responses.push(data));
+
+        terminal.write("\x1b[c");
+        await terminal.snapshot();
+
+        expect(responses).toEqual(["\x1b[?62;22c"]);
+    });
+
+    it("preserves UTF-8 code points split across output chunks", async () => {
+        const terminal = await GhosttyTerminal.create(20, 4);
+        running.add(terminal);
+        const bytes = Buffer.from("e\u0301界🙂");
+
+        for (const byte of bytes) terminal.writeBytes(Uint8Array.of(byte));
+
+        expect((await terminal.snapshot()).text).toBe("e\u0301界🙂");
+    });
+
     it("normalizes cleared cells back to the effective default background", async () => {
         const terminal = await GhosttyTerminal.create(20, 4);
         running.add(terminal);

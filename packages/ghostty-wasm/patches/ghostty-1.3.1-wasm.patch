@@ -1,0 +1,90 @@
+diff --git a/src/terminal/PageList.zig b/src/terminal/PageList.zig
+--- a/src/terminal/PageList.zig
++++ b/src/terminal/PageList.zig
+@@ -324,11 +324,10 @@ inline fn pageAllocator() Allocator {
+-    // In tests we use our testing allocator so we can detect leaks.
+     if (builtin.is_test) return std.testing.allocator;
+-
+-    // On non-macOS we use our standard Zig page allocator.
+-    if (!builtin.target.os.tag.isDarwin()) return std.heap.page_allocator;
+-
+-    // On macOS we want to tag our memory so we can assign it to our
+-    // core terminal usage.
+-    const mach = @import("../os/mach.zig");
+-    return mach.taggedPageAllocator(.application_specific_1);
++    if (comptime builtin.target.cpu.arch.isWasm()) {
++        return std.heap.wasm_allocator;
++    } else if (comptime builtin.target.os.tag.isDarwin()) {
++        const mach = @import("../os/mach.zig");
++        return mach.taggedPageAllocator(.application_specific_1);
++    } else {
++        return std.heap.page_allocator;
++    }
+ }
+diff --git a/src/terminal/page.zig b/src/terminal/page.zig
+--- a/src/terminal/page.zig
++++ b/src/terminal/page.zig
+@@ -5,7 +5,7 @@ const builtin = @import("builtin");
+ const ArenaAllocator = std.heap.ArenaAllocator;
+ const assert = @import("../quirks.zig").inlineAssert;
+ const testing = std.testing;
+-const posix = std.posix;
++const posix = if (builtin.target.cpu.arch.isWasm()) void else std.posix;
+ const fastmem = @import("../fastmem.zig");
+ const color = @import("color.zig");
+ const hyperlink = @import("hyperlink.zig");
+@@ -164,13 +164,21 @@ pub const Page = struct {
+     /// The backing memory is always allocated using mmap directly.
+     /// You cannot use custom allocators with this structure because
+     /// it is critical to performance that we use mmap.
++    // Patched by @slopus/ghostty-wasm for WebAssembly compatibility.
+     pub inline fn init(cap: Capacity) !Page {
+         const l = layout(cap);
+ 
+-        // We use mmap directly to avoid Zig allocator overhead
+-        // (small but meaningful for this path) and because a private
+-        // anonymous mmap is guaranteed on Linux and macOS to be zeroed,
+-        // which is a critical property for us.
++        if (comptime builtin.target.cpu.arch.isWasm()) {
++            const backing = std.heap.wasm_allocator.alignedAlloc(
++                u8,
++                std.heap.page_size_min,
++                l.total_size,
++            ) catch return error.OutOfMemory;
++            @memset(backing, 0);
++            const buf = OffsetBuf.init(backing);
++            return initBuf(buf, l);
++        }
++
+         assert(l.total_size % std.heap.page_size_min == 0);
+         const backing = try posix.mmap(
+             null,
+@@ -245,7 +253,11 @@ pub const Page = struct {
+     /// this if you allocated the backing memory yourself (i.e. you used
+     /// initBuf).
+     pub inline fn deinit(self: *Page) void {
+-        posix.munmap(self.memory);
++        if (comptime builtin.target.cpu.arch.isWasm()) {
++            std.heap.wasm_allocator.free(self.memory);
++        } else {
++            posix.munmap(self.memory);
++        }
+         self.* = undefined;
+     }
+ 
+@@ -578,6 +590,15 @@ pub const Page = struct {
+     /// using the page allocator. If you want to manage memory manually,
+     /// use cloneBuf.
+     pub inline fn clone(self: *const Page) !Page {
++        if (comptime builtin.target.cpu.arch.isWasm()) {
++            const backing = std.heap.wasm_allocator.alignedAlloc(
++                u8,
++                std.heap.page_size_min,
++                self.memory.len,
++            ) catch return error.OutOfMemory;
++            errdefer std.heap.wasm_allocator.free(backing);
++            return self.cloneBuf(backing);
++        }
+         const backing = try posix.mmap(
+             null,
+             self.memory.len,

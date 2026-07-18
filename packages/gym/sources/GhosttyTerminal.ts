@@ -1,71 +1,28 @@
-import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import {
+    createGhosttyTerminal,
+    type GhosttyRow,
+    type GhosttySnapshot,
+    type GhosttyTerminal as WasmGhosttyTerminal,
+} from "@slopus/ghostty-wasm/node";
 
-import { createRetryableMemo } from "./createRetryableMemo.js";
 import type { TerminalColorScheme, TerminalSnapshot } from "./types.js";
 
-const execFileAsync = promisify(execFile);
-const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const manifestPath = join(packageRoot, "terminal", "Cargo.toml");
-const binaryPath = join(
-    packageRoot,
-    "terminal",
-    "target",
-    "debug",
-    process.platform === "win32" ? "rig-gym-terminal.exe" : "rig-gym-terminal",
-);
-const buildTerminalHelper = createRetryableMemo(() =>
-    execFileAsync("cargo", ["build", "--manifest-path", manifestPath], {
-        maxBuffer: 100 * 1024 * 1024,
-    }).then(() => undefined),
-);
-
-interface HelperSnapshot extends Omit<TerminalSnapshot, "outputRevision"> {
-    id: number;
-}
-
-interface HelperPtyWrite {
-    data: string;
-    event: "pty_write";
-}
-
 export class GhosttyTerminal {
-    #buffer = "";
+    #bottomDepartureCount = 0;
     #closed = false;
-    #helper: ChildProcessWithoutNullStreams;
-    #nextId = 1;
+    #cols: number;
+    #lastAtBottom = true;
+    #lastAtTop = false;
     #outputHandlers = new Set<(data: string) => void>();
     #outputRevision = 0;
-    #pending = new Map<
-        number,
-        {
-            outputRevision: number;
-            reject: (error: unknown) => void;
-            resolve: (snapshot: TerminalSnapshot) => void;
-        }
-    >();
-    #ptyWriteHandlers = new Set<(data: string) => void>();
-    #stderr = "";
+    #rows: number;
+    readonly #terminal: WasmGhosttyTerminal;
+    #topArrivalCount = 0;
 
-    private constructor(helper: ChildProcessWithoutNullStreams) {
-        this.#helper = helper;
-        helper.stdout.setEncoding("utf8");
-        helper.stdout.on("data", (chunk: string) => this.#onData(chunk));
-        helper.stderr.setEncoding("utf8");
-        helper.stderr.on("data", (chunk: string) => {
-            this.#stderr += chunk;
-        });
-        helper.once("exit", (code, signal) => {
-            this.#closed = true;
-            const detail = this.#stderr.trim();
-            const error = new Error(
-                `libghostty-vt helper exited ${signal ?? `with code ${String(code)}`}${detail.length === 0 ? "." : `: ${detail}`}`,
-            );
-            for (const pending of this.#pending.values()) pending.reject(error);
-            this.#pending.clear();
-        });
+    private constructor(terminal: WasmGhosttyTerminal, cols: number, rows: number) {
+        this.#terminal = terminal;
+        this.#cols = cols;
+        this.#rows = rows;
     }
 
     static async create(
@@ -73,26 +30,31 @@ export class GhosttyTerminal {
         rows: number,
         colorScheme: TerminalColorScheme = "dark",
     ): Promise<GhosttyTerminal> {
-        await buildTerminalHelper();
-        const terminal = new GhosttyTerminal(spawn(binaryPath, [], { stdio: "pipe" }));
-        terminal.resize(cols, rows);
-        terminal.setColorScheme(colorScheme);
-        return terminal;
+        const terminal = await createGhosttyTerminal({
+            colorScheme,
+            cols,
+            maxScrollback: 10_000,
+            rows,
+        });
+        return new GhosttyTerminal(terminal, cols, rows);
     }
 
     close(): void {
         if (this.#closed) return;
         this.#closed = true;
-        this.#helper.stdin.end();
+        this.#terminal.dispose();
     }
 
     resize(cols: number, rows: number): void {
-        this.#send({ type: "resize", cols, rows });
+        this.#assertActive();
+        this.#terminal.resize(cols, rows);
+        this.#cols = cols;
+        this.#rows = rows;
+        this.#observeScroll(this.#terminal.snapshot());
     }
 
     onPtyWrite(handler: (data: string) => void): () => void {
-        this.#ptyWriteHandlers.add(handler);
-        return () => this.#ptyWriteHandlers.delete(handler);
+        return this.#terminal.onPtyWrite((data) => handler(Buffer.from(data).toString("utf8")));
     }
 
     onOutput(handler: (data: string) => void): () => void {
@@ -101,27 +63,33 @@ export class GhosttyTerminal {
     }
 
     scrollBy(rows: number): void {
-        this.#send({ type: "scroll_by", rows });
+        this.#assertActive();
+        this.#terminal.scrollBy(rows);
+        this.#observeScroll(this.#terminal.snapshot());
     }
 
     scrollToBottom(): void {
-        this.#send({ type: "scroll_bottom" });
+        this.#assertActive();
+        this.#terminal.scrollToBottom();
+        this.#observeScroll(this.#terminal.snapshot());
     }
 
     scrollToTop(): void {
-        this.#send({ type: "scroll_top" });
+        this.#assertActive();
+        this.#terminal.scrollToTop();
+        this.#observeScroll(this.#terminal.snapshot());
     }
 
     setColorScheme(colorScheme: TerminalColorScheme): void {
-        this.#send({ type: "set_color_scheme", color_scheme: colorScheme });
+        this.#assertActive();
+        this.#terminal.setColorScheme(colorScheme);
     }
 
     snapshot(): Promise<TerminalSnapshot> {
-        const id = this.#nextId++;
-        return new Promise((resolve, reject) => {
-            this.#pending.set(id, { outputRevision: this.#outputRevision, reject, resolve });
-            this.#send({ type: "snapshot", id });
-        });
+        this.#assertActive();
+        const current = this.#terminal.snapshot();
+        this.#observeScroll(current);
+        return Promise.resolve(this.#createSnapshot(current));
     }
 
     write(data: string): void {
@@ -129,36 +97,90 @@ export class GhosttyTerminal {
     }
 
     writeBytes(data: Uint8Array): void {
+        this.#assertActive();
         this.#outputRevision += 1;
         const text = Buffer.from(data).toString("utf8");
         for (const handler of this.#outputHandlers) handler(text);
-        this.#send({ type: "write", data: Buffer.from(data).toString("base64") });
+        this.#terminal.write(data);
     }
 
-    #onData(chunk: string): void {
-        this.#buffer += chunk;
-        for (;;) {
-            const newline = this.#buffer.indexOf("\n");
-            if (newline < 0) return;
-            const line = this.#buffer.slice(0, newline);
-            this.#buffer = this.#buffer.slice(newline + 1);
-            if (line.length === 0) continue;
-            const message = JSON.parse(line) as HelperPtyWrite | HelperSnapshot;
-            if (!("id" in message)) {
-                const data = Buffer.from(message.data, "base64").toString("utf8");
-                for (const handler of this.#ptyWriteHandlers) handler(data);
-                continue;
-            }
-            const { id, ...snapshot } = message;
-            const pending = this.#pending.get(id);
-            if (pending === undefined) continue;
-            this.#pending.delete(id);
-            pending.resolve({ ...snapshot, outputRevision: pending.outputRevision });
-        }
+    #assertActive(): void {
+        if (this.#closed) throw new Error("The Ghostty terminal is closed.");
     }
 
-    #send(message: object): void {
-        if (this.#closed) throw new Error("libghostty-vt helper is closed.");
-        this.#helper.stdin.write(`${JSON.stringify(message)}\n`);
+    #createSnapshot(current: GhosttySnapshot): TerminalSnapshot {
+        const rows = current.rows.map((row) => rowText(row));
+        const renderedCells = current.rows.flatMap((row, y) =>
+            row.cells.map((cell) => ({
+                background: cell.style.background,
+                blink: cell.style.blink,
+                bold: cell.style.bold,
+                dim: cell.style.dim,
+                foreground: cell.style.foreground,
+                invisible: cell.style.invisible,
+                inverse: cell.style.inverse,
+                italic: cell.style.italic,
+                overline: cell.style.overline,
+                strikethrough: cell.style.strikethrough,
+                text: cell.text,
+                underline: cell.style.underline,
+                underlineColor: cell.style.underlineColor,
+                width: cell.width,
+                x: cell.x,
+                y,
+            })),
+        );
+        const cells =
+            renderedCells.length === this.#cols * this.#rows &&
+            renderedCells.every((cell) => cell.text === " ")
+                ? []
+                : renderedCells;
+        const atBottom = current.startRow + current.visibleRows >= current.totalRows;
+        const atTop = current.totalRows > current.visibleRows && current.startRow === 0;
+        return {
+            cells,
+            cursor: {
+                visible: current.cursor?.visible ?? false,
+                x: current.cursor?.x ?? 0,
+                y: current.cursor?.y ?? 0,
+            },
+            defaultBackground: current.defaultBackground,
+            defaultForeground: current.defaultForeground,
+            outputRevision: this.#outputRevision,
+            rows,
+            scroll: {
+                atBottom,
+                atTop,
+                bottomDepartureCount: this.#bottomDepartureCount,
+                offset: current.startRow,
+                topArrivalCount: this.#topArrivalCount,
+                totalRows: current.totalRows,
+                visibleRows: current.visibleRows,
+            },
+            synchronizedOutputActive: current.synchronizedOutputActive,
+            text: rows.join("\n").trimEnd(),
+            title: current.title,
+            wrappedRows: current.rows.map((row) => row.wrapped),
+        };
     }
+
+    #observeScroll(snapshot: GhosttySnapshot): void {
+        const atBottom = snapshot.startRow + snapshot.visibleRows >= snapshot.totalRows;
+        const atTop = snapshot.totalRows > snapshot.visibleRows && snapshot.startRow === 0;
+        if (this.#lastAtBottom && !atBottom) this.#bottomDepartureCount += 1;
+        if (!this.#lastAtTop && atTop) this.#topArrivalCount += 1;
+        this.#lastAtBottom = atBottom;
+        this.#lastAtTop = atTop;
+    }
+}
+
+function rowText(row: GhosttyRow): string {
+    let result = "";
+    let column = 0;
+    for (const cell of row.cells) {
+        result += " ".repeat(Math.max(0, cell.x - column));
+        result += cell.text;
+        column = cell.x + cell.width;
+    }
+    return result.trimEnd();
 }

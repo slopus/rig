@@ -1,0 +1,50 @@
+{
+    "name": "@slopus/ghostty-wasm",
+    "version": "1.3.2",
+    "description": "Node- and browser-friendly Ghostty terminal emulator backed by WebAssembly.",
+    "license": "MIT",
+    "files": [
+        "dist",
+        "LICENSE",
+        "README.md",
+        "wasm",
+        "LICENSE-GHOSTTY",
+        "LICENSE-WTERM",
+        "THIRD-PARTY-NOTICES.md"
+    ],
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "browser": "./dist/browser.js",
+            "node": "./dist/node.js",
+            "import": "./dist/browser.js",
+            "default": "./dist/browser.js"
+        },
+        "./browser": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/browser.js"
+        },
+        "./node": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/node.js"
+        },
+        "./wasm": "./wasm/ghostty-vt.wasm"
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "tsc -p tsconfig.build.json",
+        "build:wasm": "bash scripts/build-wasm.sh",
+        "check": "tsc --noEmit",
+        "prepack": "pnpm build",
+        "publish:npm": "pnpm whoami --registry=https://registry.npmjs.org/ && pnpm build && pnpm test && pnpm publish --ignore-scripts --no-git-checks --registry=https://registry.npmjs.org/",
+        "test": "vitest run"
+    },
+    "devDependencies": {
+        "@types/node": "^24.0.10",
+        "typescript": "^5.8.3",
+        "vitest": "^3.2.4"
+    }
+}
