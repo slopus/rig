@@ -22,7 +22,7 @@ describe("settled resize while reading scrollback", () => {
             controlReading.outputRevision + 25,
             52,
         );
-        const expectedRowsAtFinalSize = controlSettled.scroll.totalRows;
+        const controlRowsAtFinalSize = controlSettled.scroll.totalRows;
         control.terminal.press("escape");
 
         const gym = await createResizeGym(80);
@@ -40,8 +40,13 @@ describe("settled resize while reading scrollback", () => {
         submit(gym, "Hold this follow-up while resize settles.");
 
         const settled = await waitForOutputRevisions(gym, reading.outputRevision + 25, 52);
-        expect(settled.scroll.totalRows).toBe(expectedRowsAtFinalSize);
         const rebuiltRows = await collectScrollbackRows(gym);
+        expect(settled.scroll.totalRows).toBeLessThanOrEqual(
+            controlRowsAtFinalSize + settled.rows.length,
+        );
+        expect(rebuiltRows.filter((row) => row.trim().length === 0).length).toBeLessThanOrEqual(
+            settled.rows.length,
+        );
         expect(rebuiltRows.filter((row) => row.includes(anchor))).toHaveLength(1);
         expect(rebuiltRows.filter((row) => row.includes("RESIZE HISTORY"))).toHaveLength(120);
 

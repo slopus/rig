@@ -1,6 +1,6 @@
 {
     "name": "@slopus/ghostty-wasm",
-    "version": "1.3.2",
+    "version": "1.3.3",
     "description": "Node- and browser-friendly Ghostty terminal emulator backed by WebAssembly.",
     "license": "MIT",
     "files": [

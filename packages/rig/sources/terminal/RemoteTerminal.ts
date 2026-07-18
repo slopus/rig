@@ -9,6 +9,7 @@ import type {
 import type { RemoteTerminalFrame, RemoteTerminalViewport } from "./types.js";
 
 const RETAINED_REVISIONS = 256;
+const OUTPUT_COALESCE_MS = 16;
 
 export class RemoteTerminal {
     readonly id = randomUUID();
@@ -17,7 +18,7 @@ export class RemoteTerminal {
     #exitCode: number | null = null;
     #operation = Promise.resolve();
     #output: Uint8Array[] = [];
-    #outputScheduled = false;
+    #outputTimer: ReturnType<typeof setTimeout> | undefined;
     #process: RemoteTerminalProcess;
     #revision = 0;
     #state: GhosttyState;
@@ -36,6 +37,8 @@ export class RemoteTerminal {
         });
         void process.wait().then(({ exitCode }) => {
             void this.#enqueue(async () => {
+                if (this.#outputTimer !== undefined) clearTimeout(this.#outputTimer);
+                this.#outputTimer = undefined;
                 await this.#flushOutput();
                 this.#status = "exited";
                 this.#exitCode = exitCode;
@@ -160,12 +163,11 @@ export class RemoteTerminal {
 
     #queueOutput(data: Uint8Array): void {
         this.#output.push(data);
-        if (this.#outputScheduled) return;
-        this.#outputScheduled = true;
-        void this.#enqueue(async () => {
-            this.#outputScheduled = false;
-            await this.#flushOutput();
-        });
+        if (this.#outputTimer !== undefined) return;
+        this.#outputTimer = setTimeout(() => {
+            this.#outputTimer = undefined;
+            void this.#enqueue(() => this.#flushOutput());
+        }, OUTPUT_COALESCE_MS);
     }
 }
 

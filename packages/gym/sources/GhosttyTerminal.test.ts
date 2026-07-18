@@ -109,10 +109,26 @@ describe("GhosttyTerminal cell styles", () => {
         const terminal = await GhosttyTerminal.create(20, 4);
         running.add(terminal);
         const bytes = Buffer.from("e\u0301界🙂");
+        const output: string[] = [];
+        terminal.onOutput((data) => output.push(data));
 
         for (const byte of bytes) terminal.writeBytes(Uint8Array.of(byte));
 
         expect((await terminal.snapshot()).text).toBe("e\u0301界🙂");
+        expect(output.join("")).toBe("e\u0301界🙂");
+    });
+
+    it("publishes output only after the terminal state is current", async () => {
+        const terminal = await GhosttyTerminal.create(20, 4);
+        running.add(terminal);
+        let observed: Promise<string> | undefined;
+        terminal.onOutput(() => {
+            observed = terminal.snapshot().then((snapshot) => snapshot.text);
+        });
+
+        terminal.write("visible");
+
+        await expect(observed).resolves.toBe("visible");
     });
 
     it("normalizes cleared cells back to the effective default background", async () => {

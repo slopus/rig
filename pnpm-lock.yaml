@@ -42,8 +42,8 @@ importers:
         specifier: 1.2.0-beta.12
         version: 1.2.0-beta.12
       '@slopus/ghostty-wasm':
-        specifier: 1.3.2
-        version: 1.3.2
+        specifier: 1.3.3
+        version: 1.3.3
     devDependencies:
       '@types/node':
         specifier: ^24.0.10
@@ -137,8 +137,8 @@ importers:
         specifier: ^0.34.49
         version: 0.34.49
       '@slopus/ghostty-wasm':
-        specifier: 1.3.2
-        version: 1.3.2
+        specifier: 1.3.3
+        version: 1.3.3
       dockerode:
         specifier: ^5.0.1
         version: 5.0.1
@@ -1462,8 +1462,8 @@ packages:
   '@sinclair/typebox@0.34.49':
     resolution: {integrity: sha512-brySQQs7Jtn0joV8Xh9ZV/hZb9Ozb0pmazDIASBkYKCjXrXU3mpcFahmK/z4YDhGkQvP9mWJbVyahdtU5wQA+A==}
 
-  '@slopus/ghostty-wasm@1.3.2':
-    resolution: {integrity: sha512-D7x+ogSg3eRmyMOqrgLyUTc6kvd0hl3vtjpqHANKmbmXdbLixwOnUXVRuyVLuz4JvyU+CtUNW/dTm8S2pz5O8g==}
+  '@slopus/ghostty-wasm@1.3.3':
+    resolution: {integrity: sha512-N20II2jANol+5F4StLrTL8My4/ew9gj49LK5JV7DH4Qx9gVXRsGJQV05rEI2WMjrs1S4tR035mWGznGMtRDhfA==}
 
   '@smithy/core@3.29.1':
     resolution: {integrity: sha512-qoiY4nrk5OCu1+eIR1VB8l5DmON/oKiqrd5zZFAhXJXjJlLWQusKEW/SkBDAtGDcPaz86m9kfcE1lngU0GlM6A==}
@@ -3987,7 +3987,7 @@ snapshots:
 
   '@sinclair/typebox@0.34.49': {}
 
-  '@slopus/ghostty-wasm@1.3.2': {}
+  '@slopus/ghostty-wasm@1.3.3': {}
 
   '@smithy/core@3.29.1':
     dependencies:

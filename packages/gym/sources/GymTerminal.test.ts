@@ -31,4 +31,17 @@ describe("GymTerminal input tracking", () => {
         expect(onOutput).toHaveBeenCalledOnce();
         stop();
     });
+
+    it("waits for synchronized terminal output to become stable", async () => {
+        const matching = { synchronizedOutputActive: true, text: "ready" };
+        const stable = { synchronizedOutputActive: false, text: "settled" };
+        const snapshot = vi.fn().mockResolvedValueOnce(matching).mockResolvedValue(stable);
+        const terminal = new GymTerminal(
+            { write: vi.fn() } as unknown as IPty,
+            { snapshot } as unknown as GhosttyTerminal,
+        );
+
+        await expect(terminal.waitForText("ready", 1_000)).resolves.toBe(stable);
+        expect(snapshot).toHaveBeenCalledTimes(2);
+    });
 });

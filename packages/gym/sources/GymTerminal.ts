@@ -110,6 +110,15 @@ export class GymTerminal {
             await new Promise((resolve) => setTimeout(resolve, 50));
             last = await this.snapshot();
         }
+        while (last.synchronizedOutputActive) {
+            if (Date.now() >= deadline) {
+                throw new Error(
+                    `Timed out waiting for ${description} to finish synchronized output. Last terminal snapshot:\n\n${last.text}`,
+                );
+            }
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            last = await this.snapshot();
+        }
         return last;
     }
 }

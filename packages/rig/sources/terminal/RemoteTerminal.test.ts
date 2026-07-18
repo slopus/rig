@@ -49,8 +49,10 @@ describe("RemoteTerminal", () => {
         terminal.subscribe((frame) => revisions.push(frame.revision));
 
         process.emit("\x1b[1;31mred");
+        await new Promise((resolve) => setTimeout(resolve, 1));
         process.emit(" text\x1b[0m");
         await vi.waitFor(() => expect(terminal.frame().revision).toBeGreaterThan(0));
+        await new Promise((resolve) => setTimeout(resolve, 10));
 
         const red = terminal
             .frame()
@@ -61,6 +63,7 @@ describe("RemoteTerminal", () => {
             foreground: { index: 1, kind: "palette" },
         });
         expect(revisions).toEqual([...revisions].sort((left, right) => left - right));
+        expect(revisions).toEqual([1]);
         await terminal.dispose();
     }, 60_000);
 });

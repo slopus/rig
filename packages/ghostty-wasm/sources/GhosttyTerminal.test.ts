@@ -27,6 +27,49 @@ describe("GhosttyTerminal", () => {
         });
     });
 
+    it("never reuses stale render styles for default cells", async () => {
+        terminal = await createGhosttyTerminal({ cols: 12, rows: 2 });
+        terminal.write("\x1b[1;38;5;202;48;5;235mstyled\x1b[0m");
+        terminal.snapshot();
+        terminal.write("\r\x1b[2Kplain");
+
+        expect(terminal.snapshot().rows[0]?.cells).toEqual([
+            expect.objectContaining({
+                style: {
+                    background: null,
+                    blink: false,
+                    bold: false,
+                    dim: false,
+                    foreground: null,
+                    invisible: false,
+                    inverse: false,
+                    italic: false,
+                    overline: false,
+                    strikethrough: false,
+                    underline: "none",
+                    underlineColor: null,
+                },
+                text: "p",
+            }),
+            expect.objectContaining({
+                style: expect.objectContaining({ background: null, foreground: null }),
+                text: "l",
+            }),
+            expect.objectContaining({
+                style: expect.objectContaining({ background: null, foreground: null }),
+                text: "a",
+            }),
+            expect.objectContaining({
+                style: expect.objectContaining({ background: null, foreground: null }),
+                text: "i",
+            }),
+            expect.objectContaining({
+                style: expect.objectContaining({ background: null, foreground: null }),
+                text: "n",
+            }),
+        ]);
+    });
+
     it("keeps grapheme clusters, wide cells, wrapping, scrollback, and split titles", async () => {
         terminal = await createGhosttyTerminal({ cols: 4, rows: 2 });
         terminal.write("e\u0301界");
@@ -104,10 +147,11 @@ describe("GhosttyTerminal", () => {
         });
         expect(replies.at(-1)).toBe("\x1b[?997;2n");
 
+        const replyCount = replies.length;
         terminal.write("\x1b[?2026l\x1b[?2031l");
         expect(terminal.snapshot().synchronizedOutputActive).toBe(false);
         terminal.setColorScheme("dark");
-        expect(replies.at(-1)).toBe("\x1b[?997;2n");
+        expect(replies).toHaveLength(replyCount);
     });
 
     it("is safe to dispose more than once and rejects later use", async () => {

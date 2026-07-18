@@ -147,7 +147,12 @@ export fn get_viewport(ptr: usize, buffer: [*]u8) u32 {
         const styles = rows[y].items(.style);
         for (0..state.render.cols) |x| {
             const cell = cells[x];
-            const style = styles[x];
+            const style: vt.Style = if (cell.style_id > 0 or
+                cell.content_tag == .bg_color_palette or
+                cell.content_tag == .bg_color_rgb)
+                styles[x]
+            else
+                .{};
             const codepoint: u32 = switch (cell.content_tag) {
                 .codepoint, .codepoint_grapheme => cell.content.codepoint,
                 else => 0,

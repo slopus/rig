@@ -14,6 +14,7 @@ export class GhosttyTerminal {
     #lastAtBottom = true;
     #lastAtTop = false;
     #outputHandlers = new Set<(data: string) => void>();
+    #outputDecoder = new TextDecoder();
     #outputRevision = 0;
     #rows: number;
     readonly #terminal: WasmGhosttyTerminal;
@@ -98,10 +99,10 @@ export class GhosttyTerminal {
 
     writeBytes(data: Uint8Array): void {
         this.#assertActive();
-        this.#outputRevision += 1;
-        const text = Buffer.from(data).toString("utf8");
-        for (const handler of this.#outputHandlers) handler(text);
         this.#terminal.write(data);
+        this.#outputRevision += 1;
+        const text = this.#outputDecoder.decode(data, { stream: true });
+        for (const handler of this.#outputHandlers) handler(text);
     }
 
     #assertActive(): void {
