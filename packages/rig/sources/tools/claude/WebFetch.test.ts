@@ -4,6 +4,12 @@ import { createJustBashToolHarness } from "../testing/createJustBashToolHarness.
 import { createClaudeWebFetchTool } from "./WebFetch.js";
 
 describe("Claude Code WebFetch tool", () => {
+    it("declares that network access requires Auto or Full access", () => {
+        const tool = createClaudeWebFetchTool();
+
+        expect(tool.requiresAutoOrFullAccess).toBe(true);
+    });
+
     it("fetches content and applies the requested prompt", async () => {
         const fetchPage = vi.fn().mockResolvedValue({
             bytes: 42,

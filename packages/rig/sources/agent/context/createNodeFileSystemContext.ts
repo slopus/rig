@@ -30,7 +30,7 @@ export function createNodeFileSystemContext(
     cwd: string,
     options: CreateNodeFileSystemContextOptions = {},
 ): FileSystemContext {
-    const permissionMode = options.permissionMode ?? (() => "full_access" as const);
+    const permissionMode = options.permissionMode ?? (() => "workspace_write" as const);
     const resolvePath = (path: string) => (isAbsolute(path) ? path : resolve(cwd, path));
     const home = options.home ?? homedir();
     const readPathOptions = {

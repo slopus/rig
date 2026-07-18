@@ -745,6 +745,50 @@ describe("PersistentSessionStore", () => {
         }
     });
 
+    it("reconciles a durable terminal event without appending a startup error", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        try {
+            const state = sessionState({
+                activeRunId: "completed-before-crash",
+                status: "running",
+            });
+            const store = new PersistentSessionStore({ databasePath });
+            store.saveSession(state);
+            store.close();
+            const database = new DatabaseSync(databasePath);
+            insertEvent(database, state.id, "durable-finish", "run_finished", 10, {
+                agentRunId: "agent-run",
+                modelLocked: false,
+                runId: "completed-before-crash",
+                stopReason: "stop",
+            });
+            database.close();
+
+            const reopened = new PersistentSessionStore({ databasePath });
+            reopened.close();
+
+            const verify = new DatabaseSync(databasePath);
+            try {
+                expect(
+                    verify
+                        .prepare("SELECT status, active_run_id FROM sessions WHERE id = ?")
+                        .get(state.id),
+                ).toEqual({ active_run_id: null, status: "completed" });
+                expect(
+                    verify
+                        .prepare(
+                            "SELECT COUNT(*) AS count FROM session_events WHERE session_id = ? AND type = 'run_error'",
+                        )
+                        .get(state.id),
+                ).toEqual({ count: 0 });
+            } finally {
+                verify.close();
+            }
+        } finally {
+            await cleanup();
+        }
+    });
+
     it("does not promote active steering after restart interruption, including on reopen", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         try {

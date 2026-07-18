@@ -1,4 +1,5 @@
 import type { AgentContext } from "../agent/context/AgentContext.js";
+import { isProtectedGitControlPath } from "../agent/context/isProtectedGitControlPath.js";
 import { resolveFileSystemPath } from "../agent/context/resolveFileSystemPath.js";
 import { quoteVisibleExact } from "./quoteVisibleExact.js";
 
@@ -13,5 +14,8 @@ export function describeFileAutoPermissionAction(
     } catch {
         // Preserve malformed input so the approval prompt still shows the proposed path.
     }
-    return `${operation} ${quoteVisibleExact(resolvedPath)}. Access: unrestricted filesystem access outside the workspace sandbox`;
+    const access = isProtectedGitControlPath(resolvedPath)
+        ? "protected Git control path inside the workspace"
+        : "unrestricted filesystem access outside the workspace sandbox";
+    return `${operation} ${quoteVisibleExact(resolvedPath)}. Access: ${access}`;
 }

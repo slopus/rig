@@ -5,12 +5,15 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { createSandboxFilesystemConfig } from "./createSandboxFilesystemConfig.js";
+import { createSandboxConfigDirectoryCache } from "./createSandboxConfigDirectoryCache.js";
 import { materializeSandboxConfig } from "./materializeSandboxConfig.js";
 import type { PermissionMode } from "../../permissions/index.js";
 import { quoteShellArgument } from "./quoteShellArgument.js";
 
 const require = createRequire(import.meta.url);
-let configDirectoryPromise: Promise<string> | undefined;
+const getConfigDirectory = createSandboxConfigDirectoryCache(() =>
+    mkdtemp(join(tmpdir(), "rig-sandbox-")),
+);
 
 export interface SandboxedCommand {
     args?: readonly string[];
@@ -26,8 +29,7 @@ export async function createSandboxedCommand(options: {
 }): Promise<SandboxedCommand> {
     if (options.mode === "full_access") return { command: options.command };
 
-    configDirectoryPromise ??= mkdtemp(join(tmpdir(), "rig-sandbox-"));
-    const configDirectory = await configDirectoryPromise;
+    const configDirectory = await getConfigDirectory();
     const config = {
         // Gym's disposable Docker container is the outer isolation layer for nested sandbox tests.
         enableWeakerNestedSandbox:

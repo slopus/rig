@@ -53,14 +53,11 @@ describe("Bedrock OpenAI response semantics", () => {
         gym.terminal.type("Trigger an incomplete Bedrock response.");
         gym.terminal.press("enter");
 
-        const retrying = await gym.terminal.waitForText("Retrying incomplete response", 30_000);
-        expect(retrying.text).toMatch(/Retrying incomplete response · [1-5] of 5/u);
-
         const screen = await gym.terminal.waitForText(INCOMPLETE_ERROR, 30_000);
         expect(screen.text).toContain("PARTIAL_BEDROCK_TEXT");
         expect(screen.text).toContain(INCOMPLETE_ERROR);
         expect(screen.text).not.toContain("Retrying incomplete response");
-        expect(mainResponseRequests(gym)).toHaveLength(6);
+        expect(mainResponseRequests(gym)).toHaveLength(1);
     }, 120_000);
 
     it("continues when a completed response says the model has not ended its turn", async () => {

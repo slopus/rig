@@ -14,6 +14,99 @@ import {
 } from "../providers/types.js";
 
 describe("duplicate tool call identifiers", () => {
+    it("rejects an identifier that was already used by an earlier turn", async () => {
+        const model = defineModel({
+            id: "mock/model",
+            name: "Mock Model",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "mock",
+            models: [model],
+            stream() {
+                return streamFor({
+                    role: "assistant",
+                    content: [
+                        {
+                            type: "toolCall",
+                            id: "already-used",
+                            name: "machine-action",
+                            arguments: { value: "second action" },
+                        },
+                    ],
+                    api: "mock",
+                    provider: "mock",
+                    model: model.id,
+                    usage: {
+                        input: 0,
+                        output: 0,
+                        cacheRead: 0,
+                        cacheWrite: 0,
+                        totalTokens: 0,
+                        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+                    },
+                    stopReason: "toolUse",
+                    timestamp: 2,
+                });
+            },
+        });
+        const execute = vi.fn((args: { value: string }) => args);
+        const tool = defineTool({
+            name: "machine-action",
+            label: "Machine action",
+            description: "Changes the machine.",
+            arguments: Type.Object({ value: Type.String() }),
+            returnType: Type.Object({ value: Type.String() }),
+            shouldReviewInAutoMode: () => false,
+            execute,
+            toLLM: (result: { value: string }) => [{ type: "text", text: result.value }],
+            toUI: (result: { value: string }) => result.value,
+            locks: [],
+        });
+        const harness = createJustBashToolHarness();
+
+        const result = await runAgentLoop({
+            provider,
+            modelId: model.id,
+            tools: [tool],
+            messages: [
+                { role: "user", id: "user-1", blocks: [{ type: "text", text: "first" }] },
+                {
+                    role: "agent",
+                    id: "assistant-1",
+                    blocks: [
+                        {
+                            type: "tool_call",
+                            id: "already-used",
+                            name: "machine-action",
+                            arguments: { value: "first action" },
+                        },
+                    ],
+                },
+                {
+                    role: "agent",
+                    id: "result-1",
+                    blocks: [
+                        {
+                            type: "tool_result",
+                            toolCallId: "already-used",
+                            toolName: "machine-action",
+                            rendered: [{ type: "text", text: "first action" }],
+                            display: "first action",
+                        },
+                    ],
+                },
+                { role: "user", id: "user-2", blocks: [{ type: "text", text: "second" }] },
+            ],
+            context: harness.context,
+        });
+
+        expect(result.stopReason).toBe("error");
+        expect(execute).not.toHaveBeenCalled();
+        expect(JSON.stringify(result.messages)).toContain("No tools were run.");
+    });
+
     it("rejects every action in the ambiguous batch without executing any tool", async () => {
         const model = defineModel({
             id: "mock/model",

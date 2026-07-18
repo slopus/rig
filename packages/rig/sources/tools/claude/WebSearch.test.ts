@@ -4,6 +4,12 @@ import { createJustBashToolHarness } from "../testing/createJustBashToolHarness.
 import { createClaudeWebSearchTool } from "./WebSearch.js";
 
 describe("Claude Code WebSearch tool", () => {
+    it("declares that network access requires Auto or Full access", () => {
+        const tool = createClaudeWebSearchTool();
+
+        expect(tool.requiresAutoOrFullAccess).toBe(true);
+    });
+
     it("runs a search and formats links for the model", async () => {
         const search = vi.fn().mockResolvedValue({
             query: "current docs 2026",

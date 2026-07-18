@@ -2,10 +2,15 @@ import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Type } from "@sinclair/typebox";
 
 import { defineTool, type AnyDefinedTool, type ContentBlock } from "../agent/types.js";
+import { boundedJsonStringify } from "../app/boundedJsonStringify.js";
 import { describeMcpAutoPermissionAction } from "./describeMcpAutoPermissionAction.js";
 import { runMcpClientCall } from "./runMcpClientCall.js";
 import { mcpResultToContentBlocks } from "./mcpResultToContentBlocks.js";
+import { MCP_RESULT_MAXIMUM_TEXT_BYTES } from "./mcpResultMaximumTextBytes.js";
 import { isMcpErrorResult } from "./isMcpErrorResult.js";
+
+const MAXIMUM_RESOURCE_CONTENTS = 128;
+const MAXIMUM_UNKNOWN_RESOURCE_BYTES = 4_096;
 
 interface McpProtocolConnection {
     client: Client;
@@ -33,7 +38,7 @@ export function createMcpProtocolTools(
         (selected.enabledTools === undefined || selected.enabledTools.includes(name)) &&
         !selected.disabledTools?.includes(name);
     const jsonBlocks = (value: unknown): readonly ContentBlock[] => [
-        { type: "text", text: JSON.stringify(value, null, 2) },
+        { type: "text", text: boundedJsonStringify(value, MCP_RESULT_MAXIMUM_TEXT_BYTES) },
     ];
 
     return [
@@ -173,24 +178,38 @@ export function createMcpProtocolTools(
                     "contents" in result &&
                     Array.isArray(result.contents)
                 ) {
-                    const blocks = result.contents.flatMap((content): ContentBlock[] => {
-                        if (content === null || typeof content !== "object") return [];
-                        if ("text" in content && typeof content.text === "string") {
-                            return [{ type: "text", text: content.text }];
-                        }
-                        if (
-                            "blob" in content &&
-                            typeof content.blob === "string" &&
-                            "mimeType" in content &&
-                            typeof content.mimeType === "string" &&
-                            content.mimeType.startsWith("image/")
-                        ) {
-                            return [
-                                { type: "image", data: content.blob, mediaType: content.mimeType },
-                            ];
-                        }
-                        return [{ type: "text", text: JSON.stringify(content, null, 2) }];
-                    });
+                    const contentBlocks = result.contents
+                        .slice(0, MAXIMUM_RESOURCE_CONTENTS)
+                        .map((content): Record<string, unknown> | undefined => {
+                            if (content === null || typeof content !== "object") return undefined;
+                            if ("text" in content && typeof content.text === "string") {
+                                return { type: "text", text: content.text };
+                            }
+                            if (
+                                "blob" in content &&
+                                typeof content.blob === "string" &&
+                                "mimeType" in content &&
+                                typeof content.mimeType === "string" &&
+                                content.mimeType.startsWith("image/")
+                            ) {
+                                return {
+                                    type: "image",
+                                    data: content.blob,
+                                    mimeType: content.mimeType,
+                                };
+                            }
+                            return {
+                                type: "text",
+                                text: boundedJsonStringify(content, MAXIMUM_UNKNOWN_RESOURCE_BYTES),
+                            };
+                        })
+                        .filter(
+                            (content): content is Record<string, unknown> => content !== undefined,
+                        );
+                    if (result.contents.length > MAXIMUM_RESOURCE_CONTENTS) {
+                        contentBlocks.push({ type: "text", text: "... [truncated]" });
+                    }
+                    const blocks = mcpResultToContentBlocks({ content: contentBlocks });
                     if (blocks.length > 0) return blocks;
                 }
                 return jsonBlocks(result);
@@ -233,7 +252,9 @@ export function createMcpProtocolTools(
             }),
             returnType: Type.Unknown(),
             requiresAutoOrFullAccess: true,
-            shouldReviewInAutoMode: () => false,
+            describeAutoPermissionAction: ({ server, name }) =>
+                `loading prompt "${humanize(name)}" from "${humanize(server)}". Access: the MCP server can return instructions from outside Rig’s local sandbox`,
+            shouldReviewInAutoMode: () => true,
             async execute({ server, name, arguments: promptArguments }, context) {
                 const selected = connection(server);
                 return runMcpClientCall(selected.client, context, () =>

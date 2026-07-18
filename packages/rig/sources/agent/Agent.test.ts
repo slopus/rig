@@ -1,5 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { codexViewImageTool } from "../tools/codex/view_image.js";
 import { createJustBashToolHarness } from "../tools/testing/createJustBashToolHarness.js";
@@ -18,8 +18,139 @@ import {
     type Usage,
 } from "../providers/types.js";
 import type { DebugLog } from "../debug/index.js";
+import { createPermissionContext } from "../permissions/index.js";
 
 describe("Agent", () => {
+    it("preserves tool results when optional debug and live observers fail", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        let requestCount = 0;
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                requestCount += 1;
+                return streamFor({
+                    role: "assistant",
+                    content:
+                        requestCount === 1
+                            ? [
+                                  {
+                                      type: "toolCall",
+                                      id: "observer-failure-tool",
+                                      name: "side-effect",
+                                      arguments: {},
+                                  },
+                              ]
+                            : [{ type: "text", text: "completed after observer failures" }],
+                    api: "test",
+                    provider: "codex",
+                    model: model.id,
+                    usage: zeroUsage(),
+                    stopReason: requestCount === 1 ? "toolUse" : "stop",
+                    timestamp: requestCount,
+                });
+            },
+        });
+        const execute = vi.fn(() => ({ changed: true }));
+        const tool = defineTool({
+            name: "side-effect",
+            label: "Side effect",
+            description: "Changes observable state.",
+            arguments: Type.Object({}),
+            returnType: Type.Object({ changed: Type.Boolean() }),
+            shouldReviewInAutoMode: () => false,
+            execute,
+            toLLM: (result) => [{ type: "text", text: JSON.stringify(result) }],
+            toUI: () => "State changed.",
+            locks: [],
+        });
+        const messages: Message[] = [];
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: createJustBashToolHarness().context,
+            tools: [tool],
+            printToConsole: false,
+            onEvent(event) {
+                if (
+                    event.type.startsWith("tool_execution_") ||
+                    event.type === "background_processes_changed"
+                ) {
+                    throw new Error("optional observer failed");
+                }
+            },
+            onMessage(message) {
+                messages.push(message);
+            },
+        });
+        const debug = {
+            directory: "/tmp/rig-failing-debug",
+            record: vi.fn(async () => {
+                throw new Error("optional debug failed");
+            }),
+        } as unknown as DebugLog;
+
+        const result = await agent.send("Run the side effect.", { debug });
+
+        expect(result.stopReason).toBe("stop");
+        expect(execute).toHaveBeenCalledOnce();
+        expect(messages).toContainEqual(
+            expect.objectContaining({
+                role: "agent",
+                blocks: [
+                    expect.objectContaining({
+                        type: "tool_result",
+                        toolCallId: "observer-failure-tool",
+                        display: "State changed.",
+                    }),
+                ],
+            }),
+        );
+        expect(result.messages.at(-1)).toMatchObject({
+            role: "agent",
+            blocks: [{ type: "text", text: "completed after observer failures" }],
+        });
+    });
+
+    it("stops background shells before reducing permissions in-process", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                throw new Error("Inference is not expected.");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        harness.context.permissions = createPermissionContext("full_access");
+        const killAllSessions = vi.fn(async () => {
+            expect(harness.context.permissions?.mode).toBe("full_access");
+            return 1;
+        });
+        harness.context.bash.killAllSessions = killAllSessions;
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+
+        await agent.setPermissionMode("workspace_write");
+
+        expect(killAllSessions).toHaveBeenCalledOnce();
+        expect(harness.context.permissions?.mode).toBe("workspace_write");
+    });
+
     it("uses the provider image profile independently of its identifier", async () => {
         const model = defineModel({
             id: "anthropic/claude-test",
@@ -125,8 +256,12 @@ describe("Agent", () => {
         agent.enqueueUserMessage("Second run.");
         await agent.run();
 
-        expect(contexts[0]?.systemPrompt).toBe("Base instructions.\n\nInitial API instructions.");
-        expect(contexts[1]?.systemPrompt).toBe("Base instructions.\n\nUpdated API instructions.");
+        expect(contexts[0]?.systemPrompt).toBe(
+            "Base instructions.\n\nYou are in Full access mode. Filesystem, shell, and network access are unrestricted.\n\nInitial API instructions.",
+        );
+        expect(contexts[1]?.systemPrompt).toBe(
+            "Base instructions.\n\nYou are in Full access mode. Filesystem, shell, and network access are unrestricted.\n\nUpdated API instructions.",
+        );
     });
 
     it("queues steering and user messages, runs the loop, and prints messages", async () => {
@@ -199,7 +334,9 @@ describe("Agent", () => {
         expect(agent.status).toBe("idle");
         expect(agent.queue).toEqual([]);
         expect(agent.messages.map((message) => message.id)).toEqual(["id-2", "id-4", "id-7"]);
-        expect(contexts[0]?.systemPrompt).toBe("Base instructions.\n\nKeep answers short.");
+        expect(contexts[0]?.systemPrompt).toBe(
+            "Base instructions.\n\nKeep answers short.\n\nYou are in Full access mode. Filesystem, shell, and network access are unrestricted.",
+        );
         expect(logs.map((entry) => entry[0])).toEqual([
             "[system:id-2] Keep answers short.",
             "[user:id-4] Say done.",
@@ -734,6 +871,71 @@ describe("Agent", () => {
         });
     });
 
+    it("does not retry an incomplete response after visible content begins", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        let requestCount = 0;
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                requestCount += 1;
+                const message: AssistantMessage = {
+                    role: "assistant",
+                    content: [{ type: "text", text: "partial answer" }],
+                    api: "test",
+                    provider: "codex",
+                    model: model.id,
+                    usage: zeroUsage(),
+                    stopReason: "error",
+                    errorCode: "incomplete_response",
+                    errorMessage: "The response ended early.",
+                    timestamp: requestCount,
+                };
+                return {
+                    async *[Symbol.asyncIterator]() {
+                        yield { type: "start" as const, partial: message };
+                        yield {
+                            type: "text_delta" as const,
+                            contentIndex: 0,
+                            delta: "partial answer",
+                            partial: message,
+                        };
+                        yield { type: "error" as const, reason: "error" as const, error: message };
+                    },
+                    async result() {
+                        return message;
+                    },
+                };
+            },
+        });
+        const observedEventTypes: string[] = [];
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+            onEvent: (event) => {
+                observedEventTypes.push(event.type);
+            },
+        });
+
+        const result = await agent.send("Answer once.");
+
+        expect(result.stopReason).toBe("error");
+        expect(requestCount).toBe(1);
+        expect(observedEventTypes).not.toContain("inference_retry");
+        expect(result.messages.at(-1)).toMatchObject({
+            role: "agent",
+            blocks: [{ type: "text", text: "partial answer" }],
+        });
+    });
+
     it("manually compacts with the active reasoning and service tier without changing history", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
@@ -795,6 +997,57 @@ describe("Agent", () => {
         ]);
         expect(compactionThinking).toEqual(["high"]);
         expect(compactionServiceTiers).toEqual(["fast"]);
+    });
+
+    it("discards steering received during manual compaction", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const normalContexts: Context[] = [];
+        let agent: Agent;
+        let steeredDuringCompaction = false;
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream(_model, context) {
+                const isCompaction = context.systemPrompt?.startsWith(
+                    "Create a detailed continuation brief",
+                );
+                if (isCompaction && !steeredDuringCompaction) {
+                    steeredDuringCompaction = true;
+                    void agent.steer("stale compaction steering");
+                } else if (!isCompaction) {
+                    normalContexts.push(context);
+                }
+                return streamFor({
+                    role: "assistant",
+                    content: [{ type: "text", text: isCompaction ? "Brief." : "done" }],
+                    api: "test",
+                    provider: "codex",
+                    model: model.id,
+                    usage: zeroUsage(),
+                    stopReason: "stop",
+                    timestamp: 1,
+                });
+            },
+        });
+        const harness = createJustBashToolHarness();
+        agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+        await agent.send("Initial turn.");
+        await agent.compact();
+
+        await agent.send("Fresh turn.");
+
+        expect(normalContexts).toHaveLength(2);
+        expect(JSON.stringify(normalContexts.at(-1))).not.toContain("stale compaction steering");
     });
 
     it("resets transcript and queued messages", async () => {
@@ -1028,12 +1281,18 @@ describe("Agent", () => {
             locks: [],
         });
         const harness = createJustBashToolHarness();
+        const completedDisplays: string[] = [];
         const agent = new Agent({
             provider,
             modelId: model.id,
             context: harness.context,
             tools: [waitTool],
             printToConsole: false,
+            onEvent(event) {
+                if (event.type === "tool_execution_end") {
+                    completedDisplays.push(event.result.display);
+                }
+            },
         });
 
         const abortedRun = agent.send("start tool", { signal: controller.signal });
@@ -1058,6 +1317,7 @@ describe("Agent", () => {
             role: "user",
             blocks: [{ type: "text", text: "pending tool direction" }],
         });
+        expect(completedDisplays).toEqual(["Interrupted by user."]);
 
         await agent.send("next message");
 

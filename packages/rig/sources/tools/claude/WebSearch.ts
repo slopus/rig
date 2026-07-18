@@ -50,6 +50,7 @@ export function createClaudeWebSearchTool(dependencies: ClaudeWebSearchDependenc
             ),
         }),
         returnType: claudeWebSearchReturnSchema,
+        requiresAutoOrFullAccess: true,
         describeAutoPermissionAction: ({ query }) =>
             `searching the web for ${quoteVisibleExact(query)}. Access: network access outside Rig’s shell sandbox`,
         shouldReviewInAutoMode: () => true,

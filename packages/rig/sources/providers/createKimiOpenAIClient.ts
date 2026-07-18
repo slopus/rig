@@ -11,5 +11,6 @@ export function createKimiOpenAIClient(options: {
         apiKey: options.token,
         baseURL: options.baseUrl,
         defaultHeaders: options.headers,
+        maxRetries: 0,
     }) as unknown as KimiChatClient;
 }

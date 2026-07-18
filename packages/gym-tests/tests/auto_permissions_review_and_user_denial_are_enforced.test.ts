@@ -149,8 +149,8 @@ describe("Auto permissions review and user denial are enforced", () => {
             false,
         );
         expect(automaticallyApproved.text).not.toContain("Approved automatically");
-        expect(automaticallyApproved.text).not.toContain("Risk: low");
-        expect(automaticallyApproved.text).not.toContain("User authorization: high");
+        expect(automaticallyApproved.text).not.toContain("Risk: Low");
+        expect(automaticallyApproved.text).not.toContain("User authorization: High");
         expect(automaticallyApproved.text).not.toContain(
             "The user directly requested this local workspace check.",
         );
@@ -163,7 +163,7 @@ describe("Auto permissions review and user denial are enforced", () => {
         const approvalPrompt = await gym.terminal.waitUntil(
             (snapshot) =>
                 snapshot.text.includes("Needs approval") &&
-                snapshot.text.includes("Risk: high") &&
+                snapshot.text.includes("Risk: High") &&
                 snapshot.text.includes("Allow once") &&
                 snapshot.text.includes("Deny") &&
                 snapshot.scroll.atBottom,
@@ -175,7 +175,7 @@ describe("Auto permissions review and user denial are enforced", () => {
         );
         expect(approvalPrompt.text).toContain("Allow running");
         expect(normalizeWhitespace(approvalPrompt.text)).toContain(
-            'auto-denied.txt". Working directory: "/workspace". Shell: "the default shell". Access: unrestricted filesystem and network access? · 1 of 1',
+            'auto-denied.txt". Working directory: "/workspace". Shell: "the system login shell". Access: unrestricted filesystem and network access? · 1 of 1',
         );
         expect(
             approvalPrompt.rows.some((row) =>

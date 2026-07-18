@@ -75,6 +75,7 @@ import { formatToolResultForDisplay } from "./formatToolResultForDisplay.js";
 import { humanizeReasoningLevel } from "./humanizeReasoningLevel.js";
 import { humanizePermissionMode } from "./humanizePermissionMode.js";
 import { humanizeProviderId } from "./humanizeProviderId.js";
+import { humanizePermissionReviewLevel } from "./humanizePermissionReviewLevel.js";
 import { humanizeGoalStatus } from "./humanizeGoalStatus.js";
 import { humanizeToolName } from "./humanizeToolName.js";
 import { parseCodexMcpToolInvocation } from "./parseCodexMcpToolInvocation.js";
@@ -388,7 +389,6 @@ export class CodingAssistantApp implements Component, Focusable {
     #streamedToolCallEntries = new Set<AppTranscriptEntry>();
     #streamingThinkingEntryIds = new Set<string>();
     #deferredTurnSeparator = false;
-    #workSegmentStartedAtMs: number | undefined;
     #pendingSubagentCompletionIds = new Set<string>();
     #recordedSubagentCompletionIds = new Set<string>();
     #renderedCompletionNotices = new Map<string, number>();
@@ -668,6 +668,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#abortNotified = false;
             this.#activeSessionRunId = event.data.runId;
             this.#setRunning(true);
+            this.#deferredTurnSeparator = true;
             this.#statusText = "Running";
             this.#activityStartedAtMs = this.#lastUserInputAtMs ?? this.#now();
             this.#startActivityAnimation();
@@ -801,7 +802,6 @@ export class CodingAssistantApp implements Component, Focusable {
                 this.#appendAbortNotice();
             } else if (event.data.stopReason !== "stop") {
                 this.#deferredTurnSeparator = false;
-                this.#workSegmentStartedAtMs = undefined;
             }
             this.#discardPendingToolCallEntries();
             if (this.#activeSessionRunId === event.data.runId) {
@@ -834,7 +834,6 @@ export class CodingAssistantApp implements Component, Focusable {
         if (event.type === "run_error") {
             this.#finishLocalSteeringRun(event.data.runId);
             this.#deferredTurnSeparator = false;
-            this.#workSegmentStartedAtMs = undefined;
             this.#discardPendingToolCallEntries();
             if (this.#activeSessionRunId === event.data.runId) {
                 this.#activeSessionRunId = undefined;
@@ -2143,6 +2142,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#abortController = controller;
         this.#abortNotified = false;
         this.#setRunning(true);
+        this.#deferredTurnSeparator = true;
         this.#statusText = "Running";
         this.#streamEntryId = undefined;
         this.#thinkingEntryIdsByContentIndex.clear();
@@ -2192,7 +2192,6 @@ export class CodingAssistantApp implements Component, Focusable {
                 turnCompleted = result.stopReason === "stop";
                 if (!turnCompleted) {
                     this.#deferredTurnSeparator = false;
-                    this.#workSegmentStartedAtMs = undefined;
                 }
                 this.#statusText =
                     result.stopReason === "stop" ? "Idle" : `Stopped: ${result.stopReason}`;
@@ -2206,7 +2205,6 @@ export class CodingAssistantApp implements Component, Focusable {
                 this.#appendAbortNotice();
             } else {
                 this.#deferredTurnSeparator = false;
-                this.#workSegmentStartedAtMs = undefined;
                 this.#statusText = "Error";
                 this.#appendEntry({ role: "error", text: errorToMessage(error) });
             }
@@ -2793,7 +2791,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 this.#statusText = "Waiting for approval";
                 const toolEntry = this.#entries.find((entry) => entry.id === event.toolCallId);
                 if (toolEntry !== undefined) {
-                    toolEntry.permissionReview = `Needs approval: ${event.reason} Risk: ${event.risk}. User authorization: ${event.userAuthorization}.`;
+                    toolEntry.permissionReview = `Needs approval: ${event.reason} Risk: ${humanizePermissionReviewLevel(event.risk)}. User authorization: ${humanizePermissionReviewLevel(event.userAuthorization)}.`;
                 }
             }
         } else if (event.type === "background_processes_changed") {
@@ -2821,7 +2819,6 @@ export class CodingAssistantApp implements Component, Focusable {
                 return;
             }
             this.#deferredTurnSeparator = false;
-            this.#workSegmentStartedAtMs = undefined;
             this.#statusText = "Error";
             this.#appendEntry({
                 role: "error",
@@ -2843,7 +2840,6 @@ export class CodingAssistantApp implements Component, Focusable {
 
     #appendAbortNotice(): void {
         this.#deferredTurnSeparator = false;
-        this.#workSegmentStartedAtMs = undefined;
         this.#markActiveToolCallsStopped();
         this.#activeToolCallIds.clear();
         this.#awaitingApprovalToolCallIds.clear();
@@ -3077,25 +3073,6 @@ export class CodingAssistantApp implements Component, Focusable {
         if (index < 0) return;
         this.#entries.splice(index, 1);
         this.#streamedToolCallEntries.delete(entry);
-        this.#removeOrphanedSeparators();
-    }
-
-    #removeOrphanedSeparators(): void {
-        const retained: AppTranscriptEntry[] = [];
-        for (const entry of this.#entries) {
-            if (entry.role === "separator" && retained.at(-1)?.role === "separator") {
-                if (entry.turnElapsedMs !== undefined) {
-                    retained[retained.length - 1]!.turnElapsedMs = entry.turnElapsedMs;
-                }
-                continue;
-            }
-            retained.push(entry);
-        }
-        const trailing = retained.at(-1);
-        if (trailing?.role === "separator" && trailing.turnElapsedMs === undefined) {
-            retained.pop();
-        }
-        this.#entries = retained;
     }
 
     #finishThinkingMessage(messageId: string, contentIndex: number, text: string): void {
@@ -3178,7 +3155,6 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#observedShellProcesses = [];
         this.#yieldedBackgroundTerminals.clear();
         this.#deferredTurnSeparator = false;
-        this.#workSegmentStartedAtMs = undefined;
     }
 
     #discardPendingToolCallEntries(): void {
@@ -3190,7 +3166,6 @@ export class CodingAssistantApp implements Component, Focusable {
             return !pending;
         });
         this.#streamedToolCallEntries.clear();
-        this.#removeOrphanedSeparators();
     }
 
     #renderHeader(width: number): string[] {
@@ -3255,6 +3230,9 @@ export class CodingAssistantApp implements Component, Focusable {
             if (entryLines.length === 0) continue;
             if (lines.length > 0) lines.push("");
             lines.push(...entryLines);
+            if (entry.turnElapsedMs !== undefined) {
+                lines.push("", renderTurnCompletionSeparator(entry.turnElapsedMs, width));
+            }
         }
         return lines;
     }
@@ -3270,13 +3248,6 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #renderEntry(entry: AppTranscriptEntry, width: number): string[] {
-        if (entry.role === "separator") {
-            return [
-                entry.turnElapsedMs === undefined
-                    ? this.#turnSeparator(width)
-                    : renderTurnCompletionSeparator(entry.turnElapsedMs, width),
-            ];
-        }
         if (entry.role === "user") {
             return this.#renderUserEntry(entry, width);
         }
@@ -3782,21 +3753,23 @@ export class CodingAssistantApp implements Component, Focusable {
                 const mode = item.value as "auto" | "workspace_write" | "read_only" | "full_access";
                 try {
                     const change = this.#agent.setPermissionMode(mode);
-                    if (change !== undefined) {
-                        void change.catch((error: unknown) => {
+                    void Promise.resolve(change)
+                        .then(() => {
+                            if (!this.#sessionBacked) {
+                                this.#appendEntry({
+                                    role: "event",
+                                    title: "Permissions",
+                                    text: `Permissions changed to ${humanizePermissionMode(mode)}.`,
+                                });
+                            }
+                            this.#requestRender();
+                        })
+                        .catch((error: unknown) => {
                             this.#appendEntry({ role: "error", text: errorToMessage(error) });
                             this.#requestRender();
                         });
-                    }
                 } catch (error) {
                     this.#appendEntry({ role: "error", text: errorToMessage(error) });
-                }
-                if (!this.#sessionBacked) {
-                    this.#appendEntry({
-                        role: "event",
-                        title: "Permissions",
-                        text: `Permissions changed to ${humanizePermissionMode(mode)}.`,
-                    });
                 }
                 this.#closeSelectionPanel();
                 this.#requestRender();
@@ -4616,22 +4589,10 @@ export class CodingAssistantApp implements Component, Focusable {
     #appendTurnCompletion(elapsedMs: number): void {
         if (!this.#deferredTurnSeparator) return;
         this.#deferredTurnSeparator = false;
-        const segmentElapsedMs = Math.max(
-            0,
-            this.#now() - (this.#workSegmentStartedAtMs ?? this.#lastUserInputAtMs ?? this.#now()),
-        );
-        this.#workSegmentStartedAtMs = undefined;
         const latest = this.#entries.at(-1);
-        if (latest?.role === "separator") {
-            latest.turnElapsedMs = segmentElapsedMs || elapsedMs;
-            this.#requestRender();
-            return;
-        }
-        this.#appendEntry({
-            role: "separator",
-            text: "",
-            turnElapsedMs: segmentElapsedMs || elapsedMs,
-        });
+        if (latest === undefined) return;
+        latest.turnElapsedMs = elapsedMs;
+        this.#requestRender();
     }
 
     #markConcreteWorkCompleted(
@@ -4652,7 +4613,6 @@ export class CodingAssistantApp implements Component, Focusable {
             normalized.startsWith("mcp__");
         if (!concreteTool) return;
         this.#deferredTurnSeparator = true;
-        this.#workSegmentStartedAtMs ??= this.#lastUserInputAtMs ?? this.#now();
     }
 
     #recordClosedBackgroundTerminals(nextProcesses: readonly BashSessionActivity[]): void {
@@ -4795,10 +4755,6 @@ export class CodingAssistantApp implements Component, Focusable {
         const fitted = truncateToWidth(line, width, "", false);
         const padding = " ".repeat(Math.max(0, width - visibleWidth(fitted)));
         return `${fitted}${padding}`;
-    }
-
-    #turnSeparator(width: number): string {
-        return this.#fitLine(`${DIM}${"─".repeat(width)}${RESET}`, width);
     }
 
     #inputPrompt(): string {

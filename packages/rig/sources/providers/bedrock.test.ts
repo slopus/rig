@@ -203,6 +203,15 @@ describe("Amazon Bedrock provider", () => {
         expect(streamRuntime.mock.calls[2]?.[2]?.maxTokens).toBe(32_000);
     });
 
+    it("uses the endpoint-specific AWS model IDs for Kimi K2 Thinking", () => {
+        const route = getBedrockModelRoute(modelMoonshotKimiK2Thinking.id);
+
+        expect(route).toMatchObject({
+            apiModelId: "moonshot.kimi-k2-thinking",
+            mantleApiModelId: "moonshotai.kimi-k2-thinking",
+        });
+    });
+
     it("uses the official OpenAI Bedrock client without automatic request replay", () => {
         const client = createBedrockOpenAIClient({
             bearerToken: "bedrock-token",

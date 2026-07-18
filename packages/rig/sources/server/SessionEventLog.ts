@@ -34,7 +34,12 @@ export class SessionEventLog {
         }
         this.#lastEventId = event.id;
         for (const listener of this.#listeners) {
-            listener(event);
+            try {
+                listener(event);
+            } catch {
+                // Subscribers are optional observers. A disconnected or broken
+                // consumer must not roll back an event that is already durable.
+            }
         }
         return event;
     }

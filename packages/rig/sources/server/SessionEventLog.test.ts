@@ -10,6 +10,20 @@ const OTHER_SESSION = "018bcfe5-6800-7002-8000-00000000bbbb";
 const FUTURE = "018bcfe5-6800-7005-8000-00000000aaaa";
 
 describe("SessionEventLog", () => {
+    it("isolates subscriber failures from durable event delivery", () => {
+        const delivered: SessionEvent[] = [];
+        const log = new SessionEventLog();
+        log.subscribe(() => {
+            throw new Error("disconnected subscriber");
+        });
+        log.subscribe((next) => delivered.push(next));
+        const next = event(FIRST);
+
+        expect(() => log.append(next)).not.toThrow();
+        expect(delivered).toEqual([next]);
+        expect(log.since(undefined)).toEqual([next]);
+    });
+
     it("recovers an omitted ordered cursor without replaying its durable predecessor", () => {
         const log = new SessionEventLog({
             events: [event(FIRST)],

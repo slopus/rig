@@ -77,7 +77,7 @@ describe("DebugLog", () => {
 
         await rm(directory, { recursive: true });
         await writeFile(directory, "temporarily blocked", "utf8");
-        await expect(log.record("failed", { attempt: 1 })).rejects.toThrow();
+        await expect(log.record("failed", { attempt: 1 })).resolves.toBeUndefined();
 
         await rm(directory);
         await mkdir(directory);

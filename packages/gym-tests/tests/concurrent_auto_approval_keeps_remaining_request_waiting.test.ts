@@ -173,7 +173,7 @@ describe("concurrent Auto approvals keep the remaining request waiting", () => {
                 snapshot.text.includes("• Awaiting approval printf 'alpha approved") &&
                 snapshot.text.includes("• Awaiting approval printf 'beta approved") &&
                 normalizeWhitespace(snapshot.text).includes(
-                    `Allow running "${visibleExact(alphaCommand)}". Working directory: "/workspace". Shell: "the default shell". Access: unrestricted filesystem and network access? · 1 of 1`,
+                    `Allow running "${visibleExact(alphaCommand)}". Working directory: "/workspace". Shell: "the system login shell". Access: unrestricted filesystem and network access? · 1 of 1`,
                 ) &&
                 snapshot.text.includes("◦ Waiting for approval") &&
                 snapshot.scroll.atBottom,
@@ -206,7 +206,7 @@ describe("concurrent Auto approvals keep the remaining request waiting", () => {
         const betaStillPending = await gym.terminal.waitUntil(
             (snapshot) =>
                 normalizeWhitespace(snapshot.text).includes(
-                    `Allow running "${visibleExact(betaCommand)}". Working directory: "/workspace". Shell: "the default shell". Access: unrestricted filesystem and network access? · 1 of 1`,
+                    `Allow running "${visibleExact(betaCommand)}". Working directory: "/workspace". Shell: "the system login shell". Access: unrestricted filesystem and network access? · 1 of 1`,
                 ) &&
                 snapshot.text.includes("• Ran printf 'alpha approved") &&
                 snapshot.text.includes("• Awaiting approval printf 'beta approved") &&

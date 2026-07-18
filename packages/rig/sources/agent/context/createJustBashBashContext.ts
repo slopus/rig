@@ -3,6 +3,7 @@ import type { Bash } from "just-bash";
 import { errorToMessage } from "../../errorToMessage.js";
 import type { BashContext, BashRunResult, BashSessionSnapshot } from "./BashContext.js";
 import { capOutput } from "./capOutput.js";
+import { MAX_ACTIVE_BASH_SESSIONS, MAX_RETAINED_BASH_SESSIONS } from "./bashSessionLimits.js";
 
 interface JustBashSession {
     command: string;
@@ -19,13 +20,11 @@ interface JustBashSession {
     timeout?: ReturnType<typeof setTimeout>;
 }
 
-const MAX_RETAINED_SESSIONS = 64;
-
 export function createJustBashBashContext(bash: Bash, cwd: string): BashContext {
     const sessions = new Map<number, JustBashSession>();
     let nextSessionId = 1;
     const trimSessions = () => {
-        while (sessions.size > MAX_RETAINED_SESSIONS) {
+        while (sessions.size > MAX_RETAINED_BASH_SESSIONS) {
             const completed = [...sessions.values()].find(
                 (session) => session.result !== undefined,
             );
@@ -116,6 +115,14 @@ export function createJustBashBashContext(bash: Bash, cwd: string): BashContext 
             }
         },
         async startSession(runOptions) {
+            const active = [...sessions.values()].filter(
+                (session) => session.result === undefined,
+            ).length;
+            if (active >= MAX_ACTIVE_BASH_SESSIONS) {
+                throw new Error(
+                    `No more than ${String(MAX_ACTIVE_BASH_SESSIONS)} background commands can run at once.`,
+                );
+            }
             assertNoSecrets(runOptions.secrets);
             const controller = new AbortController();
             const sessionId = nextSessionId;

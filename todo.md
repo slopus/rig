@@ -77,9 +77,9 @@ This file tracks known defects, verified coverage gaps, and concrete follow-up w
     - The parent receives a durable passive notification that delegated work stopped at restart and will not resume automatically.
     - Gym restarts the real daemon, verifies no child inference runs on startup, and recovers only after the parent calls `resume_agent`.
 
-- [ ] Bound MCP rendering work before serializing and wrapping large payloads.
-    - Invocation arguments and result blocks currently process the full payload before display row limits apply.
-    - Add byte/character bounds and a large-payload render performance regression.
+- [x] Bound MCP rendering work before serializing and wrapping large payloads.
+    - MCP tool text and protocol metadata now stop at a 512 KiB budget, image payloads and block counts are capped, and structured content uses bounded traversal.
+    - Large-array, oversized-image, resource-content, and structured-payload regressions prove rendering stops before walking the full value.
 
 - [x] Enforce the inference retry boundary at low-level transport failures before response content.
     - Retry typed socket, DNS, and Undici failures plus exact fetch, WebSocket, and incomplete-stream transport errors.

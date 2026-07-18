@@ -104,7 +104,7 @@ describe("escalated approval discloses the complete execution boundary", () => {
         const normalizedApproval = normalizeWhitespace(approval.text);
         expect(normalizedApproval).toContain(visibleExact(command));
         expect(normalizedApproval).toContain('Working directory: "/home/rig"');
-        expect(normalizedApproval).toContain('Shell: "/bin/sh"');
+        expect(normalizedApproval).toContain('Shell: "/bin/sh (login)"');
         expect(normalizedApproval.toLowerCase()).toMatch(
             /unrestricted (?:file system|filesystem) and network access/u,
         );

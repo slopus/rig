@@ -127,10 +127,18 @@ describe("tool-owned Auto permission policies", () => {
         await writeFile(insideWorkflow, "'done'");
         const hook = join(context.fs.cwd, ".git", "hooks", "pre-commit");
         await mkdir(join(context.fs.cwd, ".git", "hooks"), { recursive: true });
+        const userSkill = join(context.fs.home ?? "", ".codex", "skills", "review", "SKILL.md");
+        await mkdir(join(context.fs.home ?? "", ".codex", "skills", "review"), {
+            recursive: true,
+        });
+        await writeFile(userSkill, "# Review");
 
         await expect(
             claudeReadTool.shouldReviewInAutoMode({ file_path: outside }, context),
         ).resolves.toBe(true);
+        await expect(
+            claudeReadTool.shouldReviewInAutoMode({ file_path: userSkill }, context),
+        ).resolves.toBe(false);
         await expect(
             claudeReadTool.shouldRunInFullAccessInAutoMode({ file_path: outside }, context),
         ).resolves.toBe(true);
@@ -196,6 +204,14 @@ describe("tool-owned Auto permission policies", () => {
         );
         expect(claudeReadTool.describeAutoPermissionAction?.({ file_path: outside }, context)).toBe(
             `reading ${JSON.stringify(outside)}. Access: unrestricted filesystem access outside the workspace sandbox`,
+        );
+        expect(
+            claudeWriteTool.describeAutoPermissionAction?.(
+                { content: "hook", file_path: hook },
+                context,
+            ),
+        ).toBe(
+            `writing ${JSON.stringify(hook)}. Access: protected Git control path inside the workspace`,
         );
     });
 

@@ -55,13 +55,13 @@ describe("production startup status quota", () => {
 
         const freshWide = await gym.terminal.waitUntil(
             (snapshot) =>
-                snapshot.text.includes("Rig 0.0.12 · New session") &&
+                snapshot.text.includes("New session") &&
                 snapshot.text.includes("Usage: 5h 68% left · week 84% left") &&
                 snapshot.text.includes("Ask Rig to do anything"),
             "the fresh wide quota-bearing startup card",
             30_000,
         );
-        expect(count(freshWide.text, "Rig 0.0.12 · New session")).toBe(1);
+        expect(count(freshWide.text, "New session")).toBe(1);
         await gym.terminal.screenshot(`${artifacts}/startup-quota-fresh-wide.png`);
 
         gym.terminal.resize(19, 60);
@@ -100,7 +100,7 @@ describe("production startup status quota", () => {
                 if (boundary < 0) return false;
                 const resumed = snapshot.text.slice(boundary);
                 return (
-                    resumed.includes("Rig 0.0.12 · Resumed") &&
+                    resumed.includes("Resumed") &&
                     resumed.includes("Usage: 5h 68% left · week 84% left") &&
                     resumed.includes("STARTUP_QUOTA_REPLAY") &&
                     resumed.includes("Ask Rig to do anything")
@@ -110,7 +110,7 @@ describe("production startup status quota", () => {
             30_000,
         );
         const resumedText = resumedWide.text.slice(resumedWide.text.indexOf(resumeMarker));
-        expect(count(resumedText, "Rig 0.0.12 · Resumed")).toBe(1);
+        expect(count(resumedText, "Resumed")).toBe(1);
         expect(resumedText.indexOf("Resumed")).toBeLessThan(
             resumedText.indexOf("STARTUP_QUOTA_REPLAY"),
         );

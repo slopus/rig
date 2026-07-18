@@ -16,6 +16,19 @@ afterEach(async () => {
 });
 
 describe("createNodeFileSystemContext", () => {
+    it("defaults to the workspace-write boundary", async () => {
+        const root = await mkdtemp(join(tmpdir(), "rig-fs-safe-default-"));
+        temporaryDirectories.push(root);
+        const workspace = join(root, "workspace");
+        await mkdir(workspace);
+        const context = createNodeFileSystemContext(workspace);
+
+        await expect(context.writeFile(join(root, "outside.txt"), "outside\n")).rejects.toThrow(
+            "cannot modify files outside the working directory",
+        );
+        await expect(context.writeFile("inside.txt", "inside\n")).resolves.toBeUndefined();
+    });
+
     it("reads user skill trees without exposing other private home files", async () => {
         const root = await mkdtemp(join(tmpdir(), "rig-fs-user-skills-"));
         temporaryDirectories.push(root);

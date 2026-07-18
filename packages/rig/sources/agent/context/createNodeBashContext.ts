@@ -12,6 +12,7 @@ import { assertCanUseCustomShell } from "./assertCanUseCustomShell.js";
 import { createSandboxedCommand } from "./createSandboxedCommand.js";
 import { createToolEnvironment } from "./createToolEnvironment.js";
 import { waitForBashSessionCompletion } from "./waitForBashSessionCompletion.js";
+import { MAX_ACTIVE_BASH_SESSIONS, MAX_RETAINED_BASH_SESSIONS } from "./bashSessionLimits.js";
 import { createCommandEnvironment, type SessionSecretContext } from "../../secrets/index.js";
 
 export interface CreateNodeBashContextOptions {
@@ -34,11 +35,10 @@ interface NodeBashSession {
     timeout?: NodeJS.Timeout;
 }
 
-const MAX_RETAINED_SESSIONS = 64;
-
 export function createNodeBashContext(options: CreateNodeBashContextOptions): BashContext {
     const sessions = new Map<number, NodeBashSession>();
     let nextSessionId = 1;
+    let pendingSessionStarts = 0;
     let onActiveSessionCountChange: ((count: number) => void) | undefined;
     const activeSessionCount = () =>
         [...sessions.values()].filter((session) => session.result === undefined).length;
@@ -51,6 +51,20 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
                 sessionId: session.sessionId,
                 status: "running" as const,
             }));
+    const reserveSessionStart = () => {
+        if (activeSessionCount() + pendingSessionStarts >= MAX_ACTIVE_BASH_SESSIONS) {
+            throw new Error(
+                `No more than ${String(MAX_ACTIVE_BASH_SESSIONS)} background commands can run at once.`,
+            );
+        }
+        pendingSessionStarts += 1;
+        let released = false;
+        return () => {
+            if (released) return;
+            released = true;
+            pendingSessionStarts -= 1;
+        };
+    };
     const runCwd = (cwd: string | undefined) =>
         cwd === undefined ? options.cwd : isAbsolute(cwd) ? cwd : resolve(options.cwd, cwd);
 
@@ -156,69 +170,78 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
             };
         },
         async startSession(runOptions) {
-            assertCanUseCustomShell(options.permissions.mode, runOptions.shell);
-            const cwd = runCwd(runOptions.cwd);
-            const shell = runOptions.shell ?? resolveSystemShell();
-            const toolEnvironment = await createToolEnvironment(
-                options.permissions.mode,
-                globalThis.process.env,
-                { cwd: options.cwd },
-            );
-            const sandboxedCommand = await createSandboxedCommand({
-                command: runOptions.command,
-                cwd: options.cwd,
-                mode: options.permissions.mode,
-                ...(toolEnvironment.PATH === undefined ? {} : { path: toolEnvironment.PATH }),
-                shell,
-            });
-            const processStartOptions: Parameters<NativeProcessManager["start"]>[0] = {
-                cleanupProcessGroupOnExit: true,
-                command: sandboxedCommand.command,
-                cwd,
-                env: createCommandEnvironment(toolEnvironment, options.secrets, runOptions.secrets),
-                maxOutputBytes: runOptions.maxOutputBytes ?? 512_000,
-            };
-            if (sandboxedCommand.args !== undefined) {
-                processStartOptions.args = sandboxedCommand.args;
-            } else {
-                processStartOptions.shell = shell;
-            }
-            const process = options.processManager.start(processStartOptions);
-            const completion = process.wait();
-            const sessionId = nextSessionId;
-            nextSessionId += 1;
-            const session: NodeBashSession = {
-                command: runOptions.command,
-                completionWaiters: new Set(),
-                cwd,
-                process,
-                sessionId,
-                stderrOffset: 0,
-                stdoutOffset: 0,
-                timedOut: false,
-            };
-            sessions.set(sessionId, session);
-            onActiveSessionCountChange?.(activeSessionCount());
-            if (runOptions.timeoutMs !== undefined) {
-                session.timeout = setTimeout(() => {
-                    session.timedOut = true;
-                    void process.kill("SIGTERM", { forceAfterMs: 500 });
-                }, runOptions.timeoutMs);
-                session.timeout.unref();
-            }
-            void completion.then((result) => {
-                session.result = result;
-                if (session.timeout !== undefined) clearTimeout(session.timeout);
-                for (const finish of session.completionWaiters) finish();
-                onActiveSessionCountChange?.(activeSessionCount());
-            });
-            if (sessions.size > MAX_RETAINED_SESSIONS) {
-                const completed = [...sessions.values()].find(
-                    (candidate) => candidate.result !== undefined,
+            const releaseSessionStart = reserveSessionStart();
+            try {
+                assertCanUseCustomShell(options.permissions.mode, runOptions.shell);
+                const cwd = runCwd(runOptions.cwd);
+                const shell = runOptions.shell ?? resolveSystemShell();
+                const toolEnvironment = await createToolEnvironment(
+                    options.permissions.mode,
+                    globalThis.process.env,
+                    { cwd: options.cwd },
                 );
-                if (completed !== undefined) sessions.delete(completed.sessionId);
+                const sandboxedCommand = await createSandboxedCommand({
+                    command: runOptions.command,
+                    cwd: options.cwd,
+                    mode: options.permissions.mode,
+                    ...(toolEnvironment.PATH === undefined ? {} : { path: toolEnvironment.PATH }),
+                    shell,
+                });
+                const processStartOptions: Parameters<NativeProcessManager["start"]>[0] = {
+                    cleanupProcessGroupOnExit: true,
+                    command: sandboxedCommand.command,
+                    cwd,
+                    env: createCommandEnvironment(
+                        toolEnvironment,
+                        options.secrets,
+                        runOptions.secrets,
+                    ),
+                    maxOutputBytes: runOptions.maxOutputBytes ?? 512_000,
+                };
+                if (sandboxedCommand.args !== undefined) {
+                    processStartOptions.args = sandboxedCommand.args;
+                } else {
+                    processStartOptions.shell = shell;
+                }
+                const process = options.processManager.start(processStartOptions);
+                const completion = process.wait();
+                const sessionId = nextSessionId;
+                nextSessionId += 1;
+                const session: NodeBashSession = {
+                    command: runOptions.command,
+                    completionWaiters: new Set(),
+                    cwd,
+                    process,
+                    sessionId,
+                    stderrOffset: 0,
+                    stdoutOffset: 0,
+                    timedOut: false,
+                };
+                sessions.set(sessionId, session);
+                onActiveSessionCountChange?.(activeSessionCount());
+                if (runOptions.timeoutMs !== undefined) {
+                    session.timeout = setTimeout(() => {
+                        session.timedOut = true;
+                        void process.kill("SIGTERM", { forceAfterMs: 500 });
+                    }, runOptions.timeoutMs);
+                    session.timeout.unref();
+                }
+                void completion.then((result) => {
+                    session.result = result;
+                    if (session.timeout !== undefined) clearTimeout(session.timeout);
+                    for (const finish of session.completionWaiters) finish();
+                    onActiveSessionCountChange?.(activeSessionCount());
+                });
+                if (sessions.size > MAX_RETAINED_BASH_SESSIONS) {
+                    const completed = [...sessions.values()].find(
+                        (candidate) => candidate.result !== undefined,
+                    );
+                    if (completed !== undefined) sessions.delete(completed.sessionId);
+                }
+                return sessionId;
+            } finally {
+                releaseSessionStart();
             }
-            return sessionId;
         },
         setActiveSessionCountListener(listener) {
             onActiveSessionCountChange = listener;

@@ -1,0 +1,2 @@
+export const MAX_ACTIVE_BASH_SESSIONS = 64;
+export const MAX_RETAINED_BASH_SESSIONS = 64;

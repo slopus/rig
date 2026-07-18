@@ -4224,6 +4224,7 @@ describe("CodingAssistantApp", () => {
 
         const renderedLines = app.render(80).map(stripAnsi);
         const userLineIndex = renderedLines.findIndex((line) => line.includes("› first"));
+        const answerLineIndex = renderedLines.findIndex((line) => line.includes("• answer"));
         const separatorLineIndex = renderedLines.findIndex((line) =>
             line.includes(
                 "────────────────────────────────────────────────────────────────────────────────",
@@ -4231,7 +4232,8 @@ describe("CodingAssistantApp", () => {
         );
 
         expect(userLineIndex).toBeGreaterThan(0);
-        expect(separatorLineIndex).toBe(-1);
+        expect(answerLineIndex).toBeGreaterThan(userLineIndex);
+        expect(separatorLineIndex).toBeGreaterThan(answerLineIndex);
     });
 
     it("reports provider token usage and shows optional live footer status", async () => {
@@ -4841,6 +4843,8 @@ describe("CodingAssistantApp", () => {
         expect(rendered).not.toContain("Failed search.find_docs");
         expect(rendered).toContain('◦ Calling issues.close_ticket({"issue":42})');
         expect(rendered).toContain("Needs approval: This changes external issue state.");
+        expect(rendered).toContain("Risk: Medium. User authorization: Low.");
+        expect(rendered).not.toContain("Risk: medium");
         expect(rendered).toContain("Waiting for approval");
         expect(raw).toContain("\x1b[36mnode_repl");
         expect(raw).toContain("\x1b[31m\x1b[1m•");
@@ -5902,7 +5906,7 @@ describe("CodingAssistantApp", () => {
                 (left, right) => left - right,
             ),
         );
-        expect(rendered.match(/Worked for/gu)).toHaveLength(1);
+        expect(rendered.match(/Worked for/gu)).toHaveLength(2);
     });
 
     it("does not leak deferred completion after a tool-using provider error", async () => {
@@ -6157,7 +6161,7 @@ describe("CodingAssistantApp", () => {
         await app.waitForIdle();
     });
 
-    it("does not add elapsed history for a permission-only conversational turn", () => {
+    it("keeps elapsed history based on the composer message across permission answers", () => {
         const model = defineModel({
             id: "openai/gpt-test",
             name: "GPT Test",
@@ -6274,8 +6278,147 @@ describe("CodingAssistantApp", () => {
 
         const rendered = stripAnsi(app.render(100).join("\n"));
         expect(rendered).toContain("TASK_COMPLETE");
-        expect(rendered).not.toContain("Worked for");
+        expect(rendered).toContain("Worked for 1m 5s");
         expect(rendered).not.toContain("esc to interrupt");
+    });
+
+    it("measures immutable completion from the latest steering message", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        let now = 10_000;
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            now: () => now,
+            processManager: new NativeProcessManager(),
+            sessionBacked: true,
+            tui: fakeTui(),
+        });
+
+        app.applySessionEvent({
+            createdAt: 10_000,
+            data: {
+                displayText: "Start the task.",
+                message: {
+                    blocks: [{ text: "Start the task.", type: "text" }],
+                    id: "user-message-1",
+                    role: "user",
+                },
+                runId: "run-1",
+            },
+            id: "event-user-message",
+            sessionId: "session-1",
+            type: "message_submitted",
+        });
+        app.applySessionEvent({
+            createdAt: 10_001,
+            data: { runId: "run-1" },
+            id: "event-run-started",
+            sessionId: "session-1",
+            type: "run_started",
+        });
+        app.applySessionEvent({
+            createdAt: 10_002,
+            data: {
+                message: {
+                    blocks: [
+                        {
+                            arguments: { cmd: "printf done" },
+                            id: "tool-call-1",
+                            name: "exec_command",
+                            type: "tool_call",
+                        },
+                        {
+                            display: "Completed command",
+                            presentation: { type: "file_diff", files: [] },
+                            rendered: [{ text: "done", type: "text" }],
+                            toolCallId: "tool-call-1",
+                            toolName: "exec_command",
+                            type: "tool_result",
+                        },
+                    ],
+                    id: "tool-message-1",
+                    role: "agent",
+                },
+                runId: "run-1",
+            },
+            id: "event-tool-message",
+            sessionId: "session-1",
+            type: "agent_message",
+        });
+
+        now = 70_000;
+        app.applySessionEvent({
+            createdAt: 70_000,
+            data: {
+                delivery: "steer",
+                displayText: "Finish with the concise result.",
+                message: {
+                    blocks: [{ text: "Finish with the concise result.", type: "text" }],
+                    id: "steering-message-1",
+                    role: "user",
+                },
+                runId: "run-1",
+            },
+            id: "event-steering-message",
+            sessionId: "session-1",
+            type: "message_submitted",
+        });
+        app.applySessionEvent({
+            createdAt: 70_001,
+            data: { messageIds: ["steering-message-1"], runId: "run-1" },
+            id: "event-steering-applied",
+            sessionId: "session-1",
+            type: "steering_applied",
+        });
+        now = 75_000;
+        app.applySessionEvent({
+            createdAt: 75_000,
+            data: {
+                message: {
+                    blocks: [{ text: "STEERED_TASK_COMPLETE", type: "text" }],
+                    id: "agent-message-final",
+                    role: "agent",
+                },
+                runId: "run-1",
+            },
+            id: "event-agent-message-final",
+            sessionId: "session-1",
+            type: "agent_message",
+        });
+        app.applySessionEvent({
+            createdAt: 75_000,
+            data: {
+                agentRunId: "agent-run-1",
+                modelLocked: false,
+                runId: "run-1",
+                stopReason: "stop",
+            },
+            id: "event-run-finished",
+            sessionId: "session-1",
+            type: "run_finished",
+        });
+
+        const rendered = stripAnsi(app.render(100).join("\n"));
+        expect(rendered).toContain("STEERED_TASK_COMPLETE");
+        expect(rendered).not.toContain("Worked for");
     });
 
     it("renders completed thinking blocks as transcript text", async () => {
@@ -6495,7 +6638,7 @@ describe("CodingAssistantApp", () => {
         expect(stripAnsi(app.render(100).join("\n"))).toContain("Durable event queue enabled.");
     });
 
-    it("changes the session permission mode from the permissions menu", () => {
+    it("changes the session permission mode from the permissions menu", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
             name: "GPT Test",
@@ -6537,7 +6680,7 @@ describe("CodingAssistantApp", () => {
         app.handleInput("\x1b[B");
         app.handleInput("\r");
 
-        expect(agent.permissionMode).toBe("read_only");
+        await vi.waitFor(() => expect(agent.permissionMode).toBe("read_only"));
         expect(stripAnsi(app.render(100).join("\n"))).toContain(
             "Permissions changed to Read only.",
         );
@@ -6843,9 +6986,11 @@ describe("CodingAssistantApp", () => {
         expect(lines.length).toBeGreaterThan(8);
         expect(rendered).toContain("› first");
         expect(rendered).toContain("• answer 4");
-        expect(rendered).not.toContain(
-            "────────────────────────────────────────────────────────────────────────────────",
-        );
+        expect(
+            rendered.match(
+                /────────────────────────────────────────────────────────────────────────────────/gu,
+            ),
+        ).toHaveLength(4);
 
         const resized = stripAnsi(app.render(48).join("\n"));
         expect(resized).toContain("██████╗");

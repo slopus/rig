@@ -64,6 +64,7 @@ export function createClaudeWebFetchTool(dependencies: ClaudeWebFetchDependencie
             prompt: Type.String({ description: "The prompt to run on the fetched content" }),
         }),
         returnType: claudeWebFetchReturnSchema,
+        requiresAutoOrFullAccess: true,
         describeAutoPermissionAction: ({ url }) =>
             `fetching ${quoteVisibleExact(url)}. Access: network access outside Rig’s shell sandbox`,
         shouldReviewInAutoMode: () => true,

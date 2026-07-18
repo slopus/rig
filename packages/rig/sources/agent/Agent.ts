@@ -11,6 +11,7 @@ import { printAgentMessageToConsole, type AgentConsole } from "./printAgentMessa
 import type { AnyDefinedTool, ContentBlock, Message, SystemMessage, UserMessage } from "./types.js";
 import type { Model, Provider, ServiceTier } from "../providers/types.js";
 import type { PermissionMode } from "../permissions/index.js";
+import { isPermissionReduction } from "../permissions/index.js";
 
 export type AgentStatus = "idle" | "running" | "aborted";
 
@@ -219,8 +220,15 @@ export class Agent {
         this.#tools = tools;
     }
 
-    setPermissionMode(mode: PermissionMode): void {
-        this.context.permissions?.setMode(mode);
+    async setPermissionMode(mode: PermissionMode): Promise<void> {
+        const permissions = this.context.permissions;
+        if (permissions === undefined) {
+            throw new Error("Permission settings are unavailable for this agent.");
+        }
+        if (isPermissionReduction(permissions.mode, mode)) {
+            await this.context.bash.killAllSessions?.();
+        }
+        permissions.setMode(mode);
     }
 
     reset(): void {
@@ -312,6 +320,7 @@ export class Agent {
             this.#status = "idle";
             return result;
         } finally {
+            this.#steeringQueue = [];
             if (this.#activeRunId === runId) this.#activeRunId = undefined;
             if (this.#status === "running") this.#status = signal?.aborted ? "aborted" : "idle";
         }

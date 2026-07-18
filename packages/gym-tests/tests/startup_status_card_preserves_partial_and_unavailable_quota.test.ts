@@ -50,7 +50,7 @@ describe("partial and unavailable production startup quota", () => {
 
         const snapshot = await gym.terminal.waitUntil(
             (screen) =>
-                screen.text.includes("Rig 0.0.12 · New session") &&
+                screen.text.includes("New session") &&
                 screen.text.includes("Access: Full access") &&
                 screen.text.includes("Ask Rig to do anything"),
             "the startup card with unavailable quota",

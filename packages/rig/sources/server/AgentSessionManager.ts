@@ -282,6 +282,7 @@ export class AgentSessionManager {
             throw error;
         } finally {
             signal?.removeEventListener("abort", abortChild);
+            this.#stoppedExplicitly.delete(child.id);
         }
     }
 

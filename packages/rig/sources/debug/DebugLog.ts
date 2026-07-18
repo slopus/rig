@@ -45,9 +45,9 @@ export class DebugLog {
         const operation = this.#pending
             .catch(() => undefined)
             .then(() => writeFile(join(this.directory, fileName), body, { mode: 0o600 }));
-        this.#pending = operation;
-        void operation.catch(() => undefined);
-        return operation;
+        const settled = operation.catch(() => undefined);
+        this.#pending = settled;
+        return settled;
     }
 
     async #initialize(): Promise<void> {

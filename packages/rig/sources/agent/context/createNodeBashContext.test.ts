@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createNodeBashContext } from "./createNodeBashContext.js";
+import { MAX_ACTIVE_BASH_SESSIONS } from "./bashSessionLimits.js";
 import { createPermissionContext } from "../../permissions/index.js";
 import {
     type ManagedProcess,
@@ -19,6 +20,49 @@ afterEach(async () => {
 });
 
 describe("createNodeBashContext", () => {
+    it("rejects background work beyond the active session limit", async () => {
+        const cwd = await makeTempDir();
+        const completion = new Promise<ProcessRunResult>(() => {});
+        const process = {
+            interrupt: vi.fn(),
+            kill: vi.fn(),
+            readOutput: vi.fn(() => ({
+                aborted: false,
+                command: "pending",
+                cwd,
+                exitCode: null,
+                id: "pending",
+                killed: false,
+                pid: 1,
+                signal: null,
+                status: "running" as const,
+                stderr: "",
+                stderrDelta: "",
+                stderrOffset: 0,
+                stdout: "",
+                stdoutDelta: "",
+                stdoutOffset: 0,
+                timedOut: false,
+            })),
+            wait: () => completion,
+            writeStdin: vi.fn(),
+        } as unknown as ManagedProcess;
+        const start = vi.fn(() => process);
+        const context = createNodeBashContext({
+            cwd,
+            permissions: createPermissionContext("full_access"),
+            processManager: { start } as unknown as NativeProcessManager,
+        });
+        for (let index = 0; index < MAX_ACTIVE_BASH_SESSIONS; index += 1) {
+            await context.startSession({ command: `pending-${String(index)}` });
+        }
+
+        await expect(context.startSession({ command: "one-too-many" })).rejects.toThrow(
+            `No more than ${String(MAX_ACTIVE_BASH_SESSIONS)} background commands can run at once.`,
+        );
+        expect(start).toHaveBeenCalledTimes(MAX_ACTIVE_BASH_SESSIONS);
+    });
+
     it.runIf(process.platform !== "win32")(
         "uses the system login shell for foreground and background commands",
         async () => {

@@ -12,11 +12,12 @@ export function createAmbiguousToolCallRejection(
     message: AssistantMessage,
     idFactory: () => string,
     attribution: { providerId: string; requestedModelId: string },
+    existingToolCallIds: ReadonlySet<string>,
 ): AmbiguousToolCallRejection | undefined {
     const toolCalls = message.content.filter(
         (block): block is ToolCall => block.type === "toolCall",
     );
-    const seenIds = new Set<string>();
+    const seenIds = new Set(existingToolCallIds);
     let hasReusedId = false;
     for (const toolCall of toolCalls) {
         if (seenIds.has(toolCall.id)) {

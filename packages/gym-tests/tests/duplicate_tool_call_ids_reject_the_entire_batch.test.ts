@@ -101,7 +101,7 @@ describe("duplicate model tool call identifier handling", () => {
         expect(agentRequests(gym)).toHaveLength(2);
     }, 120_000);
 
-    it("allows identifier reuse on a later turn without erasing earlier audit history", async () => {
+    it("rejects identifier reuse on a later turn without erasing earlier audit history", async () => {
         const firstCommand = "printf 'first audited action\\n' > first-audited-action.txt";
         const reusedCommand = "printf 'reused id ran\\n' > reused-id-action-ran.txt";
         const providerId = "provider-id-from-earlier-turn";
@@ -140,13 +140,7 @@ describe("duplicate model tool call identifier handling", () => {
                         ],
                     };
                 }
-                expect(callIndex).toBe(3);
-                expect(request.context.messages.at(-1)).toMatchObject({
-                    isError: false,
-                    role: "toolResult",
-                    toolCallId: providerId,
-                });
-                return { content: [{ text: "CROSS_TURN_ID_RECOVERY_OK", type: "text" }] };
+                throw new Error(`Unexpected inference call ${String(callIndex)}.`);
             },
             rows: ROWS,
         });
@@ -170,19 +164,27 @@ describe("duplicate model tool call identifier handling", () => {
 
         submit(gym, "Run a later action even if its provider identifier repeats.");
         const reused = await gym.terminal.waitUntil(
-            (snapshot) =>
-                snapshot.text.includes("CROSS_TURN_ID_RECOVERY_OK") &&
-                snapshot.text.includes("Ask Rig to do anything") &&
-                snapshot.scroll.atBottom,
-            "cross-turn identifier reuse completing normally",
+            (snapshot) => {
+                const text = normalizeWhitespace(snapshot.text);
+                return (
+                    text.includes("Rig rejected this entire batch of 1 requested actions") &&
+                    text.includes("the model reused an action identifier") &&
+                    text.includes("No tools were run") &&
+                    text.includes("Ask Rig to do anything") &&
+                    snapshot.scroll.atBottom
+                );
+            },
+            "cross-turn identifier reuse being rejected",
             30_000,
         );
         expect(reused.text).toContain("Ran printf 'first audited action");
-        expect(reused.text).toContain("Ran printf 'reused id ran");
+        expect(reused.text).toContain("Failed printf 'reused id ran");
         expect(reused.text).not.toContain(providerId);
-        await expect(gym.readFile("reused-id-action-ran.txt")).resolves.toBe("reused id ran\n");
+        await expect(gym.readFile("reused-id-action-ran.txt")).rejects.toMatchObject({
+            code: "ENOENT",
+        });
         assertHealthyTerminal(reused, baseline);
-        expect(agentRequests(gym)).toHaveLength(4);
+        expect(agentRequests(gym)).toHaveLength(3);
     }, 120_000);
 });
 

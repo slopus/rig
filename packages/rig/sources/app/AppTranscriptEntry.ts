@@ -13,8 +13,7 @@ export type AppTranscriptRole =
     | "thinking"
     | "tool"
     | "event"
-    | "error"
-    | "separator";
+    | "error";
 
 export interface AppTranscriptEntry {
     backgroundTerminalCompletion?: string;

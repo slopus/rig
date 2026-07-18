@@ -16,7 +16,25 @@ describe("isTransientInferenceSessionEvent", () => {
         }
     });
 
-    it("keeps tool, process, compaction, and unknown future agent events durable", () => {
+    it("drops ephemeral tool progress while keeping terminal tool state durable", () => {
+        expect(
+            isTransientInferenceSessionEvent(
+                agentEvent({
+                    display: "halfway",
+                    toolCallId: "tool-1",
+                    type: "tool_execution_progress",
+                }),
+            ),
+        ).toBe(true);
+        expect(
+            isTransientInferenceSessionEvent(
+                agentEvent({
+                    status: "waiting",
+                    toolCallId: "tool-1",
+                    type: "tool_execution_status",
+                }),
+            ),
+        ).toBe(true);
         expect(
             isTransientInferenceSessionEvent(
                 agentEvent({

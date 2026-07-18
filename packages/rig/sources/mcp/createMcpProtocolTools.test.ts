@@ -6,6 +6,63 @@ import { createMcpProtocolTools } from "./createMcpProtocolTools.js";
 import { createMcpTool } from "./createMcpTool.js";
 
 describe("createMcpProtocolTools", () => {
+    it("bounds protocol metadata before returning it to the model", () => {
+        const tool = createMcpProtocolTools([{ client: {} as Client, name: "large_server" }]).find(
+            (candidate) => candidate.name === "list_mcp_tools",
+        );
+
+        const blocks = tool?.toLLM({
+            tools: Array.from({ length: 10_000 }, (_, index) => ({
+                description: "x".repeat(1_000),
+                name: `tool_${String(index)}`,
+            })),
+        } as never);
+
+        expect(blocks).toHaveLength(1);
+        expect(blocks?.[0]).toMatchObject({ type: "text" });
+        if (blocks?.[0]?.type !== "text") throw new Error("Expected bounded metadata text.");
+        expect(Buffer.byteLength(blocks[0].text)).toBeLessThanOrEqual(512 * 1024);
+        expect(blocks[0].text).toContain("[truncated]");
+    });
+
+    it("bounds resource contents before returning them to the model", () => {
+        const tool = createMcpProtocolTools([{ client: {} as Client, name: "large_server" }]).find(
+            (candidate) => candidate.name === "read_mcp_resource",
+        );
+
+        const blocks = tool?.toLLM({
+            contents: Array.from({ length: 1_000 }, (_, index) => ({
+                text: `${String(index)}:${"🔥".repeat(10_000)}`,
+                uri: `resource://${String(index)}`,
+            })),
+        } as never);
+        const text = blocks
+            ?.filter((block) => block.type === "text")
+            .map((block) => block.text)
+            .join("");
+
+        expect(Buffer.byteLength(text ?? "")).toBeLessThanOrEqual(512 * 1024);
+        expect(text).toContain("[truncated]");
+    });
+
+    it("reviews prompt loading because prompt content can come from an external server", () => {
+        const tool = createMcpProtocolTools([
+            { client: {} as Client, name: "deployment_service" },
+        ]).find((candidate) => candidate.name === "get_mcp_prompt");
+
+        expect(tool?.shouldReviewInAutoMode({} as never, createJustBashToolHarness().context)).toBe(
+            true,
+        );
+        expect(
+            tool?.describeAutoPermissionAction?.(
+                { name: "release_notes", server: "deployment_service" } as never,
+                createJustBashToolHarness().context,
+            ),
+        ).toBe(
+            'loading prompt "release notes" from "deployment service". Access: the MCP server can return instructions from outside Rig’s local sandbox',
+        );
+    });
+
     it("makes the dynamic call tool own its external-boundary description", () => {
         const tool = createMcpProtocolTools([
             { client: {} as Client, name: "deployment_service" },

@@ -67,8 +67,8 @@ describe("successful Auto permission reviews", () => {
         const toolRow = completed.rows.findIndex((row) => row.includes("INLINE_APPROVAL_MARKER"));
         expect(toolRow).toBeGreaterThanOrEqual(0);
         expect(completed.text).not.toContain("Approved automatically");
-        expect(completed.text).not.toContain("Risk: low");
-        expect(completed.text).not.toContain("User authorization: high");
+        expect(completed.text).not.toContain("Risk: Low");
+        expect(completed.text).not.toContain("User authorization: High");
         expect(completed.text).not.toContain(
             "The user explicitly authorized this harmless home-directory check.",
         );

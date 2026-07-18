@@ -2,6 +2,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { Value } from "@sinclair/typebox/value";
 
 import { assistantMessageToAgentMessage } from "./assistantMessageToAgentMessage.js";
+import { collectToolCallIds } from "./collectToolCallIds.js";
 import { createAmbiguousToolCallRejection } from "./createAmbiguousToolCallRejection.js";
 import type { AgentContext } from "./context/AgentContext.js";
 import type { BashSessionActivity } from "./context/BashContext.js";
@@ -15,6 +16,7 @@ import { prepareProviderMessageImages } from "./prepareProviderMessageImages.js"
 import { replaceLastTurnToolResultImages } from "./replaceLastTurnToolResultImages.js";
 import { createSystemPrompt } from "./createSystemPrompt.js";
 import { ToolLockManager } from "./ToolLockManager.js";
+import { toToolExecutionEndResult } from "./toToolExecutionEndResult.js";
 import { errorToMessage } from "../errorToMessage.js";
 import type {
     AgentBlock,
@@ -186,6 +188,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
     const toolsByName = new Map(options.tools.map((tool) => [tool.name, tool]));
     const toolContext = options.context;
     const toolLocks = new ToolLockManager();
+    const usedToolCallIds = collectToolCallIds(transcript);
 
     let iteration = 0;
     let contextOverflowRecoveryAttempted = false;
@@ -259,8 +262,9 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                 if (
                     assistantMessage.stopReason === "error" &&
                     inferenceRetryCount < INFERENCE_MAX_RETRIES &&
+                    !emittedContent &&
                     (assistantMessage.errorCode === "incomplete_response" ||
-                        (!emittedContent && isRetryableInferenceError(assistantMessage)))
+                        isRetryableInferenceError(assistantMessage))
                 ) {
                     inferenceRetryCount += 1;
                     if (assistantMessage.errorCode === "incomplete_response") {
@@ -371,6 +375,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
             assistantMessage,
             idFactory,
             { providerId: options.provider.id, requestedModelId: model.id },
+            usedToolCallIds,
         );
         if (ambiguousToolCallRejection !== undefined) {
             await options.onEvent?.({
@@ -396,6 +401,9 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         }
 
         providerMessages.push(assistantMessage);
+        for (const block of assistantMessage.content) {
+            if (block.type === "toolCall") usedToolCallIds.add(block.id);
+        }
 
         const agentMessage = assistantMessageToAgentMessage(assistantMessage, idFactory, {
             providerId: options.provider.id,
@@ -485,11 +493,15 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                                 toolCall,
                             };
                         }
-                        await options.debug?.record("tool-call", {
-                            iteration,
-                            toolCall,
-                        });
-                        await options.onEvent?.({ type: "tool_execution_start", toolCall });
+                        await ignoreOptionalFailure(() =>
+                            options.debug?.record("tool-call", {
+                                iteration,
+                                toolCall,
+                            }),
+                        );
+                        await ignoreOptionalFailure(() =>
+                            options.onEvent?.({ type: "tool_execution_start", toolCall }),
+                        );
                         const result = await executeToolCall(toolCall, toolsByName, toolContext, {
                             batchId: agentMessage.id,
                             messages: transcript,
@@ -497,69 +509,75 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                             now,
                             toolCallIndex: toolCalls.indexOf(toolCall),
                             onProgress: (display) => {
-                                void options.onEvent?.({
-                                    type: "tool_execution_progress",
-                                    display,
-                                    toolCallId: toolCall.id,
-                                });
+                                void ignoreOptionalFailure(() =>
+                                    options.onEvent?.({
+                                        type: "tool_execution_progress",
+                                        display,
+                                        toolCallId: toolCall.id,
+                                    }),
+                                );
                             },
                             onStatus: (status) => {
-                                void options.onEvent?.({
-                                    type: "tool_execution_status",
-                                    status,
-                                    toolCallId: toolCall.id,
-                                });
+                                void ignoreOptionalFailure(() =>
+                                    options.onEvent?.({
+                                        type: "tool_execution_status",
+                                        status,
+                                        toolCallId: toolCall.id,
+                                    }),
+                                );
                             },
                             onPermissionReview: (review) =>
-                                options.onEvent?.({
-                                    type: "permission_review",
-                                    toolCallId: toolCall.id,
-                                    ...review,
-                                }),
+                                ignoreOptionalFailure(() =>
+                                    options.onEvent?.({
+                                        type: "permission_review",
+                                        toolCallId: toolCall.id,
+                                        ...review,
+                                    }),
+                                ),
                             onRawResult: (rawResult) =>
-                                options.debug?.record("tool-raw-result", {
-                                    iteration,
-                                    rawResult,
-                                    toolCall,
-                                }),
+                                ignoreOptionalFailure(() =>
+                                    options.debug?.record("tool-raw-result", {
+                                        iteration,
+                                        rawResult,
+                                        toolCall,
+                                    }),
+                                ),
                             onError: (error) =>
-                                options.debug?.record("tool-error", {
-                                    error,
-                                    iteration,
-                                    toolCall,
-                                }),
+                                ignoreOptionalFailure(() =>
+                                    options.debug?.record("tool-error", {
+                                        error,
+                                        iteration,
+                                        toolCall,
+                                    }),
+                                ),
                             provider: options.provider,
                             ...(options.signal === undefined ? {} : { signal: options.signal }),
                         });
                         const completedBeforeAbort = options.signal?.aborted !== true;
-                        await options.debug?.record("tool-result", {
-                            iteration,
-                            result,
-                            toolCall,
-                        });
-                        await options.onEvent?.({
-                            type: "tool_execution_end",
-                            result: {
-                                type: "tool_result",
-                                toolCallId: result.toolCallId,
-                                toolName: result.toolName,
-                                display: result.display,
-                                ...(result.failure === undefined
-                                    ? {}
-                                    : { failure: result.failure }),
-                                ...(result.isError === undefined
-                                    ? {}
-                                    : { isError: result.isError }),
-                                ...(result.presentation === undefined
-                                    ? {}
-                                    : { presentation: result.presentation }),
-                            },
-                        });
-                        await options.onEvent?.({
-                            type: "background_processes_changed",
-                            processes: toolContext.bash.activeSessions?.() ?? [],
-                            running: toolContext.bash.activeSessionCount?.() ?? 0,
-                        });
+                        const durableResult =
+                            options.signal?.aborted && !completedBeforeAbort
+                                ? interruptedToolResultBlock(toolCall, toolsByName)
+                                : result;
+                        await ignoreOptionalFailure(() =>
+                            options.debug?.record("tool-result", {
+                                iteration,
+                                result: durableResult,
+                                toolCall,
+                            }),
+                        );
+                        await ignoreOptionalFailure(() =>
+                            options.onEvent?.({
+                                type: "tool_execution_end",
+                                result: toToolExecutionEndResult(durableResult),
+                            }),
+                        );
+                        await ignoreOptionalFailure(() =>
+                            options.onEvent?.({
+                                type: "background_processes_changed",
+                                processes: toolContext.bash.activeSessions?.() ?? [],
+                                running: toolContext.bash.activeSessionCount?.() ?? 0,
+                            }),
+                        );
                         return { completedBeforeAbort, result, toolCall };
                     }),
                 ),
@@ -606,6 +624,14 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
             reportedTokens: assistantMessage.usage.totalTokens,
         });
         await appendSteering(options, transcript, contextTranscript, providerMessages, now);
+    }
+}
+
+async function ignoreOptionalFailure(callback: () => void | Promise<void>): Promise<void> {
+    try {
+        await callback();
+    } catch {
+        // Optional telemetry and live observers cannot invalidate durable tool execution.
     }
 }
 
@@ -917,9 +943,15 @@ async function executeToolCall(
         });
     }
 
+    if (context.permissions === undefined) {
+        return errorToolResultBlock(
+            toolCall,
+            "This action requires an available permission context.",
+        );
+    }
+
     if (
         tool.requiresAutoOrFullAccess &&
-        context.permissions?.mode !== undefined &&
         context.permissions.mode !== "auto" &&
         context.permissions.mode !== "full_access"
     ) {
@@ -943,6 +975,7 @@ async function executeToolCall(
             }
             const action = tool.describeAutoPermissionAction(toolCall.arguments as never, context);
             const review = await reviewAutoPermission({
+                action,
                 args: toolCall.arguments,
                 messages: options.messages,
                 model: options.model,

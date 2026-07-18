@@ -6,10 +6,21 @@ import type {
     KimiChatCompletionChunk,
     KimiChatRequest,
 } from "./kimi-chat-types.js";
+import { createKimiOpenAIClient } from "./createKimiOpenAIClient.js";
 import { createKimiProvider } from "./kimi.js";
 import { modelMoonshotKimiK3 } from "./models.js";
 
 describe("Kimi provider", () => {
+    it("disables SDK request retries so the shared agent loop owns retry policy", () => {
+        const client = createKimiOpenAIClient({
+            baseUrl: "https://api.kimi.com/coding/v1",
+            headers: {},
+            token: "kimi-token",
+        });
+
+        expect((client as unknown as { maxRetries: number }).maxRetries).toBe(0);
+    });
+
     it("sends the native K3 request and streams reasoning, text, parallel tools, and usage", async () => {
         let captured: KimiChatRequest | undefined;
         const clientFactory = vi.fn(

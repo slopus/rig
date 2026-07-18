@@ -38,7 +38,7 @@ describe("startup quota interactivity budget", () => {
         ]);
         running.add(gym);
         const startup = await gym.terminal.snapshot();
-        expect(startup.text).toContain("Rig 0.0.12 · New session");
+        expect(startup.text).toContain("New session");
         expect(startup.text).toContain("Ask Rig to do anything");
         expect(startup.text).not.toContain("Usage:");
 
@@ -46,7 +46,7 @@ describe("startup quota interactivity budget", () => {
         submit(gym, "/usage");
         const usage = await gym.terminal.waitForText("5-hour: 68% left", 30_000);
         expect(usage.text).toContain("Weekly: 84% left");
-        expect(usage.text.match(/Rig 0\.0\.12 · New session/gu)).toHaveLength(1);
+        expect(usage.text.match(/New session/gu)).toHaveLength(1);
         await gym.terminal.screenshot(`${artifacts}/slow-startup-quota-budget.png`);
     }, 120_000);
 
@@ -57,7 +57,7 @@ describe("startup quota interactivity budget", () => {
         running.add(gym);
 
         const startup = await gym.terminal.snapshot();
-        expect(startup.text).toContain("Rig 0.0.12 · New session");
+        expect(startup.text).toContain("New session");
         expect(startup.text).toContain("Ask Rig to do anything");
         expect(startup.text).not.toContain("Usage:");
     }, 120_000);

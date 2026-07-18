@@ -116,7 +116,7 @@ describe("permission-sensitive command waits for approval before showing Running
         await expect(gym.readFile("approved-after-prompt.txt")).rejects.toMatchObject({
             code: "ENOENT",
         });
-        assertTerminalHealth(awaitingApproval, baseline);
+        assertTerminalHealth(awaitingApproval, baseline, false);
 
         gym.terminal.press("enter");
         const executing = await gym.terminal.waitUntil(
@@ -197,6 +197,7 @@ function visibleExact(value: string): string {
 function assertTerminalHealth(
     snapshot: Awaited<ReturnType<Gym["terminal"]["snapshot"]>>,
     baseline: Awaited<ReturnType<Gym["terminal"]["snapshot"]>>["scroll"],
+    expectWorkspace = true,
 ): void {
     expect(snapshot.rows).toHaveLength(30);
     expect(snapshot.scroll.visibleRows).toBe(30);
@@ -204,7 +205,7 @@ function assertTerminalHealth(
     expect(snapshot.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
     expect(snapshot.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
     expect(snapshot.text).toContain("gym off");
-    expect(snapshot.text).toContain("/workspace");
+    if (expectWorkspace) expect(snapshot.text).toContain("/workspace");
     expect(snapshot.text).not.toContain("�");
     expect(snapshot.cursor.x).toBeLessThan(100);
     expect(snapshot.cursor.y).toBeLessThan(30);

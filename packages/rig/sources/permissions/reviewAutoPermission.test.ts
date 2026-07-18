@@ -5,7 +5,9 @@ import {
     defineModel,
     defineProvider,
     type AssistantMessage,
+    type Context,
     type InferenceStream,
+    type Model,
 } from "../providers/types.js";
 import { reviewAutoPermission } from "./reviewAutoPermission.js";
 
@@ -20,6 +22,7 @@ describe("reviewAutoPermission", () => {
 
         await expect(
             reviewAutoPermission({
+                action: 'running "pnpm test". Access: unrestricted filesystem and network access',
                 args: { sandbox_permissions: "require_escalated" },
                 messages: [
                     {
@@ -57,6 +60,7 @@ describe("reviewAutoPermission", () => {
 
         await expect(
             reviewAutoPermission({
+                action: 'running "pnpm test". Access: unrestricted filesystem and network access',
                 args: { sandbox_permissions: "require_escalated" },
                 messages: oversizedUserHistory(),
                 model,
@@ -85,6 +89,7 @@ describe("reviewAutoPermission", () => {
 
             await expect(
                 reviewAutoPermission({
+                    action: 'running "pnpm test". Access: unrestricted filesystem and network access',
                     args: { sandbox_permissions: "require_escalated" },
                     messages: oversizedUserHistory(),
                     model,
@@ -101,6 +106,30 @@ describe("reviewAutoPermission", () => {
             expect(stream).toHaveBeenCalledOnce();
         },
     );
+
+    it("sends the tool-owned action description to the reviewer", async () => {
+        const { model, provider, requests } = reviewer({
+            decision: "allow",
+            reason: "This is a routine local development action.",
+            risk: "low",
+            userAuthorization: "low",
+        });
+        const action =
+            'writing "/workspace/.git/config". Access: protected Git control path inside the workspace';
+
+        await reviewAutoPermission({
+            action,
+            args: { file_path: "/workspace/.git/config" },
+            messages: [],
+            model,
+            now: () => 0,
+            provider,
+            toolName: "Write",
+        });
+
+        const request = requests[0];
+        expect(request?.messages[0]?.content).toContain(`"description":${JSON.stringify(action)}`);
+    });
 });
 
 function oversizedUserHistory(): Message[] {
@@ -155,19 +184,22 @@ function reviewer(review: {
             totalTokens: 0,
         },
     };
-    const stream = vi.fn(
-        (): InferenceStream => ({
+    const requests: Context[] = [];
+    const stream = vi.fn((_model: Model, context: Context): InferenceStream => {
+        requests.push(context);
+        return {
             async *[Symbol.asyncIterator]() {
                 yield { message, reason: "stop" as const, type: "done" as const };
             },
             async result() {
                 return message;
             },
-        }),
-    );
+        };
+    });
     return {
         model,
         provider: defineProvider({ id: "codex", models: [model], stream }),
+        requests,
         stream,
     };
 }

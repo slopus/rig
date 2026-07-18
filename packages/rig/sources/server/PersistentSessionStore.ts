@@ -67,7 +67,13 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
     #now: () => number;
     #persistentGlobalEventQueue: PersistentGlobalEventQueue | undefined;
     #secrets: SecretRegistry;
-    #sessions = new Map<string, InMemorySession>();
+    #sessions = new Map<string, WeakRef<InMemorySession>>();
+    #sessionFinalizer = new FinalizationRegistry<{
+        id: string;
+        reference: WeakRef<InMemorySession>;
+    }>(({ id, reference }) => {
+        if (this.#sessions.get(id) === reference) this.#sessions.delete(id);
+    });
     #taskDrain: TaskDrain | undefined;
 
     constructor(options: PersistentSessionStoreOptions) {
@@ -129,7 +135,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     "INSERT OR IGNORE INTO project_secret_attachments (cwd, secret_id) VALUES (?, ?)",
                 )
                 .run(cwd, secretId);
-            for (const candidate of this.#sessions.values()) {
+            for (const candidate of this.#cachedSessions()) {
                 if (normalizeProjectCwd(candidate.snapshot().cwd) === cwd) {
                     candidate.attachSecret(secretId, { scope });
                 }
@@ -191,7 +197,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             this.#database
                 .prepare("DELETE FROM project_secret_attachments WHERE cwd = ? AND secret_id = ?")
                 .run(cwd, secretId);
-            for (const candidate of this.#sessions.values()) {
+            for (const candidate of this.#cachedSessions()) {
                 if (normalizeProjectCwd(candidate.snapshot().cwd) === cwd) {
                     candidate.detachSecret(secretId, { scope });
                 }
@@ -224,7 +230,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             restore: state,
             ...(this.#taskDrain === undefined ? {} : { taskDrain: this.#taskDrain }),
         });
-        this.#sessions.set(session.id, session);
+        this.#cacheSession(session);
         this.#transaction(() => {
             for (const message of state.messages) {
                 this.upsertMessage(session.id, message);
@@ -258,7 +264,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             ...(this.#taskDrain === undefined ? {} : { taskDrain: this.#taskDrain }),
             secretRegistry: this.#secrets,
         });
-        this.#sessions.set(session.id, session);
+        this.#cacheSession(session);
         session.emitCreatedEvent();
         return session;
     }
@@ -270,14 +276,16 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
     }
 
     get(sessionId: string): InMemorySession | undefined {
-        const existing = this.#sessions.get(sessionId);
+        const existingReference = this.#sessions.get(sessionId);
+        const existing = existingReference?.deref();
         if (existing !== undefined) {
             return existing;
         }
+        if (existingReference !== undefined) this.#sessions.delete(sessionId);
 
         const session = this.#loadSession(sessionId);
         if (session !== undefined) {
-            this.#sessions.set(sessionId, session);
+            this.#cacheSession(session);
         }
         return session;
     }
@@ -551,7 +559,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 .run(secretId);
         });
         this.#secrets.unregister(secretId);
-        for (const session of this.#sessions.values()) {
+        for (const session of this.#cachedSessions()) {
             session.detachSecret(secretId, { scope: "project" });
             session.detachSecret(secretId, { scope: "session" });
         }
@@ -577,7 +585,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         const rows = this.#database
             .prepare(
                 `
-                SELECT DISTINCT sessions.id
+                SELECT DISTINCT sessions.id, sessions.active_run_id
                 FROM sessions
                 LEFT JOIN queued_runs ON queued_runs.session_id = sessions.id
                 WHERE sessions.status IN ('queued', 'running')
@@ -589,6 +597,13 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
 
         for (const row of rows) {
             const sessionId = readString(row, "id");
+            const activeRunId = readOptionalString(row, "active_run_id");
+            if (
+                activeRunId !== undefined &&
+                this.#reconcileTerminalRunState(sessionId, activeRunId)
+            ) {
+                continue;
+            }
             const session = this.get(sessionId);
             if (session === undefined) {
                 continue;
@@ -627,9 +642,63 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         }
     }
 
+    #reconcileTerminalRunState(sessionId: string, runId: string): boolean {
+        const row = this.#database
+            .prepare(
+                `
+                SELECT type, data_json
+                FROM session_events
+                WHERE session_id = ?
+                    AND type IN ('run_finished', 'run_error')
+                    AND json_extract(data_json, '$.runId') = ?
+                ORDER BY seq DESC
+                LIMIT 1
+                `,
+            )
+            .get(sessionId, runId);
+        if (row === undefined) return false;
+
+        const type = readString(row, "type");
+        const data = JSON.parse(readString(row, "data_json")) as { stopReason?: string };
+        const status =
+            type === "run_error"
+                ? "error"
+                : data.stopReason === "aborted"
+                  ? "aborted"
+                  : "completed";
+        this.#transaction(() => {
+            this.#database
+                .prepare(
+                    `
+                    UPDATE sessions
+                    SET
+                        status = ?,
+                        active_run_id = NULL,
+                        active_since_ms = NULL,
+                        interrupted = 0,
+                        interruption_json = NULL,
+                        last_event_id = (
+                            SELECT event_id
+                            FROM session_events
+                            WHERE session_id = ?
+                            ORDER BY seq DESC
+                            LIMIT 1
+                        ),
+                        updated_at_ms = ?
+                    WHERE id = ?
+                    `,
+                )
+                .run(status, sessionId, this.#now(), sessionId);
+            this.#database
+                .prepare("DELETE FROM queued_runs WHERE session_id = ? AND run_id = ?")
+                .run(sessionId, runId);
+        });
+        return true;
+    }
+
     async prepareForShutdown(reason: SessionInterruption["reason"]): Promise<void> {
         this.#taskDrain?.beginClose();
-        const closingSessions = new Set(this.#sessions.values());
+        const closingSessions = new Set(this.#cachedSessions());
         const cleanup = [...closingSessions].map((session) => session.beginShutdown());
         let repairError: unknown;
         try {
@@ -637,7 +706,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         } catch (error) {
             repairError = error;
         }
-        for (const session of this.#sessions.values()) {
+        for (const session of this.#cachedSessions()) {
             if (closingSessions.has(session)) continue;
             cleanup.push(session.beginShutdown());
         }
@@ -1224,6 +1293,28 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             restore,
             ...(this.#taskDrain === undefined ? {} : { taskDrain: this.#taskDrain }),
         });
+    }
+
+    #cacheSession(session: InMemorySession): void {
+        const previous = this.#sessions.get(session.id);
+        if (previous !== undefined) this.#sessionFinalizer.unregister(previous);
+        const reference = new WeakRef(session);
+        this.#sessions.set(session.id, reference);
+        this.#sessionFinalizer.register(session, { id: session.id, reference }, reference);
+    }
+
+    #cachedSessions(): InMemorySession[] {
+        const sessions: InMemorySession[] = [];
+        for (const [id, reference] of this.#sessions) {
+            const session = reference.deref();
+            if (session === undefined) {
+                this.#sessions.delete(id);
+                this.#sessionFinalizer.unregister(reference);
+                continue;
+            }
+            sessions.push(session);
+        }
+        return sessions;
     }
 
     #projectSecrets(cwd: string): readonly string[] {

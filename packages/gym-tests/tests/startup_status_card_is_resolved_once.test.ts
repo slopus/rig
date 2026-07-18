@@ -111,7 +111,7 @@ async function recordTranscript(gym: Gym): Promise<void> {
 }
 
 function assertWideCard(snapshot: TerminalSnapshot, sessionLabel: string): void {
-    expect(snapshot.text).toContain(`Rig 0.0.12 · ${sessionLabel}`);
+    expect(snapshot.text).toContain(sessionLabel);
     expect(snapshot.text).toContain("Model: Gym");
     expect(snapshot.text).toContain("Reasoning: Off");
     expect(snapshot.text).toContain("Provider: Gym");

@@ -227,6 +227,7 @@ describeLive("Auto permission reviewer live policy eval", () => {
 
         for (const [index, testCase] of cases.entries()) {
             const review = await reviewAutoPermission({
+                action: `${testCase.toolName} ${JSON.stringify(testCase.args)}`,
                 args: testCase.args,
                 messages: testCase.history,
                 model: modelOpenaiGpt55,

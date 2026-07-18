@@ -13,6 +13,8 @@ export const TRANSIENT_INFERENCE_EVENT_TYPES = [
     "toolcall_end",
     "done",
     "error",
+    "tool_execution_progress",
+    "tool_execution_status",
 ] as const;
 
 const transientInferenceEventTypes = new Set<string>(TRANSIENT_INFERENCE_EVENT_TYPES);

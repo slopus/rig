@@ -20,6 +20,42 @@ import { grokRunTerminalCommandTool } from "../tools/grok/run_terminal_command.j
 import { piBashTool } from "../tools/pi/bash.js";
 
 describe("Auto permissions", () => {
+    it("fails closed when any tool has no permission context", async () => {
+        const harness = createJustBashToolHarness();
+        delete harness.context.permissions;
+        const execute = vi.fn(() => ({ ok: true }));
+        const tool = defineTool({
+            name: "hosted_lookup",
+            label: "Hosted lookup",
+            description: "Looks up information through an external service.",
+            arguments: Type.Object({ query: Type.String() }),
+            returnType: Type.Object({ ok: Type.Boolean() }),
+            shouldReviewInAutoMode: () => false,
+            execute,
+            toLLM: () => [{ type: "text", text: "Lookup completed." }],
+            toUI: () => "Completed hosted lookup",
+            locks: [],
+        });
+        const provider = autoReviewProvider("allow", {
+            arguments: { query: "release status" },
+            name: tool.name,
+        });
+        const agent = new Agent({
+            context: harness.context,
+            modelId: provider.models[0]?.id ?? "",
+            printToConsole: false,
+            provider,
+            tools: [tool],
+        });
+
+        await agent.send("Look up the release status.");
+
+        expect(execute).not.toHaveBeenCalled();
+        expect(JSON.stringify(agent.messages)).toContain(
+            "This action requires an available permission context.",
+        );
+    });
+
     it.each(["read_only", "workspace_write"] as const)(
         "describes the generic external boundary in %s mode",
         async (mode) => {
