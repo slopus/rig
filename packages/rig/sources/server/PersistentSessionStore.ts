@@ -46,6 +46,7 @@ import type { SecretAttachmentScope } from "../secrets/index.js";
 import { normalizeProjectCwd } from "./normalizeProjectCwd.js";
 import { initializeSessionDatabase } from "./initializeSessionDatabase.js";
 import type { ExternalToolCall, ExternalToolDefinition } from "../external-tools/index.js";
+import type { DurableSkillDefinition } from "../external-skills/index.js";
 
 export interface PersistentSessionStoreOptions {
     createRuntime?: InMemorySessionOptions["createRuntime"];
@@ -340,12 +341,15 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 run.kind,
                 run.text,
                 JSON.stringify(run.userMessage),
-                run.externalTools === undefined && run.systemPrompt === undefined
+                run.externalTools === undefined &&
+                    run.skills === undefined &&
+                    run.systemPrompt === undefined
                     ? null
                     : JSON.stringify({
                           ...(run.externalTools === undefined
                               ? {}
                               : { externalTools: run.externalTools }),
+                          ...(run.skills === undefined ? {} : { skills: run.skills }),
                           ...(run.systemPrompt === undefined
                               ? {}
                               : { systemPrompt: run.systemPrompt }),
@@ -748,6 +752,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     append_system_prompt,
                     system_prompt,
                     external_tools_json,
+                    durable_skills_json,
                     status,
                     active_run_id,
                     active_since_ms,
@@ -774,7 +779,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     created_at_ms,
                     updated_at_ms
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     agent_id = excluded.agent_id,
                     session_kind = excluded.session_kind,
@@ -795,6 +800,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     append_system_prompt = excluded.append_system_prompt,
                     system_prompt = excluded.system_prompt,
                     external_tools_json = excluded.external_tools_json,
+                    durable_skills_json = excluded.durable_skills_json,
                     status = excluded.status,
                     active_run_id = excluded.active_run_id,
                     active_since_ms = excluded.active_since_ms,
@@ -842,6 +848,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 state.appendSystemPrompt ?? null,
                 state.systemPrompt ?? null,
                 JSON.stringify(state.externalTools ?? []),
+                JSON.stringify(state.skills ?? []),
                 state.status,
                 state.activeRunId ?? null,
                 state.activeSince ?? null,
@@ -924,13 +931,14 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     tool_call_id,
                     tool_call_index,
                     definition_json,
+                    skill_json,
                     arguments_json,
                     status,
                     resolution_json,
                     consumed,
                     created_at_ms,
                     resolved_at_ms
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     status = excluded.status,
                     resolution_json = excluded.resolution_json,
@@ -946,6 +954,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 call.toolCallId,
                 call.toolCallIndex,
                 JSON.stringify(call.definition),
+                call.skill === undefined ? null : JSON.stringify(call.skill),
                 JSON.stringify(call.arguments),
                 call.status,
                 call.resolution === undefined ? null : JSON.stringify(call.resolution),
@@ -1129,6 +1138,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                         ? {}
                         : (JSON.parse(integrationConfigJson) as {
                               externalTools?: readonly ExternalToolDefinition[];
+                              skills?: readonly DurableSkillDefinition[];
                               systemPrompt?: string | null;
                           });
                 return {
@@ -1235,6 +1245,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             externalTools: JSON.parse(
                 readString(row, "external_tools_json"),
             ) as ExternalToolDefinition[],
+            skills: JSON.parse(readString(row, "durable_skills_json")) as DurableSkillDefinition[],
             modelId,
             models: JSON.parse(readString(row, "models_json")) as Model[],
             providerId: readString(row, "provider_id"),
@@ -1395,6 +1406,7 @@ function readString(row: Record<string, unknown>, key: string): string {
 
 function readExternalToolCallRow(row: Record<string, unknown>): ExternalToolCall {
     const resolutionJson = readOptionalString(row, "resolution_json");
+    const skillJson = readOptionalString(row, "skill_json");
     const resolvedAt = readOptionalNumber(row, "resolved_at_ms");
     return {
         arguments: JSON.parse(readString(row, "arguments_json")),
@@ -1402,6 +1414,9 @@ function readExternalToolCallRow(row: Record<string, unknown>): ExternalToolCall
         consumed: readNumber(row, "consumed") !== 0,
         createdAt: readNumber(row, "created_at_ms"),
         definition: JSON.parse(readString(row, "definition_json")) as ExternalToolDefinition,
+        ...(skillJson === undefined
+            ? {}
+            : { skill: JSON.parse(skillJson) as DurableSkillDefinition }),
         id: readString(row, "id"),
         runId: readString(row, "run_id"),
         sessionId: readString(row, "session_id"),

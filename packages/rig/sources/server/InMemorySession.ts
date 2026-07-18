@@ -117,6 +117,7 @@ import {
     type ResolveExternalToolCallResponse,
 } from "../external-tools/index.js";
 import type { AgentMessage, ToolResultBlock } from "../agent/types.js";
+import { createDurableSkillTool, type DurableSkillDefinition } from "../external-skills/index.js";
 
 const MAX_RETAINED_EXTERNAL_TOOL_CALLS = 1_000;
 
@@ -137,6 +138,7 @@ export interface PersistedQueuedRun {
     text: string;
     userMessage: UserMessage;
     externalTools?: readonly ExternalToolDefinition[];
+    skills?: readonly DurableSkillDefinition[];
     systemPrompt?: string | null;
 }
 
@@ -177,6 +179,7 @@ export interface PersistedSessionState {
     tools: readonly string[];
     externalToolCalls?: readonly ExternalToolCall[];
     externalTools?: readonly ExternalToolDefinition[];
+    skills?: readonly DurableSkillDefinition[];
     systemPrompt?: string;
     workflows?: readonly PersistedWorkflowRun[];
     workflowsEnabled?: boolean;
@@ -304,6 +307,7 @@ export class InMemorySession {
     #goal: SessionGoal | undefined;
     #externalToolCalls = new Map<string, ExternalToolCall>();
     #externalToolDefinitions: readonly ExternalToolDefinition[] = [];
+    #durableSkillDefinitions: readonly DurableSkillDefinition[] = [];
     #externalToolInstallation: ExternalToolInstallation = {
         installed: new Set(),
         shadowed: new Map(),
@@ -427,6 +431,7 @@ export class InMemorySession {
             options.restore?.appendSystemPrompt ?? options.request.appendSystemPrompt;
         this.#systemPrompt = options.restore?.systemPrompt;
         this.#externalToolDefinitions = [...(options.restore?.externalTools ?? [])];
+        this.#durableSkillDefinitions = [...(options.restore?.skills ?? [])];
         for (const call of options.restore?.externalToolCalls ?? []) {
             this.#externalToolCalls.set(call.id, cloneExternalToolCall(call));
         }
@@ -1703,6 +1708,7 @@ export class InMemorySession {
             workflows: this.listWorkflows(),
             backgroundProcesses: this.#runtime?.context.bash.activeSessions?.() ?? [],
             externalTools: this.#externalToolDefinitions.map((definition) => ({ ...definition })),
+            skills: this.#durableSkillDefinitions.map((definition) => ({ ...definition })),
             pendingExternalToolCalls: this.externalToolCalls({ status: "pending" }),
             ...(this.#systemPrompt !== undefined ? { systemPrompt: this.#systemPrompt } : {}),
             ...(this.#goal !== undefined ? { goal: { ...this.#goal } } : {}),
@@ -1791,6 +1797,7 @@ export class InMemorySession {
             tools: this.#tools,
             externalToolCalls: this.externalToolCalls(),
             externalTools: this.#externalToolDefinitions.map((definition) => ({ ...definition })),
+            skills: this.#durableSkillDefinitions.map((definition) => ({ ...definition })),
             ...(this.#systemPrompt !== undefined ? { systemPrompt: this.#systemPrompt } : {}),
             workflowsEnabled: this.#workflowsEnabled,
             workflows: [...this.#workflowRuns.values()].map((run) => ({
@@ -1863,6 +1870,9 @@ export class InMemorySession {
                 : {
                       externalTools: request.externalTools.map((definition) => ({ ...definition })),
                   }),
+            ...(request.skills === undefined
+                ? {}
+                : { skills: request.skills.map((definition) => ({ ...definition })) }),
             ...(request.systemPrompt === undefined ? {} : { systemPrompt: request.systemPrompt }),
         };
 
@@ -1907,9 +1917,13 @@ export class InMemorySession {
 
     steer(request: SteerMessageRequest): SteerMessageResponse {
         this.#assertAcceptingWork();
-        if (request.externalTools !== undefined || request.systemPrompt !== undefined) {
+        if (
+            request.externalTools !== undefined ||
+            request.skills !== undefined ||
+            request.systemPrompt !== undefined
+        ) {
             throw new Error(
-                "External functions and the system prompt can only be changed by submitting a message.",
+                "External functions, durable skills, and the system prompt can only be changed by submitting a message.",
             );
         }
         this.#restartMetadataSettlement();
@@ -2181,6 +2195,15 @@ export class InMemorySession {
         if (call.status !== "pending") {
             throw new Error("This external function call is no longer waiting for a result.");
         }
+        if (
+            call.skill !== undefined &&
+            resolution.status === "completed" &&
+            (resolution.content !== undefined || typeof resolution.output !== "string")
+        ) {
+            throw new Error(
+                "A durable skill result must provide the complete SKILL.md as text output.",
+            );
+        }
         call.resolution = cloneExternalResolution(resolution);
         call.resolvedAt = this.#now();
         call.status = resolution.status;
@@ -2205,6 +2228,7 @@ export class InMemorySession {
             toolCallIndex: number;
         },
         signal?: AbortSignal,
+        skill?: DurableSkillDefinition,
     ): Promise<ExternalToolCallResolution> {
         const runId = this.#activeRun?.runId;
         if (runId === undefined) throw new Error("The external function has no active run.");
@@ -2227,6 +2251,7 @@ export class InMemorySession {
             status: "pending",
             toolCallId: request.toolCallId,
             toolCallIndex: request.toolCallIndex,
+            ...(skill === undefined ? {} : { skill: { ...skill } }),
         };
         if (existing === undefined) {
             this.#externalToolCalls.set(call.id, call);
@@ -2262,10 +2287,12 @@ export class InMemorySession {
             throw new Error(`External function ${call.definition.name} has no result.`);
         }
         const failed = resolution.status === "failed";
+        const display =
+            call.skill === undefined
+                ? `External function ${call.definition.name} ${failed ? "failed" : "completed"}`
+                : `Skill ${call.skill.name} ${failed ? "could not be read" : "read"}`;
         return {
-            display: failed
-                ? `External function ${call.definition.name} failed`
-                : `External function ${call.definition.name} completed`,
+            display,
             ...(failed
                 ? {
                       failure: {
@@ -2714,6 +2741,9 @@ export class InMemorySession {
             },
             sessionId: this.#agentMetadata.rootSessionId,
             ...(this.#systemPrompt !== undefined ? { systemPrompt: this.#systemPrompt } : {}),
+            ...(this.#durableSkillDefinitions.length === 0
+                ? {}
+                : { durableSkills: this.#durableSkillDefinitions }),
             tasks: {
                 create: (request) => this.#taskSession().createTask(request),
                 get: (taskId) => this.#taskSession().getTask(taskId),
@@ -2809,6 +2839,12 @@ export class InMemorySession {
             if (this.#runtime !== undefined) this.#installExternalTools(this.#runtime);
             changed = true;
         }
+        if (queued.skills !== undefined) {
+            this.#durableSkillDefinitions = queued.skills.map((definition) => ({ ...definition }));
+            this.#runtime?.agent.setDurableSkills(this.#durableSkillDefinitions);
+            if (this.#runtime !== undefined) this.#installExternalTools(this.#runtime);
+            changed = true;
+        }
         if (changed) this.#append("session_updated", { session: this.snapshot() });
         else this.#saveSession();
     }
@@ -2820,6 +2856,30 @@ export class InMemorySession {
                 invoke: (request, signal) => this.#invokeExternalTool(definition, request, signal),
             }),
         );
+        if (this.#durableSkillDefinitions.length > 0) {
+            externalTools.push(
+                createDurableSkillTool({
+                    skills: this.#durableSkillDefinitions,
+                    invoke: (skill, request, signal) =>
+                        this.#invokeExternalTool(
+                            {
+                                description: `Read the complete SKILL.md for ${skill.name}.`,
+                                label: "Read skill",
+                                name: "read_skill",
+                                parameters: {
+                                    additionalProperties: false,
+                                    properties: { name: { type: "string" } },
+                                    required: ["name"],
+                                    type: "object",
+                                },
+                            },
+                            request,
+                            signal,
+                            skill,
+                        ),
+                }),
+            );
+        }
         const replacement = replaceExternalTools(
             runtime.agent.tools,
             externalTools,
@@ -3380,6 +3440,7 @@ function cloneExternalToolCall(call: ExternalToolCall): ExternalToolCall {
     return {
         ...call,
         definition: { ...call.definition, parameters: { ...call.definition.parameters } },
+        ...(call.skill === undefined ? {} : { skill: { ...call.skill } }),
         ...(call.resolution === undefined
             ? {}
             : { resolution: cloneExternalResolution(call.resolution) }),

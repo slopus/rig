@@ -99,6 +99,22 @@ database.exec(\`
         PRIMARY KEY (session_id, run_id)
     );
 
+    CREATE TABLE external_tool_calls (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        run_id TEXT NOT NULL,
+        batch_id TEXT NOT NULL,
+        tool_call_id TEXT NOT NULL,
+        tool_call_index INTEGER NOT NULL,
+        definition_json TEXT NOT NULL,
+        arguments_json TEXT NOT NULL,
+        status TEXT NOT NULL,
+        resolution_json TEXT,
+        consumed INTEGER NOT NULL DEFAULT 0,
+        created_at_ms INTEGER NOT NULL,
+        resolved_at_ms INTEGER
+    );
+
     INSERT INTO sessions (
         id,
         agent_id,
@@ -145,6 +161,7 @@ const expectedSessionColumns = [
     "append_system_prompt",
     "context_messages_json",
     "docker_json",
+    "durable_skills_json",
     "elapsed_ms",
     "external_tools_json",
     "goal_json",
@@ -176,9 +193,15 @@ const externalCallsTable = database
 if (externalCallsTable?.name !== "external_tool_calls") {
     throw new Error("Missing migrated external_tool_calls table.");
 }
+const externalCallColumns = new Set(
+    database.prepare("PRAGMA table_info(external_tool_calls)").all().map((column) => column.name),
+);
+if (!externalCallColumns.has("skill_json")) {
+    throw new Error("Missing migrated external_tool_calls skill column.");
+}
 
 const version = database.prepare("PRAGMA user_version").get().user_version;
-if (version !== 2) throw new Error("Expected schema version 2, received " + String(version));
+if (version !== 3) throw new Error("Expected schema version 3, received " + String(version));
 
 const session = database
     .prepare("SELECT id, permission_mode, tasks_json, workflows_json FROM sessions WHERE id = ?")

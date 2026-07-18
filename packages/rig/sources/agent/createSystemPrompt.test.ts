@@ -45,6 +45,37 @@ describe("createSystemPrompt", () => {
         ).resolves.toBe("Exact external prompt.");
     });
 
+    it("appends configured durable skill metadata to an exact integration prompt", async () => {
+        const model = defineModel({
+            defaultThinkingLevel: "off",
+            id: "mock/model",
+            name: "Mock",
+            thinkingLevels: ["off"],
+        });
+        const prompt = await createSystemPrompt({
+            context: contextFor("/tmp/rig-durable-skill-prompt"),
+            durableSkills: [
+                {
+                    description: "Check a release using integration-owned instructions.",
+                    location: "durable",
+                    name: "release-check",
+                },
+            ],
+            instructions: "Internal instructions.",
+            messages: [],
+            model,
+            provider: providerFor("mock", model),
+            systemPrompt: "Exact external prompt.",
+        });
+
+        expect(prompt).toContain("Exact external prompt.\n\n# Skills");
+        expect(prompt).toContain("<name>release-check</name>");
+        expect(prompt).toContain("<location>durable</location>");
+        expect(prompt).toContain("<source>durable</source>");
+        expect(prompt).toContain("read_skill");
+        expect(prompt).not.toContain("Internal instructions.");
+    });
+
     afterEach(async () => {
         await Promise.all(
             tempDirs.splice(0).map((path) =>

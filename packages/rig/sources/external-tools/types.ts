@@ -1,4 +1,5 @@
 import type { ContentBlock } from "../agent/types.js";
+import type { DurableSkillDefinition } from "../external-skills/types.js";
 
 export type JsonSchema = Readonly<Record<string, unknown>>;
 
@@ -17,6 +18,7 @@ export interface ExternalToolCall {
     id: string;
     runId: string;
     sessionId: string;
+    skill?: DurableSkillDefinition;
     status: "pending" | "completed" | "failed" | "cancelled";
     toolCallId: string;
     toolCallIndex: number;

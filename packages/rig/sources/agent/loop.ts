@@ -48,6 +48,7 @@ import type {
 } from "../providers/types.js";
 import { requestAutoPermissionApproval, reviewAutoPermission } from "../permissions/index.js";
 import type { DebugLog } from "../debug/index.js";
+import type { DurableSkillDefinition } from "../external-skills/types.js";
 
 export interface RunAgentLoopOptions {
     appendSystemPrompt?: string;
@@ -58,6 +59,7 @@ export interface RunAgentLoopOptions {
     effort?: string;
     serviceTier?: ServiceTier;
     tools: readonly AnyDefinedTool[];
+    durableSkills?: readonly DurableSkillDefinition[];
     instructions?: string;
     messages: readonly Message[];
     /** Model-facing history, when the visible transcript has been compacted. */
@@ -183,6 +185,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         messages: contextTranscript,
         context: options.context,
         tools: options.tools,
+        ...(options.durableSkills === undefined ? {} : { durableSkills: options.durableSkills }),
     });
     const providerTools = options.tools.map(toProviderTool);
     const toolsByName = new Map(options.tools.map((tool) => [tool.name, tool]));

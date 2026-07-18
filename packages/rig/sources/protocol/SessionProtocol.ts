@@ -28,6 +28,7 @@ import type {
     ExternalToolDefinition,
     ResolveExternalToolCallResponse,
 } from "../external-tools/index.js";
+import type { DurableSkillDefinition } from "../external-skills/index.js";
 
 export type SessionStatus =
     | "idle"
@@ -164,6 +165,7 @@ export interface ProtocolSession {
     goal?: SessionGoal;
     backgroundProcesses?: readonly BashSessionActivity[];
     externalTools?: readonly ExternalToolDefinition[];
+    skills?: readonly DurableSkillDefinition[];
     pendingExternalToolCalls?: readonly ExternalToolCall[];
     systemPrompt?: string;
 }
@@ -392,6 +394,8 @@ export interface SubmitMessageRequest {
     interactive?: boolean;
     /** Replaces the external function set for this and subsequent runs when present. */
     externalTools?: readonly ExternalToolDefinition[];
+    /** Replaces the integration-owned durable skill set when present. */
+    skills?: readonly DurableSkillDefinition[];
     /** Replaces Rig's assembled system prompt. Null restores Rig's normal prompt. */
     systemPrompt?: string | null;
     text: string;

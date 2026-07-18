@@ -21,6 +21,7 @@ export type {
     WriteRemoteTerminalRequest,
 } from "../terminal/index.js";
 export type { GoalStatus, SessionGoal } from "../goals/index.js";
+export type { DurableSkillDefinition } from "../external-skills/index.js";
 export type { WorkflowRun, WorkflowRunStatus, WorkflowRunUpdate } from "../workflows/index.js";
 export {
     createEventIdFactory,

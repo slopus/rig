@@ -3,10 +3,12 @@ import { createPermissionInstructions } from "./createPermissionInstructions.js"
 import { loadAgentsMdInstructions } from "./loadAgentsMdInstructions.js";
 import { selectSystemPromptForModel } from "./selectSystemPromptForModel.js";
 import { loadSkillInstructions } from "./skills/loadSkillInstructions.js";
+import { formatSkillsForPrompt } from "./skills/formatSkillsForPrompt.js";
 import { systemMessageToText } from "./systemMessageToText.js";
 import type { AnyDefinedTool, Message } from "./types.js";
 import type { Model, Provider } from "../providers/types.js";
 import { createSecretInstructions } from "../secrets/index.js";
+import type { DurableSkillDefinition } from "../external-skills/types.js";
 
 export interface CreateSystemPromptOptions {
     appendSystemPrompt?: string;
@@ -18,12 +20,17 @@ export interface CreateSystemPromptOptions {
     messages: readonly Message[];
     context: AgentContext;
     tools?: readonly AnyDefinedTool[];
+    durableSkills?: readonly DurableSkillDefinition[];
 }
 
 export async function createSystemPrompt(
     options: CreateSystemPromptOptions,
 ): Promise<string | undefined> {
-    if (options.systemPrompt !== undefined) return options.systemPrompt;
+    if (options.systemPrompt !== undefined) {
+        const skillInstructions = formatSkillsForPrompt([], options.durableSkills ?? []);
+        if (skillInstructions === undefined) return options.systemPrompt;
+        return `${options.systemPrompt}\n\n${skillInstructions}`;
+    }
     const parts: string[] = [];
     const modelPrompt = selectSystemPromptForModel(options.provider, options.model);
     if (modelPrompt !== undefined && modelPrompt.length > 0) {
@@ -45,7 +52,10 @@ export async function createSystemPrompt(
         parts.push(agentsMdInstructions);
     }
 
-    const skillInstructions = await loadSkillInstructions(options.context.fs);
+    const skillInstructions = await loadSkillInstructions(
+        options.context.fs,
+        options.durableSkills ?? [],
+    );
     if (skillInstructions !== undefined) {
         parts.push(skillInstructions);
     }

@@ -12,6 +12,7 @@ import type { AnyDefinedTool, ContentBlock, Message, SystemMessage, UserMessage 
 import type { Model, Provider, ServiceTier } from "../providers/types.js";
 import type { PermissionMode } from "../permissions/index.js";
 import { isPermissionReduction } from "../permissions/index.js";
+import type { DurableSkillDefinition } from "../external-skills/types.js";
 
 export type AgentStatus = "idle" | "running" | "aborted";
 
@@ -57,6 +58,7 @@ export interface AgentOptions {
     systemPrompt?: string;
     /** Omit for a tool-free agent; product runtimes compose provider tools explicitly. */
     tools?: readonly AnyDefinedTool[];
+    durableSkills?: readonly DurableSkillDefinition[];
     /** Selects default tools without coupling the generic agent to provider tool registries. */
     toolSelector?: AgentToolSelector;
     idFactory?: () => string;
@@ -100,6 +102,7 @@ export class Agent {
     #instructions: string | undefined;
     #systemPrompt: string | undefined;
     #tools: readonly AnyDefinedTool[];
+    #durableSkills: readonly DurableSkillDefinition[];
     #toolSelector: AgentToolSelector | undefined;
     #usesExplicitTools: boolean;
     #idFactory: () => string;
@@ -134,6 +137,7 @@ export class Agent {
             options.tools ??
             options.toolSelector?.({ model: this.#model, provider: options.provider }) ??
             [];
+        this.#durableSkills = [...(options.durableSkills ?? [])];
         this.#now = options.now ?? Date.now;
         this.#console = options.console ?? console;
         this.#printToConsole = options.printToConsole ?? true;
@@ -218,6 +222,10 @@ export class Agent {
 
     setTools(tools: readonly AnyDefinedTool[]): void {
         this.#tools = tools;
+    }
+
+    setDurableSkills(skills: readonly DurableSkillDefinition[]): void {
+        this.#durableSkills = [...skills];
     }
 
     async setPermissionMode(mode: PermissionMode): Promise<void> {
@@ -431,6 +439,7 @@ export class Agent {
                 loopOptions.appendSystemPrompt = this.#appendSystemPrompt;
             }
             if (this.#systemPrompt !== undefined) loopOptions.systemPrompt = this.#systemPrompt;
+            if (this.#durableSkills.length > 0) loopOptions.durableSkills = this.#durableSkills;
             if (this.#effort !== undefined) loopOptions.effort = this.#effort;
             if (this.#serviceTier !== undefined) loopOptions.serviceTier = this.#serviceTier;
             if (this.#instructions !== undefined) loopOptions.instructions = this.#instructions;

@@ -1,9 +1,9 @@
 # Integration API
 
-Rig can expose integration-owned functions to a model without running those
-functions inside the daemon. Calls are stored in SQLite before they are
-published, remain pending across daemon restarts, and are completed through a
-separate authenticated HTTP request.
+Rig can expose integration-owned functions and skill instructions to a model
+without installing their implementations or source files in the daemon.
+Requests are stored in SQLite before they are published, remain pending across
+daemon restarts, and are completed through a separate authenticated HTTP request.
 
 ## Submit a configured message
 
@@ -24,14 +24,25 @@ separate authenticated HTTP request.
                 "additionalProperties": false
             }
         }
+    ],
+    "skills": [
+        {
+            "name": "support-workflow",
+            "description": "Resolve support tickets using the team's workflow.",
+            "location": "durable"
+        }
     ]
 }
 ```
 
 When present, `systemPrompt` replaces Rig's assembled prompt; `null` restores
-Rig's normal prompt. When present, `externalTools` replaces the session's prior
+Rig's normal prompt. Durable skill catalog instructions are appended when
+`skills` is non-empty. When present, `externalTools` replaces the session's prior
 external function set. An empty array disables all external functions. The JSON
-Schema in `parameters` is forwarded to the provider unchanged.
+Schema in `parameters` is forwarded to the provider unchanged. When present,
+`skills` replaces the session's integration-owned skill set. Every supplied
+skill must use `"location": "durable"`; an empty array disables durable skills.
+Rig adds their metadata to the skills catalog without fetching their bodies.
 
 Use `POST /messages` with either `"all": true` or a non-empty `sessionIds`
 array to submit the same configured message to multiple primary sessions. IDs
@@ -44,11 +55,27 @@ Pending work is available from `GET /external-tool-calls` and through the
 stable `id`, `sessionId`, `runId`, provider `toolCallId`, function definition,
 and arguments.
 
-Complete it with:
+Complete a call with:
 
 ```text
 POST /sessions/{sessionId}/external-tool-calls/{id}
 ```
+
+When the model chooses a durable skill, Rig invokes its built-in `read_skill`
+tool. The resulting external call also includes the selected `skill` metadata.
+Complete that call with the full `SKILL.md` text:
+
+```json
+{
+    "status": "completed",
+    "output": "---\nname: support-workflow\ndescription: Resolve support tickets.\n---\n\n# Workflow\n..."
+}
+```
+
+The contents are returned to the model as the `read_skill` result. Failed skill
+loads use the same failure shape as external functions. Durable skills currently
+cover `SKILL.md` itself; references to other integration-owned resources require
+an integration-provided access mechanism.
 
 Successful JSON output:
 
@@ -76,6 +103,7 @@ Rig retains the latest 1,000 completed or cancelled calls per session for
 callback idempotency and history. Pending and completed-but-not-yet-consumed
 calls are never pruned.
 
-External functions cross a boundary that Rig cannot sandbox. They therefore
-require Auto or Full access, and Auto reviews each invocation before publishing
-it. The daemon bearer token is required for every endpoint above.
+External functions and durable skill reads cross a boundary that Rig cannot
+sandbox. They therefore require Auto or Full access, and Auto reviews each
+invocation before publishing it. The daemon bearer token is required for every
+endpoint above.

@@ -131,6 +131,118 @@ describe("PersistentSessionStore", () => {
         }
     });
 
+    it("resumes a durable skill request with its configured metadata after restart", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        const model = defineModel({
+            defaultThinkingLevel: "off",
+            id: "openai/gym",
+            name: "Gym",
+            thinkingLevels: ["off"],
+        });
+        const catalog: ModelCatalog = {
+            defaultModelId: model.id,
+            defaultProviderId: "gym",
+            models: [model],
+            providers: [{ models: [model], providerId: "gym" }],
+        };
+        const requests: GymInferenceRequest[] = [];
+        const originalFetch = globalThis.fetch;
+        const originalInferenceUrl = process.env.RIG_GYM_INFERENCE_URL;
+        let store: PersistentSessionStore | undefined;
+        try {
+            process.env.RIG_GYM_INFERENCE_URL = "http://gym.test/inference";
+            globalThis.fetch = async (_input, init) => {
+                if (typeof init?.body !== "string") throw new Error("Expected request JSON.");
+                requests.push(JSON.parse(init.body) as GymInferenceRequest);
+                return new Response(
+                    JSON.stringify(
+                        requests.length === 1
+                            ? {
+                                  content: [
+                                      {
+                                          arguments: { name: "release-check" },
+                                          id: "provider-skill-call-1",
+                                          name: "read_skill",
+                                          type: "toolCall",
+                                      },
+                                  ],
+                              }
+                            : { content: [{ text: "Release checked.", type: "text" }] },
+                    ),
+                    { headers: { "content-type": "application/json" }, status: 200 },
+                );
+            };
+
+            store = new PersistentSessionStore({ databasePath, modelCatalog: catalog });
+            const session = store.create({
+                cwd: "/tmp/rig-durable-skill",
+                modelId: model.id,
+                permissionMode: "full_access",
+                providerId: "gym",
+            });
+            const submitted = session.submit({
+                skills: [
+                    {
+                        description: "Check a release using integration-owned instructions.",
+                        location: "durable",
+                        name: "release-check",
+                    },
+                ],
+                systemPrompt: "Exact integration prompt.",
+                text: "Use the release-check skill.",
+            });
+            const pending = await waitForExternalToolCall(session);
+            expect(pending).toMatchObject({
+                arguments: { name: "release-check" },
+                skill: { location: "durable", name: "release-check" },
+            });
+            expect(requests[0]?.context.systemPrompt).toContain("Exact integration prompt.");
+            expect(requests[0]?.context.systemPrompt).toContain("<name>release-check</name>");
+            expect(
+                requests[0]?.context.tools?.find((tool) => tool.name === "read_skill"),
+            ).toMatchObject({ parameters: { required: ["name"], type: "object" } });
+
+            await store.prepareForShutdown("shutdown");
+            store.close();
+            store = undefined;
+
+            store = new PersistentSessionStore({ databasePath, modelCatalog: catalog });
+            const restored = store.get(session.id);
+            if (restored === undefined) throw new Error("Expected restored session.");
+            expect(restored.snapshot()).toMatchObject({
+                pendingExternalToolCalls: [
+                    {
+                        id: pending.id,
+                        skill: { location: "durable", name: "release-check" },
+                        status: "pending",
+                    },
+                ],
+                skills: [{ location: "durable", name: "release-check" }],
+                status: "running",
+            });
+
+            expect(
+                restored.resolveExternalToolCall(pending.id, {
+                    output: "# Release check\nDURABLE_SKILL_BODY_SENTINEL",
+                    status: "completed",
+                }),
+            ).toMatchObject({ accepted: true });
+            await expect(restored.waitForRun(submitted.runId)).resolves.toEqual({
+                status: "completed",
+            });
+            expect(requests).toHaveLength(2);
+            expect(JSON.stringify(requests[1]?.context.messages)).toContain(
+                "DURABLE_SKILL_BODY_SENTINEL",
+            );
+        } finally {
+            store?.close();
+            globalThis.fetch = originalFetch;
+            if (originalInferenceUrl === undefined) delete process.env.RIG_GYM_INFERENCE_URL;
+            else process.env.RIG_GYM_INFERENCE_URL = originalInferenceUrl;
+            await cleanup();
+        }
+    });
+
     it("retains a bounded external call history without pruning pending work", () => {
         const store = new PersistentSessionStore({ databasePath: ":memory:" });
         const state = sessionState();

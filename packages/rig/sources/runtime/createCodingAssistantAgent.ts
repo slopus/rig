@@ -34,11 +34,13 @@ import { kimiAgentTool, kimiGoalTools } from "../tools/kimi/index.js";
 import type { CodingAssistantRuntime } from "./CodingAssistantRuntime.js";
 import { createDefaultInstructions } from "./createDefaultInstructions.js";
 import { selectToolsForModel } from "./selectToolsForModel.js";
+import type { DurableSkillDefinition } from "../external-skills/types.js";
 
 export interface CreateCodingAssistantAgentOptions {
     appendSystemPrompt?: string;
     cwd: string;
     docker?: DockerExecutionConfig;
+    durableSkills?: readonly DurableSkillDefinition[];
     agentId?: string;
     apiKey?: string;
     effort?: string;
@@ -192,6 +194,7 @@ export function createCodingAssistantAgent(
         id: agentId,
         instructions: options.instructions ?? createDefaultInstructions(runtimeCwd),
         ...(options.systemPrompt !== undefined ? { systemPrompt: options.systemPrompt } : {}),
+        ...(options.durableSkills !== undefined ? { durableSkills: options.durableSkills } : {}),
         ...(options.messages !== undefined ? { messages: options.messages } : {}),
         ...(options.contextMessages !== undefined
             ? { contextMessages: options.contextMessages }

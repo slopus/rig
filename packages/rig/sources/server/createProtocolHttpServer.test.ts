@@ -37,6 +37,13 @@ describe("createProtocolHttpServer", () => {
                         parameters: { type: "object" },
                     },
                 ],
+                skills: [
+                    {
+                        description: "Check a release outside Rig.",
+                        location: "durable",
+                        name: "release-check",
+                    },
+                ],
                 systemPrompt: "Exact broadcast prompt.",
                 text: "Check the queue.",
             } as const;

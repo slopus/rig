@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 
 const sessionColumnMigrations = [
     ["title", "TEXT"],
@@ -27,6 +27,7 @@ const sessionColumnMigrations = [
     ["append_system_prompt", "TEXT"],
     ["system_prompt", "TEXT"],
     ["external_tools_json", "TEXT NOT NULL DEFAULT '[]'"],
+    ["durable_skills_json", "TEXT NOT NULL DEFAULT '[]'"],
     ["permission_mode", "TEXT NOT NULL DEFAULT 'workspace_write'"],
     ["tasks_json", "TEXT NOT NULL DEFAULT '[]'"],
     ["workflows_json", "TEXT NOT NULL DEFAULT '[]'"],
@@ -84,6 +85,7 @@ export function initializeSessionDatabase(database: DatabaseSync): void {
                 append_system_prompt TEXT,
                 system_prompt TEXT,
                 external_tools_json TEXT NOT NULL DEFAULT '[]',
+                durable_skills_json TEXT NOT NULL DEFAULT '[]',
                 status TEXT NOT NULL,
                 active_run_id TEXT,
                 active_since_ms INTEGER,
@@ -155,6 +157,7 @@ export function initializeSessionDatabase(database: DatabaseSync): void {
                 tool_call_id TEXT NOT NULL,
                 tool_call_index INTEGER NOT NULL,
                 definition_json TEXT NOT NULL,
+                skill_json TEXT,
                 arguments_json TEXT NOT NULL,
                 status TEXT NOT NULL,
                 resolution_json TEXT,
@@ -203,6 +206,16 @@ export function initializeSessionDatabase(database: DatabaseSync): void {
         for (const [name, definition] of queuedRunColumnMigrations) {
             if (queuedRunColumns.has(name)) continue;
             database.exec(`ALTER TABLE queued_runs ADD COLUMN ${name} ${definition}`);
+        }
+
+        const externalToolCallColumns = new Set(
+            database
+                .prepare("PRAGMA table_info(external_tool_calls)")
+                .all()
+                .map((column) => String(column.name)),
+        );
+        if (!externalToolCallColumns.has("skill_json")) {
+            database.exec("ALTER TABLE external_tool_calls ADD COLUMN skill_json TEXT");
         }
 
         database.exec(`
