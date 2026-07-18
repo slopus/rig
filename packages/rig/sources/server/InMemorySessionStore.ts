@@ -20,6 +20,7 @@ import type { McpToolProvider } from "../mcp/index.js";
 import { SecretRegistry, type SecretRegistration } from "../secrets/index.js";
 import type { SecretAttachmentScope } from "../secrets/index.js";
 import { normalizeProjectCwd } from "./normalizeProjectCwd.js";
+import type { ExternalToolCall } from "../external-tools/index.js";
 
 export interface InMemorySessionStoreOptions {
     createRuntime?: InMemorySessionOptions["createRuntime"];
@@ -181,6 +182,19 @@ export class InMemorySessionStore implements SessionStore {
             .map((session) => session.summary())
             .sort((left, right) => sortSummariesByActivity(left, right));
         return options.limit === undefined ? sessions : sessions.slice(0, options.limit);
+    }
+
+    listExternalToolCalls(
+        options: { limit?: number; status?: ExternalToolCall["status"] } = {},
+    ): readonly ExternalToolCall[] {
+        return [...this.#sessions.values()]
+            .flatMap((session) =>
+                session.externalToolCalls(
+                    options.status === undefined ? {} : { status: options.status },
+                ),
+            )
+            .sort((left, right) => left.createdAt - right.createdAt)
+            .slice(0, options.limit ?? 100);
     }
 
     listSubagents(parentSessionId: string): readonly SubagentSummary[] {

@@ -9,10 +9,184 @@ import type { UserMessage } from "../agent/types.js";
 import { createEventIdFactory, type ModelCatalog, type SessionEvent } from "../protocol/index.js";
 import type { GymInferenceRequest } from "../providers/gym-types.js";
 import { defineModel } from "../providers/types.js";
-import type { PersistedQueuedRun, PersistedSessionState } from "./InMemorySession.js";
+import type {
+    InMemorySession,
+    PersistedQueuedRun,
+    PersistedSessionState,
+} from "./InMemorySession.js";
 import { PersistentSessionStore } from "./PersistentSessionStore.js";
 
 describe("PersistentSessionStore", () => {
+    it("resumes a durable external function after daemon restart without replaying its call", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        const model = defineModel({
+            defaultThinkingLevel: "off",
+            id: "openai/gym",
+            name: "Gym",
+            thinkingLevels: ["off"],
+        });
+        const catalog: ModelCatalog = {
+            defaultModelId: model.id,
+            defaultProviderId: "gym",
+            models: [model],
+            providers: [{ models: [model], providerId: "gym" }],
+        };
+        const requests: GymInferenceRequest[] = [];
+        const originalFetch = globalThis.fetch;
+        const originalInferenceUrl = process.env.RIG_GYM_INFERENCE_URL;
+        let store: PersistentSessionStore | undefined;
+        try {
+            process.env.RIG_GYM_INFERENCE_URL = "http://gym.test/inference";
+            globalThis.fetch = async (_input, init) => {
+                if (typeof init?.body !== "string") throw new Error("Expected request JSON.");
+                requests.push(JSON.parse(init.body) as GymInferenceRequest);
+                return new Response(
+                    JSON.stringify(
+                        requests.length === 1
+                            ? {
+                                  content: [
+                                      {
+                                          arguments: { ticket: 42 },
+                                          id: "provider-call-1",
+                                          name: "lookup_ticket",
+                                          type: "toolCall",
+                                      },
+                                  ],
+                              }
+                            : { content: [{ text: "Ticket resolved.", type: "text" }] },
+                    ),
+                    { headers: { "content-type": "application/json" }, status: 200 },
+                );
+            };
+
+            store = new PersistentSessionStore({ databasePath, modelCatalog: catalog });
+            const session = store.create({
+                cwd: "/tmp/rig-durable-external-tool",
+                modelId: model.id,
+                permissionMode: "full_access",
+                providerId: "gym",
+            });
+            const submitted = session.submit({
+                externalTools: [
+                    {
+                        description: "Looks up a ticket in the integrating system.",
+                        name: "lookup_ticket",
+                        parameters: {
+                            additionalProperties: false,
+                            properties: { ticket: { type: "number" } },
+                            required: ["ticket"],
+                            type: "object",
+                        },
+                    },
+                ],
+                systemPrompt: "Exact integration prompt.",
+                text: "Resolve ticket 42.",
+            });
+            const pending = await waitForExternalToolCall(session);
+            expect(requests[0]?.context.systemPrompt).toBe("Exact integration prompt.");
+            expect(
+                requests[0]?.context.tools?.find((tool) => tool.name === "lookup_ticket"),
+            ).toMatchObject({
+                description: "Looks up a ticket in the integrating system.",
+                name: "lookup_ticket",
+                parameters: { required: ["ticket"], type: "object" },
+            });
+
+            await store.prepareForShutdown("shutdown");
+            store.close();
+            store = undefined;
+
+            store = new PersistentSessionStore({ databasePath, modelCatalog: catalog });
+            const restored = store.get(session.id);
+            if (restored === undefined) throw new Error("Expected restored session.");
+            expect(restored.snapshot()).toMatchObject({
+                pendingExternalToolCalls: [{ id: pending.id, status: "pending" }],
+                status: "running",
+                systemPrompt: "Exact integration prompt.",
+            });
+
+            expect(
+                restored.resolveExternalToolCall(pending.id, {
+                    output: { state: "resolved" },
+                    status: "completed",
+                }),
+            ).toMatchObject({ accepted: true });
+            await expect(restored.waitForRun(submitted.runId)).resolves.toEqual({
+                status: "completed",
+            });
+            expect(requests).toHaveLength(2);
+            expect(JSON.stringify(requests[1]?.context.messages)).toContain("resolved");
+            expect(
+                restored.resolveExternalToolCall(pending.id, {
+                    output: { state: "resolved" },
+                    status: "completed",
+                }),
+            ).toMatchObject({ accepted: false });
+        } finally {
+            store?.close();
+            globalThis.fetch = originalFetch;
+            if (originalInferenceUrl === undefined) delete process.env.RIG_GYM_INFERENCE_URL;
+            else process.env.RIG_GYM_INFERENCE_URL = originalInferenceUrl;
+            await cleanup();
+        }
+    });
+
+    it("retains a bounded external call history without pruning pending work", () => {
+        const store = new PersistentSessionStore({ databasePath: ":memory:" });
+        const state = sessionState();
+        store.saveSession(state);
+        try {
+            for (let index = 0; index < 1_002; index += 1) {
+                store.upsertExternalToolCall({
+                    arguments: { index },
+                    batchId: `batch-${index}`,
+                    consumed: true,
+                    createdAt: index,
+                    definition: {
+                        description: "Looks up a ticket.",
+                        name: "lookup_ticket",
+                        parameters: { type: "object" },
+                    },
+                    id: `completed-${index}`,
+                    resolution: { output: { index }, status: "completed" },
+                    resolvedAt: index,
+                    runId: `run-${index}`,
+                    sessionId: state.id,
+                    status: "completed",
+                    toolCallId: `tool-${index}`,
+                    toolCallIndex: 0,
+                });
+            }
+            store.upsertExternalToolCall({
+                arguments: {},
+                batchId: "pending-batch",
+                consumed: false,
+                createdAt: -1,
+                definition: {
+                    description: "Waits for a callback.",
+                    name: "wait_for_callback",
+                    parameters: { type: "object" },
+                },
+                id: "pending-call",
+                runId: "pending-run",
+                sessionId: state.id,
+                status: "pending",
+                toolCallId: "pending-tool",
+                toolCallIndex: 0,
+            });
+
+            store.pruneExternalToolCalls(state.id, 1_000);
+
+            const calls = store.listExternalToolCalls({ limit: 2_000 });
+            expect(calls).toHaveLength(1_001);
+            expect(calls.some((call) => call.id === "pending-call")).toBe(true);
+            expect(calls.some((call) => call.id === "completed-0")).toBe(false);
+            expect(calls.some((call) => call.id === "completed-1001")).toBe(true);
+        } finally {
+            store.close();
+        }
+    });
+
     it("restores appended system prompts after reopening SQLite", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         try {
@@ -1831,6 +2005,15 @@ describe("PersistentSessionStore", () => {
         }
     });
 });
+
+async function waitForExternalToolCall(session: InMemorySession) {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+        const call = session.externalToolCalls({ status: "pending" })[0];
+        if (call !== undefined) return call;
+        await new Promise((resolve) => setImmediate(resolve));
+    }
+    throw new Error("Timed out waiting for the external function call.");
+}
 
 async function createDatabasePath(): Promise<{
     cleanup: () => Promise<void>;

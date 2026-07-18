@@ -3,6 +3,8 @@ import { request as httpRequest } from "node:http";
 import type {
     AbortRunOptions,
     AbortRunResponse,
+    BroadcastMessageRequest,
+    BroadcastMessageResponse,
     AnswerUserInputRequest,
     ChangeEffortRequest,
     ChangeModelRequest,
@@ -21,12 +23,15 @@ import type {
     HealthResponse,
     GoalSessionResponse,
     ListGlobalEventsResponse,
+    ListExternalToolCallsResponse,
     ListModelsResponse,
     ListSecretsResponse,
     ListSessionsResponse,
     ListSubagentsResponse,
     ProtocolSession,
     RecordSessionActivityResponse,
+    ResolveExternalToolCallRequest,
+    ResolveExternalToolCallResponse,
     RewindSessionResponse,
     RegisterSecretRequest,
     RegisterSecretResponse,
@@ -59,6 +64,7 @@ import type {
     WatchRemoteTerminalOptions,
 } from "../terminal/index.js";
 import { parseRemoteTerminalSseEvent } from "./parseRemoteTerminalSseEvent.js";
+import type { ExternalToolCall } from "../external-tools/index.js";
 
 export interface ProtocolHttpClientOptions {
     socketPath: string;
@@ -397,6 +403,33 @@ export class ProtocolHttpClient {
         return this.#requestJson(
             "POST",
             `/sessions/${encodeURIComponent(sessionId)}/messages`,
+            request,
+        );
+    }
+
+    broadcastMessage(request: BroadcastMessageRequest): Promise<BroadcastMessageResponse> {
+        return this.#requestJson("POST", "/messages", request);
+    }
+
+    listExternalToolCalls(sessionId: string): Promise<{ calls: readonly ExternalToolCall[] }> {
+        return this.#requestJson(
+            "GET",
+            `/sessions/${encodeURIComponent(sessionId)}/external-tool-calls`,
+        );
+    }
+
+    listPendingExternalToolCalls(limit = 100): Promise<ListExternalToolCallsResponse> {
+        return this.#requestJson("GET", `/external-tool-calls?limit=${encodeURIComponent(limit)}`);
+    }
+
+    resolveExternalToolCall(
+        sessionId: string,
+        callId: string,
+        request: ResolveExternalToolCallRequest,
+    ): Promise<ResolveExternalToolCallResponse> {
+        return this.#requestJson(
+            "POST",
+            `/sessions/${encodeURIComponent(sessionId)}/external-tool-calls/${encodeURIComponent(callId)}`,
             request,
         );
     }

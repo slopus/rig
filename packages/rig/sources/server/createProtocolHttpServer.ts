@@ -2,6 +2,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import type {
     AbortRunResponse,
+    BroadcastMessageRequest,
+    BroadcastMessageResponse,
     AnswerUserInputRequest,
     AttachSecretRequest,
     ChangeEffortRequest,
@@ -18,6 +20,7 @@ import type {
     GetDaemonConfigResponse,
     GetSessionUsageResponse,
     ListGlobalEventsResponse,
+    ListExternalToolCallsResponse,
     ListSecretsResponse,
     HealthResponse,
     GoalSessionResponse,
@@ -28,6 +31,8 @@ import type {
     RewindSessionRequest,
     RewindSessionResponse,
     RecordSessionActivityResponse,
+    ResolveExternalToolCallRequest,
+    ResolveExternalToolCallResponse,
     RegisterSecretRequest,
     RegisterSecretResponse,
     SearchFilesResponse,
@@ -140,13 +145,20 @@ export function createProtocolHttpServer(
             mutating && options.taskDrain !== undefined ? options.taskDrain.run(handle) : handle();
         void handling.catch((error: unknown) => {
             const invalidJson = error instanceof InvalidJsonBodyError;
-            const status = invalidJson
-                ? 400
-                : mutating && options.taskDrain?.closing === true
-                  ? 503
-                  : 500;
+            const bodyTooLarge = error instanceof RequestBodyTooLargeError;
+            const status = bodyTooLarge
+                ? 413
+                : invalidJson
+                  ? 400
+                  : mutating && options.taskDrain?.closing === true
+                    ? 503
+                    : 500;
             sendJson(response, status, {
-                error: invalidJson ? "Request body must be valid JSON." : errorToMessage(error),
+                error: bodyTooLarge
+                    ? "Request body is larger than the allowed limit."
+                    : invalidJson
+                      ? "Request body must be valid JSON."
+                      : errorToMessage(error),
             });
         });
     });
@@ -210,6 +222,59 @@ async function handleRequest(
 
     if (request.method === "GET" && route.name === "models") {
         sendJson<ListModelsResponse>(response, 200, { catalog: modelCatalog });
+        return;
+    }
+
+    if (request.method === "POST" && route.name === "messages" && route.sessionId === undefined) {
+        const body = await readJson<unknown>(request);
+        if (!isSubmitMessageRequest(body)) {
+            sendJson(response, 400, { error: "Message settings are invalid." });
+            return;
+        }
+        const broadcast = body as BroadcastMessageRequest;
+        const allTargets = broadcast.all === true ? store.list({ limit: 501 }) : undefined;
+        if (allTargets !== undefined && allTargets.length > 500) {
+            sendJson(response, 409, {
+                error: "A single broadcast can target at most 500 sessions.",
+            });
+            return;
+        }
+        const targets = allTargets?.map((summary) => summary.id) ?? broadcast.sessionIds;
+        if (
+            (broadcast.all === true) === (broadcast.sessionIds !== undefined) ||
+            targets === undefined ||
+            !Array.isArray(targets) ||
+            targets.length === 0 ||
+            targets.some((id) => typeof id !== "string")
+        ) {
+            sendJson(response, 400, {
+                error: "Choose either all sessions or a non-empty list of session IDs.",
+            });
+            return;
+        }
+        if (targets.length > 500) {
+            sendJson(response, 409, {
+                error: "A single broadcast can target at most 500 sessions.",
+            });
+            return;
+        }
+        if (new Set(targets).size !== targets.length) {
+            sendJson(response, 400, { error: "Session IDs must be unique." });
+            return;
+        }
+        const sessions = targets.map((id) => store.get(id));
+        if (sessions.some((candidate) => candidate === undefined)) {
+            sendJson(response, 404, { error: "One or more sessions were not found." });
+            return;
+        }
+        if (sessions.some((candidate) => candidate!.isSubagent())) {
+            sendJson(response, 409, { error: "Subagent sessions cannot receive broadcasts." });
+            return;
+        }
+        const { all: _all, sessionIds: _sessionIds, ...message } = broadcast;
+        sendJson<BroadcastMessageResponse>(response, 202, {
+            submissions: sessions.map((candidate) => candidate!.submit(message)),
+        });
         return;
     }
 
@@ -301,6 +366,30 @@ async function handleRequest(
         }
 
         sendJson(response, 405, { error: "Method not allowed" });
+        return;
+    }
+
+    if (
+        request.method === "GET" &&
+        route.name === "external-tool-calls" &&
+        route.sessionId === undefined
+    ) {
+        const status = url.searchParams.get("status") ?? "pending";
+        if (!["pending", "completed", "failed", "cancelled"].includes(status)) {
+            sendJson(response, 400, { error: "External function status is invalid." });
+            return;
+        }
+        const limit = parseLimit(url.searchParams.get("limit"));
+        if (url.searchParams.has("limit") && limit === undefined) {
+            sendJson(response, 400, { error: "External function call limit is invalid." });
+            return;
+        }
+        sendJson<ListExternalToolCallsResponse>(response, 200, {
+            calls: store.listExternalToolCalls({
+                limit: limit ?? 100,
+                status: status as import("../external-tools/index.js").ExternalToolCall["status"],
+            }),
+        });
         return;
     }
 
@@ -646,6 +735,33 @@ async function handleRequest(
         return;
     }
 
+    if (request.method === "GET" && route.name === "external-tool-calls") {
+        sendJson(response, 200, { calls: session.externalToolCalls() });
+        return;
+    }
+
+    if (request.method === "POST" && route.name === "external-tool-call") {
+        const body = await readJson<unknown>(request, 1_048_576);
+        if (!isExternalToolCallResolution(body)) {
+            sendJson(response, 400, { error: "External function result is invalid." });
+            return;
+        }
+        try {
+            const result = session.resolveExternalToolCall(
+                route.externalToolCallId,
+                body as ResolveExternalToolCallRequest,
+            );
+            if (result === undefined) {
+                sendJson(response, 404, { error: "External function call not found." });
+                return;
+            }
+            sendJson<ResolveExternalToolCallResponse>(response, 200, result);
+        } catch (error) {
+            sendJson(response, 409, { error: errorToMessage(error) });
+        }
+        return;
+    }
+
     if (request.method === "POST" && route.name === "activity") {
         session.recordUserActivity();
         sendJson<RecordSessionActivityResponse>(response, 200, { recorded: true });
@@ -930,8 +1046,10 @@ function matchRoute(pathname: string):
               | "global-events"
               | "global-events-stream"
               | "global-events-trim"
+              | "external-tool-calls"
               | "config"
               | "health"
+              | "messages"
               | "models"
               | "secret-registrations"
               | "sessions"
@@ -948,6 +1066,7 @@ function matchRoute(pathname: string):
               | "current-provider-quota"
               | "effort"
               | "events"
+              | "external-tool-calls"
               | "files"
               | "fork"
               | "goal"
@@ -972,6 +1091,7 @@ function matchRoute(pathname: string):
           terminalId: string;
       }
     | { name: "user-input"; requestId: string; sessionId: string }
+    | { name: "external-tool-call"; externalToolCallId: string; sessionId: string }
     | { name: "secret"; secretId: string; sessionId: string }
     | { name: "workflow-stop"; sessionId: string; workflowRunId: string }
     | undefined {
@@ -980,7 +1100,9 @@ function matchRoute(pathname: string):
     if (pathname === "/events") return { name: "global-events" };
     if (pathname === "/events/stream") return { name: "global-events-stream" };
     if (pathname === "/events/trim") return { name: "global-events-trim" };
+    if (pathname === "/external-tool-calls") return { name: "external-tool-calls" };
     if (pathname === "/models") return { name: "models" };
+    if (pathname === "/messages") return { name: "messages" };
     if (pathname === "/secrets") return { name: "secret-registrations" };
     if (pathname === "/sessions") return { name: "sessions" };
     if (pathname === "/shutdown") return { name: "shutdown" };
@@ -1032,6 +1154,13 @@ function matchRoute(pathname: string):
             sessionId,
         };
     }
+    if (parts.length === 4 && parts[2] === "external-tool-calls" && parts[3] !== undefined) {
+        return {
+            name: "external-tool-call",
+            externalToolCallId: decodeURIComponent(parts[3]),
+            sessionId,
+        };
+    }
     if (
         parts.length === 5 &&
         parts[2] === "workflows" &&
@@ -1060,6 +1189,9 @@ function matchRoute(pathname: string):
     }
     if (parts[2] === "effort") return { name: "effort", sessionId };
     if (parts[2] === "events") return { name: "events", sessionId };
+    if (parts[2] === "external-tool-calls") {
+        return { name: "external-tool-calls", sessionId };
+    }
     if (parts[2] === "files") return { name: "files", sessionId };
     if (parts[2] === "fork") return { name: "fork", sessionId };
     if (parts[2] === "goal") return { name: "goal", sessionId };
@@ -1087,6 +1219,7 @@ function isSessionMutation(routeName: string, method: string | undefined): boole
                 "activity",
                 "background-processes-stop",
                 "compact",
+                "external-tool-call",
                 "fork",
                 "messages",
                 "reset",
@@ -1114,6 +1247,9 @@ function isMutatingProtocolRequest(request: IncomingMessage): boolean {
     if (route.name === "global-events-trim") return request.method === "POST";
     if (route.name === "secret-registrations") return request.method === "POST";
     if (route.name === "secret-registration") return request.method === "DELETE";
+    if (route.name === "messages" && route.sessionId === undefined) {
+        return request.method === "POST";
+    }
     if (route.name === "sessions") return request.method === "POST";
     if (route.sessionId === undefined) return false;
     return isSessionMutation(route.name, request.method);
@@ -1133,10 +1269,16 @@ function parseBoundedWholeNumber(
         : undefined;
 }
 
-async function readJson<T>(request: IncomingMessage): Promise<T> {
+async function readJson<T>(request: IncomingMessage, maximumBytes?: number): Promise<T> {
     const chunks: Buffer[] = [];
+    let receivedBytes = 0;
     for await (const chunk of request) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        receivedBytes += buffer.byteLength;
+        if (maximumBytes !== undefined && receivedBytes > maximumBytes) {
+            throw new RequestBodyTooLargeError();
+        }
+        chunks.push(buffer);
     }
 
     const body = Buffer.concat(chunks).toString("utf8");
@@ -1148,6 +1290,36 @@ async function readJson<T>(request: IncomingMessage): Promise<T> {
 }
 
 class InvalidJsonBodyError extends Error {}
+
+class RequestBodyTooLargeError extends Error {}
+
+function isExternalToolCallResolution(value: unknown): value is ResolveExternalToolCallRequest {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+    if (JSON.stringify(value).length > 1_048_576) return false;
+    const candidate = value as Record<string, unknown>;
+    if (candidate.status === "failed") {
+        if (candidate.error === null || typeof candidate.error !== "object") return false;
+        const error = candidate.error as Record<string, unknown>;
+        return (
+            typeof error.message === "string" &&
+            (error.code === undefined || typeof error.code === "string")
+        );
+    }
+    if (candidate.status !== "completed") return false;
+    if (candidate.content === undefined) return true;
+    return (
+        Array.isArray(candidate.content) &&
+        candidate.content.every((block) => {
+            if (block === null || typeof block !== "object" || Array.isArray(block)) return false;
+            const content = block as Record<string, unknown>;
+            return content.type === "text"
+                ? typeof content.text === "string"
+                : content.type === "image" &&
+                      typeof content.mediaType === "string" &&
+                      typeof content.data === "string";
+        })
+    );
+}
 
 function streamEvents(
     request: IncomingMessage,

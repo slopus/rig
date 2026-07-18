@@ -10,6 +10,8 @@ import { createSecretInstructions } from "../secrets/index.js";
 
 export interface CreateSystemPromptOptions {
     appendSystemPrompt?: string;
+    /** Exact integration-owned prompt. When present, Rig's assembled prompt is replaced. */
+    systemPrompt?: string;
     provider: Provider;
     model: Model;
     instructions?: string;
@@ -21,6 +23,7 @@ export interface CreateSystemPromptOptions {
 export async function createSystemPrompt(
     options: CreateSystemPromptOptions,
 ): Promise<string | undefined> {
+    if (options.systemPrompt !== undefined) return options.systemPrompt;
     const parts: string[] = [];
     const modelPrompt = selectSystemPromptForModel(options.provider, options.model);
     if (modelPrompt !== undefined && modelPrompt.length > 0) {

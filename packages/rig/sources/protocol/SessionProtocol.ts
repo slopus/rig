@@ -22,6 +22,12 @@ import type {
     SecretReference,
     SecretRegistration,
 } from "../secrets/index.js";
+import type {
+    ExternalToolCall,
+    ExternalToolCallResolution,
+    ExternalToolDefinition,
+    ResolveExternalToolCallResponse,
+} from "../external-tools/index.js";
 
 export type SessionStatus =
     | "idle"
@@ -157,6 +163,9 @@ export interface ProtocolSession {
     workflows?: readonly WorkflowRun[];
     goal?: SessionGoal;
     backgroundProcesses?: readonly BashSessionActivity[];
+    externalTools?: readonly ExternalToolDefinition[];
+    pendingExternalToolCalls?: readonly ExternalToolCall[];
+    systemPrompt?: string;
 }
 
 export interface SubagentSummary {
@@ -363,6 +372,10 @@ export interface ListGlobalEventsResponse {
     events: readonly GlobalEventQueueEntry[];
 }
 
+export interface ListExternalToolCallsResponse {
+    calls: readonly ExternalToolCall[];
+}
+
 export interface TrimGlobalEventsRequest {
     through: number;
 }
@@ -377,8 +390,24 @@ export interface SubmitMessageRequest {
     debug?: boolean;
     displayText?: string;
     interactive?: boolean;
+    /** Replaces the external function set for this and subsequent runs when present. */
+    externalTools?: readonly ExternalToolDefinition[];
+    /** Replaces Rig's assembled system prompt. Null restores Rig's normal prompt. */
+    systemPrompt?: string | null;
     text: string;
 }
+
+export interface BroadcastMessageRequest extends SubmitMessageRequest {
+    all?: boolean;
+    sessionIds?: readonly string[];
+}
+
+export interface BroadcastMessageResponse {
+    submissions: readonly SubmitMessageResponse[];
+}
+
+export type ResolveExternalToolCallRequest = ExternalToolCallResolution;
+export type { ResolveExternalToolCallResponse };
 
 export interface SubmitMessageResponse {
     debugDirectory?: string;
@@ -451,7 +480,9 @@ export type SessionEvent =
     | GoalChangedEvent
     | SubagentChangedEvent
     | SubagentsSuspendedEvent
-    | WorkflowChangedEvent;
+    | WorkflowChangedEvent
+    | ExternalToolCallRequestedEvent
+    | ExternalToolCallResolvedEvent;
 
 export interface BaseSessionEvent<TType extends string, TData> {
     createdAt: number;
@@ -644,4 +675,14 @@ export type WorkflowChangedEvent = BaseSessionEvent<
     {
         update: WorkflowRunUpdate;
     }
+>;
+
+export type ExternalToolCallRequestedEvent = BaseSessionEvent<
+    "external_tool_call_requested",
+    { call: ExternalToolCall }
+>;
+
+export type ExternalToolCallResolvedEvent = BaseSessionEvent<
+    "external_tool_call_resolved",
+    { call: ExternalToolCall }
 >;

@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
 
 const sessionColumnMigrations = [
     ["title", "TEXT"],
@@ -25,6 +25,8 @@ const sessionColumnMigrations = [
     ["context_messages_json", "TEXT"],
     ["service_tier", "TEXT"],
     ["append_system_prompt", "TEXT"],
+    ["system_prompt", "TEXT"],
+    ["external_tools_json", "TEXT NOT NULL DEFAULT '[]'"],
     ["permission_mode", "TEXT NOT NULL DEFAULT 'workspace_write'"],
     ["tasks_json", "TEXT NOT NULL DEFAULT '[]'"],
     ["workflows_json", "TEXT NOT NULL DEFAULT '[]'"],
@@ -37,6 +39,7 @@ const queuedRunColumnMigrations = [
     ["kind", "TEXT NOT NULL DEFAULT 'user'"],
     ["debug", "INTEGER NOT NULL DEFAULT 0"],
     ["debug_directory", "TEXT"],
+    ["integration_config_json", "TEXT"],
 ] as const;
 
 export function initializeSessionDatabase(database: DatabaseSync): void {
@@ -79,6 +82,8 @@ export function initializeSessionDatabase(database: DatabaseSync): void {
                 service_tier TEXT,
                 instructions TEXT,
                 append_system_prompt TEXT,
+                system_prompt TEXT,
+                external_tools_json TEXT NOT NULL DEFAULT '[]',
                 status TEXT NOT NULL,
                 active_run_id TEXT,
                 active_since_ms INTEGER,
@@ -137,8 +142,25 @@ export function initializeSessionDatabase(database: DatabaseSync): void {
                 kind TEXT NOT NULL DEFAULT 'user',
                 text TEXT NOT NULL,
                 user_message_json TEXT NOT NULL,
+                integration_config_json TEXT,
                 created_at_ms INTEGER NOT NULL,
                 PRIMARY KEY (session_id, run_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS external_tool_calls (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                run_id TEXT NOT NULL,
+                batch_id TEXT NOT NULL,
+                tool_call_id TEXT NOT NULL,
+                tool_call_index INTEGER NOT NULL,
+                definition_json TEXT NOT NULL,
+                arguments_json TEXT NOT NULL,
+                status TEXT NOT NULL,
+                resolution_json TEXT,
+                consumed INTEGER NOT NULL DEFAULT 0,
+                created_at_ms INTEGER NOT NULL,
+                resolved_at_ms INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS secret_registrations (
@@ -190,6 +212,8 @@ export function initializeSessionDatabase(database: DatabaseSync): void {
                 ON session_messages(session_id, message_id);
             CREATE INDEX IF NOT EXISTS sessions_parent_created
                 ON sessions(parent_session_id, created_at_ms);
+            CREATE INDEX IF NOT EXISTS external_tool_calls_session_created
+                ON external_tool_calls(session_id, created_at_ms);
             PRAGMA user_version = ${String(CURRENT_SCHEMA_VERSION)};
             COMMIT;
         `);

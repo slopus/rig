@@ -56,6 +56,7 @@ export interface CreateCodingAssistantAgentOptions {
     serviceTier?: ServiceTier;
     secrets?: SessionSecretContext;
     subagents?: SubagentContext;
+    systemPrompt?: string;
     tasks?: TaskContext;
     userInput?: UserInputContext;
     workflows?: WorkflowContext;
@@ -190,6 +191,7 @@ export function createCodingAssistantAgent(
         context,
         id: agentId,
         instructions: options.instructions ?? createDefaultInstructions(runtimeCwd),
+        ...(options.systemPrompt !== undefined ? { systemPrompt: options.systemPrompt } : {}),
         ...(options.messages !== undefined ? { messages: options.messages } : {}),
         ...(options.contextMessages !== undefined
             ? { contextMessages: options.contextMessages }

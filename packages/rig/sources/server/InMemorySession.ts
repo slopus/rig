@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { isDeepStrictEqual } from "node:util";
 
 import { createId } from "@paralleldrive/cuid2";
 
@@ -105,6 +106,19 @@ import {
     type RemoteTerminal,
     type RemoteTerminalManager,
 } from "../terminal/index.js";
+import {
+    createExternalTool,
+    externalToolResolutionToContent,
+    replaceExternalTools,
+    type ExternalToolCall,
+    type ExternalToolCallResolution,
+    type ExternalToolDefinition,
+    type ExternalToolInstallation,
+    type ResolveExternalToolCallResponse,
+} from "../external-tools/index.js";
+import type { AgentMessage, ToolResultBlock } from "../agent/types.js";
+
+const MAX_RETAINED_EXTERNAL_TOOL_CALLS = 1_000;
 
 export interface PersistedSessionMessage {
     isPartial: boolean;
@@ -122,6 +136,8 @@ export interface PersistedQueuedRun {
     runId: string;
     text: string;
     userMessage: UserMessage;
+    externalTools?: readonly ExternalToolDefinition[];
+    systemPrompt?: string | null;
 }
 
 export interface PersistedSessionState {
@@ -159,6 +175,9 @@ export interface PersistedSessionState {
     titleStatus: SessionTitleStatus;
     totalTokens?: number;
     tools: readonly string[];
+    externalToolCalls?: readonly ExternalToolCall[];
+    externalTools?: readonly ExternalToolDefinition[];
+    systemPrompt?: string;
     workflows?: readonly PersistedWorkflowRun[];
     workflowsEnabled?: boolean;
 }
@@ -178,8 +197,10 @@ export interface InMemorySessionPersistence {
     deleteMessagesFrom(sessionId: string, position: number): void;
     deleteQueuedRun(sessionId: string, runId: string): void;
     insertQueuedRun(sessionId: string, run: PersistedQueuedRun): void;
+    pruneExternalToolCalls?(sessionId: string, retain: number): void;
     saveSession(state: PersistedSessionState): void;
     upsertMessage(sessionId: string, message: PersistedSessionMessage): void;
+    upsertExternalToolCall?(call: ExternalToolCall): void;
 }
 
 export interface InMemorySessionOptions {
@@ -208,6 +229,11 @@ interface ActiveRun {
     debug: boolean;
     kind: PersistedQueuedRun["kind"];
     runId: string;
+}
+
+interface ExternalToolWaiter {
+    reject: (error: Error) => void;
+    resolve: (resolution: ExternalToolCallResolution) => void;
 }
 
 interface InternalWorkflowRun {
@@ -276,6 +302,13 @@ export class InMemorySession {
     #effort: string | undefined;
     #serviceTier: ServiceTier | undefined;
     #goal: SessionGoal | undefined;
+    #externalToolCalls = new Map<string, ExternalToolCall>();
+    #externalToolDefinitions: readonly ExternalToolDefinition[] = [];
+    #externalToolInstallation: ExternalToolInstallation = {
+        installed: new Set(),
+        shadowed: new Map(),
+    };
+    #externalToolWaiters = new Map<string, ExternalToolWaiter>();
     #instructions: string | undefined;
     #interruption: SessionInterruption | undefined;
     #lastMessageAt: number | undefined;
@@ -312,6 +345,7 @@ export class InMemorySession {
     #secrets: SessionSecretContext;
     #status: SessionStatus = "idle";
     #suspendedRunIds = new Set<string>();
+    #systemPrompt: string | undefined;
     #suspendOnAbort = false;
     #shutdownCleanup: Promise<void> | undefined;
     #taskList: SessionTaskList;
@@ -391,6 +425,11 @@ export class InMemorySession {
         );
         this.#appendSystemPrompt =
             options.restore?.appendSystemPrompt ?? options.request.appendSystemPrompt;
+        this.#systemPrompt = options.restore?.systemPrompt;
+        this.#externalToolDefinitions = [...(options.restore?.externalTools ?? [])];
+        for (const call of options.restore?.externalToolCalls ?? []) {
+            this.#externalToolCalls.set(call.id, cloneExternalToolCall(call));
+        }
         const requestedEffort = options.restore?.effort ?? options.request.effort;
         this.#effort =
             requestedEffort !== undefined &&
@@ -532,7 +571,7 @@ export class InMemorySession {
         pauseDescendants?: boolean;
         steeringMessageIds?: readonly string[];
     }): Promise<AbortRunResponse> {
-        const runId = this.#activeRun?.runId;
+        const runId = this.#activeRun?.runId ?? this.#restoredActiveRunId;
         if (options.expectedRunId !== undefined && runId !== options.expectedRunId) {
             return { aborted: false };
         }
@@ -582,6 +621,13 @@ export class InMemorySession {
                 : (this.#agentManager?.pauseDescendants(this.id) ?? Promise.resolve(0));
         const runningProcesses = this.#activeProcessCount();
         if (this.#activeRun === undefined && this.#queue.length === 0 && runningProcesses === 0) {
+            if (runId !== undefined && this.hasDurableExternalRun()) {
+                this.#cancelExternalToolCalls(runId);
+                this.#restoredActiveRunId = undefined;
+                this.#status = "aborted";
+                const event = this.#append("abort_requested", { runId });
+                return { aborted: true, eventId: event.id };
+            }
             return { aborted: (await pauseDescendants) > 0 };
         }
 
@@ -603,6 +649,7 @@ export class InMemorySession {
         }
         this.#queue = [];
         this.#pauseActiveGoal();
+        if (runId !== undefined) this.#cancelExternalToolCalls(runId);
         this.#activeRun?.controller.abort();
         this.#restoredActiveRunId = undefined;
         await Promise.all([
@@ -1332,7 +1379,13 @@ export class InMemorySession {
         for (const workflow of this.#workflowRuns.values()) {
             if (workflow.state.status === "running") this.stopWorkflow(workflow.state.runId);
         }
-        this.#activeRun?.controller.abort();
+        const activeRun = this.#activeRun;
+        if (activeRun !== undefined && this.hasDurableExternalRun()) {
+            this.#restoredActiveRunId = activeRun.runId;
+            this.#activeRun = undefined;
+            this.#status = "running";
+        }
+        activeRun?.controller.abort();
         this.#compactionController?.abort();
         this.#shutdownCleanup = Promise.all([
             this.#killRuntimeProcesses(5_000),
@@ -1649,6 +1702,9 @@ export class InMemorySession {
             workflowsEnabled: this.#workflowsEnabled,
             workflows: this.listWorkflows(),
             backgroundProcesses: this.#runtime?.context.bash.activeSessions?.() ?? [],
+            externalTools: this.#externalToolDefinitions.map((definition) => ({ ...definition })),
+            pendingExternalToolCalls: this.externalToolCalls({ status: "pending" }),
+            ...(this.#systemPrompt !== undefined ? { systemPrompt: this.#systemPrompt } : {}),
             ...(this.#goal !== undefined ? { goal: { ...this.#goal } } : {}),
             ...(snapshot.effort !== undefined ? { effort: snapshot.effort } : {}),
             ...(snapshot.serviceTier !== undefined ? { serviceTier: snapshot.serviceTier } : {}),
@@ -1733,6 +1789,9 @@ export class InMemorySession {
             titleStatus: this.#titleStatus,
             totalTokens: this.#totalTokens,
             tools: this.#tools,
+            externalToolCalls: this.externalToolCalls(),
+            externalTools: this.#externalToolDefinitions.map((definition) => ({ ...definition })),
+            ...(this.#systemPrompt !== undefined ? { systemPrompt: this.#systemPrompt } : {}),
             workflowsEnabled: this.#workflowsEnabled,
             workflows: [...this.#workflowRuns.values()].map((run) => ({
                 agentCalls: [...run.agentCalls],
@@ -1799,6 +1858,12 @@ export class InMemorySession {
             runId,
             text: request.text,
             userMessage,
+            ...(request.externalTools === undefined
+                ? {}
+                : {
+                      externalTools: request.externalTools.map((definition) => ({ ...definition })),
+                  }),
+            ...(request.systemPrompt === undefined ? {} : { systemPrompt: request.systemPrompt }),
         };
 
         this.#interruption = undefined;
@@ -1842,6 +1907,11 @@ export class InMemorySession {
 
     steer(request: SteerMessageRequest): SteerMessageResponse {
         this.#assertAcceptingWork();
+        if (request.externalTools !== undefined || request.systemPrompt !== undefined) {
+            throw new Error(
+                "External functions and the system prompt can only be changed by submitting a message.",
+            );
+        }
         this.#restartMetadataSettlement();
         const activeRun = this.#activeRun;
         if (activeRun === undefined) {
@@ -2024,6 +2094,282 @@ export class InMemorySession {
                 );
             });
         });
+    }
+
+    externalToolCalls(options: { status?: ExternalToolCall["status"] } = {}): ExternalToolCall[] {
+        return [...this.#externalToolCalls.values()]
+            .filter((call) => options.status === undefined || call.status === options.status)
+            .sort(
+                (left, right) =>
+                    left.createdAt - right.createdAt || left.toolCallIndex - right.toolCallIndex,
+            )
+            .map(cloneExternalToolCall);
+    }
+
+    hasDurableExternalRun(): boolean {
+        const runId = this.#activeRun?.runId ?? this.#restoredActiveRunId;
+        if (runId === undefined) return false;
+        const calls = [...this.#externalToolCalls.values()].filter(
+            (call) => call.runId === runId && call.status !== "cancelled",
+        );
+        if (calls.length === 0) return false;
+        if (calls.some((call) => !call.consumed)) return true;
+        const resultIds = new Set(calls.map((call) => call.toolCallId));
+        const resultPosition = this.#messages.reduce(
+            (latest, entry) =>
+                entry.message.role === "agent" &&
+                entry.message.blocks.some(
+                    (block) => block.type === "tool_result" && resultIds.has(block.toolCallId),
+                )
+                    ? Math.max(latest, entry.position)
+                    : latest,
+            -1,
+        );
+        return (
+            resultPosition >= 0 &&
+            !this.#messages.some(
+                (entry) => entry.runId === runId && entry.position > resultPosition,
+            )
+        );
+    }
+
+    resumeDurableExternalRun(): void {
+        if (this.#closing || this.#activeRun !== undefined) return;
+        const runId = this.#restoredActiveRunId;
+        if (runId === undefined || !this.hasDurableExternalRun()) return;
+        this.#reconcileExternalToolConsumption(runId);
+        const unconsumed = [...this.#externalToolCalls.values()].filter(
+            (call) => call.runId === runId && !call.consumed && call.status !== "cancelled",
+        );
+        if (unconsumed.length > 0) {
+            const batchId = unconsumed[0]?.batchId;
+            const batch = unconsumed.filter((call) => call.batchId === batchId);
+            if (batch.some((call) => call.status === "pending")) return;
+            const resultMessage: AgentMessage = {
+                blocks: batch
+                    .sort((left, right) => left.toolCallIndex - right.toolCallIndex)
+                    .map((call) => this.#externalToolResultBlock(call)),
+                id: createId(),
+                role: "agent",
+            };
+            this.#storeMessage(this.#messages.length, resultMessage, false, runId);
+            for (const call of batch) {
+                call.consumed = true;
+                this.#persistence?.upsertExternalToolCall?.(call);
+            }
+            this.#pruneExternalToolCalls();
+            this.#append("agent_message", { message: resultMessage, runId });
+        }
+        this.#contextMessages = undefined;
+        const continuation = () => this.#continueDurableExternalRun(runId);
+        const running = this.#taskDrain?.run(continuation) ?? continuation();
+        void running.catch(() => undefined);
+    }
+
+    resolveExternalToolCall(
+        callId: string,
+        resolution: ExternalToolCallResolution,
+    ): ResolveExternalToolCallResponse | undefined {
+        const call = this.#externalToolCalls.get(callId);
+        if (call === undefined) return undefined;
+        if (call.resolution !== undefined) {
+            if (!isDeepStrictEqual(call.resolution, resolution)) {
+                throw new Error("This external function call already has a different result.");
+            }
+            return { accepted: false, call: cloneExternalToolCall(call) };
+        }
+        if (call.status !== "pending") {
+            throw new Error("This external function call is no longer waiting for a result.");
+        }
+        call.resolution = cloneExternalResolution(resolution);
+        call.resolvedAt = this.#now();
+        call.status = resolution.status;
+        this.#persistence?.upsertExternalToolCall?.(call);
+        this.#append("external_tool_call_resolved", { call: cloneExternalToolCall(call) });
+        const waiter = this.#externalToolWaiters.get(call.id);
+        if (waiter !== undefined) {
+            this.#externalToolWaiters.delete(call.id);
+            waiter.resolve(cloneExternalResolution(resolution));
+        } else {
+            this.resumeDurableExternalRun();
+        }
+        return { accepted: true, call: cloneExternalToolCall(call) };
+    }
+
+    async #invokeExternalTool(
+        definition: ExternalToolDefinition,
+        request: {
+            arguments: unknown;
+            batchId: string;
+            toolCallId: string;
+            toolCallIndex: number;
+        },
+        signal?: AbortSignal,
+    ): Promise<ExternalToolCallResolution> {
+        const runId = this.#activeRun?.runId;
+        if (runId === undefined) throw new Error("The external function has no active run.");
+        const existing = [...this.#externalToolCalls.values()].find(
+            (call) =>
+                call.runId === runId &&
+                call.batchId === request.batchId &&
+                call.toolCallId === request.toolCallId,
+        );
+        if (existing?.resolution !== undefined) return cloneExternalResolution(existing.resolution);
+        const call: ExternalToolCall = existing ?? {
+            arguments: request.arguments,
+            batchId: request.batchId,
+            consumed: false,
+            createdAt: this.#now(),
+            definition: { ...definition },
+            id: createId(),
+            runId,
+            sessionId: this.id,
+            status: "pending",
+            toolCallId: request.toolCallId,
+            toolCallIndex: request.toolCallIndex,
+        };
+        if (existing === undefined) {
+            this.#externalToolCalls.set(call.id, call);
+            this.#persistence?.upsertExternalToolCall?.(call);
+            this.#append("external_tool_call_requested", { call: cloneExternalToolCall(call) });
+        }
+        return new Promise<ExternalToolCallResolution>((resolve, reject) => {
+            let waiter: ExternalToolWaiter;
+            const abort = () => {
+                if (this.#externalToolWaiters.get(call.id) !== waiter) return;
+                this.#externalToolWaiters.delete(call.id);
+                reject(new Error(`External function ${definition.name} was interrupted.`));
+            };
+            waiter = {
+                reject: (error) => {
+                    signal?.removeEventListener("abort", abort);
+                    reject(error);
+                },
+                resolve: (resolution) => {
+                    signal?.removeEventListener("abort", abort);
+                    resolve(resolution);
+                },
+            };
+            this.#externalToolWaiters.set(call.id, waiter);
+            signal?.addEventListener("abort", abort, { once: true });
+            if (signal?.aborted === true) abort();
+        });
+    }
+
+    #externalToolResultBlock(call: ExternalToolCall): ToolResultBlock {
+        const resolution = call.resolution;
+        if (resolution === undefined) {
+            throw new Error(`External function ${call.definition.name} has no result.`);
+        }
+        const failed = resolution.status === "failed";
+        return {
+            display: failed
+                ? `External function ${call.definition.name} failed`
+                : `External function ${call.definition.name} completed`,
+            ...(failed
+                ? {
+                      failure: {
+                          kind: "execution_failed" as const,
+                          message: resolution.error.message,
+                      },
+                      isError: true,
+                  }
+                : {}),
+            rendered: externalToolResolutionToContent(resolution),
+            toolCallId: call.toolCallId,
+            toolName: call.definition.name,
+            type: "tool_result",
+        };
+    }
+
+    #reconcileExternalToolConsumption(runId: string): void {
+        const consumedToolCallIds = new Set(
+            this.#messages.flatMap((entry) =>
+                entry.message.role !== "agent"
+                    ? []
+                    : entry.message.blocks.flatMap((block) =>
+                          block.type === "tool_result" ? [block.toolCallId] : [],
+                      ),
+            ),
+        );
+        for (const call of this.#externalToolCalls.values()) {
+            if (
+                call.runId !== runId ||
+                call.consumed ||
+                !consumedToolCallIds.has(call.toolCallId)
+            ) {
+                continue;
+            }
+            call.consumed = true;
+            this.#persistence?.upsertExternalToolCall?.(call);
+        }
+        this.#pruneExternalToolCalls();
+    }
+
+    #cancelExternalToolCalls(runId: string): void {
+        for (const call of this.#externalToolCalls.values()) {
+            if (call.runId !== runId || call.status !== "pending") continue;
+            call.status = "cancelled";
+            call.resolvedAt = this.#now();
+            this.#persistence?.upsertExternalToolCall?.(call);
+            this.#append("external_tool_call_resolved", { call: cloneExternalToolCall(call) });
+            const waiter = this.#externalToolWaiters.get(call.id);
+            if (waiter !== undefined) {
+                this.#externalToolWaiters.delete(call.id);
+                waiter.reject(
+                    new Error(`External function ${call.definition.name} was cancelled.`),
+                );
+            }
+        }
+        this.#pruneExternalToolCalls();
+    }
+
+    #pruneExternalToolCalls(): void {
+        const eligible = [...this.#externalToolCalls.values()]
+            .filter((call) => call.status === "cancelled" || call.consumed)
+            .sort(
+                (left, right) =>
+                    (right.resolvedAt ?? right.createdAt) - (left.resolvedAt ?? left.createdAt) ||
+                    right.toolCallIndex - left.toolCallIndex,
+            );
+        for (const call of eligible.slice(MAX_RETAINED_EXTERNAL_TOOL_CALLS)) {
+            this.#externalToolCalls.delete(call.id);
+        }
+        this.#persistence?.pruneExternalToolCalls?.(this.id, MAX_RETAINED_EXTERNAL_TOOL_CALLS);
+    }
+
+    async #continueDurableExternalRun(runId: string): Promise<void> {
+        if (this.#activeRun !== undefined || this.#closing) return;
+        const controller = new AbortController();
+        this.#activeRun = { controller, debug: false, kind: "user", runId };
+        this.#restoredActiveRunId = undefined;
+        this.#status = "running";
+        this.#activeSince ??= this.#now();
+        let runtime: CodingAssistantRuntime | undefined;
+        try {
+            runtime = this.#ensureRuntime();
+            const result = await runtime.agent.run({
+                signal: controller.signal,
+                onEvent: (event) => this.#appendAgentEvent(runId, event),
+                onMessage: (message) => this.#appendAgentMessage(runId, message),
+            });
+            if (this.#activeRun?.runId !== runId) return;
+            this.#appendRunFinished(runId, result);
+        } catch (error) {
+            if (this.#activeRun?.runId !== runId) return;
+            this.#status = "error";
+            this.#finishElapsedInterval();
+            this.#activeRun = undefined;
+            this.#append("run_error", {
+                errorMessage: errorToMessage(error),
+                modelLocked: this.#modelLocked(),
+                runId,
+            });
+        } finally {
+            if (this.#activeRun?.runId === runId) this.#activeRun = undefined;
+            this.#syncContextMessages();
+            this.#saveSession();
+        }
     }
 
     #agentSnapshot(): AgentSnapshot {
@@ -2243,6 +2589,19 @@ export class InMemorySession {
             false,
             runId,
         );
+        if (message.role === "agent") {
+            const resultIds = new Set(
+                message.blocks.flatMap((block) =>
+                    block.type === "tool_result" ? [block.toolCallId] : [],
+                ),
+            );
+            for (const call of this.#externalToolCalls.values()) {
+                if (call.runId !== runId || !resultIds.has(call.toolCallId)) continue;
+                call.consumed = true;
+                this.#persistence?.upsertExternalToolCall?.(call);
+            }
+            this.#pruneExternalToolCalls();
+        }
         if (partialPosition !== undefined) {
             this.#activePartial = undefined;
         }
@@ -2354,6 +2713,7 @@ export class InMemorySession {
                     this.requestUserInput(request, requestOptions),
             },
             sessionId: this.#agentMetadata.rootSessionId,
+            ...(this.#systemPrompt !== undefined ? { systemPrompt: this.#systemPrompt } : {}),
             tasks: {
                 create: (request) => this.#taskSession().createTask(request),
                 get: (taskId) => this.#taskSession().getTask(taskId),
@@ -2402,6 +2762,8 @@ export class InMemorySession {
             };
         }
         const runtime = this.#createRuntime(options);
+        this.#externalToolInstallation = { installed: new Set(), shadowed: new Map() };
+        this.#installExternalTools(runtime);
         let previousBackgroundCount = runtime.context.bash.activeSessionCount?.() ?? 0;
         runtime.context.bash.setActiveSessionCountListener?.((running) => {
             const runId = this.#activeRun?.runId ?? this.#lastSessionRunId ?? "background";
@@ -2426,10 +2788,46 @@ export class InMemorySession {
         this.#effort = snapshot.effort;
         this.#serviceTier = snapshot.serviceTier;
         this.#instructions = snapshot.instructions;
+        this.#systemPrompt = snapshot.systemPrompt;
         this.#models = this.#modelsForProvider(this.#providerId);
         this.#tools = snapshot.tools;
         this.#saveSession();
         return runtime;
+    }
+
+    #applyIntegrationConfiguration(queued: PersistedQueuedRun): void {
+        let changed = false;
+        if (Object.prototype.hasOwnProperty.call(queued, "systemPrompt")) {
+            this.#systemPrompt = queued.systemPrompt ?? undefined;
+            this.#runtime?.agent.setSystemPrompt(this.#systemPrompt);
+            changed = true;
+        }
+        if (queued.externalTools !== undefined) {
+            this.#externalToolDefinitions = queued.externalTools.map((definition) => ({
+                ...definition,
+            }));
+            if (this.#runtime !== undefined) this.#installExternalTools(this.#runtime);
+            changed = true;
+        }
+        if (changed) this.#append("session_updated", { session: this.snapshot() });
+        else this.#saveSession();
+    }
+
+    #installExternalTools(runtime: CodingAssistantRuntime): void {
+        const externalTools = this.#externalToolDefinitions.map((definition) =>
+            createExternalTool({
+                definition,
+                invoke: (request, signal) => this.#invokeExternalTool(definition, request, signal),
+            }),
+        );
+        const replacement = replaceExternalTools(
+            runtime.agent.tools,
+            externalTools,
+            this.#externalToolInstallation,
+        );
+        runtime.agent.setTools(replacement.tools);
+        this.#externalToolInstallation = replacement.installation;
+        this.#tools = runtime.agent.tools.map((tool) => tool.name);
     }
 
     #remoteTerminals(): RemoteTerminalManager {
@@ -2710,6 +3108,7 @@ export class InMemorySession {
                 runId: queued.runId,
                 sessionId: this.id,
             });
+            this.#applyIntegrationConfiguration(queued);
             runtime = this.#ensureRuntime();
             await this.#ensureMcpTools(runtime, controller.signal, queued.interactive !== false);
             await this.#observeProviderQuota(
@@ -2817,7 +3216,12 @@ export class InMemorySession {
             if (this.#activeRun?.runId === queued.runId) {
                 this.#activeRun = undefined;
             }
-            this.#syncContextMessages();
+            if (this.#restoredActiveRunId === queued.runId && this.hasDurableExternalRun()) {
+                this.#contextMessages = undefined;
+                this.#runtime = undefined;
+            } else {
+                this.#syncContextMessages();
+            }
             this.#saveSession();
             await this.#closeDebugLog(queued);
         }
@@ -2969,6 +3373,33 @@ function cloneWorkflowRun(run: WorkflowRun): WorkflowRun {
     return {
         ...run,
         logs: [...run.logs],
+    };
+}
+
+function cloneExternalToolCall(call: ExternalToolCall): ExternalToolCall {
+    return {
+        ...call,
+        definition: { ...call.definition, parameters: { ...call.definition.parameters } },
+        ...(call.resolution === undefined
+            ? {}
+            : { resolution: cloneExternalResolution(call.resolution) }),
+    };
+}
+
+function cloneExternalResolution(
+    resolution: ExternalToolCallResolution,
+): ExternalToolCallResolution {
+    if (resolution.status === "failed") {
+        return { status: "failed", error: { ...resolution.error } };
+    }
+    return {
+        status: "completed",
+        ...(resolution.content === undefined
+            ? {}
+            : { content: resolution.content.map((block) => ({ ...block })) }),
+        ...(Object.prototype.hasOwnProperty.call(resolution, "output")
+            ? { output: resolution.output }
+            : {}),
     };
 }
 

@@ -111,7 +111,9 @@ export interface ToolExecutionOptions {
     /** Reports a short ephemeral activity label while the tool remains active. */
     onStatus?: (status: string) => void;
     signal?: AbortSignal;
+    toolBatchId?: string;
     toolCallId?: string;
+    toolCallIndex?: number;
 }
 
 export type AutoPermissionPredicate<TArgs> = (
@@ -130,6 +132,8 @@ export interface DefinedTool<
     description: string;
     arguments: TArgsSchema;
     returnType: TReturnSchema;
+    /** Durable tools form a barrier after immediate calls in the same model batch. */
+    execution: "immediate" | "durable";
     execute: (
         args: Static<TArgsSchema>,
         context: AgentContext,
@@ -165,6 +169,7 @@ export interface AnyDefinedTool {
     description: string;
     arguments: TSchema;
     returnType: TSchema;
+    execution: "immediate" | "durable";
     execute: (
         args: never,
         context: AgentContext,
@@ -222,12 +227,14 @@ export function defineTool<
     autoPermissionInstructions?: string;
     describeAutoPermissionAction?: AutoPermissionActionDescriber<Static<TArgsSchema>>;
     requiresAutoOrFullAccess?: boolean;
+    execution?: "immediate" | "durable";
     shouldReviewInAutoMode: AutoPermissionPredicate<Static<TArgsSchema>>;
     shouldRunInFullAccessInAutoMode?: AutoPermissionPredicate<Static<TArgsSchema>>;
     locks: readonly Lock<Static<TArgsSchema>>[];
 }): DefinedTool<TArgsSchema, TReturnSchema> {
     return {
         ...tool,
+        execution: tool.execution ?? "immediate",
         requiresAutoOrFullAccess: tool.requiresAutoOrFullAccess ?? false,
         shouldRunInFullAccessInAutoMode: tool.shouldRunInFullAccessInAutoMode ?? (() => false),
     };

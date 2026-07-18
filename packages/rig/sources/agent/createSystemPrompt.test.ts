@@ -24,6 +24,27 @@ import { piBashTool } from "../tools/pi/bash.js";
 const tempDirs: string[] = [];
 
 describe("createSystemPrompt", () => {
+    it("uses an exact integration system prompt without assembled Rig instructions", async () => {
+        const model = defineModel({
+            defaultThinkingLevel: "off",
+            id: "mock/model",
+            name: "Mock",
+            thinkingLevels: ["off"],
+        });
+        const provider = providerFor("mock", model);
+
+        await expect(
+            createSystemPrompt({
+                context: contextFor("/tmp/rig-exact-system-prompt"),
+                instructions: "Internal instructions.",
+                messages: [],
+                model,
+                provider,
+                systemPrompt: "Exact external prompt.",
+            }),
+        ).resolves.toBe("Exact external prompt.");
+    });
+
     afterEach(async () => {
         await Promise.all(
             tempDirs.splice(0).map((path) =>

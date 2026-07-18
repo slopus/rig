@@ -146,6 +146,7 @@ const expectedSessionColumns = [
     "context_messages_json",
     "docker_json",
     "elapsed_ms",
+    "external_tools_json",
     "goal_json",
     "metadata_run_id",
     "metadata_updated_at_ms",
@@ -154,13 +155,14 @@ const expectedSessionColumns = [
     "recap",
     "secret_ids_json",
     "service_tier",
+    "system_prompt",
     "task_name",
     "tasks_json",
     "total_tokens",
     "workflows_enabled",
     "workflows_json",
 ];
-const expectedQueuedRunColumns = ["debug", "debug_directory", "kind"];
+const expectedQueuedRunColumns = ["debug", "debug_directory", "integration_config_json", "kind"];
 
 for (const column of expectedSessionColumns) {
     if (!sessionColumns.has(column)) throw new Error("Missing migrated sessions column: " + column);
@@ -168,9 +170,15 @@ for (const column of expectedSessionColumns) {
 for (const column of expectedQueuedRunColumns) {
     if (!queuedRunColumns.has(column)) throw new Error("Missing migrated queued_runs column: " + column);
 }
+const externalCallsTable = database
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'external_tool_calls'")
+    .get();
+if (externalCallsTable?.name !== "external_tool_calls") {
+    throw new Error("Missing migrated external_tool_calls table.");
+}
 
 const version = database.prepare("PRAGMA user_version").get().user_version;
-if (version !== 1) throw new Error("Expected schema version 1, received " + String(version));
+if (version !== 2) throw new Error("Expected schema version 2, received " + String(version));
 
 const session = database
     .prepare("SELECT id, permission_mode, tasks_json, workflows_json FROM sessions WHERE id = ?")

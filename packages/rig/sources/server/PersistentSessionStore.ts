@@ -45,6 +45,7 @@ import { SecretRegistry, type SecretRegistration } from "../secrets/index.js";
 import type { SecretAttachmentScope } from "../secrets/index.js";
 import { normalizeProjectCwd } from "./normalizeProjectCwd.js";
 import { initializeSessionDatabase } from "./initializeSessionDatabase.js";
+import type { ExternalToolCall, ExternalToolDefinition } from "../external-tools/index.js";
 
 export interface PersistentSessionStoreOptions {
     createRuntime?: InMemorySessionOptions["createRuntime"];
@@ -308,16 +309,18 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     kind,
                     text,
                     user_message_json,
+                    integration_config_json,
                     created_at_ms
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(session_id, run_id) DO UPDATE SET
                     debug = excluded.debug,
                     debug_directory = excluded.debug_directory,
                     display_text = excluded.display_text,
                     kind = excluded.kind,
                     text = excluded.text,
-                    user_message_json = excluded.user_message_json
+                    user_message_json = excluded.user_message_json,
+                    integration_config_json = excluded.integration_config_json
                 `,
             )
             .run(
@@ -329,6 +332,16 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 run.kind,
                 run.text,
                 JSON.stringify(run.userMessage),
+                run.externalTools === undefined && run.systemPrompt === undefined
+                    ? null
+                    : JSON.stringify({
+                          ...(run.externalTools === undefined
+                              ? {}
+                              : { externalTools: run.externalTools }),
+                          ...(run.systemPrompt === undefined
+                              ? {}
+                              : { systemPrompt: run.systemPrompt }),
+                      }),
                 this.#now(),
             );
     }
@@ -408,6 +421,24 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     : {}),
             };
         });
+    }
+
+    listExternalToolCalls(
+        options: { limit?: number; status?: ExternalToolCall["status"] } = {},
+    ): readonly ExternalToolCall[] {
+        const rows =
+            options.status === undefined
+                ? this.#database
+                      .prepare(
+                          "SELECT * FROM external_tool_calls ORDER BY created_at_ms ASC, tool_call_index ASC LIMIT ?",
+                      )
+                      .all(options.limit ?? 100)
+                : this.#database
+                      .prepare(
+                          "SELECT * FROM external_tool_calls WHERE status = ? ORDER BY created_at_ms ASC, tool_call_index ASC LIMIT ?",
+                      )
+                      .all(options.status, options.limit ?? 100);
+        return rows.map(readExternalToolCallRow);
     }
 
     listSubagents(parentSessionId: string): readonly SubagentSummary[] {
@@ -565,6 +596,10 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
 
             const state = session.state();
             const runId = state.activeRunId ?? state.queuedRuns.at(0)?.runId;
+            if (session.hasDurableExternalRun()) {
+                session.resumeDurableExternalRun();
+                continue;
+            }
             if (session.isSubagent() && state.status === "suspended") {
                 const message =
                     "The subagent stopped working because the local server restarted before its suspended run finished.";
@@ -642,6 +677,8 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     service_tier,
                     instructions,
                     append_system_prompt,
+                    system_prompt,
+                    external_tools_json,
                     status,
                     active_run_id,
                     active_since_ms,
@@ -668,7 +705,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     created_at_ms,
                     updated_at_ms
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     agent_id = excluded.agent_id,
                     session_kind = excluded.session_kind,
@@ -687,6 +724,8 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     service_tier = excluded.service_tier,
                     instructions = excluded.instructions,
                     append_system_prompt = excluded.append_system_prompt,
+                    system_prompt = excluded.system_prompt,
+                    external_tools_json = excluded.external_tools_json,
                     status = excluded.status,
                     active_run_id = excluded.active_run_id,
                     active_since_ms = excluded.active_since_ms,
@@ -732,6 +771,8 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 state.serviceTier ?? null,
                 state.instructions ?? null,
                 state.appendSystemPrompt ?? null,
+                state.systemPrompt ?? null,
+                JSON.stringify(state.externalTools ?? []),
                 state.status,
                 state.activeRunId ?? null,
                 state.activeSince ?? null,
@@ -800,6 +841,70 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 JSON.stringify(message.message),
                 this.#now(),
             );
+    }
+
+    upsertExternalToolCall(call: ExternalToolCall): void {
+        this.#database
+            .prepare(
+                `
+                INSERT INTO external_tool_calls (
+                    id,
+                    session_id,
+                    run_id,
+                    batch_id,
+                    tool_call_id,
+                    tool_call_index,
+                    definition_json,
+                    arguments_json,
+                    status,
+                    resolution_json,
+                    consumed,
+                    created_at_ms,
+                    resolved_at_ms
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    status = excluded.status,
+                    resolution_json = excluded.resolution_json,
+                    consumed = excluded.consumed,
+                    resolved_at_ms = excluded.resolved_at_ms
+                `,
+            )
+            .run(
+                call.id,
+                call.sessionId,
+                call.runId,
+                call.batchId,
+                call.toolCallId,
+                call.toolCallIndex,
+                JSON.stringify(call.definition),
+                JSON.stringify(call.arguments),
+                call.status,
+                call.resolution === undefined ? null : JSON.stringify(call.resolution),
+                call.consumed ? 1 : 0,
+                call.createdAt,
+                call.resolvedAt ?? null,
+            );
+    }
+
+    pruneExternalToolCalls(sessionId: string, retain: number): void {
+        this.#database
+            .prepare(
+                `
+                DELETE FROM external_tool_calls
+                WHERE session_id = ?
+                    AND (status = 'cancelled' OR consumed = 1)
+                    AND id NOT IN (
+                        SELECT id
+                        FROM external_tool_calls
+                        WHERE session_id = ?
+                            AND (status = 'cancelled' OR consumed = 1)
+                        ORDER BY COALESCE(resolved_at_ms, created_at_ms) DESC,
+                            tool_call_index DESC
+                        LIMIT ?
+                    )
+                `,
+            )
+            .run(sessionId, sessionId, retain);
     }
 
     #appendEvent(event: SessionEvent): void {
@@ -939,7 +1044,8 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         return this.#database
             .prepare(
                 `
-                SELECT run_id, debug, debug_directory, display_text, kind, text, user_message_json
+                SELECT run_id, debug, debug_directory, display_text, kind, text, user_message_json,
+                    integration_config_json
                 FROM queued_runs
                 WHERE session_id = ?
                 ORDER BY created_at_ms ASC
@@ -948,6 +1054,14 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             .all(sessionId)
             .map((row) => {
                 const debugDirectory = readOptionalString(row, "debug_directory");
+                const integrationConfigJson = readOptionalString(row, "integration_config_json");
+                const integrationConfig =
+                    integrationConfigJson === undefined
+                        ? {}
+                        : (JSON.parse(integrationConfigJson) as {
+                              externalTools?: readonly ExternalToolDefinition[];
+                              systemPrompt?: string | null;
+                          });
                 return {
                     ...(readNumber(row, "debug") === 0 ? {} : { debug: true }),
                     ...(debugDirectory === undefined ? {} : { debugDirectory }),
@@ -956,8 +1070,23 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     runId: readString(row, "run_id"),
                     text: readString(row, "text"),
                     userMessage: JSON.parse(readString(row, "user_message_json")),
+                    ...integrationConfig,
                 };
             }) as PersistedQueuedRun[];
+    }
+
+    #loadExternalToolCalls(sessionId: string): ExternalToolCall[] {
+        return this.#database
+            .prepare(
+                `
+                SELECT *
+                FROM external_tool_calls
+                WHERE session_id = ?
+                ORDER BY created_at_ms ASC, tool_call_index ASC
+                `,
+            )
+            .all(sessionId)
+            .map(readExternalToolCallRow);
     }
 
     #loadSession(sessionId: string): InMemorySession | undefined {
@@ -980,6 +1109,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         const secretIdsJson = readOptionalString(row, "secret_ids_json");
         const instructions = readOptionalString(row, "instructions");
         const appendSystemPrompt = readOptionalString(row, "append_system_prompt");
+        const systemPrompt = readOptionalString(row, "system_prompt");
         const interruptionJson = readOptionalString(row, "interruption_json");
         const lastMessageAt = readOptionalNumber(row, "last_message_at_ms");
         const modelId = readString(row, "model_id");
@@ -1013,6 +1143,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             agent,
             agentId: readString(row, "agent_id"),
             ...(appendSystemPrompt !== undefined ? { appendSystemPrompt } : {}),
+            ...(systemPrompt !== undefined ? { systemPrompt } : {}),
             cwd: readString(row, "cwd"),
             elapsedMs: readNumber(row, "elapsed_ms"),
             ...(dockerJson !== undefined
@@ -1031,6 +1162,10 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 : {}),
             ...(lastMessageAt !== undefined ? { lastMessageAt } : {}),
             messages: this.#loadMessages(sessionId),
+            externalToolCalls: this.#loadExternalToolCalls(sessionId),
+            externalTools: JSON.parse(
+                readString(row, "external_tools_json"),
+            ) as ExternalToolDefinition[],
             modelId,
             models: JSON.parse(readString(row, "models_json")) as Model[],
             providerId: readString(row, "provider_id"),
@@ -1165,4 +1300,24 @@ function readString(row: Record<string, unknown>, key: string): string {
         throw new Error(`Expected text SQLite column '${key}'.`);
     }
     return value;
+}
+
+function readExternalToolCallRow(row: Record<string, unknown>): ExternalToolCall {
+    const resolutionJson = readOptionalString(row, "resolution_json");
+    const resolvedAt = readOptionalNumber(row, "resolved_at_ms");
+    return {
+        arguments: JSON.parse(readString(row, "arguments_json")),
+        batchId: readString(row, "batch_id"),
+        consumed: readNumber(row, "consumed") !== 0,
+        createdAt: readNumber(row, "created_at_ms"),
+        definition: JSON.parse(readString(row, "definition_json")) as ExternalToolDefinition,
+        id: readString(row, "id"),
+        runId: readString(row, "run_id"),
+        sessionId: readString(row, "session_id"),
+        status: readString(row, "status") as ExternalToolCall["status"],
+        toolCallId: readString(row, "tool_call_id"),
+        toolCallIndex: readNumber(row, "tool_call_index"),
+        ...(resolutionJson === undefined ? {} : { resolution: JSON.parse(resolutionJson) }),
+        ...(resolvedAt === undefined ? {} : { resolvedAt }),
+    };
 }

@@ -39,6 +39,7 @@ export interface AgentSnapshot {
     queue: readonly QueuedAgentMessage[];
     tools: readonly string[];
     lastRunId?: string;
+    systemPrompt?: string;
 }
 
 export interface AgentOptions {
@@ -52,6 +53,7 @@ export interface AgentOptions {
     messages?: readonly Message[];
     contextMessages?: readonly Message[];
     instructions?: string;
+    systemPrompt?: string;
     /** Omit for a tool-free agent; product runtimes compose provider tools explicitly. */
     tools?: readonly AnyDefinedTool[];
     /** Selects default tools without coupling the generic agent to provider tool registries. */
@@ -95,6 +97,7 @@ export class Agent {
     #effort: string | undefined;
     #serviceTier: ServiceTier | undefined;
     #instructions: string | undefined;
+    #systemPrompt: string | undefined;
     #tools: readonly AnyDefinedTool[];
     #toolSelector: AgentToolSelector | undefined;
     #usesExplicitTools: boolean;
@@ -123,6 +126,7 @@ export class Agent {
         this.#effort = options.effort ?? this.#model.defaultThinkingLevel;
         this.#serviceTier = this.#validateServiceTier(options.serviceTier);
         this.#instructions = options.instructions;
+        this.#systemPrompt = options.systemPrompt;
         this.#toolSelector = options.toolSelector;
         this.#usesExplicitTools = options.tools !== undefined;
         this.#tools =
@@ -181,6 +185,10 @@ export class Agent {
 
     setAppendSystemPrompt(appendSystemPrompt: string | undefined): void {
         this.#appendSystemPrompt = appendSystemPrompt;
+    }
+
+    setSystemPrompt(systemPrompt: string | undefined): void {
+        this.#systemPrompt = systemPrompt;
     }
 
     setEffort(effort: string | undefined): void {
@@ -413,6 +421,7 @@ export class Agent {
             if (this.#appendSystemPrompt !== undefined) {
                 loopOptions.appendSystemPrompt = this.#appendSystemPrompt;
             }
+            if (this.#systemPrompt !== undefined) loopOptions.systemPrompt = this.#systemPrompt;
             if (this.#effort !== undefined) loopOptions.effort = this.#effort;
             if (this.#serviceTier !== undefined) loopOptions.serviceTier = this.#serviceTier;
             if (this.#instructions !== undefined) loopOptions.instructions = this.#instructions;
@@ -472,6 +481,7 @@ export class Agent {
                 : {}),
             ...(this.#instructions !== undefined ? { instructions: this.#instructions } : {}),
             ...(this.#lastRunId !== undefined ? { lastRunId: this.#lastRunId } : {}),
+            ...(this.#systemPrompt !== undefined ? { systemPrompt: this.#systemPrompt } : {}),
         };
     }
 

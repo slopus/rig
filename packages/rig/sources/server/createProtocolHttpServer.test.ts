@@ -20,6 +20,101 @@ import { TrackedTaskDrain } from "./TrackedTaskDrain.js";
 import type { ProviderQuota } from "../providers/providerQuota.js";
 
 describe("createProtocolHttpServer", () => {
+    it("broadcasts one fully configured message to every primary session", async () => {
+        const store = new InMemorySessionStore();
+        const first = store.create({ cwd: "/tmp/broadcast-first" });
+        const second = store.create({ cwd: "/tmp/broadcast-second" });
+        const firstSubmit = vi.spyOn(first, "submit");
+        const secondSubmit = vi.spyOn(second, "submit");
+        const { client, close } = await startServer({ store });
+        try {
+            const request = {
+                all: true,
+                externalTools: [
+                    {
+                        description: "Look up a ticket.",
+                        name: "lookup_ticket",
+                        parameters: { type: "object" },
+                    },
+                ],
+                systemPrompt: "Exact broadcast prompt.",
+                text: "Check the queue.",
+            } as const;
+            const response = await client.broadcastMessage(request);
+
+            expect(response.submissions.map((submission) => submission.sessionId).sort()).toEqual(
+                [first.id, second.id].sort(),
+            );
+            const { all: _all, ...message } = request;
+            expect(firstSubmit).toHaveBeenCalledWith(message);
+            expect(secondSubmit).toHaveBeenCalledWith(message);
+            await expect(
+                client.broadcastMessage({
+                    sessionIds: [first.id, first.id],
+                    text: "Do not submit this twice.",
+                }),
+            ).rejects.toThrow("unique");
+            expect(firstSubmit).toHaveBeenCalledTimes(1);
+        } finally {
+            await first.abort();
+            await second.abort();
+            await close();
+        }
+    });
+
+    it("lists and idempotently resolves external function calls through the integration API", async () => {
+        const store = new PersistentSessionStore({ databasePath: ":memory:" });
+        const state = pausedGoalState();
+        store.saveSession(state);
+        store.upsertExternalToolCall({
+            arguments: { ticket: 42 },
+            batchId: "batch-1",
+            consumed: false,
+            createdAt: 100,
+            definition: {
+                description: "Look up a ticket.",
+                name: "lookup_ticket",
+                parameters: { type: "object" },
+            },
+            id: "external-call-1",
+            runId: "run-1",
+            sessionId: state.id,
+            status: "pending",
+            toolCallId: "provider-call-1",
+            toolCallIndex: 0,
+        });
+        const { client, close } = await startServer({ store });
+        try {
+            await expect(client.listPendingExternalToolCalls()).resolves.toMatchObject({
+                calls: [{ id: "external-call-1", sessionId: state.id }],
+            });
+            await expect(client.listExternalToolCalls(state.id)).resolves.toMatchObject({
+                calls: [{ id: "external-call-1", status: "pending" }],
+            });
+            await expect(
+                client.resolveExternalToolCall(state.id, "external-call-1", {
+                    output: "x".repeat(1_048_576),
+                    status: "completed",
+                }),
+            ).rejects.toThrow("allowed limit");
+            await expect(
+                client.resolveExternalToolCall(state.id, "external-call-1", {
+                    output: { state: "resolved" },
+                    status: "completed",
+                }),
+            ).resolves.toMatchObject({ accepted: true, call: { status: "completed" } });
+            await expect(
+                client.resolveExternalToolCall(state.id, "external-call-1", {
+                    output: { state: "resolved" },
+                    status: "completed",
+                }),
+            ).resolves.toMatchObject({ accepted: false });
+        } finally {
+            await close();
+            store.close();
+        }
+    });
+
     it("serves only the current provider quota from the daemon quota service", async () => {
         const quota = {
             capturedAt: 10,
@@ -1416,6 +1511,12 @@ describe("createProtocolHttpServer", () => {
             await expect(client.reset("subagent-1")).rejects.toThrow("read-only");
             await expect(client.rewind("subagent-1", "message-1")).rejects.toThrow("read-only");
             await expect(client.compact("subagent-1")).rejects.toThrow("read-only");
+            await expect(
+                client.broadcastMessage({
+                    sessionIds: ["subagent-1"],
+                    text: "Continue working.",
+                }),
+            ).rejects.toThrow("cannot receive broadcasts");
         } finally {
             await close();
             store.close();
