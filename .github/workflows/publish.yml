@@ -35,6 +35,14 @@ jobs:
                   node-version: "24"
                   package-manager-cache: false
 
+            - name: Install Linux sandbox dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install --yes bubblewrap ripgrep socat
+                  if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+                      sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+                  fi
+
             - name: Verify the tagged commit is on main
               run: |
                   if ! git merge-base --is-ancestor HEAD origin/main; then
