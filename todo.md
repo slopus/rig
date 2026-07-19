@@ -190,3 +190,10 @@ This file tracks known defects, verified coverage gaps, and concrete follow-up w
 
 - [ ] Explore cmux integration.
     - Identify the high-value session, pane, and background-terminal workflows before choosing an integration surface.
+
+## Nice to have
+
+- [ ] Support starred (favorite) models.
+    - Let users star models, persisted in the config file, and surface starred models first in the model picker.
+    - Ship factory-default favorites so users who never customize still get a good curated set; a user override in config replaces the defaults.
+    - Consider indicating which providers the user is logged into (and which are unavailable) in the model picker, so starred-but-unauthenticated models are not a dead end.
