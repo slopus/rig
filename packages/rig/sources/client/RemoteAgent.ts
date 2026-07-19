@@ -248,6 +248,9 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
                     : undefined
                 : content;
         const submitted = await this.#client.submitMessage(this.#session.id, {
+            ...(options.clientSubmissionId === undefined
+                ? {}
+                : { clientSubmissionId: options.clientSubmissionId }),
             ...(requestContent === undefined ? {} : { content: requestContent }),
             ...(this.#debug ? { debug: true } : {}),
             ...(options.displayText !== undefined ? { displayText: options.displayText } : {}),

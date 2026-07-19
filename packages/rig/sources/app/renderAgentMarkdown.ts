@@ -20,7 +20,7 @@ export function renderAgentMarkdown(options: RenderAgentMarkdownOptions): string
     const text = sanitizeTerminalText(options.text).trimEnd();
 
     if (text.length === 0) {
-        return [" ".repeat(width)];
+        return [];
     }
 
     const defaultTextStyle: DefaultTextStyle = {
@@ -33,7 +33,7 @@ export function renderAgentMarkdown(options: RenderAgentMarkdownOptions): string
 
     const rendered = markdown.render(width);
     if (rendered.length === 0) {
-        return [" ".repeat(width)];
+        return [];
     }
 
     return rendered.map((line) => truncateToWidth(line, width, "", true));

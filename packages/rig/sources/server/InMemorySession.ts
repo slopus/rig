@@ -1959,7 +1959,7 @@ export class InMemorySession {
         ];
         const userMessage: UserMessage = {
             role: "user",
-            id: createId(),
+            id: request.clientSubmissionId ?? createId(),
             blocks,
         };
         const visibleMessage: UserMessage = {

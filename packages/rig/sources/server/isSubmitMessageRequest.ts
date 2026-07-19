@@ -11,6 +11,13 @@ export function isSubmitMessageRequest(value: unknown): value is SubmitMessageRe
         return false;
     const request = value as Record<string, unknown>;
     if (
+        request.clientSubmissionId !== undefined &&
+        (typeof request.clientSubmissionId !== "string" ||
+            request.clientSubmissionId.length === 0 ||
+            request.clientSubmissionId.length > 256)
+    )
+        return false;
+    if (
         request.systemPrompt !== undefined &&
         request.systemPrompt !== null &&
         typeof request.systemPrompt !== "string"

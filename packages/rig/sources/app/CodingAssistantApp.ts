@@ -233,6 +233,7 @@ interface PendingPrompt {
     content: string | readonly ContentBlock[];
     displayText: string;
     transcriptAppended?: boolean;
+    transcriptEntryId?: string;
 }
 
 interface PendingSteeringMessage {
@@ -253,6 +254,7 @@ interface PromptSubmission {
     content: string | readonly ContentBlock[];
     displayText: string;
     transcriptAppended?: boolean;
+    transcriptEntryId?: string;
 }
 
 interface LocalSteeringSubmission {
@@ -332,6 +334,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #terminalFocused = true;
     #freeformUserInput: FreeformUserInput | undefined;
     #pendingPrompts: PendingPrompt[] = [];
+    #pendingSubmittedUserEntries: AppTranscriptEntry[] = [];
     #pendingSteeringMessages: PendingSteeringMessage[] = [];
     #inFlightSteeringSubmissions = new Map<number, LocalSteeringSubmission>();
     #acceptedSteeringSubmissions: LocalSteeringSubmission[] = [];
@@ -636,6 +639,14 @@ export class CodingAssistantApp implements Component, Focusable {
                 return;
             } else {
                 this.#recordUserInput(event.createdAt);
+                if (
+                    this.#reconcileSubmittedUserEntry(
+                        event.data.message.id,
+                        event.data.displayText,
+                    )
+                ) {
+                    return;
+                }
             }
             this.#appendEntry({
                 ...(event.data.source === "notification" ? { childText: true } : {}),
@@ -2167,11 +2178,22 @@ export class CodingAssistantApp implements Component, Focusable {
                 return;
             }
             this.#pendingPrompts.shift();
-            if (!this.#sessionBacked && prompt.transcriptAppended !== true) {
-                this.#appendEntry({ role: "user", text: prompt.displayText });
+            if (prompt.transcriptAppended !== true) {
+                const entry = this.#appendEntry({ role: "user", text: prompt.displayText });
+                prompt.transcriptAppended = true;
+                prompt.transcriptEntryId = entry.id;
+                if (this.#sessionBacked) {
+                    this.#pendingSubmittedUserEntries.push(entry);
+                    if (this.#pendingSubmittedUserEntries.length > 100) {
+                        this.#pendingSubmittedUserEntries.shift();
+                    }
+                }
             }
 
             const result = await this.#agent.send(prompt.content, {
+                ...(this.#sessionBacked && prompt.transcriptEntryId !== undefined
+                    ? { clientSubmissionId: prompt.transcriptEntryId }
+                    : {}),
                 displayText: prompt.displayText,
                 signal: controller.signal,
                 ...(this.#sessionBacked
@@ -2721,8 +2743,6 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#finishStreamText(event.content);
         } else if (event.type === "thinking_start") {
             this.#statusText = "Thinking";
-            const entry = this.#ensureThinkingEntry(event.contentIndex);
-            this.#streamingThinkingEntryIds.add(entry.id);
         } else if (event.type === "thinking_delta") {
             this.#statusText = "Thinking";
             this.#appendThinkingText(event.contentIndex, event.delta);
@@ -2877,7 +2897,8 @@ export class CodingAssistantApp implements Component, Focusable {
         let pendingText = "";
         let textSegment = 0;
         const flushText = () => {
-            if (pendingText.length === 0) {
+            if (pendingText.trim().length === 0) {
+                pendingText = "";
                 return;
             }
 
@@ -2933,11 +2954,23 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #appendStreamText(delta: string): void {
+        if (this.#streamEntryId === undefined && delta.trim().length === 0) {
+            return;
+        }
         const entry = this.#ensureStreamEntry();
         entry.text += delta;
     }
 
     #finishStreamText(text: string): void {
+        if (text.trim().length === 0) {
+            if (this.#streamEntryId !== undefined) {
+                const entry = this.#entries.find(
+                    (candidate) => candidate.id === this.#streamEntryId,
+                );
+                if (entry !== undefined && entry.text.trim().length === 0) entry.text = "";
+            }
+            return;
+        }
         const entry = this.#ensureStreamEntry();
         entry.text = text;
     }
@@ -2958,7 +2991,10 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #appendThinkingText(contentIndex: number, delta: string): void {
-        if (delta.length === 0) {
+        if (
+            delta.length === 0 ||
+            (!this.#thinkingEntryIdsByContentIndex.has(contentIndex) && delta.trim().length === 0)
+        ) {
             return;
         }
 
@@ -2968,7 +3004,9 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #finishThinkingText(contentIndex: number, text: string): void {
-        if (text.length === 0 && !this.#thinkingEntryIdsByContentIndex.has(contentIndex)) {
+        if (text.trim().length === 0) {
+            const existingId = this.#thinkingEntryIdsByContentIndex.get(contentIndex);
+            if (existingId !== undefined) this.#streamingThinkingEntryIds.delete(existingId);
             return;
         }
 
@@ -3076,7 +3114,7 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #finishThinkingMessage(messageId: string, contentIndex: number, text: string): void {
-        if (text.length === 0) {
+        if (text.trim().length === 0) {
             return;
         }
 
@@ -3091,13 +3129,43 @@ export class CodingAssistantApp implements Component, Focusable {
             const entry = this.#entries.find((candidate) => candidate.id === this.#streamEntryId);
             if (entry !== undefined) {
                 entry.id = messageId;
-                if (!this.#abortNotified) entry.text = text;
+                if (!this.#abortNotified && text.trim().length > 0) entry.text = text;
                 this.#streamEntryId = undefined;
                 return;
             }
         }
 
+        if (text.trim().length === 0) return;
         this.#appendEntry({ id: messageId, role: "assistant", text });
+    }
+
+    #reconcileSubmittedUserEntry(messageId: string, displayText: string): boolean {
+        const existing = this.#entries.find(
+            (entry) => entry.role === "user" && entry.id === messageId,
+        );
+        if (existing !== undefined) {
+            this.#pendingSubmittedUserEntries = this.#pendingSubmittedUserEntries.filter(
+                (entry) => entry !== existing,
+            );
+            return true;
+        }
+
+        let pendingIndex = this.#pendingSubmittedUserEntries.findIndex(
+            (entry) => entry.id === messageId,
+        );
+        if (pendingIndex < 0) {
+            pendingIndex = this.#pendingSubmittedUserEntries.findIndex(
+                (entry) => entry.text === displayText,
+            );
+        }
+        if (pendingIndex < 0) return false;
+
+        const [entry] = this.#pendingSubmittedUserEntries.splice(pendingIndex, 1);
+        if (entry === undefined) return false;
+        entry.id = messageId;
+        entry.text = displayText;
+        this.#requestRender();
+        return true;
     }
 
     #appendEntry(entry: Omit<AppTranscriptEntry, "id"> & { id?: string }): AppTranscriptEntry {
@@ -3150,6 +3218,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
     #clearEntries(): void {
         this.#entries = [];
+        this.#pendingSubmittedUserEntries = [];
         this.#streamedToolCallEntries.clear();
         this.#stoppedToolCallIds.clear();
         this.#observedShellProcesses = [];
@@ -4293,6 +4362,7 @@ export class CodingAssistantApp implements Component, Focusable {
         const prefixWidth = visibleWidth(prefix);
         const contentWidth = Math.max(1, width - prefixWidth);
         const isStreaming = entry.id === this.#streamEntryId;
+        if (!isStreaming && entry.text.trim().length === 0) return [];
         const renderMarkdown = (text: string): readonly string[] =>
             renderAgentMarkdown({
                 text,
@@ -4314,6 +4384,9 @@ export class CodingAssistantApp implements Component, Focusable {
                 width: contentWidth,
             });
         }
+        if (isStreaming && renderedMarkdown.length === 0) {
+            renderedMarkdown = [" ".repeat(contentWidth)];
+        }
         const indent = " ".repeat(prefixWidth);
         return renderedMarkdown.map((line, index) =>
             this.#fitLine(`${index === 0 ? prefix : indent}${line}`, width),
@@ -4324,9 +4397,11 @@ export class CodingAssistantApp implements Component, Focusable {
         const prefix = `${DIM}•${RESET} `;
         const prefixWidth = visibleWidth(prefix);
         const contentWidth = Math.max(1, width - prefixWidth);
-        const renderedMarkdown = this.#thinkingStreamingRender.render({
+        const isStreaming = this.#streamingThinkingEntryIds.has(entry.id);
+        if (!isStreaming && entry.text.trim().length === 0) return [];
+        let renderedMarkdown = this.#thinkingStreamingRender.render({
             entry,
-            isStreaming: this.#streamingThinkingEntryIds.has(entry.id),
+            isStreaming,
             render: (text) =>
                 renderAgentMarkdown({
                     text,
@@ -4337,6 +4412,9 @@ export class CodingAssistantApp implements Component, Focusable {
             text: entry.text,
             width: contentWidth,
         });
+        if (isStreaming && renderedMarkdown.length === 0) {
+            renderedMarkdown = [" ".repeat(contentWidth)];
+        }
         const indent = " ".repeat(prefixWidth);
         return renderedMarkdown.map((line, index) =>
             this.#fitLine(`${index === 0 ? prefix : indent}${line}`, width),

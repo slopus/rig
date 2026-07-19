@@ -388,6 +388,7 @@ export interface TrimGlobalEventsResponse {
 }
 
 export interface SubmitMessageRequest {
+    clientSubmissionId?: string;
     content?: readonly ContentBlock[];
     debug?: boolean;
     displayText?: string;

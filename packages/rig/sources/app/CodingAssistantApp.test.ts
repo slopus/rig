@@ -29,6 +29,179 @@ import { DEFAULT_TERMINAL_THEME } from "./defaultTerminalTheme.js";
 import { stripAnsi } from "./testing/stripAnsi.js";
 
 describe("CodingAssistantApp", () => {
+    it("does not render rows or separators for finalized whitespace-only assistant or thinking entries", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProcessManager(),
+            sessionBacked: true,
+            showReasoning: true,
+            tui: fakeTui(),
+        });
+        const baseline = app.render(80);
+
+        app.applySessionEvent({
+            createdAt: 1,
+            data: {
+                message: {
+                    blocks: [{ text: " \n\n ", type: "text" }],
+                    id: "whitespace-assistant",
+                    role: "agent",
+                },
+                runId: "run-1",
+            },
+            id: "whitespace-assistant-event",
+            sessionId: "session-1",
+            type: "agent_message",
+        });
+        app.applySessionEvent({
+            createdAt: 2,
+            data: {
+                event: {
+                    contentIndex: 0,
+                    partial: {
+                        api: "test",
+                        content: [],
+                        model: "openai/gpt-test",
+                        provider: "codex",
+                        role: "assistant",
+                        stopReason: "stop",
+                        timestamp: 1,
+                        usage: zeroUsage(),
+                    },
+                    type: "thinking_start",
+                },
+                runId: "run-1",
+            },
+            id: "empty-thinking-start",
+            sessionId: "session-1",
+            type: "agent_event",
+        });
+        app.applySessionEvent({
+            createdAt: 3,
+            data: {
+                event: {
+                    content: "\n\n",
+                    contentIndex: 0,
+                    partial: {
+                        api: "test",
+                        content: [],
+                        model: "openai/gpt-test",
+                        provider: "codex",
+                        role: "assistant",
+                        stopReason: "stop",
+                        timestamp: 1,
+                        usage: zeroUsage(),
+                    },
+                    type: "thinking_end",
+                },
+                runId: "run-1",
+            },
+            id: "empty-thinking-end",
+            sessionId: "session-1",
+            type: "agent_event",
+        });
+
+        expect(app.render(80)).toEqual(baseline);
+    });
+
+    it("replaces a drained session-backed queued row with one user history row before its echo", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const run = deferred<{
+            contextMessages: readonly never[];
+            messages: readonly never[];
+            runId: string;
+            stopReason: "stop";
+        }>();
+        const send = vi.fn(() => run.promise);
+        const app = new CodingAssistantApp({
+            agent: Object.assign(
+                new Agent({
+                    provider,
+                    modelId: model.id,
+                    context: harness.context,
+                    printToConsole: false,
+                }),
+                { send },
+            ),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProcessManager(),
+            sessionBacked: true,
+            tui: fakeTui(),
+        });
+
+        submit(app, "Keep the composer steady");
+        expect(stripAnsi(app.render(100).join("\n"))).toContain(
+            "↳ queued Keep the composer steady",
+        );
+
+        await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+        expect(send).toHaveBeenCalledWith(
+            "Keep the composer steady",
+            expect.objectContaining({ clientSubmissionId: expect.any(String) }),
+        );
+        const drained = stripAnsi(app.render(100).join("\n"));
+        expect(drained).not.toContain("↳ queued Keep the composer steady");
+        expect(drained.match(/› Keep the composer steady/gu)).toHaveLength(1);
+
+        const echoedMessage = {
+            blocks: [{ text: "Keep the composer steady", type: "text" as const }],
+            id: "canonical-user-message",
+            role: "user" as const,
+        };
+        const echo = {
+            createdAt: 1,
+            data: {
+                displayText: "Keep the composer steady",
+                message: echoedMessage,
+                runId: "run-1",
+            },
+            id: "user-message-event",
+            sessionId: "session-1",
+            type: "message_submitted" as const,
+        };
+        app.applySessionEvent(echo);
+        app.applySessionEvent(echo);
+
+        const echoed = stripAnsi(app.render(100).join("\n"));
+        expect(echoed.match(/› Keep the composer steady/gu)).toHaveLength(1);
+
+        run.resolve({ contextMessages: [], messages: [], runId: "run-1", stopReason: "stop" });
+        await app.waitForIdle();
+    });
+
     it("renders the startup frame and Codex-style empty composer", () => {
         const model = defineModel({
             id: "openai/gpt-test",

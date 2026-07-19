@@ -70,6 +70,7 @@ export interface AgentOptions {
 }
 
 export interface AgentRunOptions {
+    clientSubmissionId?: string;
     debug?: DebugLog;
     displayText?: string;
     signal?: AbortSignal;
@@ -292,7 +293,11 @@ export class Agent {
             throw new Error(`Agent '${this.id}' is already running`);
         }
 
-        this.enqueueUserMessage(text);
+        this.enqueueMessage({
+            role: "user",
+            id: options.clientSubmissionId ?? this.#idFactory(),
+            blocks: typeof text === "string" ? [{ type: "text", text }] : text,
+        });
         return this.run(options);
     }
 
