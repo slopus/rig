@@ -30,8 +30,10 @@ import { createProviderQuotaCache } from "./createProviderQuotaCache.js";
 import { fetchCodexProviderQuota } from "./fetchCodexProviderQuota.js";
 import { getCodexAuthPath } from "./getCodexAuthPath.js";
 import { unavailableProviderQuota } from "./unavailableProviderQuota.js";
+import { readCodexQuotaAuth, type CodexQuotaAuth } from "./readCodexQuotaAuth.js";
 
 const CODEX_PROVIDER_ID = "openai-codex";
+const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 
 function toPiCodexModelId(id: string): string {
     return id.startsWith("openai/") ? id.slice("openai/".length) : id;
@@ -75,6 +77,7 @@ export function createCodexProvider(options: CodexProviderOptions = {}): Provide
         }
     }
     const resolveApiKey = buildApiKeyResolver(options, authPath);
+    const resolveImageAuth = buildImageAuthResolver(options, authPath);
     const quota = createProviderQuotaCache(() =>
         options.apiKey !== undefined ||
         options.resolveApiKey !== undefined ||
@@ -93,6 +96,13 @@ export function createCodexProvider(options: CodexProviderOptions = {}): Provide
         models: codexModels,
         serviceTiers: ["fast"],
         quota: (quotaOptions) => quota.get(quotaOptions),
+        generateImage: (prompt, imageOptions) =>
+            generateCodexImage({
+                auth: resolveImageAuth(),
+                prompt,
+                ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
+                ...(imageOptions?.signal === undefined ? {} : { signal: imageOptions.signal }),
+            }),
         stream(model, context, streamOptions) {
             const piModel = piModelById.get(toPiCodexModelId(model.id));
             if (!piModel) {
@@ -122,6 +132,80 @@ export function createCodexProvider(options: CodexProviderOptions = {}): Provide
             );
         },
     });
+}
+
+function buildImageAuthResolver(
+    options: CodexProviderOptions,
+    authPath: string,
+): () => CodexQuotaAuth | undefined {
+    if (options.apiKey !== undefined) return () => ({ accessToken: options.apiKey! });
+    if (options.resolveApiKey !== undefined) {
+        return () => {
+            const accessToken = options.resolveApiKey!();
+            return accessToken === undefined ? undefined : { accessToken };
+        };
+    }
+    if (options.useLocalCodexAuth === false) return () => undefined;
+    return () => {
+        if (!existsSync(authPath)) return undefined;
+        try {
+            return readCodexQuotaAuth(readFileSync(authPath, "utf8"));
+        } catch {
+            return undefined;
+        }
+    };
+}
+
+async function generateCodexImage(options: {
+    auth: CodexQuotaAuth | undefined;
+    baseUrl?: string;
+    prompt: string;
+    signal?: AbortSignal;
+}) {
+    if (options.auth === undefined) {
+        throw new Error("Codex image generation requires a usable access token.");
+    }
+    const headers = new Headers({
+        authorization: `Bearer ${options.auth.accessToken}`,
+        "content-type": "application/json",
+    });
+    if (options.auth.accountId !== undefined) {
+        headers.set("chatgpt-account-id", options.auth.accountId);
+    }
+    const configuredBase = (options.baseUrl ?? DEFAULT_CODEX_BASE_URL).replace(/\/+$/, "");
+    const baseUrl = configuredBase.endsWith("/codex") ? configuredBase : `${configuredBase}/codex`;
+    const response = await fetch(`${baseUrl}/images/generations`, {
+        body: JSON.stringify({
+            background: "auto",
+            model: "gpt-image-2",
+            prompt: options.prompt,
+            quality: "auto",
+            size: "auto",
+        }),
+        headers,
+        method: "POST",
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+    });
+    if (!response.ok) {
+        const detail = (await response.text()).trim();
+        throw new Error(
+            `Codex image generation failed (${response.status})${detail ? `: ${detail}` : "."}`,
+        );
+    }
+    const body = (await response.json()) as {
+        data?: readonly { b64_json?: unknown; revised_prompt?: unknown }[];
+    };
+    const first = body.data?.[0];
+    if (typeof first?.b64_json !== "string" || first.b64_json.length === 0) {
+        throw new Error("Codex image generation returned no image data.");
+    }
+    return {
+        data: first.b64_json,
+        mediaType: "image/png" as const,
+        ...(typeof first.revised_prompt === "string"
+            ? { revisedPrompt: first.revised_prompt }
+            : {}),
+    };
 }
 
 function buildApiKeyResolver(

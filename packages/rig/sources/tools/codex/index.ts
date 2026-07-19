@@ -10,6 +10,7 @@ export { codexInterruptAgentTool } from "./interrupt_agent.js";
 export { codexResumeAgentTool } from "./resume_agent.js";
 export { codexListAgentsTool } from "./list_agents.js";
 export { codexWaitAgentTool } from "./wait_agent.js";
+export { createCodexImageGenerationTool } from "./image_gen.js";
 export { unifiedExecOutputSchema } from "./unifiedExecOutput.js";
 
 import { codexApplyPatchTool } from "./apply_patch.js";

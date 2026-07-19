@@ -164,11 +164,18 @@ export interface Provider {
     imageProfile(model: Model): ProviderImageProfile;
     toolProfile(model: Model): ProviderToolProfile;
     quota?(options?: { fresh?: boolean }): Promise<ProviderQuota>;
+    generateImage?(prompt: string, options?: { signal?: AbortSignal }): Promise<GeneratedImage>;
     stream<TThinkingLevel extends string>(
         model: Model<TThinkingLevel>,
         context: Context,
         options?: StreamOptions<TThinkingLevel>,
     ): InferenceStream;
+}
+
+export interface GeneratedImage {
+    data: string;
+    mediaType: "image/png";
+    revisedPrompt?: string;
 }
 
 export type InferProviderModels<T extends Provider> = T["models"];
@@ -197,6 +204,7 @@ export function defineProvider(provider: {
     imageProfile?: (model: Model) => ProviderImageProfile;
     toolProfile?: (model: Model) => ProviderToolProfile;
     quota?: (options?: { fresh?: boolean }) => Promise<ProviderQuota>;
+    generateImage?: (prompt: string, options?: { signal?: AbortSignal }) => Promise<GeneratedImage>;
     stream<TThinkingLevel extends string>(
         model: Model<TThinkingLevel>,
         context: Context,

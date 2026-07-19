@@ -16,6 +16,55 @@ afterEach(() => {
 });
 
 describe("codex provider", () => {
+    it("generates images through the Codex backend with the upstream request shape", async () => {
+        let requestUrl = "";
+        let requestBody: unknown;
+        vi.stubGlobal(
+            "fetch",
+            vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+                requestUrl = String(input);
+                requestBody = parseRequestBody(init);
+                return Response.json({
+                    data: [{ b64_json: validPng32Base64, revised_prompt: "A precise diagram" }],
+                });
+            }),
+        );
+        const provider = createCodexProvider({ apiKey: "codex-token" });
+
+        await expect(provider.generateImage?.("Draw a diagram")).resolves.toEqual({
+            data: validPng32Base64,
+            mediaType: "image/png",
+            revisedPrompt: "A precise diagram",
+        });
+        expect(requestUrl).toBe("https://chatgpt.com/backend-api/codex/images/generations");
+        expect(requestBody).toEqual({
+            background: "auto",
+            model: "gpt-image-2",
+            prompt: "Draw a diagram",
+            quality: "auto",
+            size: "auto",
+        });
+    });
+
+    it("reports image API failures and empty output without fabricating an image", async () => {
+        const provider = createCodexProvider({ apiKey: "codex-token" });
+        vi.stubGlobal(
+            "fetch",
+            vi.fn<typeof fetch>().mockResolvedValue(new Response("denied", { status: 403 })),
+        );
+        await expect(provider.generateImage?.("Draw it")).rejects.toThrow(
+            "Codex image generation failed (403): denied",
+        );
+
+        vi.stubGlobal(
+            "fetch",
+            vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: [] })),
+        );
+        await expect(provider.generateImage?.("Draw it")).rejects.toThrow(
+            "Codex image generation returned no image data",
+        );
+    });
+
     it("loads local authentication from CODEX_HOME", async () => {
         const codexHome = await mkdtemp(join(tmpdir(), "rig-codex-home-"));
         const accessToken =

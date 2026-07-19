@@ -26,7 +26,13 @@ export function routeProviderThroughGym(provider: Provider, env: NodeJS.ProcessE
         ...(provider.serviceTiers === undefined ? {} : { serviceTiers: provider.serviceTiers }),
         ...(env.RIG_GYM_TOKEN === undefined ? {} : { token: env.RIG_GYM_TOKEN }),
     });
-    return provider.quota === undefined
-        ? gymProvider
-        : { ...gymProvider, quota: (options) => provider.quota!(options) };
+    return {
+        ...gymProvider,
+        ...(provider.quota === undefined
+            ? {}
+            : { quota: (options?: { fresh?: boolean }) => provider.quota!(options) }),
+        ...(provider.generateImage === undefined
+            ? {}
+            : { generateImage: provider.generateImage.bind(provider) }),
+    };
 }

@@ -30,6 +30,7 @@ describe("createCodingAssistantAgent", () => {
         expect(runtime.context.bash.cwd).toBe(cwd);
         expect(runtime.agent.snapshot().instructions).toContain(cwd);
         expect(runtime.agent.snapshot().effort).toBe("medium");
+        expect(runtime.agent.tools.map((tool) => tool.name)).toContain("image_gen");
     });
 
     it("creates a Claude SDK agent for Anthropic models", () => {
@@ -297,6 +298,7 @@ describe("createCodingAssistantAgent", () => {
             "view_image",
             "update_plan",
             "request_user_input",
+            "image_gen",
             "workflow",
             "wait_for_workflow",
             "workflow_status",
@@ -405,6 +407,7 @@ describe("createCodingAssistantAgent", () => {
             "update_plan",
             "request_user_input",
         ]);
+        expect(runtime.agent.tools.map((tool) => tool.name)).not.toContain("image_gen");
     });
 
     it("uses provider-neutral tools for Bedrock Kimi and GLM models", () => {

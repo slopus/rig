@@ -26,7 +26,7 @@ import { modelMoonshotKimiK3, modelOpenaiGpt56Sol } from "../providers/models.js
 import type { ServiceTier } from "../providers/types.js";
 import { routeProviderThroughGym } from "../providers/routeProviderThroughGym.js";
 import { claudeCollaborationTools } from "../tools/claude/index.js";
-import { codexCollaborationTools } from "../tools/codex/index.js";
+import { codexCollaborationTools, createCodexImageGenerationTool } from "../tools/codex/index.js";
 import { grokCollaborationTools } from "../tools/grok/index.js";
 import { agentTool } from "../tools/Agent.js";
 import { goalTools } from "../tools/goals/index.js";
@@ -156,7 +156,11 @@ export function createCodingAssistantAgent(
     const usesCodexTools = toolProfile === "codex";
     const usesGrokTools = toolProfile === "grok";
     const usesKimiTools = toolProfile === "kimi";
-    const baseTools = selectToolsForModel({ model, provider });
+    const selectedBaseTools = selectToolsForModel({ model, provider });
+    const baseTools =
+        usesCodexTools && provider.generateImage !== undefined
+            ? [...selectedBaseTools, createCodexImageGenerationTool(provider.generateImage)]
+            : selectedBaseTools;
     const collaborationTools = (
         usesCodexTools
             ? codexCollaborationTools
