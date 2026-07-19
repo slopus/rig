@@ -1226,7 +1226,7 @@ describe("CodingAssistantApp", () => {
         );
     });
 
-    it("repaints retained input and the live composer when the theme changes", async () => {
+    it("keeps retained input immutable while repainting the live composer theme", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
             name: "GPT Test",
@@ -1267,11 +1267,11 @@ describe("CodingAssistantApp", () => {
         const updated = app.render(80).join("\n");
         expect(updated).toContain("Change the palette.");
         expect(updated).toContain("\x1b[48;5;254m");
-        expect(updated).not.toContain("\x1b[48;5;235m");
+        expect(updated).toContain("\x1b[48;5;235m");
         expect(tui.requestRender).toHaveBeenCalledWith(false);
     });
 
-    it("repaints cached header and transcript lines when the terminal theme changes", () => {
+    it("keeps rendered header and transcript bytes stable across a theme change", () => {
         const model = defineModel({
             id: "openai/gpt-test",
             name: "GPT Test",
@@ -1319,28 +1319,29 @@ describe("CodingAssistantApp", () => {
             type: "agent_message",
         });
 
-        const initial = app.render(80).join("\n");
-        expect(initial).toContain(oldBrand);
-        expect(initial).toContain(oldPrimary);
-        expect(initial).toContain(oldSecondary);
+        const initial = app.render(80);
+        const initialJoined = initial.join("\n");
+        expect(initialJoined).toContain(oldBrand);
+        expect(initialJoined).toContain(oldPrimary);
+        const transcriptLine = initial.findIndex((line) =>
+            line.includes("Cached transcript colors."),
+        );
+        expect(transcriptLine).toBeGreaterThanOrEqual(0);
 
-        const newBrand = "\x1b[38;5;211m";
-        const newPrimary = "\x1b[38;5;212m";
-        const newSecondary = "\x1b[38;5;213m";
+        // Retained rows are append-only: a theme change recolors them through
+        // terminal palette redefinition, so the header and transcript must
+        // keep serving byte-identical lines instead of repainting.
         app.setTheme({
             ...DEFAULT_TERMINAL_THEME,
-            brand: newBrand,
-            primary: newPrimary,
-            secondary: newSecondary,
+            brand: "\x1b[38;5;211m",
+            primary: "\x1b[38;5;212m",
+            secondary: "\x1b[38;5;213m",
         });
 
-        const updated = app.render(80).join("\n");
-        expect(updated).toContain(newBrand);
-        expect(updated).toContain(newPrimary);
-        expect(updated).toContain(newSecondary);
-        expect(updated).not.toContain(oldBrand);
-        expect(updated).not.toContain(oldPrimary);
-        expect(updated).not.toContain(oldSecondary);
+        const updated = app.render(80);
+        expect(updated.slice(0, transcriptLine + 1)).toEqual(
+            initial.slice(0, transcriptLine + 1),
+        );
     });
 
     it("renders every markdown table row after streaming finishes", () => {

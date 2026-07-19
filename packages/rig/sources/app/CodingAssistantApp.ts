@@ -1284,9 +1284,10 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     setTheme(theme: TerminalTheme): void {
+        // Retained transcript rows are append-only: a palette change recolors
+        // them through terminal palette redefinition, so the transcript and
+        // header caches must keep serving the already-painted bytes.
         Object.assign(this.#theme, theme);
-        this.#entryRenderCache.clear();
-        this.#headerLinesByWidth.clear();
         this.invalidate();
         this.#requestRender();
     }
