@@ -19,6 +19,7 @@ describe("permission prompt reveals commands without terminal-control spoofing",
             .replaceAll("\x1b", "\\u{001b}")
             .replaceAll("\x07", "\\u{0007}");
         const gym = await createGym({
+            mode: "docker",
             cols: 96,
             inference(request, callIndex) {
                 const systemPrompt = request.context.systemPrompt ?? "";

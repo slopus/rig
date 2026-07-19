@@ -64,6 +64,7 @@ function createResizeGym(cols: number): Promise<Gym> {
             `RESIZE HISTORY ${String(index).padStart(3, "0")} has enough stable text to wrap at the final narrow width.`,
     ).join("\n");
     return createGym({
+        mode: "docker",
         cols,
         inference: [
             { content: [{ text: history, type: "text" }] },

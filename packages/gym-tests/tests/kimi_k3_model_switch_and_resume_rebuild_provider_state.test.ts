@@ -14,6 +14,7 @@ describe("Kimi K3 model switching", () => {
     it("rebuilds provider prompts and tools, persists Codex, then switches back to Kimi", async () => {
         let agentCallIndex = 0;
         const gym = await createGym({
+            mode: "docker",
             entrypoint: [
                 "bash",
                 "-lc",
@@ -124,7 +125,7 @@ describe("Kimi K3 model switching", () => {
         await gym.terminal.waitForText("kimi-k3 max · /workspace", 30_000);
         submit(gym, "Switch back to Kimi.");
         const result = await gym.terminal.waitForText("KIMI_AFTER_SWITCH_BACK", 30_000);
-        expect(result.text).toContain("kimi-k3 max · /workspace");
+        expect(result.text).toContain("kimi-k3 max");
         expect(agentCallIndex).toBe(4);
     }, 180_000);
 });

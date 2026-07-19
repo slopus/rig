@@ -18,6 +18,7 @@ afterEach(async () => {
 describe("Bedrock OpenAI response semantics", () => {
     it("shows the exact incomplete reason instead of silently ending the turn", async () => {
         const gym = await createGym({
+            mode: "docker",
             entrypoint: [
                 "/bin/sh",
                 "-lc",
@@ -63,6 +64,7 @@ describe("Bedrock OpenAI response semantics", () => {
     it("continues when a completed response says the model has not ended its turn", async () => {
         let mainCallIndex = 0;
         const gym = await createGym({
+            mode: "docker",
             entrypoint: [
                 "/bin/sh",
                 "-lc",

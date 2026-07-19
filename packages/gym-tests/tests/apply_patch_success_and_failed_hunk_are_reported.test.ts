@@ -39,6 +39,7 @@ describe("apply_patch success and failed hunk are reported", () => {
             "Tool 'apply_patch' failed: Invalid patch: hunk did not match seed.txt";
         const gym = await createGym({
             cols: 92,
+            mode: "docker",
             entrypoint: [
                 "bash",
                 "-lc",

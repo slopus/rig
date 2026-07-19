@@ -10,8 +10,9 @@ afterEach(async () => {
 });
 
 describe("display settings persist when daemon config update fails", () => {
-    it("writes the runtime config before reporting the socket failure", async () => {
+    it("writes the runtime config when the daemon config socket is unavailable", async () => {
         const gym = await createGym({
+            mode: "docker",
             files: {
                 "break-daemon-config-socket.mjs": breakDaemonConfigSocketScript,
             },
@@ -39,7 +40,8 @@ describe("display settings persist when daemon config update fails", () => {
         gym.terminal.press("enter");
         await gym.terminal.waitForText("Show reasoning");
         gym.terminal.press("enter");
-        await gym.terminal.waitForText("Could not update the config file.");
+        const updated = await gym.terminal.waitForText("Settings Reasoning display enabled.");
+        expect(updated.text).not.toContain("Could not update the config file.");
 
         const runtimeConfig = await gym.readFile("runtime-after-daemon-failure.toml");
         expect(runtimeConfig).toContain("show_reasoning = true");

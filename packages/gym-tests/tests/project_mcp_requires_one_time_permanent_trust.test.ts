@@ -30,6 +30,7 @@ describe("project MCP requires one-time permanent trust", () => {
     it("does not start before consent and does not ask again on later turns", async () => {
         let mainTurns = 0;
         const gym = await createGym({
+            mode: "docker",
             cols: 104,
             files: {
                 "project-helper.mjs": MCP_SERVER,

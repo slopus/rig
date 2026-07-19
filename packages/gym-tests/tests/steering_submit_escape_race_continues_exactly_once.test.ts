@@ -19,6 +19,7 @@ describe("steering submit and immediate Escape", () => {
         const releaseAppliedBoundary = deferred<void>();
         const releaseContinuation = deferred<void>();
         const gym = await createGym({
+            mode: "docker",
             inference: async (request, callIndex) => {
                 if (callIndex === 0) {
                     await releaseAppliedBoundary.promise;
@@ -127,6 +128,7 @@ describe("steering submit and immediate Escape", () => {
                     : [`Immediate steering from ${label}.`];
             const releaseContinuation = deferred<void>();
             const gym = await createGym({
+                mode: "docker",
                 inference: async (request, callIndex) => {
                     if (callIndex === 0) {
                         return {

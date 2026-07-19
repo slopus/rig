@@ -28,6 +28,7 @@ describe("main and subagent footer identity", () => {
 
     it("retains a differentiating subagent identity in a real PTY", async () => {
         const gym = await createGym({
+            mode: "docker",
             entrypoint: ["node", "/workspace/subagent-footer.mjs"],
             files: { "subagent-footer.mjs": SUBAGENT_APP },
             inference: [],

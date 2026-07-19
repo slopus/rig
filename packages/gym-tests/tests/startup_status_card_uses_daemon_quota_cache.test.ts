@@ -26,6 +26,7 @@ describe("production startup status quota", () => {
         let quotaProbes = 0;
         const gym = await createGym({
             cols: 96,
+            mode: "docker",
             entrypoint: [
                 "bash",
                 "-lc",

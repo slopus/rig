@@ -89,6 +89,7 @@ describe("resolved startup status card", () => {
 async function createResumingGym(cols: number, rows: number, marker: string): Promise<Gym> {
     return createGym({
         cols,
+        mode: "docker",
         entrypoint: [
             "bash",
             "-lc",

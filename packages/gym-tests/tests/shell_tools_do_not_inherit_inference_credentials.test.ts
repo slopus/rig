@@ -17,6 +17,7 @@ describe("shell tools do not inherit inference credentials", () => {
         let nextRequestContainedCredential = false;
         let nextRequestContainedLeakMarker = false;
         const gym = await createGym({
+            mode: "docker",
             cols: 100,
             inference(request, callIndex) {
                 const lastMessage = request.context.messages.at(-1);

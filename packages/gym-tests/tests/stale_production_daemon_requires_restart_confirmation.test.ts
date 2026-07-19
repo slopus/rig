@@ -5,9 +5,9 @@ import { createGym, type Gym } from "@slopus/rig-gym";
 
 const running = new Set<Gym>();
 const currentVersion = (
-    JSON.parse(
-        readFileSync(new URL("../../packages/rig/package.json", import.meta.url), "utf8"),
-    ) as { version: string }
+    JSON.parse(readFileSync(new URL("../../rig/package.json", import.meta.url), "utf8")) as {
+        version: string;
+    }
 ).version;
 
 afterEach(async () => {
@@ -29,6 +29,7 @@ describe("starting Rig with a stale production daemon", () => {
             `exec node ${cliPath}`,
         ].join("\n");
         const gym = await createGym({
+            mode: "docker",
             entrypoint: ["/bin/sh", "-lc", setup],
             inference: [],
             startupText: "Restart local daemon?",

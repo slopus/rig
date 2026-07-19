@@ -12,6 +12,7 @@ afterEach(async () => {
 describe("remote terminal API", () => {
     it("streams a real PTY as Ghostty frames and retains scrollback", async () => {
         const gym = await createGym({
+            mode: "docker",
             files: { "remote-terminal-client.mjs": REMOTE_TERMINAL_CLIENT },
         });
         running.add(gym);

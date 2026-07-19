@@ -24,6 +24,7 @@ describe("Docker shell permissions", () => {
         const before = new Set(await listManagedContainers());
         const gym = await createGym({
             args: ["--docker-image", "rig-gym:local", "--docker-workdir", "/workspace"],
+            mode: "docker",
             dockerSocket: true,
             inference: [
                 {
@@ -57,6 +58,7 @@ describe("Docker shell permissions", () => {
         const before = new Set(await listManagedContainers());
         const gym = await createGym({
             args: ["--docker-image", "rig-gym:local", "--docker-workdir", "/workspace"],
+            mode: "docker",
             dockerSocket: true,
             inference: [
                 {

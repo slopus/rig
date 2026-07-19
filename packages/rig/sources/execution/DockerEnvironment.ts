@@ -12,10 +12,16 @@ export class DockerEnvironment {
     readonly #sessionId: string;
     #containerPromise: Promise<Dockerode.Container> | undefined;
 
-    constructor(config: DockerExecutionConfig, sessionId: string) {
+    constructor(
+        config: DockerExecutionConfig,
+        sessionId: string,
+        docker: Dockerode = new Dockerode({
+            socketPath: config.socketPath ?? DEFAULT_DOCKER_SOCKET,
+        }),
+    ) {
         this.config = config;
         this.#sessionId = sessionId;
-        this.#docker = new Dockerode({ socketPath: config.socketPath ?? DEFAULT_DOCKER_SOCKET });
+        this.#docker = docker;
     }
 
     container(): Promise<Dockerode.Container> {

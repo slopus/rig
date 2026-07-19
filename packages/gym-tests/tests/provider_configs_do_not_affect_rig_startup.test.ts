@@ -12,6 +12,7 @@ afterEach(async () => {
 describe("provider configs do not affect Rig startup", () => {
     it("starts with unrelated Codex settings and ignores Codex MCP servers", async () => {
         const gym = await createGym({
+            mode: "docker",
             homeFiles: {
                 ".codex/config.toml": [
                     'personality = "pragmatic"',

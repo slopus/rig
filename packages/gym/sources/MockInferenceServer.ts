@@ -10,10 +10,17 @@ export class MockInferenceServer {
 
     #agentCallIndex = 0;
     #handler: GymInferenceHandler;
+    #pathReplacements: readonly [string, string][];
     #server: Server | undefined;
+    #timeScale: number;
     #url: string | undefined;
 
-    constructor(inference: readonly GymMockResponse[] | GymInferenceHandler) {
+    constructor(
+        inference: readonly GymMockResponse[] | GymInferenceHandler,
+        pathReplacements: readonly [string, string][] = [],
+    ) {
+        this.#pathReplacements = pathReplacements;
+        this.#timeScale = readTimeScale();
         if (typeof inference === "function") {
             this.#handler = inference;
         } else {
@@ -34,6 +41,11 @@ export class MockInferenceServer {
     get url(): string {
         if (this.#url === undefined) throw new Error("Mock inference server has not started.");
         return this.#url;
+    }
+
+    get localUrl(): string {
+        if (this.#url === undefined) throw new Error("Mock inference server has not started.");
+        return this.#url.replace("host.docker.internal", "127.0.0.1");
     }
 
     async start(): Promise<void> {
@@ -103,11 +115,52 @@ export class MockInferenceServer {
                 return;
             }
             response.writeHead(200, { "content-type": "application/json" });
-            response.end(JSON.stringify(reply));
+            response.end(
+                JSON.stringify(
+                    scaleMockTime(this.#replaceVirtualToolPaths(reply), this.#timeScale),
+                ),
+            );
         } catch (error) {
             send(response, 500, error instanceof Error ? error.message : String(error));
         }
     }
+
+    #replaceVirtualToolPaths(reply: GymMockResponse): GymMockResponse {
+        if (!("content" in reply)) return reply;
+        return {
+            ...reply,
+            content: reply.content.map((block) => {
+                if (!("arguments" in block) || block.arguments === undefined) return block;
+                return {
+                    ...block,
+                    arguments: replacePaths(block.arguments, this.#pathReplacements) as Record<
+                        string,
+                        unknown
+                    >,
+                };
+            }),
+        };
+    }
+}
+
+function readTimeScale(): number {
+    const value = Number(process.env.RIG_GYM_TIME_SCALE ?? "1");
+    return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
+function scaleMockTime(value: unknown, scale: number, key?: string): unknown {
+    if (key === "arguments") return value;
+    if (
+        typeof value === "number" &&
+        (key === "completionDelayMs" || key?.endsWith("DeltaDelayMs") === true)
+    ) {
+        return value <= 0 ? value : Math.max(1, Math.round(value * scale));
+    }
+    if (Array.isArray(value)) return value.map((item) => scaleMockTime(item, scale));
+    if (value === null || typeof value !== "object") return value;
+    return Object.fromEntries(
+        Object.entries(value).map(([name, item]) => [name, scaleMockTime(item, scale, name)]),
+    );
 }
 
 async function readBody(request: IncomingMessage): Promise<string> {
@@ -125,4 +178,18 @@ async function readBody(request: IncomingMessage): Promise<string> {
 function send(response: ServerResponse, status: number, body: string): void {
     response.writeHead(status, { "content-type": "text/plain; charset=utf-8" });
     response.end(body);
+}
+
+function replacePaths(value: unknown, replacements: readonly [string, string][]): unknown {
+    if (typeof value === "string") {
+        return replacements.reduce(
+            (replaced, [virtualPath, realPath]) => replaced.replaceAll(virtualPath, realPath),
+            value,
+        );
+    }
+    if (Array.isArray(value)) return value.map((item) => replacePaths(item, replacements));
+    if (value === null || typeof value !== "object") return value;
+    return Object.fromEntries(
+        Object.entries(value).map(([name, item]) => [name, replacePaths(item, replacements)]),
+    );
 }

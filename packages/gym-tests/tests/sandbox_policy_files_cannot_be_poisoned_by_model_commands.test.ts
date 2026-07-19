@@ -15,6 +15,7 @@ describe("sandbox policy files cannot be poisoned by model commands", () => {
     it("keeps a first restricted command from weakening the next command's boundary", async () => {
         let stage = 0;
         const gym = await createGym({
+            mode: "docker",
             cols: 100,
             inference(request) {
                 if (request.options.sessionId?.endsWith(":title")) {

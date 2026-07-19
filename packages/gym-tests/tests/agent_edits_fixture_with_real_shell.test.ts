@@ -13,6 +13,7 @@ describe("agent edits a fixture with the real shell", () => {
     it("drives the built CLI through Ghostty and writes inside Docker", async () => {
         const gym = await createGym({
             files: { "seed.txt": "from fixture\n" },
+            mode: "docker",
             inference: [
                 {
                     content: [

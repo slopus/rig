@@ -60,6 +60,7 @@ afterEach(async () => {
 describe("parallel MCP reverse completion", () => {
     it("keeps both calls live until ordered durable results arrive", async () => {
         const gym = await createGym({
+            mode: "docker",
             cols: 110,
             homeFiles: {
                 ".rig/config.toml": `[mcp_servers."Slow Service"]\ncommand = "node"\nargs = ["parallel-mcp.mjs", "slow"]\nstartup_timeout_sec = 10\ntool_timeout_sec = 30\n\n[mcp_servers."Fast Service"]\ncommand = "node"\nargs = ["parallel-mcp.mjs", "fast"]\nstartup_timeout_sec = 10\ntool_timeout_sec = 30\n`,
@@ -101,7 +102,7 @@ describe("parallel MCP reverse completion", () => {
         const baseline = (await gym.terminal.snapshot()).scroll;
 
         submit(gym, "Run both Parallel Service tools together.");
-        await approveMcpServers(gym, 2);
+        await approveMcpServers(gym, ["Slow Service", "Fast Service"]);
         await waitForFile(gym, "fast.done", 30_000);
 
         const staged = await gym.terminal.snapshot();
@@ -132,18 +133,28 @@ function submit(gym: Gym, text: string): void {
     gym.terminal.press("enter");
 }
 
-async function approveMcpServers(gym: Gym, count: number): Promise<void> {
-    let outputRevision = -1;
-    for (let index = 0; index < count; index += 1) {
+async function approveMcpServers(gym: Gym, serverNames: readonly string[]): Promise<void> {
+    const remaining = new Set(serverNames);
+    while (remaining.size > 0) {
         const prompt = await gym.terminal.waitUntil(
             (snapshot) =>
-                snapshot.outputRevision > outputRevision &&
-                snapshot.text.includes("Trust MCP server"),
-            `MCP trust prompt ${index + 1}`,
+                [...remaining].some((serverName) =>
+                    snapshot.text.includes(`Trust MCP server "${serverName}"`),
+                ),
+            "the next MCP trust prompt",
             30_000,
         );
-        outputRevision = prompt.outputRevision;
+        const serverName = [...remaining].find((candidate) =>
+            prompt.text.includes(`Trust MCP server "${candidate}"`),
+        );
+        if (serverName === undefined) throw new Error("Could not identify the MCP trust prompt.");
+        remaining.delete(serverName);
         gym.terminal.press("enter");
+        await gym.terminal.waitUntil(
+            (snapshot) => !snapshot.text.includes(`Trust MCP server "${serverName}"`),
+            `closed MCP trust prompt for ${serverName}`,
+            30_000,
+        );
     }
 }
 

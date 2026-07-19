@@ -15,6 +15,7 @@ describe("pending steering after a provider error", () => {
         const releaseInference = deferred<void>();
         let inferenceStarted = false;
         const gym = await createGym({
+            mode: "docker",
             files: { "provider-error-steering.mjs": providerErrorSteeringScript },
             async inference(_request, callIndex) {
                 expect(callIndex).toBe(0);

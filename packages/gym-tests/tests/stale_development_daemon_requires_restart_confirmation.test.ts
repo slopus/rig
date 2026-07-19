@@ -20,6 +20,7 @@ describe("starting Rig after its development code changes", () => {
             `RIG_DEVELOPMENT_BUILD_ID=current-source exec node ${cliPath}`,
         ].join("\n");
         const gym = await createGym({
+            mode: "docker",
             entrypoint: ["/bin/sh", "-lc", setup],
             inference: [],
             startupText: "Restart local daemon?",

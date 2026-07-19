@@ -15,6 +15,7 @@ describe("external reset boundary", () => {
         const draft = "Preserve this draft across external reset.";
         const fresh = "Run only this fresh post-reset prompt.";
         const gym = await createGym({
+            mode: "docker",
             inference(request, callIndex) {
                 if (callIndex === 0) {
                     return {

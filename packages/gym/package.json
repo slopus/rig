@@ -7,6 +7,7 @@
         "./types": "./sources/types.ts"
     },
     "scripts": {
+        "build:image": "tsx sources/buildGymImageCli.ts",
         "check": "tsc --noEmit",
         "test": "vitest run --passWithNoTests"
     },

@@ -43,6 +43,7 @@ describe("streaming Markdown table while reading history", () => {
         const command =
             "sleep 8; printf 'BACKGROUND_VIEWPORT_COMPLETED\\n' > background-viewport.txt";
         const gym = await createGym({
+            mode: "docker",
             cols: 68,
             inference: async (request, callIndex) => {
                 if (callIndex === 0) {

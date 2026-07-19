@@ -33,6 +33,7 @@ import { goalTools } from "../tools/goals/index.js";
 import { kimiAgentTool, kimiGoalTools } from "../tools/kimi/index.js";
 import type { CodingAssistantRuntime } from "./CodingAssistantRuntime.js";
 import { createDefaultInstructions } from "./createDefaultInstructions.js";
+import { createGymJustBashAgentContext } from "./createGymJustBashAgentContext.js";
 import { selectToolsForModel } from "./selectToolsForModel.js";
 import type { DurableSkillDefinition } from "../external-skills/types.js";
 
@@ -81,17 +82,19 @@ export function createCodingAssistantAgent(
         ...(workflowsEnabled ? { workflows: options.workflows } : {}),
     };
     const context =
-        options.docker === undefined
-            ? createNodeAgentContext({
-                  ...sharedContextOptions,
-                  cwd: options.cwd,
-                  processManager,
-              })
-            : createDockerAgentContext({
-                  ...sharedContextOptions,
-                  docker: options.docker,
-                  sessionId: options.sessionId ?? options.agentId ?? "standalone",
-              });
+        process.env.RIG_GYM_RUNTIME === "just-bash"
+            ? createGymJustBashAgentContext(sharedContextOptions)
+            : options.docker === undefined
+              ? createNodeAgentContext({
+                    ...sharedContextOptions,
+                    cwd: options.cwd,
+                    processManager,
+                })
+              : createDockerAgentContext({
+                    ...sharedContextOptions,
+                    docker: options.docker,
+                    sessionId: options.sessionId ?? options.agentId ?? "standalone",
+                });
     const runtimeCwd = context.fs.cwd;
     if (options.subagents !== undefined) {
         context.subagents = options.subagents;

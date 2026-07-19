@@ -4,7 +4,13 @@
     "type": "module",
     "scripts": {
         "check": "tsc --noEmit",
-        "test:gym": "vitest run --no-file-parallelism --testTimeout=120000"
+        "prepare:image": "pnpm --filter @slopus/rig-gym run build:image",
+        "test:gym": "pnpm run test:gym:fast",
+        "test:gym:just-bash": "node runGymLane.ts local",
+        "test:gym:fast": "node runGymLane.ts fast",
+        "test:gym:slow": "node runGymLane.ts slow",
+        "test:gym:full": "pnpm run test:gym:fast && pnpm run test:gym:slow && pnpm run test:gym:docker",
+        "test:gym:docker": "pnpm run prepare:image && RIG_GYM_SKIP_BUILD=1 node runGymLane.ts docker"
     },
     "dependencies": {
         "@openai/codex": "0.144.3"

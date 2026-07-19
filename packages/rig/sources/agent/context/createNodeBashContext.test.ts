@@ -221,7 +221,12 @@ describe("createNodeBashContext", () => {
             expect(interrupted.status).toBe("running");
 
             await expect(context.writeSession(sessionId, "continue\n")).resolves.toBe(true);
-            const completed = await waitForSessionOutput(context, sessionId, "RECEIVED:continue");
+            const completed = await waitForSessionOutput(
+                context,
+                sessionId,
+                "RECEIVED:continue",
+                "completed",
+            );
             expect(completed.status).toBe("completed");
             expect(completed.exitCode).toBe(0);
         } finally {
@@ -234,10 +239,16 @@ async function waitForSessionOutput(
     context: ReturnType<typeof createNodeBashContext>,
     sessionId: number,
     marker: string,
+    status?: "completed" | "running",
 ) {
     for (let attempt = 0; attempt < 50; attempt += 1) {
         const snapshot = await context.readSession(sessionId, { waitMs: 20 });
-        if (snapshot?.stdout.includes(marker)) return snapshot;
+        if (
+            snapshot?.stdout.includes(marker) &&
+            (status === undefined || snapshot.status === status)
+        ) {
+            return snapshot;
+        }
     }
     throw new Error(`Timed out waiting for ${marker}.`);
 }

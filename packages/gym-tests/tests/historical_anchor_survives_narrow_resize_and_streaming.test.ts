@@ -35,6 +35,7 @@ describe("narrow resize while reading history and receiving output", () => {
         ].join("\n");
         const gym = await createGym({
             cols: 72,
+            mode: "docker",
             inference: async (_request, callIndex) => {
                 if (callIndex === 0) return { content: [{ text: history, type: "text" }] };
                 if (callIndex > 1) {

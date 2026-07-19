@@ -12,6 +12,7 @@ afterEach(async () => {
 describe("system config and durable state share one directory", () => {
     it("keeps the session database beside user config and daemon files temporary", async () => {
         const gym = await createGym({
+            mode: "docker",
             homeFiles: {
                 ".rig/config.toml": "[settings]\nshow_usage = false\n",
             },
@@ -68,6 +69,7 @@ describe("system config and durable state share one directory", () => {
 
     it("uses RIG_HOME as the single durable directory override", async () => {
         const gym = await createGym({
+            mode: "docker",
             environment: { RIG_HOME: "/home/rig/custom-rig-home" },
             homeFiles: {
                 "custom-rig-home/config.toml": "[settings]\nshow_usage = false\n",

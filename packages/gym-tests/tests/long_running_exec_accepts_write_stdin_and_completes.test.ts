@@ -15,6 +15,7 @@ describe("long-running exec accepts input and completes", () => {
             "printf 'WAITING_FOR_INPUT\\n'; IFS= read -r reply; printf 'SESSION_RECEIVED:%s\\n' \"$reply\"; printf '%s\\n' \"$reply\" > interactive-result.txt; printf 'PROCESS_COMPLETE\\n'";
         let yieldedSessionId: number | undefined;
         const gym = await createGym({
+            mode: "docker",
             cols: 90,
             inference(request, callIndex) {
                 const lastMessage = request.context.messages.at(-1);

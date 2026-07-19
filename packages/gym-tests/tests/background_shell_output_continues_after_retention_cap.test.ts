@@ -21,6 +21,7 @@ describe("background shell output after the retention cap", () => {
         let firstResult = "";
         let sessionId: number | undefined;
         const gym = await createGym({
+            mode: "docker",
             inference(request, callIndex) {
                 const lastMessage = request.context.messages.at(-1);
                 const resultText =

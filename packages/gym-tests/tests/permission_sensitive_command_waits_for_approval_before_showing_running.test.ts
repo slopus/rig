@@ -14,6 +14,7 @@ describe("permission-sensitive command waits for approval before showing Running
         const command =
             "printf 'COMMAND_STARTED\\n'; while [ ! -e .release-approved-command ]; do sleep 0.05; done; rm .release-approved-command; printf 'approved after prompt\\n' > approved-after-prompt.txt; printf 'COMMAND_FINISHED\\n'";
         const gym = await createGym({
+            mode: "docker",
             cols: 100,
             inference(request, callIndex) {
                 const systemPrompt = request.context.systemPrompt ?? "";

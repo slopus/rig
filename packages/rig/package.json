@@ -30,7 +30,7 @@
         "check": "tsc --noEmit",
         "dev": "pnpm --filter @slopus/rig-dev dev",
         "start": "node dist/main.js",
-        "test": "vitest run",
+        "test": "vitest run --isolate=false",
         "test:live": "RIG_LIVE_TEST=1 vitest run -c vitest.live.config.ts",
         "test:watch": "vitest"
     },
@@ -50,6 +50,7 @@
         "@slopus/ghostty-wasm": "1.3.4",
         "dockerode": "^5.0.1",
         "ignore": "^7.0.6",
+        "just-bash": "^3.0.2",
         "lru-cache": "^11.5.2",
         "openai": "6.46.0",
         "proper-lockfile": "^4.1.2",
@@ -66,7 +67,6 @@
         "@types/proper-lockfile": "^4.1.4",
         "@types/tar-stream": "^3.1.4",
         "@types/turndown": "^5.0.6",
-        "just-bash": "^3.0.2",
         "tsx": "^4.23.0",
         "typescript": "^5.8.3",
         "vitest": "^3.2.4"

@@ -13,6 +13,7 @@ describe("durable integration skills", () => {
     it("requests SKILL.md contents and continues the original run after restart", async () => {
         const gym = await createGym({
             entrypoint: ["sh", "/workspace/keep-gym-container-running.sh"],
+            mode: "docker",
             files: {
                 "durable-skill-client.mjs": durableSkillClient,
                 "keep-gym-container-running.sh": keepGymContainerRunning,

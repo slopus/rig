@@ -141,6 +141,7 @@ async function createBlockedClaudeGym(
     const effort = options.effort ?? "medium";
     const userPrompt = options.userPrompt ?? USER_PROMPT;
     return createGym({
+        mode: "docker",
         environment: {
             ANTHROPIC_API_KEY: "gym-placeholder-key",
             ANTHROPIC_BASE_URL: "http://api.anthropic.test",

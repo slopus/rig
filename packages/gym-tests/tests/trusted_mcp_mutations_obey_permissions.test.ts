@@ -168,6 +168,7 @@ async function createMcpGym(
     inference: Parameters<typeof createGym>[0]["inference"],
 ): Promise<Gym> {
     return createGym({
+        mode: "docker",
         cols: COLS,
         homeFiles: {
             ".rig/config.toml": RIG_CONFIG,

@@ -13,6 +13,7 @@ afterEach(async () => {
 describe("daemon startup with an existing SQLite database", () => {
     it("atomically applies every schema migration before becoming ready", async () => {
         const gym = await createGym({
+            mode: "docker",
             entrypoint: ["bash", "/workspace/start-with-legacy-database.sh"],
             files: {
                 "create-legacy-database.mjs": createLegacyDatabaseScript,

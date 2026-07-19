@@ -14,6 +14,7 @@ describe("Workspace write cannot install hidden Git hooks", () => {
         let stage = 0;
         let directHookWasBlocked = false;
         const gym = await createGym({
+            mode: "docker",
             cols: 98,
             files: {
                 ".git/HEAD": "ref: refs/heads/main\n",

@@ -31,6 +31,7 @@ describe("permissions menu enforces Read only then Full access", () => {
             "Tool 'apply_patch' failed: File changes are disabled in read-only mode.";
         const successfulResult = "Success. Updated the following files:\nM protected.txt";
         const gym = await createGym({
+            mode: "docker",
             cols: 94,
             files: { "protected.txt": "original value\n" },
             inference(request, callIndex) {

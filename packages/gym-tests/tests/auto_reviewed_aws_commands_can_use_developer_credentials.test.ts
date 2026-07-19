@@ -12,6 +12,7 @@ afterEach(async () => {
 describe("Auto-reviewed AWS commands can use developer credentials", () => {
     it("lets an approved CLI read the normal AWS profile without a second prompt", async () => {
         const gym = await createGym({
+            mode: "docker",
             cols: 104,
             homeFiles: {
                 ".aws/credentials":

@@ -13,6 +13,7 @@ describe("shell tool command interpreter", () => {
     it("uses the system login shell and its executable search path", async () => {
         let stage = 0;
         const gym = await createGym({
+            mode: "docker",
             environment: {
                 PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
                 SHELL: "/home/rig/system-shell",

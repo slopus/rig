@@ -19,6 +19,7 @@ describe("pending steering from an aborted parent run across session resume", ()
         let childRunCount = 0;
         const gym = await createGym({
             cols: 96,
+            mode: "docker",
             entrypoint: [
                 "bash",
                 "-lc",

@@ -12,6 +12,7 @@ afterEach(async () => {
 describe("enabled global event queue syncs and trims daemon events", () => {
     it("lets an external process acknowledge global changes without removing session history", async () => {
         const gym = await createGym({
+            mode: "docker",
             files: {
                 "inspect-global-events.mjs": inspectGlobalEventsScript,
             },

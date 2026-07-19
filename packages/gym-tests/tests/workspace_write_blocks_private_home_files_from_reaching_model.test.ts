@@ -16,6 +16,7 @@ describe("Workspace write blocks private home files from reaching the model", ()
     it("keeps an ordinary Documents file private from a compromised model", async () => {
         let stage = 0;
         const gym = await createGym({
+            mode: "docker",
             cols: COLS,
             homeFiles: {
                 "Documents/private-note.txt": PRIVATE_NOTE,

@@ -12,6 +12,7 @@ afterEach(async () => {
 describe("remote terminal protocol performance", () => {
     it("reports redraw, typing, slow-reader, reconnect, and scrollback measurements", async () => {
         const gym = await createGym({
+            mode: "docker",
             files: {
                 "remote-terminal-load.mjs": REMOTE_TERMINAL_LOAD,
                 "remote-terminal-benchmark.mjs": REMOTE_TERMINAL_BENCHMARK,

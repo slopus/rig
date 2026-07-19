@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 FROM node:24-bookworm-slim AS build
 
 ENV PNPM_HOME=/pnpm
@@ -9,7 +11,9 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json tsconfig.base
 COPY packages/gym/package.json packages/gym/package.json
 COPY packages/gym-tests/package.json packages/gym-tests/package.json
 COPY packages/rig/package.json packages/rig/package.json
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm config set store-dir /pnpm/store \
+    && pnpm install --frozen-lockfile
 
 COPY packages/rig packages/rig
 RUN pnpm --filter @slopus/rig build

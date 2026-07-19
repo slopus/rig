@@ -27,6 +27,7 @@ describe("external rewind boundary", () => {
             "}'",
         ].join(" ");
         const gym = await createGym({
+            mode: "docker",
             cols: 82,
             inference: async (request, callIndex) => {
                 if (callIndex === 0) {

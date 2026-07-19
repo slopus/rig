@@ -17,6 +17,7 @@ describe("attached command secrets", () => {
         const secretToken = "gym-token-that-must-not-reach-inference";
         const databaseToken = "gym-database-that-must-not-reach-inference";
         const gym = await createGym({
+            mode: "docker",
             entrypoint: ["/bin/bash", "/workspace/start-secret-server.sh"],
             environment: {
                 INJECTED_SERVICE_REGION: ambientRegion,

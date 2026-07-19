@@ -7,12 +7,14 @@ import type { GymFixture } from "./types.js";
 
 export async function createFixtureWorkspace(
     files: Readonly<Record<string, GymFixture>> = {},
+    directory?: string,
 ): Promise<string> {
-    const directory = await mkdtemp(join(tmpdir(), "rig-gym-"));
+    const target = directory ?? (await mkdtemp(join(tmpdir(), "rig-gym-")));
     try {
-        await chmod(directory, 0o777);
+        await mkdir(target, { recursive: true });
+        await chmod(target, 0o777);
         for (const [path, content] of Object.entries(files)) {
-            const destination = resolveWorkspacePath(directory, path);
+            const destination = resolveWorkspacePath(target, path);
             await mkdir(dirname(destination), { recursive: true });
             const fixture =
                 typeof content === "string" || content instanceof Uint8Array
@@ -21,9 +23,9 @@ export async function createFixtureWorkspace(
             await writeFile(destination, fixture.content);
             if (fixture.mode !== undefined) await chmod(destination, fixture.mode);
         }
-        return directory;
+        return target;
     } catch (error) {
-        await rm(directory, { force: true, recursive: true });
+        await rm(target, { force: true, recursive: true });
         throw error;
     }
 }

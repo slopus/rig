@@ -14,6 +14,7 @@ describe("Auto permissions review and user denial are enforced", () => {
         const allowedCommand = "printf 'approved by auto review\\n' > auto-approved.txt";
         const deniedCommand = "printf 'this must not run\\n' > auto-denied.txt";
         const gym = await createGym({
+            mode: "docker",
             cols: 96,
             inference(request, callIndex) {
                 const systemPrompt = request.context.systemPrompt ?? "";

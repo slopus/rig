@@ -15,6 +15,7 @@ describe("direct file tools cannot modify Git control files", () => {
         const blockedMessage =
             "Tool 'apply_patch' failed: Workspace write mode cannot modify Git control files without Full access.";
         const gym = await createGym({
+            mode: "docker",
             cols: 100,
             files: {
                 ".git/config": "[core]\n\trepositoryformatversion = 0\n",

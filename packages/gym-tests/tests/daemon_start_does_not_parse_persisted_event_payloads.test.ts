@@ -13,6 +13,11 @@ afterEach(async () => {
 describe("daemon startup with persisted event history", () => {
     it("opens the socket without parsing persisted event payloads", async () => {
         const gym = await createGym({
+            environment: {
+                RIG_SERVER_DIRECTORY: "/home/rig/.local/state/rig",
+                RIG_SERVER_SOCKET_PATH: "/tmp/rig-unreadable-event.sock",
+            },
+            mode: "docker",
             entrypoint: ["bash", "/workspace/restart-with-unreadable-event.sh"],
             files: {
                 "corrupt-persisted-event.mjs": corruptPersistedEventScript,

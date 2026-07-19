@@ -15,6 +15,7 @@ describe("direct image tools cannot read sensitive home files", () => {
     it("applies the same credential boundary as the shell sandbox", async () => {
         let stage = 0;
         const gym = await createGym({
+            mode: "docker",
             cols: 98,
             homeFiles: {
                 ".ssh/identity.png": Buffer.from(PNG_BASE64, "base64"),

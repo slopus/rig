@@ -12,6 +12,7 @@ afterEach(async () => {
 describe("restricted non-git home project", () => {
     it("reaches inference when ancestor marker paths are private", async () => {
         const gym = await createGym({
+            mode: "docker",
             entrypoint: [
                 "/bin/sh",
                 "-lc",

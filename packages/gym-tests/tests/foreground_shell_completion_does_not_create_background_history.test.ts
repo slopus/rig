@@ -12,6 +12,7 @@ afterEach(async () => {
 describe("foreground shell completion history", () => {
     it("renders the command once without a background-terminal completion row", async () => {
         const gym = await createGym({
+            mode: "docker",
             inference: [
                 {
                     content: [

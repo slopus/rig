@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { statSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,23 +10,54 @@ import { GhosttyTerminal } from "./GhosttyTerminal.js";
 import { Gym } from "./Gym.js";
 import { InterceptingHttpProxy } from "./InterceptingHttpProxy.js";
 import { MockInferenceServer } from "./MockInferenceServer.js";
+import { profileGymTiming } from "./profileGymTiming.js";
+import { resolveGymExecution } from "./resolveGymExecution.js";
+import { resolveGymImageTag } from "./resolveGymImageTag.js";
+import {
+    acquireSharedDockerRunner,
+    createSharedDockerFixtureRoot,
+    dockerSandboxArguments,
+} from "./sharedDockerRunner.js";
 import type { GymOptions } from "./types.js";
 
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
-const DEFAULT_IMAGE = process.env.RIG_GYM_IMAGE ?? "rig-gym:local";
 
 export async function createGym(options: GymOptions): Promise<Gym> {
+    const createStartedAt = performance.now();
     const cols = options.cols ?? 100;
     const rows = options.rows ?? 32;
-    const image = options.image ?? DEFAULT_IMAGE;
-    const workspacePath = await createFixtureWorkspace(options.files);
-    let homePath: string | undefined;
-    try {
-        if (options.homeFiles !== undefined) {
-            homePath = await createFixtureWorkspace(options.homeFiles);
+    const execution = resolveGymExecution(options);
+    const image =
+        execution === "docker"
+            ? (options.image ?? (await resolveGymImageTag(repositoryRoot)))
+            : undefined;
+    const dockerRunner =
+        execution === "docker"
+            ? await acquireSharedDockerRunner({
+                  dockerSocket: options.dockerSocket === true,
+                  imageId: await buildGymImage(image ?? "", repositoryRoot),
+                  repositoryRoot,
+              })
+            : undefined;
+    const dockerFixture =
+        dockerRunner === undefined ? undefined : await createSharedDockerFixtureRoot(dockerRunner);
+    const workspacePath = await createFixtureWorkspace(
+        options.files,
+        dockerFixture === undefined ? undefined : join(dockerFixture.hostRoot, "workspace"),
+    ).catch(async (error: unknown) => {
+        if (dockerFixture !== undefined) {
+            await rm(dockerFixture.hostRoot, { force: true, recursive: true });
         }
+        throw error;
+    });
+    let homePath: string;
+    try {
+        homePath = await createFixtureWorkspace(
+            options.homeFiles ?? {},
+            dockerFixture === undefined ? undefined : join(dockerFixture.hostRoot, "home"),
+        );
     } catch (error) {
-        await rm(workspacePath, { force: true, recursive: true });
+        await rm(dockerFixture?.hostRoot ?? workspacePath, { force: true, recursive: true });
         throw error;
     }
     const inference = new MockInferenceServer(options.inference ?? []);
@@ -37,110 +67,135 @@ export async function createGym(options: GymOptions): Promise<Gym> {
             : new InterceptingHttpProxy(
                   options.httpProxy === true ? undefined : options.httpProxy.handler,
               );
-    const containerName = `rig-gym-${randomUUID()}`;
+    const containerName = dockerRunner?.containerName ?? `rig-gym-${randomUUID()}`;
+    const profileId = containerName.slice(-8);
+    profileGymTiming(profileId, "fixtures", createStartedAt);
+    const localRunnerArguments = [
+        "--import",
+        join(repositoryRoot, "packages/gym/sources/registerTypeScriptSourceHooks.mjs"),
+        join(repositoryRoot, "packages/rig/sources/main.ts"),
+    ];
     let ghostty: GhosttyTerminal | undefined;
     let gym: Gym | undefined;
     try {
+        const terminalStartedAt = performance.now();
         const startedGhostty = await GhosttyTerminal.create(
             cols,
             rows,
             options.terminalColorScheme,
         );
+        profileGymTiming(profileId, "terminal", terminalStartedAt);
         ghostty = startedGhostty;
-        const [imageId] = await Promise.all([
-            buildGymImage(image, repositoryRoot),
-            inference.start(),
-            httpProxy?.start(),
-        ]);
+        const servicesStartedAt = performance.now();
+        await Promise.all([inference.start(), httpProxy?.start()]);
+        profileGymTiming(profileId, "services", servicesStartedAt);
         const providerId = options.providerId ?? "gym";
         const modelId = options.modelId ?? defaultModelId(providerId);
-        const pty = spawn(
-            "docker",
-            [
-                "run",
-                "--rm",
-                "--init",
-                "--interactive",
-                "--tty",
-                "--name",
-                containerName,
-                "--security-opt",
-                "seccomp=unconfined",
-                "--add-host",
-                "host.docker.internal:host-gateway",
-                "--env",
-                `RIG_GYM_INFERENCE_URL=${inference.url}`,
-                "--env",
-                `RIG_GYM_TOKEN=${inference.token}`,
-                ...(options.contextWindow === undefined
-                    ? []
-                    : ["--env", `RIG_GYM_CONTEXT_WINDOW=${options.contextWindow}`]),
-                "--env",
-                "RIG_GYM_OUTER_ISOLATION=docker",
-                ...(options.providerOverrides === undefined
-                    ? []
-                    : [
-                          "--env",
-                          `RIG_GYM_PROVIDER_OVERRIDES=${options.providerOverrides.join(",")}`,
-                      ]),
-                "--env",
-                `RIG_MODEL=${modelId}`,
-                ...(options.permissionMode === "from_config"
-                    ? []
-                    : ["--env", `RIG_PERMISSION_MODE=${options.permissionMode ?? "full_access"}`]),
-                "--env",
-                `RIG_PROVIDER=${providerId}`,
-                ...environmentArguments(options.environment, httpProxy?.url),
-                ...(httpProxy === undefined
-                    ? []
-                    : [
-                          "--env",
-                          `HTTP_PROXY=${httpProxy.url}`,
-                          "--env",
-                          `http_proxy=${httpProxy.url}`,
-                          "--env",
-                          `HTTPS_PROXY=${httpProxy.url}`,
-                          "--env",
-                          `https_proxy=${httpProxy.url}`,
-                          "--env",
-                          "NODE_USE_ENV_PROXY=1",
-                      ]),
-                ...(options.entrypoint === undefined
-                    ? []
-                    : ["--entrypoint", options.entrypoint[0]]),
-                "--volume",
-                `${workspacePath}:/workspace`,
-                ...(options.dockerSocket === true
-                    ? [
-                          "--group-add",
-                          "0",
-                          "--group-add",
-                          String(statSync("/var/run/docker.sock").gid),
-                          "--volume",
-                          "/var/run/docker.sock:/var/run/docker.sock",
-                      ]
-                    : []),
-                ...(homePath === undefined ? [] : ["--volume", `${homePath}:/home/rig`]),
-                "--workdir",
-                "/workspace",
-                imageId,
-                ...(options.entrypoint?.slice(1) ?? []),
-                ...(options.args ?? []),
-            ],
-            {
-                cols,
-                cwd: repositoryRoot,
-                env: process.env as Record<string, string>,
-                name: "xterm-256color",
-                rows,
-            },
-        );
+        const localEnvironment =
+            execution === "local"
+                ? createLocalEnvironment(options, homePath, workspacePath, inference, httpProxy)
+                : undefined;
+        const dockerEnvironmentArguments =
+            execution === "docker"
+                ? [
+                      "--env",
+                      `RIG_GYM_INFERENCE_URL=${inference.url}`,
+                      "--env",
+                      `RIG_GYM_TOKEN=${inference.token}`,
+                      ...(options.contextWindow === undefined
+                          ? []
+                          : ["--env", `RIG_GYM_CONTEXT_WINDOW=${options.contextWindow}`]),
+                      "--env",
+                      "RIG_GYM_OUTER_ISOLATION=docker",
+                      ...(options.providerOverrides === undefined
+                          ? []
+                          : [
+                                "--env",
+                                `RIG_GYM_PROVIDER_OVERRIDES=${options.providerOverrides.join(",")}`,
+                            ]),
+                      "--env",
+                      `RIG_MODEL=${modelId}`,
+                      ...(options.permissionMode === "from_config"
+                          ? []
+                          : [
+                                "--env",
+                                `RIG_PERMISSION_MODE=${options.permissionMode ?? "full_access"}`,
+                            ]),
+                      "--env",
+                      `RIG_PROVIDER=${providerId}`,
+                      ...environmentArguments(options.environment, httpProxy?.url),
+                      ...(httpProxy === undefined
+                          ? []
+                          : [
+                                "--env",
+                                `HTTP_PROXY=${httpProxy.url}`,
+                                "--env",
+                                `http_proxy=${httpProxy.url}`,
+                                "--env",
+                                `HTTPS_PROXY=${httpProxy.url}`,
+                                "--env",
+                                `https_proxy=${httpProxy.url}`,
+                                "--env",
+                                "NODE_USE_ENV_PROXY=1",
+                            ]),
+                  ]
+                : undefined;
+        const processStartedAt = performance.now();
+        const pty =
+            execution === "docker"
+                ? spawn(
+                      "docker",
+                      [
+                          "exec",
+                          "--interactive",
+                          "--tty",
+                          ...(dockerEnvironmentArguments ?? []),
+                          "--workdir",
+                          dockerFixture?.containerRoot ?? "/workspace",
+                          containerName,
+                          ...dockerSandboxArguments(
+                              dockerFixture?.containerRoot ?? "",
+                              dockerFixture?.stateRoot ?? "",
+                              options.entrypoint === undefined
+                                  ? [
+                                        "node",
+                                        "/app/packages/rig/dist/main.js",
+                                        ...(options.args ?? []),
+                                    ]
+                                  : [...options.entrypoint, ...(options.args ?? [])],
+                          ),
+                      ],
+                      {
+                          cols,
+                          cwd: repositoryRoot,
+                          env: process.env as Record<string, string>,
+                          name: "xterm-256color",
+                          rows,
+                      },
+                  )
+                : spawn(process.execPath, [...localRunnerArguments, ...(options.args ?? [])], {
+                      cols,
+                      cwd: workspacePath,
+                      env: localEnvironment ?? {},
+                      name: "xterm-256color",
+                      rows,
+                  });
         const startedGym = new Gym({
             containerName,
+            ...(dockerFixture === undefined
+                ? {}
+                : { dockerFixtureRoot: dockerFixture.containerRoot }),
+            ...(dockerFixture === undefined
+                ? {}
+                : { dockerFixtureStateRoot: dockerFixture.stateRoot }),
+            ...(dockerEnvironmentArguments === undefined ? {} : { dockerEnvironmentArguments }),
+            execution,
+            ...(dockerFixture === undefined ? {} : { fixtureRootPath: dockerFixture.hostRoot }),
             ghostty: startedGhostty,
-            ...(homePath === undefined ? {} : { homePath }),
+            homePath,
             ...(httpProxy === undefined ? {} : { httpProxy }),
             inference,
+            ...(localEnvironment === undefined ? {} : { localEnvironment, localRunnerArguments }),
             pty,
             workspacePath,
         });
@@ -157,6 +212,8 @@ export async function createGym(options: GymOptions): Promise<Gym> {
                 );
             }),
         ]);
+        profileGymTiming(profileId, "process-ready", processStartedAt);
+        profileGymTiming(profileId, "create-total", createStartedAt);
         return startedGym;
     } catch (error) {
         if (gym !== undefined) {
@@ -168,8 +225,10 @@ export async function createGym(options: GymOptions): Promise<Gym> {
                 httpProxy?.stop().catch(() => {}),
             ]);
             await Promise.all([
-                ...(homePath === undefined ? [] : [rm(homePath, { force: true, recursive: true })]),
-                rm(workspacePath, { force: true, recursive: true }),
+                rm(dockerFixture?.hostRoot ?? homePath, { force: true, recursive: true }),
+                ...(dockerFixture === undefined
+                    ? [rm(workspacePath, { force: true, recursive: true })]
+                    : []),
             ]);
         }
         throw error;
@@ -199,4 +258,73 @@ function environmentArguments(
                 : value.replaceAll("{{HTTP_PROXY_URL}}", httpProxyUrl);
         return ["--env", `${name}=${expandedValue}`];
     });
+}
+
+function createLocalEnvironment(
+    options: GymOptions,
+    homePath: string,
+    workspacePath: string,
+    inference: MockInferenceServer,
+    httpProxy: InterceptingHttpProxy | undefined,
+): Record<string, string> {
+    const environment = {
+        HOME: homePath,
+        PATH: process.env.PATH ?? "",
+        RIG_GYM_INFERENCE_URL: inference.localUrl,
+        RIG_GYM_TOKEN: inference.token,
+        RIG_HOME: join(homePath, ".rig"),
+        RIG_GYM_DISPLAY_WORKSPACE: "/workspace",
+        RIG_GYM_HOME_PATH: homePath,
+        RIG_GYM_IN_PROCESS_DAEMON: "1",
+        RIG_GYM_WORKSPACE_PATH: workspacePath,
+        RIG_GYM_RUNTIME: "just-bash",
+        RIG_SERVER_DIRECTORY: join(homePath, ".server"),
+        RIG_MODEL: options.modelId ?? defaultModelId(options.providerId ?? "gym"),
+        RIG_PROVIDER: options.providerId ?? "gym",
+        TERM: "xterm-256color",
+        ...(process.env.TMPDIR === undefined ? {} : { TMPDIR: process.env.TMPDIR }),
+        ...(options.contextWindow === undefined
+            ? {}
+            : { RIG_GYM_CONTEXT_WINDOW: String(options.contextWindow) }),
+        ...(options.permissionMode === "from_config"
+            ? {}
+            : { RIG_PERMISSION_MODE: options.permissionMode ?? "full_access" }),
+        ...(options.providerOverrides === undefined
+            ? {}
+            : { RIG_GYM_PROVIDER_OVERRIDES: options.providerOverrides.join(",") }),
+        ...localEnvironmentValues(options.environment, httpProxy?.localUrl),
+    };
+    if (httpProxy === undefined) return environment;
+    return {
+        ...environment,
+        HTTP_PROXY: httpProxy.localUrl,
+        HTTPS_PROXY: httpProxy.localUrl,
+        NODE_USE_ENV_PROXY: "1",
+        http_proxy: httpProxy.localUrl,
+        https_proxy: httpProxy.localUrl,
+    };
+}
+
+function localEnvironmentValues(
+    environment: Readonly<Record<string, string>> | undefined,
+    httpProxyUrl?: string,
+): Record<string, string> {
+    if (environment === undefined) return {};
+    return Object.fromEntries(
+        Object.entries(environment).map(([name, value]) => {
+            if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name)) {
+                throw new Error(`Invalid Gym environment variable name '${name}'.`);
+            }
+            const expanded =
+                httpProxyUrl === undefined
+                    ? value
+                    : value.replaceAll("{{HTTP_PROXY_URL}}", httpProxyUrl);
+            return [
+                name,
+                httpProxyUrl !== undefined && /^(?:NO_PROXY|no_proxy)$/u.test(name)
+                    ? `${expanded},127.0.0.1,localhost`
+                    : expanded,
+            ];
+        }),
+    );
 }

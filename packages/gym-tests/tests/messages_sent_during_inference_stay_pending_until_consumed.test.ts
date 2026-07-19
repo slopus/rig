@@ -15,6 +15,7 @@ describe("messages sent during active inference", () => {
     it("keeps local and external steering between active work and the composer until consumed", async () => {
         const releaseInference = deferred<void>();
         const gym = await createGym({
+            mode: "docker",
             cols: 100,
             files: { "steer-from-another-client.mjs": steerFromAnotherClientScript },
             async inference(request, callIndex) {

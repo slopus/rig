@@ -174,6 +174,7 @@ describe("vanilla Codex and Rig main inference prompts", () => {
 
 async function createBlockedCodexGym(options: CodexCase): Promise<Gym> {
     return createGym({
+        mode: "docker",
         environment: {
             CODEX_HOME: "/home/rig/.codex",
             DISABLE_TELEMETRY: "1",

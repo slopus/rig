@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createGym, type Gym } from "@slopus/rig-gym";
+import { captureScrollback, createGym, type Gym } from "@slopus/rig-gym";
 
 const running = new Set<Gym>();
 
@@ -59,12 +59,12 @@ describe("terminal resize reflows without losing history", () => {
         expect(narrow.cursor.y).toBeLessThan(14);
 
         const narrowHistory = await captureScrollback(gym);
-        expect(countOccurrences(narrowHistory.text, "REFLOW_HISTORY_BEGIN")).toBe(1);
-        expect(countOccurrences(narrowHistory.text, "REFLOW_UNIQUE_MIDDLE_MARKER")).toBe(1);
-        expect(countOccurrences(narrowHistory.text, "REFLOW_HISTORY_END")).toBe(1);
-        expect(narrowHistory.text).not.toContain("narrow-settled");
+        expect(countOccurrences(narrowHistory, "REFLOW_HISTORY_BEGIN")).toBe(1);
+        expect(countOccurrences(narrowHistory, "REFLOW_UNIQUE_MIDDLE_MARKER")).toBe(1);
+        expect(countOccurrences(narrowHistory, "REFLOW_HISTORY_END")).toBe(1);
+        expect(narrowHistory).not.toContain("narrow-settled");
 
-        const beforeWideResize = narrowHistory.bottom.scroll;
+        const beforeWideResize = (await gym.terminal.snapshot()).scroll;
         gym.terminal.resize(112, 28);
         const wide = await settleResize(gym, 112, 28, "wide-settled");
         expect(wide.scroll.totalRows).toBeGreaterThan(wide.scroll.visibleRows);
@@ -77,12 +77,12 @@ describe("terminal resize reflows without losing history", () => {
         expect(wide.cursor.y).toBeLessThan(28);
 
         const wideHistory = await captureScrollback(gym);
-        expect(countOccurrences(wideHistory.text, "REFLOW_HISTORY_BEGIN")).toBe(1);
-        expect(countOccurrences(wideHistory.text, "REFLOW_UNIQUE_MIDDLE_MARKER")).toBe(1);
-        expect(countOccurrences(wideHistory.text, "REFLOW_HISTORY_END")).toBe(1);
-        expect(wideHistory.text).not.toContain("wide-settled");
+        expect(countOccurrences(wideHistory, "REFLOW_HISTORY_BEGIN")).toBe(1);
+        expect(countOccurrences(wideHistory, "REFLOW_UNIQUE_MIDDLE_MARKER")).toBe(1);
+        expect(countOccurrences(wideHistory, "REFLOW_HISTORY_END")).toBe(1);
+        expect(wideHistory).not.toContain("wide-settled");
 
-        const beforeFollowUp = wideHistory.bottom.scroll;
+        const beforeFollowUp = (await gym.terminal.snapshot()).scroll;
         gym.terminal.type("Confirm input still works after both resizes.");
         gym.terminal.press("enter");
         const followUp = await gym.terminal.waitUntil(
@@ -134,37 +134,6 @@ async function settleResize(
         `healthy ${columns} by ${rows} layout at the bottom`,
         30_000,
     );
-}
-
-async function captureScrollback(
-    gym: Gym,
-): Promise<{ bottom: Awaited<ReturnType<Gym["terminal"]["snapshot"]>>; text: string }> {
-    gym.terminal.scrollToTop();
-    let snapshot = await gym.terminal.snapshot();
-    expect(snapshot.scroll.atTop).toBe(true);
-    const rows: string[] = [];
-
-    for (;;) {
-        if (snapshot.scroll.atBottom) {
-            rows.push(...snapshot.rows);
-            break;
-        }
-
-        rows.push(snapshot.rows[0] ?? "");
-        const previousOffset = snapshot.scroll.offset;
-        gym.terminal.scrollBy(1);
-        const next = await gym.terminal.snapshot();
-        expect(next.scroll.offset).toBeGreaterThan(previousOffset);
-        snapshot = next;
-    }
-
-    gym.terminal.scrollToBottom();
-    const bottom = await gym.terminal.snapshot();
-    expect(bottom.scroll.atBottom).toBe(true);
-    return {
-        bottom,
-        text: rows.join("\n"),
-    };
 }
 
 function countOccurrences(text: string, search: string): number {

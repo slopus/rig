@@ -69,6 +69,11 @@ export class InterceptingHttpProxy {
         return this.#url;
     }
 
+    get localUrl(): string {
+        if (this.#url === undefined) throw new Error("Intercepting HTTP proxy has not started.");
+        return this.#url.replace("host.docker.internal", "127.0.0.1");
+    }
+
     async start(): Promise<void> {
         if (this.#server !== undefined) return;
         const server = createServer((request, response) => {

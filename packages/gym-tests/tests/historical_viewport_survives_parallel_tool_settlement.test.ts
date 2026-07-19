@@ -33,6 +33,7 @@ describe("parallel tool settlement while reading terminal history", () => {
             "printf 'SECOND_PARALLEL_TOOL_COMPLETE\\n'",
         ].join("; ");
         const gym = await createGym({
+            mode: "docker",
             cols: 68,
             inference: [
                 { content: [{ text: history, type: "text" }] },

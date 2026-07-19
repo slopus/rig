@@ -96,6 +96,7 @@ async function createUsageGym(usage?: {
 }): Promise<Gym> {
     return createGym({
         cols: 96,
+        mode: "docker",
         entrypoint: ["node", "/workspace/status-card-usage.mjs"],
         environment: usage === undefined ? {} : { STATUS_CARD_USAGE: JSON.stringify(usage) },
         files: { "status-card-usage.mjs": STATUS_CARD_USAGE_APP },

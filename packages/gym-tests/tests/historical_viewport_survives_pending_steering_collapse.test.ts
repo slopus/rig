@@ -28,6 +28,7 @@ describe("pending local and external steering while reading history", () => {
             "STEERING_HISTORY_END",
         ].join("\n");
         const gym = await createGym({
+            mode: "docker",
             cols: 76,
             files: { "steer-from-another-client.mjs": steerFromAnotherClientScript },
             inference: async (request, callIndex) => {

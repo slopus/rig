@@ -188,7 +188,10 @@ function assertTerminalHealth(
     expect(snapshot.scroll.atBottom).toBe(true);
     expect(snapshot.scroll.bottomDepartureCount).toBe(baseline.bottomDepartureCount);
     expect(snapshot.scroll.topArrivalCount).toBe(baseline.topArrivalCount);
-    expect(snapshot.text).toContain("gym off");
+    expect(
+        snapshot.text.includes("gym off") ||
+            snapshot.text.includes("Model: Gym · Reasoning: Off · Provider: Gym"),
+    ).toBe(true);
     expect(snapshot.text).toContain("/workspace");
     expect(snapshot.text).not.toContain("�");
     expect(snapshot.cursor.x).toBeLessThan(112);

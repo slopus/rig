@@ -15,6 +15,7 @@ afterEach(async () => {
 describe("daemon startup failure handling", () => {
     it("keeps reporting the startup error and supports stop and reload", async () => {
         const gym = await createGym({
+            mode: "docker",
             entrypoint: ["bash", "/workspace/exercise-daemon-startup-error.sh"],
             files: {
                 "create-newer-database.mjs": createNewerDatabaseScript,

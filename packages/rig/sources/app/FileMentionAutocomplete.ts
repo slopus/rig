@@ -38,6 +38,19 @@ export class FileMentionAutocomplete {
         this.#selectedIndex = 0;
     }
 
+    dismiss(lines: readonly string[], cursor: { line: number; col: number }): void {
+        const context = findFileMentionContext(lines, cursor);
+        if (context === undefined) {
+            this.clear();
+            return;
+        }
+        this.#cancelSearch();
+        this.#contextKey = context.key;
+        this.#dismissedContextKey = context.key;
+        this.#items = [];
+        this.#selectedIndex = 0;
+    }
+
     handleInput(
         data: string,
         lines: readonly string[],

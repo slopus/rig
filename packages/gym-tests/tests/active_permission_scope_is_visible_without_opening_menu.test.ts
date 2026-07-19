@@ -12,6 +12,7 @@ afterEach(async () => {
 describe("active permission scope is visible without opening a menu", () => {
     it("keeps Full access, Read only, and Auto visible in the live footer", async () => {
         const gym = await createGym({
+            mode: "docker",
             cols: 100,
             inference: [],
             rows: 24,

@@ -12,9 +12,11 @@ afterEach(async () => {
 describe("restarting an incompatible daemon", () => {
     it("waits for the old daemon to finish cleanup before starting its replacement", async () => {
         const gym = await createGym({
+            mode: "docker",
             entrypoint: ["sh", "/workspace/restart-incompatible-daemon.sh"],
             environment: {
                 RIG_SERVER_DIRECTORY: "/home/rig/.local/state/rig-r013",
+                RIG_SERVER_SOCKET_PATH: "/tmp/rig-r013.sock",
             },
             files: {
                 "restart-incompatible-daemon.sh": restartIncompatibleDaemonScript,

@@ -12,6 +12,7 @@ afterEach(async () => {
 describe("User skills in Workspace write", () => {
     it("discovers and invokes skills from both Codex user roots", async () => {
         const gym = await createGym({
+            mode: "docker",
             homeFiles: {
                 ".agents/skills/agents-home/SKILL.md": skillFile(
                     "agents-home",

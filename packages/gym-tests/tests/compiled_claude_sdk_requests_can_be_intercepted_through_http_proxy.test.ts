@@ -19,6 +19,7 @@ describe("compiled Claude SDK requests through an intercepting HTTP proxy", () =
         const userMarker = "CLAUDE_SDK_PROXY_CAPTURE_MARKER";
         const responseMarker = "COMPILED_CLAUDE_SDK_PROXY_RESPONSE";
         const gym = await createGym({
+            mode: "docker",
             environment: {
                 ANTHROPIC_API_KEY: "gym-placeholder-key",
                 ANTHROPIC_BASE_URL: "http://api.anthropic.test",
@@ -100,6 +101,7 @@ describe("compiled Claude SDK requests through an intercepting HTTP proxy", () =
         const firstResponse = "FIRST_CLAUDE_SESSION_ID_RESPONSE";
         const secondResponse = "SECOND_CLAUDE_SESSION_ID_RESPONSE";
         const gym = await createGym({
+            mode: "docker",
             environment: {
                 ANTHROPIC_API_KEY: "gym-placeholder-key",
                 ANTHROPIC_BASE_URL: "http://api.anthropic.test",

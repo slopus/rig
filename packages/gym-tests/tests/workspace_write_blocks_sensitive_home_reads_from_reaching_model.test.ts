@@ -17,6 +17,7 @@ describe("Workspace write blocks sensitive home reads from reaching the model", 
     it("denies a compromised model access to a private key outside the workspace", async () => {
         const privatePath = "/home/rig/.ssh/id_rsa";
         const gym = await createGym({
+            mode: "docker",
             cols: COLS,
             inference(request, callIndex) {
                 const lastMessage = request.context.messages.at(-1);

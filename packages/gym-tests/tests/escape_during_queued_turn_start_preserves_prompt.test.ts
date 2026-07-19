@@ -22,6 +22,7 @@ describe("Escape during queued turn startup", () => {
             "}'",
         ].join(" ");
         const gym = await createGym({
+            mode: "docker",
             cols: 76,
             inference: async (request, callIndex) => {
                 if (callIndex === 0) {

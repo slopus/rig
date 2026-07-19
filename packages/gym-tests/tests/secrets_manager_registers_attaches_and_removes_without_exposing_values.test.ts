@@ -14,6 +14,7 @@ describe("secrets manager", () => {
         const token = "ui-secret-value-never-render";
         const host = "ui-host-value-never-render";
         const gym = await createGym({
+            mode: "docker",
             cols: 100,
             rows: 36,
             inference: [
@@ -86,9 +87,16 @@ describe("secrets manager", () => {
         gym.terminal.press("enter");
         await gym.terminal.waitForText("Attached: Session");
         gym.terminal.press("escape");
-        await gym.terminal.waitForText("Ask Rig to do anything");
+        await gym.terminal.waitUntil(
+            (snapshot) =>
+                snapshot.text.includes("Ask Rig to do anything") &&
+                !snapshot.text.includes("Attached: Session"),
+            "the secrets manager to close and return input focus to the composer",
+        );
 
-        gym.terminal.type("Use the attached UI service credentials.");
+        const prompt = "Use the attached UI service credentials.";
+        gym.terminal.type(prompt);
+        await gym.terminal.waitForText(prompt);
         gym.terminal.press("enter");
         await gym.terminal.waitForText("UI secret verified.", 30_000);
         await expect(gym.readFile("ui-secret-result.txt")).resolves.toBe(`${token}|${host}`);

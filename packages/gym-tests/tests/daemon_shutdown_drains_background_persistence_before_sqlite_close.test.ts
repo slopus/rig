@@ -20,9 +20,11 @@ describe("daemon shutdown persistence drain", () => {
         const backgroundCommand = "bash /workspace/held-background-persistence.sh";
         const gym = await createGym({
             cols: 92,
+            mode: "docker",
             entrypoint: ["bash", "/workspace/shutdown-drain-entrypoint.sh"],
             environment: {
                 RIG_SERVER_DIRECTORY: "/home/rig/.local/state/rig",
+                RIG_SERVER_SOCKET_PATH: "/tmp/rig-shutdown-drain.sock",
             },
             files: {
                 "held-background-persistence.sh": heldBackgroundPersistenceScript,

@@ -21,6 +21,7 @@ describe("background shell activity stays visible until it really finishes", () 
         const command =
             "printf 'BACKGROUND_PROCESS_STARTED\\n'; sleep 60; printf 'finished\\n' > background-process-state.txt";
         const gym = await createGym({
+            mode: "docker",
             cols: 88,
             inference(request, callIndex) {
                 const lastMessage = request.context.messages.at(-1);

@@ -13,6 +13,7 @@ describe("Auto reviewer allows authorized input to a running shell", () => {
     it("keeps shell startup sandboxed and reviews input without a redundant prompt", async () => {
         let sessionId: number | undefined;
         const gym = await createGym({
+            mode: "docker",
             cols: 104,
             inference(request, callIndex) {
                 if (request.context.systemPrompt?.includes("independent permission reviewer")) {

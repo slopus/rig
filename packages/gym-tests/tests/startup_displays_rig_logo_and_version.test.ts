@@ -45,6 +45,7 @@ describe("terminal startup branding", () => {
         ].join("\n");
         const gym = await createGym({
             cols: 100,
+            mode: "docker",
             entrypoint: ["/bin/sh", "-lc", setup],
             inference: [],
             rows: 32,

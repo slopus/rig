@@ -37,6 +37,7 @@ export interface GymOptions {
     httpProxy?: true | { handler?: HttpInterceptHandler };
     image?: string;
     inference?: readonly GymMockResponse[] | GymInferenceHandler | undefined;
+    mode?: "docker" | "just-bash";
     modelId?: string;
     permissionMode?: "auto" | "from_config" | "full_access" | "read_only" | "workspace_write";
     providerId?: "bedrock" | "claude" | "codex" | "gym" | "kimi";

@@ -14,6 +14,7 @@ describe("aborting an idle session stops its background processes", () => {
         const command =
             "printf 'DELAYED_ACTION_ARMED\\n'; sleep 6; printf 'escaped after abort\\n' > delayed-action.txt";
         const gym = await createGym({
+            mode: "docker",
             cols: 92,
             inference(request, callIndex) {
                 if (callIndex === 0) {

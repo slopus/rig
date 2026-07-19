@@ -1,35 +1,36 @@
 # Rig gym
 
-The Rig gym is the end-to-end test harness for the complete terminal agent experience. It runs the built Rig CLI inside a fresh Docker container, drives it through a real pseudo-terminal, supplies deterministic model responses from the host, and interprets terminal output with the prebuilt `@slopus/ghostty-wasm` package.
+The Rig gym is the end-to-end test harness for the complete terminal agent experience. It drives the real Rig CLI through a pseudo-terminal, supplies deterministic model responses, and interprets terminal output with the prebuilt `@slopus/ghostty-wasm` package.
 
 The goal is to test the product at the same boundary a user experiences while keeping model behavior deterministic. A gym test can exercise terminal rendering, multiline input, tool calls, real processes, filesystem changes, interactive questions, interruptions, provider failures, and concurrency without calling a live model.
 
 ## Core principles
 
-1. **Every instance is isolated.** Each call to `createGym` creates a unique fixture directory, inference server, Docker container, PTY, and terminal emulator.
-2. **Always use Docker.** There is no in-process shell or reduced-fidelity fallback. Tests run the built agent in a new container even when the scenario looks simple.
-3. **Mock only inference.** Model responses are scripted by the test. The CLI, daemon, agent loop, tools, shell, filesystem, process management, HTTP transport, and rendering code are real.
-4. **Interact like a user.** Drive behavior through terminal input and assert the terminal screen or resulting observable state. Avoid calling application internals to move a scenario forward.
-5. **Wait for state, not time.** Use terminal predicates and explicit timeouts instead of fixed sleeps.
-6. **Make failures explain the product.** Prefer assertions on visible text, inference requests, files, process effects, and viewport state over implementation details.
-7. **Reproduce before fixing.** For a regression, first demonstrate the failure against the unfixed image. Then fix production code and run the same test unchanged.
+1. **Every instance is isolated.** Each call to `createGym` creates unique workspace and home fixtures, an inference server, PTY, and terminal emulator.
+2. **Use JustBash by default.** Ordinary scenarios execute Rig directly from TypeScript with Node's native type stripping. The daemon runs in the CLI process and shell tools use a root-confined JustBash filesystem.
+3. **Opt out explicitly for system contracts.** Set `mode: "docker"` when a scenario needs real OS processes, Docker, Sandbox Runtime, sockets, executables, or host/container permission boundaries.
+4. **Mock only inference and the local shell runtime.** Model responses are scripted. The CLI, daemon, agent loop, tool dispatch, HTTP transport, persistence, terminal input, and rendering remain real.
+5. **Interact like a user.** Drive behavior through terminal input and assert the terminal screen or resulting observable state. Avoid calling application internals to move a scenario forward.
+6. **Wait for state, not time.** Use terminal predicates and explicit timeouts instead of fixed sleeps.
+7. **Make failures explain the product.** Prefer assertions on visible text, inference requests, files, process effects, and viewport state over implementation details.
+8. **Reproduce before fixing.** For a regression, first demonstrate the failure, then fix production code and run the same test unchanged.
 
 ## What is real and what is mocked
 
-| Part                      | Behavior in the gym                                            |
-| ------------------------- | -------------------------------------------------------------- |
-| Rig CLI and daemon        | Built from the repository and run inside Docker                |
-| Agent loop                | Real                                                           |
-| Tool dispatch             | Real                                                           |
-| Shell and child processes | Real processes inside the container                            |
-| Filesystem                | Real temporary workspace bind-mounted at `/workspace`          |
-| Terminal input            | Real PTY input sent through `node-pty`                         |
-| Terminal output           | Real PTY output interpreted by `@slopus/ghostty-wasm`          |
-| Model/provider inference  | Mocked by a test-owned HTTP server on the host                 |
-| Provider transport        | Real authenticated HTTP request from the container to the host |
-| Credentials               | Not used; the gym provider is selected explicitly              |
+| Part                      | Behavior in the gym                                          |
+| ------------------------- | ------------------------------------------------------------ |
+| Rig CLI and daemon        | Native Node TypeScript process; Docker only when requested   |
+| Agent loop                | Real                                                         |
+| Tool dispatch             | Real                                                         |
+| Shell and child processes | JustBash by default; real container processes in Docker mode |
+| Filesystem                | Root-confined temporary workspace and home fixtures          |
+| Terminal input            | Real PTY input sent through `node-pty`                       |
+| Terminal output           | Real PTY output interpreted by `@slopus/ghostty-wasm`        |
+| Model/provider inference  | Mocked by a test-owned HTTP server on the host               |
+| Provider transport        | Real authenticated local HTTP request                        |
+| Credentials               | Not used; the gym provider is selected explicitly            |
 
-The host controls model inference and terminal input. It does not replace shell commands, tools, filesystem APIs, or process execution with test doubles.
+The host controls model inference and terminal input. JustBash implements the local shell/filesystem boundary without starting host commands. Docker-mode scenarios retain the real Linux process and filesystem boundary.
 
 ## Architecture
 
@@ -40,12 +41,11 @@ Vitest scenario on the host
     │          ▲
     │          │ authenticated inference requests
     │          │
-    ├── node-pty ─────────────── docker run --interactive --tty
+    ├── node-pty ─────────────── Node runs packages/rig/sources/main.ts
     │          │                         │
-    │          │ keystrokes              ├── built Rig CLI and daemon
+    │          │ keystrokes              ├── Rig CLI + in-process daemon
     │          │                         ├── real agent loop and tools
-    │          │ PTY output              ├── bash and child processes
-    │          ▼                         └── /workspace bind mount
+    │          │ PTY output              └── root-confined JustBash runtime
     └── @slopus/ghostty-wasm emulator
                └── visible rows, cursor, title, scrollback, viewport offset
 ```
@@ -54,21 +54,23 @@ Vitest scenario on the host
 
 1. Creates a unique temporary workspace and writes fixture files.
 2. Starts a token-protected mock inference HTTP server on an ephemeral host port.
-3. Builds the default Docker image once per host test process unless image building is skipped.
-4. Starts a persistent `@slopus/ghostty-wasm` emulator for the requested terminal dimensions.
-5. Runs the container through `node-pty` with a unique name and the workspace mounted at `/workspace`.
+3. Starts an in-process `@slopus/ghostty-wasm` emulator for the requested terminal dimensions.
+4. Runs Rig's TypeScript entry point directly through native Node and `node-pty`.
+5. Mounts the temporary workspace and home into the root-confined JustBash filesystem.
 6. Configures Rig to use the `gym` provider, `openai/gym` model, and full-access permissions.
 7. Feeds every PTY output chunk into the Ghostty terminal state.
 8. Waits until the Rig composer is visible before returning the `Gym` instance.
-9. On disposal, kills the PTY, force-removes the container, closes the terminal emulator and inference server, and deletes the temporary workspace.
+9. On disposal, stops the PTY and services, then deletes the temporary workspace and home with bounded retries.
 
-Restricted-command scenarios run Sandbox Runtime inside the disposable Gym container. Gym removes Docker's seccomp filter so Bubblewrap can create nested user and PID namespaces, but adds no host capabilities; `RIG_GYM_OUTER_ISOLATION=docker` enables Sandbox Runtime's documented nested-container mode only when `/.dockerenv` is also present. The outer unprivileged container and its temporary workspace remain the host boundary.
+Docker mode replaces steps 4 and 5 with a shared warm runner container. Every Gym process gets private Bubblewrap mount, user, IPC, and UTS namespaces with unique workspace, home, and temporary directories. Processes share the runner's PID namespace so daemon lifecycle commands behave like one real machine and Rig's nested shell sandbox sees a consistent `/proc`. Disposal finds the exact Gym UUID in each process's mount table, revalidates it immediately before termination, and kills children before parents; the shared runner is removed after the lane completes.
+
+Restricted-command scenarios run Sandbox Runtime inside the shared Gym runner. Gym removes Docker's seccomp filter so Bubblewrap can create nested namespaces, but adds no host capabilities; `RIG_GYM_OUTER_ISOLATION=docker` enables Sandbox Runtime's documented nested-container mode only when `/.dockerenv` is also present. The outer unprivileged container and each test's private filesystem remain the host boundary.
 
 ## Repository layout
 
 ```text
 packages/gym/
-├── Dockerfile                 Builds the production-like Rig image
+├── Dockerfile                 Builds the Linux dependency/runtime image
 └── sources/                   Host runner, PTY, fixtures, and inference server
 
 packages/gym-tests/
@@ -88,17 +90,17 @@ tests for the host runner or terminal emulator belong beside their source in
 
 ## Prerequisites
 
-Running the gym requires:
+Running the default local gym requires:
 
-- Docker with a working Linux container runtime.
 - `pnpm`, using the version configured by the repository.
+- Node 25 or newer for native TypeScript execution.
 - A supported `node-pty` environment.
 
-No Codex, Claude, OpenAI, or Anthropic credentials are required. The container always uses the local gym provider.
+Docker is required only for `mode: "docker"` scenarios and the Docker lane. No Codex, Claude, OpenAI, or Anthropic credentials are required.
 
 ## Running tests
 
-### Complete suite
+### Local suite
 
 From the repository root:
 
@@ -106,11 +108,25 @@ From the repository root:
 pnpm test:gym
 ```
 
-This builds `rig-gym:local` and then runs every file in `packages/gym-tests/tests`. Docker caches image layers, and the test process reuses the completed image build across gym instances.
+This runs every JustBash scenario with four file workers.
+
+For the compressed iteration lane, which excludes true-clock and Docker cases:
+
+```sh
+pnpm --filter @slopus/rig-gym-tests test:gym:fast
+```
+
+To run local and explicit Docker scenarios:
+
+```sh
+pnpm --filter @slopus/rig-gym-tests test:gym:full
+```
+
+Set `mode: "docker"` on every scenario that needs Docker. `dockerSocket`, `entrypoint`, and `image` are rejected in local mode so a test cannot silently leave the fast lane.
 
 ### Targeted iteration
 
-Build the image once:
+Prepare the Docker runtime image once when dependencies or the Dockerfile change:
 
 ```sh
 pnpm build:gym
@@ -123,21 +139,22 @@ RIG_GYM_SKIP_BUILD=1 pnpm --filter @slopus/rig-gym-tests exec vitest run \
   tests/agent_edits_fixture_with_real_shell.test.ts
 ```
 
-Run all gym tests against the existing image with:
+Run every explicit Docker scenario with:
 
 ```sh
-RIG_GYM_SKIP_BUILD=1 pnpm --filter @slopus/rig-gym-tests test:gym
+RIG_GYM_SKIP_BUILD=1 pnpm test:gym:docker
 ```
 
-Set `RIG_GYM_IMAGE` to use a uniquely tagged image when other workspaces or agents may build Gym
-at the same time. This avoids another build replacing the shared `rig-gym:local` tag during a run:
+Gym automatically uses a stable tag derived from the Dockerfile, lockfile, and package manifests. Worktrees with the same runtime dependencies share the image safely because Rig's current TypeScript source is mounted read-only when the runner starts. Set `RIG_GYM_IMAGE` only to override that generated tag:
 
 ```sh
 RIG_GYM_IMAGE=rig-gym:my-workspace RIG_GYM_SKIP_BUILD=1 \
-  pnpm --filter @slopus/rig-gym-tests test:gym
+  pnpm test:gym:docker
 ```
 
-Rebuild the Docker image whenever production Rig code, package dependencies, or `packages/gym/Dockerfile` changes. Changes limited to `packages/gym-tests/tests` or the host runner in `packages/gym/sources` do not require an image rebuild. The terminal emulator is loaded from the prebuilt npm package, so Gym does not need Rust, Cargo, or Zig.
+Normal source and test changes do not rebuild the image. The dependency lockfile, Dockerfile, TypeScript/workspace configuration, production Gym dependencies, and Rig build metadata produce a new runtime tag. Test scripts and other non-runtime manifest fields do not invalidate it. The Dockerfile uses a persistent BuildKit pnpm-store cache when an install layer really is invalidated. Set `RIG_GYM_REBUILD=1` only to force replacement of an existing runtime tag.
+
+The Docker lane runs ordinary and long-clock files concurrently, then runs the small timing-sensitive group serially. All ordinary Gyms with the same capability boundary share one container; tests that request the Docker socket use a separate shared runner.
 
 ## Naming and organizing scenarios
 
@@ -185,6 +202,7 @@ describe("agent edits a fixture with the real shell", () => {
                 },
                 { content: [{ text: "Done.", type: "text" }] },
             ],
+            mode: "docker",
         });
         running.add(gym);
 
@@ -226,10 +244,11 @@ interface GymOptions {
     httpProxy?: true | { handler?: HttpInterceptHandler };
     image?: string;
     inference?: readonly GymMockResponse[] | GymInferenceHandler;
+    mode?: "docker" | "just-bash";
     modelId?: string;
     permissionMode?: "auto" | "from_config" | "full_access" | "read_only" | "workspace_write";
-    providerId?: "bedrock" | "claude" | "codex" | "gym";
-    providerOverrides?: readonly ("claude" | "codex")[];
+    providerId?: "bedrock" | "claude" | "codex" | "gym" | "kimi";
+    providerOverrides?: readonly ("claude" | "codex" | "kimi")[];
     rows?: number;
     startupText?: string;
     terminalColorScheme?: "dark" | "light";
@@ -237,27 +256,28 @@ interface GymOptions {
 }
 ```
 
-| Option                | Default                  | Purpose                                                                   |
-| --------------------- | ------------------------ | ------------------------------------------------------------------------- |
-| `args`                | `[]`                     | Arguments passed to the built Rig CLI                                     |
-| `cols`                | `100`                    | Terminal width in cells                                                   |
-| `contextWindow`       | Provider default         | Overrides the context window for gym-backed inference                     |
-| `dockerSocket`        | `false`                  | Exposes the daemon socket for Docker tests                                |
-| `entrypoint`          | Image default            | Replaces the image entrypoint for setup cases                             |
-| `environment`         | `{}`                     | Extra environment variables inside the container                          |
-| `files`               | `{}`                     | Fixture tree mounted into `/workspace`                                    |
-| `homeFiles`           | `{}`                     | Trusted fixture tree mounted into `/home/rig`                             |
-| `httpProxy`           | Disabled                 | Record, replace, rewrite, or forward provider HTTP                        |
-| `image`               | `rig-gym:local`          | Docker image tag to build or run                                          |
-| `inference`           | `[]`                     | Ordered gym-provider responses or a request handler                       |
-| `modelId`             | Provider default         | Model selected for the session                                            |
-| `permissionMode`      | `full_access`            | Permission mode, or `from_config` to leave the environment unset          |
-| `providerId`          | `gym`                    | `gym` or the deployed `bedrock`, `claude`, or `codex` provider            |
-| `providerOverrides`   | `[]`                     | Routes selected Claude or Codex providers through deterministic inference |
-| `rows`                | `32`                     | Terminal height in cells                                                  |
-| `startupText`         | `Ask Rig to do anything` | Visible text that marks startup as complete                               |
-| `terminalColorScheme` | `dark`                   | Initial terminal color scheme used by the Ghostty interpreter             |
-| `timeoutMs`           | `20_000`                 | Maximum startup wait for the composer                                     |
+| Option                | Default                  | Purpose                                                          |
+| --------------------- | ------------------------ | ---------------------------------------------------------------- |
+| `args`                | `[]`                     | Arguments passed to the Rig CLI                                  |
+| `cols`                | `100`                    | Terminal width in cells                                          |
+| `contextWindow`       | Provider default         | Overrides the context window for gym-backed inference            |
+| `dockerSocket`        | `false`                  | Exposes the daemon socket; requires `mode: "docker"`             |
+| `entrypoint`          | Image default            | Replaces the image entrypoint; requires `mode: "docker"`         |
+| `environment`         | `{}`                     | Extra environment variables for Rig                              |
+| `files`               | `{}`                     | Fixture tree mounted into `/workspace`                           |
+| `homeFiles`           | `{}`                     | Trusted fixture tree mounted into `/home/rig`                    |
+| `httpProxy`           | Disabled                 | Record, replace, rewrite, or forward provider HTTP               |
+| `image`               | Runtime dependency tag   | Docker image tag to build or run                                 |
+| `inference`           | `[]`                     | Ordered gym-provider responses or a request handler              |
+| `modelId`             | Provider default         | Model selected for the session                                   |
+| `mode`                | `just-bash`              | Use `docker` only for a real-shell or container contract         |
+| `permissionMode`      | `full_access`            | Permission mode, or `from_config` to leave the environment unset |
+| `providerId`          | `gym`                    | Gym or a deployed provider contract                              |
+| `providerOverrides`   | `[]`                     | Routes selected providers through deterministic inference        |
+| `rows`                | `32`                     | Terminal height in cells                                         |
+| `startupText`         | `Ask Rig to do anything` | Visible text that marks startup as complete                      |
+| `terminalColorScheme` | `dark`                   | Initial terminal color scheme used by the Ghostty interpreter    |
+| `timeoutMs`           | `20_000`                 | Maximum startup wait for the composer                            |
 
 Set `startupText` to a stable visible fragment only when a deliberately narrow startup viewport
 truncates the default placeholder.
@@ -289,10 +309,10 @@ A fixture may be:
 - A `Uint8Array` for binary content.
 - `{ content, mode }` when permissions matter.
 
-Absolute paths and paths that escape `/workspace` are rejected. The host fixture directory is bind-mounted, so changes made by real container processes are visible through `gym.readFile`:
+Absolute paths and paths that escape `/workspace` are rejected. JustBash mounts the fixture through a root-confined filesystem; Docker bind-mounts the same fixture. Tool changes are visible through `gym.readFile` in either mode:
 
 ```ts
-await expect(gym.readFile("src/result.txt")).resolves.toBe("created in Docker\n");
+await expect(gym.readFile("src/result.txt")).resolves.toBe("created by the tool\n");
 ```
 
 `gym.workspacePath` exposes the temporary host path for advanced diagnostics. Prefer `gym.readFile` in assertions so tests remain clear and path-safe.
@@ -608,7 +628,7 @@ Snapshots represent interpreted terminal state, not raw ANSI output. This lets t
 
 ## Scrollback and viewport tracking
 
-The Ghostty WASM emulator keeps up to 10,000 scrollback rows. Gym exposes its scrollbar values through the terminal snapshot API:
+The Ghostty helper keeps up to 10,000 scrollback rows. It exposes the scrollbar values maintained by `libghostty-vt`:
 
 - `totalRows`: total rows in the scrollable area, including visible rows.
 - `visibleRows`: length of the visible viewport.
@@ -661,7 +681,7 @@ gym.terminal.scrollBy(5);
 gym.terminal.scrollToBottom();
 ```
 
-These methods manipulate Gym's Ghostty viewport. They simulate a user scrolling the terminal emulator; they do not send Page Up, mouse-wheel, or keyboard bytes to Rig. A later snapshot is ordered after the scroll command, so no separate delay is needed.
+These methods manipulate the `libghostty-vt` viewport. They simulate a user scrolling the terminal emulator; they do not send Page Up, mouse-wheel, or keyboard bytes to Rig. A later snapshot is ordered after the scroll command, so no separate delay is needed.
 
 For `scrollBy`, positive values move down toward live output and negative values move up into history.
 
@@ -724,11 +744,11 @@ Avoid gym tests that merely repeat a unit test at much higher cost without valid
 When fixing a user-visible integration bug:
 
 1. Add a descriptively named test under `packages/gym-tests/tests`.
-2. Build the current, unfixed production image.
+2. Prepare the runtime image if dependencies changed.
 3. Run only the new test and confirm it fails for the expected reason.
 4. Record enough evidence to distinguish the real reproduction from a broken test setup.
 5. Implement the production fix without weakening the test or changing the interaction to a different path.
-6. Rebuild the image.
+6. Keep the same runtime image for source-only changes.
 7. Run the same test unchanged and confirm it passes.
 8. Add focused unit coverage when the root cause has a useful isolated contract.
 9. Run the complete gym suite and the repository's normal checks.
@@ -772,13 +792,13 @@ If a tool response appears to be missing, verify whether the next model request 
 
 Use `gym.readFile` for expected outputs. During local diagnosis, `gym.workspacePath` identifies the temporary host directory while the gym is alive. Disposal removes it.
 
-### Check the image
+### Check the mounted source and image
 
-If production changes do not appear in the container, rebuild with `pnpm build:gym`. `RIG_GYM_SKIP_BUILD=1` deliberately uses the existing image and can otherwise make a fixed source tree look unfixed.
+Rig source is mounted into the warm runner and executes through Node's native TypeScript support, so source changes do not require a rebuild. Run `pnpm build:gym` after package-manifest, lockfile, or Dockerfile changes. Use `RIG_GYM_REBUILD=1 pnpm build:gym` only when deliberately replacing an existing runtime image.
 
 ### Check for leaked containers
 
-Gym containers use unique names prefixed with `rig-gym-`. Normal cleanup removes them. If a test process is killed abruptly, inspect Docker for leftovers and remove them before interpreting isolation failures.
+Shared runner containers use names prefixed with `rig-gym-pool-`. Normal suite cleanup removes them. If a test process is killed abruptly, inspect Docker for leftovers before interpreting isolation failures.
 
 ### Keep failure injection explicit
 
@@ -806,5 +826,5 @@ The current tests provide focused references:
 - [`agent_edits_fixture_with_real_shell.test.ts`](tests/agent_edits_fixture_with_real_shell.test.ts) demonstrates fixtures, real shell tools, filesystem assertions, and inference history.
 - [`user_answers_agent_question_in_terminal.test.ts`](tests/user_answers_agent_question_in_terminal.test.ts) demonstrates interactive user input and tool-result verification.
 - [`inference_http_error_is_visible.test.ts`](tests/inference_http_error_is_visible.test.ts) demonstrates provider HTTP failure injection.
-- [`parallel_gym_instances_are_isolated.test.ts`](tests/parallel_gym_instances_are_isolated.test.ts) demonstrates concurrent isolated containers.
+- [`parallel_gym_instances_are_isolated.test.ts`](tests/parallel_gym_instances_are_isolated.test.ts) demonstrates concurrent isolated Gym filesystems.
 - [`large_multiline_unicode_message_renders_without_corruption.test.ts`](tests/large_multiline_unicode_message_renders_without_corruption.test.ts) demonstrates deterministic fuzz input, exact request validation, terminal-health assertions, scroll-transition checks, and a follow-up turn.

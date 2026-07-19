@@ -14,6 +14,7 @@ describe("restarted suspended subagent", () => {
         let childRunCount = 0;
         const gym = await createGym({
             cols: 92,
+            mode: "docker",
             entrypoint: [
                 "bash",
                 "-lc",

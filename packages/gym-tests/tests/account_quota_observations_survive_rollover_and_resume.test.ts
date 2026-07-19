@@ -37,6 +37,7 @@ describe("account quota observations", () => {
         let codexQuotaIndex = 0;
         const gym = await createGym({
             cols: 64,
+            mode: "docker",
             entrypoint: ["bash", "-lc", `${rig}; echo QUOTA_RESUMED; exec ${rig} resume --last`],
             environment: {
                 NO_PROXY: "host.docker.internal",
@@ -136,7 +137,15 @@ describe("account quota observations", () => {
         gym.terminal.resize(64, 60);
         gym.terminal.press("ctrlD");
         await gym.terminal.waitForText("QUOTA_RESUMED", 30_000);
-        await gym.terminal.waitForText("Ask Rig to do anything", 30_000);
+        await gym.terminal.waitUntil(
+            (screen) => {
+                const resumedIndex = screen.text.lastIndexOf("QUOTA_RESUMED");
+                const composerIndex = screen.text.lastIndexOf("Ask Rig to do anything");
+                return resumedIndex >= 0 && composerIndex > resumedIndex;
+            },
+            "the resumed Rig process to own the composer",
+            30_000,
+        );
         submit(gym, "/usage");
         const resumed = await gym.terminal.waitUntil(
             (screen) =>

@@ -38,6 +38,7 @@ describe("Docker-backed sessions", () => {
                 "--docker-env",
                 "RIG_DOCKER_MARKER=inside the session container",
             ],
+            mode: "docker",
             dockerSocket: true,
             inference: [
                 {
@@ -116,6 +117,7 @@ describe("Docker-backed sessions", () => {
         ]);
         const gym = await createGym({
             args: ["--docker-container", containerName, "--docker-workdir", "/workspace"],
+            mode: "docker",
             dockerSocket: true,
             inference: [
                 {
@@ -167,6 +169,7 @@ describe("Docker-backed sessions", () => {
         ]);
         const gym = await createGym({
             args: ["--docker-container", containerName, "--docker-workdir", "/workspace"],
+            mode: "docker",
             dockerSocket: true,
             inference: [
                 {
@@ -198,6 +201,7 @@ describe("Docker-backed sessions", () => {
         baselineManagedContainers = before;
         const gym = await createGym({
             args: ["--docker-image", "rig-gym:local", "--docker-workdir", "/workspace"],
+            mode: "docker",
             dockerSocket: true,
             inference: [
                 {

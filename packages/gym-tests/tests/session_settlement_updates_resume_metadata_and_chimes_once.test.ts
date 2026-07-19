@@ -20,6 +20,7 @@ describe("settled session metadata", () => {
         const gym = await createGym({
             cols: 100,
             rows: 36,
+            mode: "docker",
             entrypoint: [
                 "bash",
                 "-lc",

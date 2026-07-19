@@ -17,6 +17,7 @@ describe("image draft input history", () => {
     it("restores a cleared and submitted image draft as a real attachment", async () => {
         const prompt = "Explain this image ";
         const gym = await createGym({
+            mode: "docker",
             environment: {
                 PATH: "/workspace/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
                 WAYLAND_DISPLAY: "gym-wayland-0",

@@ -22,6 +22,7 @@ describe("Ctrl-C input to a running shell", () => {
         ].join(" ");
         let sessionId: number | undefined;
         const gym = await createGym({
+            mode: "docker",
             inference(request, callIndex) {
                 const lastMessage = request.context.messages.at(-1);
                 const resultText = messageText(lastMessage?.content);

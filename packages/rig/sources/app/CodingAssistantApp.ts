@@ -4965,7 +4965,7 @@ export class CodingAssistantApp implements Component, Focusable {
         const suffix =
             context.afterCursor.length === 0 || !/^\s/u.test(context.afterCursor) ? " " : "";
         this.#editor.insertTextAtCursor(`${formatFileMention(path)}${suffix}`);
-        this.#fileMentionAutocomplete?.clear();
+        this.#fileMentionAutocomplete?.dismiss(this.#editor.getLines(), this.#editor.getCursor());
         this.#syncAutocompleteState();
     }
 
@@ -5051,6 +5051,8 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #cwdDisplayName(): string {
+        const gymWorkspace = process.env.RIG_GYM_DISPLAY_WORKSPACE?.trim();
+        if (gymWorkspace !== undefined && gymWorkspace.length > 0) return gymWorkspace;
         const home = homedir();
         if (this.#cwd === home) {
             return "~";

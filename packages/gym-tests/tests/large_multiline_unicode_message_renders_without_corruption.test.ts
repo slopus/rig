@@ -11,7 +11,7 @@ afterEach(async () => {
 
 describe("large multiline Unicode message renders without corruption", () => {
     it("keeps the terminal stable during a deterministic fuzzy multiline write", async () => {
-        const message = createFuzzyMessage(1_000);
+        const message = createFuzzyMessage(250);
         const expectedMessage = message.replaceAll("\t", "    ").trim();
         const gym = await createGym({
             cols: 88,

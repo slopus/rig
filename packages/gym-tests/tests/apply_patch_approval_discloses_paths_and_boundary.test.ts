@@ -13,6 +13,7 @@ describe("apply_patch approval disclosure", () => {
     it("shows affected paths and the unrestricted filesystem boundary before denial", async () => {
         const path = "/home/rig/apply-patch-disclosure.txt";
         const gym = await createGym({
+            mode: "docker",
             cols: 112,
             inference(request, callIndex) {
                 const systemPrompt = request.context.systemPrompt ?? "";

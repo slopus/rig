@@ -12,6 +12,7 @@ afterEach(async () => {
 describe("durable external integration functions", () => {
     it("continues the original run after the daemon restarts and receives its callback", async () => {
         const gym = await createGym({
+            mode: "docker",
             entrypoint: ["sh", "/workspace/keep-gym-container-running.sh"],
             files: {
                 "external-function-client.mjs": externalFunctionClient,

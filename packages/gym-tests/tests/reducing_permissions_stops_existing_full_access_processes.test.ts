@@ -14,6 +14,7 @@ describe("reducing permissions stops existing Full access processes", () => {
         const command =
             "printf 'PRIVILEGED_PROCESS_STARTED\\n'; sleep 6; printf 'late privileged write\\n' > privileged-after-downgrade.txt";
         const gym = await createGym({
+            mode: "docker",
             cols: 96,
             inference(request, callIndex) {
                 const lastMessage = request.context.messages.at(-1);

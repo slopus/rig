@@ -13,6 +13,7 @@ describe("Workspace write executable search paths", () => {
     it("runs a user-installed tool outside the workspace", async () => {
         let stage = 0;
         const gym = await createGym({
+            mode: "docker",
             environment: {
                 PATH: "/home/rig/developer-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             },

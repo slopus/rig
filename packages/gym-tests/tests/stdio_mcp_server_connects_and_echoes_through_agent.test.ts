@@ -98,6 +98,7 @@ afterEach(async () => {
 describe("stdio MCP server connects and echoes through the agent", () => {
     it("discovers a normalized tool, invokes it, reports status, and remains usable", async () => {
         const gym = await createGym({
+            mode: "docker",
             cols: COLS,
             files: {
                 "mcp-echo-server.mjs": WORKSPACE_SHADOW_SERVER,

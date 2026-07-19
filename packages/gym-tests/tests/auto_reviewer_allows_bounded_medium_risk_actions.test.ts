@@ -44,7 +44,7 @@ describe("Auto reviewer allows bounded medium-risk actions", () => {
                         ],
                     };
                 }
-                expect(callIndex).toBe(2);
+                expect(callIndex).toBe(1);
                 expect(request.context.messages.at(-1)).toMatchObject({
                     isError: false,
                     role: "toolResult",

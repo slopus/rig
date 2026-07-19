@@ -24,6 +24,7 @@ describe("repeated background terminal polling", () => {
         const startFinalPoll = deferred<void>();
         let sessionId: number | undefined;
         const gym = await createGym({
+            mode: "docker",
             cols: 92,
             async inference(request, callIndex) {
                 const lastMessage = request.context.messages.at(-1);

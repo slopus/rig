@@ -27,6 +27,7 @@ describe("resuming a session with streamed response history", () => {
     it("keeps transient inference events out of durable storage and resumes the transcript", async () => {
         const gym = await createGym({
             cols: 96,
+            mode: "docker",
             entrypoint: [
                 "bash",
                 "-lc",

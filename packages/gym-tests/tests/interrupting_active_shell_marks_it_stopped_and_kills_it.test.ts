@@ -14,6 +14,7 @@ describe("interrupting an active shell command is honest about what stopped", ()
         const command =
             "trap 'printf stopped > interrupted-process-state.txt; exit 143' TERM INT; printf started > interrupted-process-state.txt; printf 'ACTIVE_PROCESS_STARTED\\n'; while :; do sleep 1; done; printf completed > interrupted-process-state.txt";
         const gym = await createGym({
+            mode: "docker",
             cols: 96,
             inference(request, callIndex) {
                 if (callIndex === 0) {

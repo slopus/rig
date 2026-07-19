@@ -40,6 +40,7 @@ describe("active Unicode tool session survives repeated resizes", () => {
             `printf '%s\\n' "$reply" > active-resize-result.txt`,
         ].join("; ");
         const gym = await createGym({
+            mode: "docker",
             cols: 88,
             inference: async (request, callIndex) => {
                 const lastMessage = request.context.messages.at(-1);

@@ -20,6 +20,7 @@ describe("provider quota boundaries", () => {
     it("uses Codex wham usage with the authenticated bearer and account headers", async () => {
         await mkdir(artifacts, { recursive: true });
         const gym = await createGym({
+            mode: "docker",
             environment: {
                 NO_PROXY: "host.docker.internal",
                 RIG_CODEX_BASE_URL: "{{HTTP_PROXY_URL}}/backend-api",
@@ -79,6 +80,7 @@ describe("provider quota boundaries", () => {
     it("maps the real Claude SDK API-key session to unavailable", async () => {
         await mkdir(artifacts, { recursive: true });
         const gym = await createGym({
+            mode: "docker",
             environment: {
                 ANTHROPIC_API_KEY: "gym-placeholder-key",
                 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
@@ -100,6 +102,7 @@ describe("provider quota boundaries", () => {
     it("keeps weekly unavailable when Codex exposes only a five-hour window", async () => {
         await mkdir(artifacts, { recursive: true });
         const gym = await createGym({
+            mode: "docker",
             environment: {
                 NO_PROXY: "host.docker.internal",
                 RIG_CODEX_BASE_URL: "{{HTTP_PROXY_URL}}/backend-api",

@@ -17,6 +17,7 @@ describe("Workspace write custom shells cannot bypass the sandbox", () => {
         const escapedMarker = "CUSTOM_SHELL_SANDBOX_ESCAPE_PRESENT";
         const containedMarker = "CUSTOM_SHELL_SANDBOX_HELD";
         const gym = await createGym({
+            mode: "docker",
             cols: 100,
             files: {
                 "custom-shell": {

@@ -12,6 +12,7 @@ afterEach(async () => {
 describe("successful Auto permission reviews", () => {
     it("runs the tool without adding approval details to its history", async () => {
         const gym = await createGym({
+            mode: "docker",
             cols: 132,
             inference(request, callIndex) {
                 if (request.context.systemPrompt?.includes("independent permission reviewer")) {

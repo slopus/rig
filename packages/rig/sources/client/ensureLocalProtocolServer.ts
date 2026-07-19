@@ -6,6 +6,7 @@ import {
     prepareLocalServerDirectory,
     readLocalServerToken,
     removeStaleSocket,
+    runLocalProtocolServer,
     writeLocalServerToken,
     type LocalServerPaths,
 } from "../server/index.js";
@@ -72,7 +73,18 @@ export async function ensureLocalProtocolServer(
     options.onStatus?.("Starting local daemon.");
     await removeStaleSocket(paths.socketPath);
     const token = await writeLocalServerToken(paths.tokenPath);
-    await spawnLocalServer(paths);
+    if (process.env.RIG_GYM_IN_PROCESS_DAEMON === "1") {
+        void runLocalProtocolServer({
+            socketPath: paths.socketPath,
+            tokenPath: paths.tokenPath,
+        }).catch((error: unknown) => {
+            options.onStatus?.(
+                `Local daemon stopped: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        });
+    } else {
+        await spawnLocalServer(paths);
+    }
     const client = new ProtocolHttpClient({ socketPath: paths.socketPath, token });
     const health = await waitForReady(client);
     await reconcileDaemonSettings(client, health);

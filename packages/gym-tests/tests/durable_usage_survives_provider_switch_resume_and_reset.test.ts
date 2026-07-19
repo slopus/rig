@@ -22,6 +22,7 @@ describe("durable session usage", () => {
         await mkdir(artifacts, { recursive: true });
         const gym = await createGym({
             cols: 58,
+            mode: "docker",
             entrypoint: [
                 "bash",
                 "-lc",

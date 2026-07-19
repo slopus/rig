@@ -11,7 +11,7 @@ afterEach(async () => {
 
 describe("daemon request failures do not crash the client", () => {
     it("keeps the reasoning menu usable when an effort update cannot reach the daemon", async () => {
-        const gym = await createGym({ inference: [] });
+        const gym = await createGym({ mode: "docker", inference: [] });
         running.add(gym);
         await disconnectDaemonSocket(gym);
 
@@ -45,6 +45,7 @@ describe("daemon request failures do not crash the client", () => {
 
     it("finishes the active run when its abort request cannot reach the daemon", async () => {
         const gym = await createGym({
+            mode: "docker",
             inference: [
                 {
                     content: [{ text: "THE_CLIENT_SURVIVED_THE_FAILED_ABORT", type: "text" }],

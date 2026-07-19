@@ -12,6 +12,7 @@ afterEach(async () => {
 describe("Auto reviewer allows explicit Git hook changes", () => {
     it("reviews and applies the requested hook without requiring Full access mode", async () => {
         const gym = await createGym({
+            mode: "docker",
             cols: 104,
             files: {
                 ".git/HEAD": "ref: refs/heads/main\n",

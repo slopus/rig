@@ -15,6 +15,7 @@ describe("resuming a session with historical background terminals", () => {
         const oldCommand = "sleep 1; printf 'OLD_BACKGROUND_FINISHED\\n'";
         const gym = await createGym({
             cols: 96,
+            mode: "docker",
             entrypoint: [
                 "bash",
                 "-lc",
