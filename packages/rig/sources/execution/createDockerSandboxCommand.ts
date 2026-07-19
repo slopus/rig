@@ -5,6 +5,7 @@ export function createDockerSandboxCommand(options: {
     command: string;
     commandCwd: string;
     mode: Exclude<PermissionMode, "full_access">;
+    protectedPaths?: readonly string[];
     runtime: PreparedDockerSandbox;
     shell: string;
     workspaceCwd: string;
@@ -17,19 +18,21 @@ export function createDockerSandboxCommand(options: {
         "--ro-bind",
         "/",
         "/",
-        "--bind",
-        "/tmp",
-        "/tmp",
-    ];
-    if (options.runtime.homeDirectory !== undefined) {
-        command.push("--tmpfs", options.runtime.homeDirectory);
-    }
-    command.push(
-        options.mode === "read_only" ? "--ro-bind" : "--bind",
-        options.workspaceCwd,
-        options.workspaceCwd,
         "--dev",
         "/dev",
+    ];
+    if (options.mode !== "read_only") {
+        command.push("--bind", "/tmp", "/tmp");
+        command.push("--bind", options.workspaceCwd, options.workspaceCwd);
+    }
+    for (const name of [".git", ".agents", ".codex"])
+        command.push(
+            "--ro-bind-try",
+            `${options.workspaceCwd}/${name}`,
+            `${options.workspaceCwd}/${name}`,
+        );
+    for (const path of options.protectedPaths ?? []) command.push("--ro-bind", path, path);
+    command.push(
         "--unshare-pid",
         "--unshare-user",
         "--bind",
@@ -38,7 +41,6 @@ export function createDockerSandboxCommand(options: {
         "--chdir",
         options.commandCwd,
         "--",
-        options.runtime.applySeccompPath,
         options.shell,
         "-lc",
         options.command,

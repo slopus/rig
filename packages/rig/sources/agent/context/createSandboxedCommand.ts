@@ -6,6 +6,8 @@ import { dirname, join } from "node:path";
 
 import { createSandboxFilesystemConfig } from "./createSandboxFilesystemConfig.js";
 import { createSandboxConfigDirectoryCache } from "./createSandboxConfigDirectoryCache.js";
+import { createLinuxBubblewrapCommand } from "./createLinuxBubblewrapCommand.js";
+import { createMacOsSeatbeltCommand } from "./createMacOsSeatbeltCommand.js";
 import { materializeSandboxConfig } from "./materializeSandboxConfig.js";
 import type { PermissionMode } from "../../permissions/index.js";
 import { quoteShellArgument } from "./quoteShellArgument.js";
@@ -18,16 +20,29 @@ const getConfigDirectory = createSandboxConfigDirectoryCache(() =>
 export interface SandboxedCommand {
     args?: readonly string[];
     command: string;
+    protectedCreatePaths?: readonly string[];
 }
 
 export async function createSandboxedCommand(options: {
     command: string;
+    commandCwd?: string;
     cwd: string;
     mode: PermissionMode;
     path?: string;
     shell: string;
 }): Promise<SandboxedCommand> {
     if (options.mode === "full_access") return { command: options.command };
+    if (process.platform === "darwin") return createMacOsSeatbeltCommand(options);
+    if (process.platform === "linux") {
+        return createLinuxBubblewrapCommand({
+            ...options,
+            commandCwd: options.commandCwd ?? options.cwd,
+            mode: options.mode,
+            mountProc: !(
+                process.env.RIG_GYM_OUTER_ISOLATION === "docker" && existsSync("/.dockerenv")
+            ),
+        });
+    }
 
     const configDirectory = await getConfigDirectory();
     const config = {

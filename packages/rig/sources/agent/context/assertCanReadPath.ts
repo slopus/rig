@@ -13,9 +13,12 @@ export async function assertCanReadPath(
         allowedPaths?: readonly string[];
         environment?: NodeJS.ProcessEnv;
         homeDirectory?: string;
+        platform?: NodeJS.Platform;
     } = {},
 ): Promise<void> {
     if (mode === "full_access" || (await isPathInsideWorkspace(cwd, targetPath))) return;
+    const platform = options.platform ?? process.platform;
+    if (platform === "darwin" || platform === "linux") return;
 
     const canonicalTarget = await resolvePotentialPath(targetPath);
     for (const allowedPath of options.allowedPaths ?? []) {

@@ -65,7 +65,7 @@ describe("Docker shell permissions", () => {
                     content: [
                         {
                             arguments: {
-                                cmd: "printf 'workspace write\n' > /workspace/workspace-write.txt; readlink /proc/self/ns/net > /workspace/sandbox-network.txt; (printf 'system write\n' > /etc/rig-workspace-write) 2>/dev/null || true",
+                                cmd: "printf 'workspace write\n' > /workspace/workspace-write.txt; readlink /proc/self/ns/net > /workspace/sandbox-network.txt; (printf 'system write\n' > /etc/rig-workspace-write) 2>/dev/null || true; mkdir -p /workspace/.git /workspace/.agents /workspace/.codex; printf poisoned > /workspace/.agents/instructions.md; sleep 0.05",
                             },
                             id: "workspace-write-command",
                             name: "exec_command",
@@ -88,6 +88,9 @@ describe("Docker shell permissions", () => {
             "workspace write\n",
         );
         await expect(pathExists(container, "/etc/rig-workspace-write")).resolves.toBe(false);
+        await expect(pathExists(container, "/workspace/.git")).resolves.toBe(false);
+        await expect(pathExists(container, "/workspace/.agents")).resolves.toBe(false);
+        await expect(pathExists(container, "/workspace/.codex")).resolves.toBe(false);
         const sandboxNetwork = await readContainerFile(container, "/workspace/sandbox-network.txt");
         const containerNetwork = await execFileAsync("docker", [
             "exec",
@@ -96,14 +99,14 @@ describe("Docker shell permissions", () => {
             "/proc/1/ns/net",
         ]).then(({ stdout }) => stdout);
         expect(sandboxNetwork).not.toBe(containerNetwork);
-        const runtimeMetadata = await execFileAsync("docker", [
+        const stagedSandboxRuntime = await execFileAsync("docker", [
             "exec",
             container,
             "/bin/sh",
             "-c",
-            'directory=$(find /tmp -maxdepth 1 -type d -name "rig-sandbox-*" -print -quit); stat -c "%u:%g %a" "$directory" "$directory/apply-seccomp"',
+            'find /tmp -maxdepth 2 -path "*/rig-sandbox-*/apply-seccomp" -print -quit',
         ]).then(({ stdout }) => stdout);
-        expect(runtimeMetadata).toBe("0:0 755\n0:0 755\n");
+        expect(stagedSandboxRuntime).toBe("");
     }, 60_000);
 });
 

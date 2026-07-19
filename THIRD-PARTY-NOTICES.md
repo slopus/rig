@@ -1,5 +1,17 @@
 # Third-party notices
 
+## OpenAI Codex
+
+Rig's macOS Seatbelt base policy and Linux Bubblewrap policy are adapted from
+[OpenAI Codex](https://github.com/openai/codex).
+
+Copyright 2025 OpenAI
+
+OpenAI Codex is licensed under the Apache License, Version 2.0. The policies
+are modified to preserve Rig's workspace metadata and daemon control paths
+while using Rig's shared permission modes. A copy of the license is distributed
+in the published package as `LICENSE-CODEX`.
+
 ## Kimi Code
 
 Rig's Kimi provider contains prompt text and model-facing tool descriptions

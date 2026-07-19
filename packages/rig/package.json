@@ -17,6 +17,7 @@
     },
     "files": [
         "dist",
+        "LICENSE-CODEX",
         "LICENSE-KIMI-CODE",
         "LICENSE-GROK-BUILD",
         "THIRD-PARTY-NOTICES.md"

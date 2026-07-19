@@ -301,12 +301,20 @@ Add a focus when useful, for example `/review focus on concurrency`.
 New sessions start in **Workspace write** mode. Change the current session with
 `/permissions`:
 
-| Mode                | Behavior                                                                                                   |
-| ------------------- | ---------------------------------------------------------------------------------------------------------- |
-| **Auto**            | Runs routine workspace work immediately and reviews risky actions automatically, asking when needed        |
-| **Workspace write** | Allows edits in the working directory while blocking shell network access and writes outside the workspace |
-| **Read only**       | Keeps project files read only while allowing temporary shell output                                        |
-| **Full access**     | Allows unrestricted filesystem, shell, and network access                                                  |
+| Mode                | Behavior                                                                                                       |
+| ------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **Auto**            | Runs routine workspace work immediately and reviews risky actions automatically, asking when needed            |
+| **Workspace write** | Allows edits in the working directory and temporary paths while blocking shell network access and other writes |
+| **Read only**       | Keeps files read only while allowing Codex-style host reads on macOS and Linux                                 |
+| **Full access**     | Allows unrestricted filesystem, shell, and network access                                                      |
+
+Restricted local shell commands use macOS Seatbelt or Linux Bubblewrap. Both
+platforms keep the host readable so tools such as Git, language managers, and
+AWS can load normal user configuration, while writes remain limited by the
+selected mode and shell network access stays blocked. An AWS command can read
+the configured profile in Workspace write, for example, but needs an approved
+Full access execution to contact AWS. Install `bubblewrap` on Linux before
+using a restricted permission mode.
 
 Auto mode evaluates the current action against the user's request. It does not
 build a permanent command allowlist. Sensitive escalation requests receive a

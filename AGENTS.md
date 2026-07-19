@@ -14,7 +14,7 @@ Rig has one permission model for every provider. Codex, Claude, Pi, Grok, MCP, a
 
 The permission modes are:
 
-- Read only permits inspection and non-mutating commands while blocking workspace changes, shell network access, and sensitive private reads.
+- Read only permits inspection and non-mutating commands while blocking workspace changes and shell network access. On macOS and Linux, restricted filesystem reads follow Codex and may inspect the host filesystem.
 - Workspace write permits changes inside the workspace while keeping shell network access and writes outside the workspace blocked.
 - Auto uses the Workspace write shell sandbox by default. A tool may request review for one exact action, and an approved tool may receive a temporary Full access override only when its own policy explicitly requires it.
 - Full access removes Rig's filesystem, shell, and network restrictions.

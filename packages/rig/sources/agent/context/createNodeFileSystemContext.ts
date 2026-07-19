@@ -24,6 +24,7 @@ import type { PermissionMode } from "../../permissions/index.js";
 export interface CreateNodeFileSystemContextOptions {
     home?: string;
     permissionMode?: () => PermissionMode;
+    platform?: NodeJS.Platform;
 }
 
 export function createNodeFileSystemContext(
@@ -36,6 +37,7 @@ export function createNodeFileSystemContext(
     const readPathOptions = {
         allowedPaths: createUserSkillRootPaths(home),
         homeDirectory: home,
+        ...(options.platform === undefined ? {} : { platform: options.platform }),
     };
     return {
         cwd,

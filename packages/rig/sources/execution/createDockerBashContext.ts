@@ -18,6 +18,7 @@ import { createDockerCommandEnvironment, type SessionSecretContext } from "../se
 import { createDockerSandboxCommand } from "./createDockerSandboxCommand.js";
 import { prepareDockerSandbox, type PreparedDockerSandbox } from "./prepareDockerSandbox.js";
 import { resolveDockerPath } from "./resolveDockerPath.js";
+import { DOCKER_PROTECTED_PATH_MONITOR_SCRIPT } from "./dockerProtectedPathMonitorScript.js";
 
 interface DockerBashSession {
     command: string;
@@ -76,6 +77,8 @@ export function createDockerBashContext(
             options.secrets,
             await ambientEnvironmentVariables,
         );
+        const workspaceCwd =
+            permissionMode === "full_access" ? undefined : await loadCanonicalWorkspace();
         const invokedCommand =
             permissionMode === "full_access"
                 ? [shell, "-lc", options.command]
@@ -83,22 +86,39 @@ export function createDockerBashContext(
                       command: options.command,
                       commandCwd: runCwd,
                       mode: permissionMode,
+                      protectedPaths: [pidFile],
                       runtime: await loadSandboxRuntime(container),
                       shell,
-                      workspaceCwd: await loadCanonicalWorkspace(),
+                      workspaceCwd: workspaceCwd ?? cwd,
                   });
+        const protectedCreatePaths =
+            workspaceCwd === undefined || permissionMode === "read_only"
+                ? []
+                : [".git", ".agents", ".codex"].map((name) => posix.join(workspaceCwd, name));
         const exec = await container.exec({
             AttachStdin: true,
             AttachStderr: true,
             AttachStdout: true,
-            Cmd: [
-                "/bin/sh",
-                "-c",
-                'echo $$ > "$1"; shift; exec "$@"',
-                "rig",
-                pidFile,
-                ...invokedCommand,
-            ],
+            Cmd:
+                protectedCreatePaths.length === 0
+                    ? [
+                          "/bin/sh",
+                          "-c",
+                          'echo $$ > "$1"; shift; exec "$@"',
+                          "rig",
+                          pidFile,
+                          ...invokedCommand,
+                      ]
+                    : [
+                          "/bin/sh",
+                          "-c",
+                          DOCKER_PROTECTED_PATH_MONITOR_SCRIPT,
+                          "rig",
+                          pidFile,
+                          ...protectedCreatePaths,
+                          "--",
+                          ...invokedCommand,
+                      ],
             ...(Object.keys(secretEnvironment).length === 0
                 ? {}
                 : {
@@ -188,7 +208,7 @@ export function createDockerBashContext(
         container: Dockerode.Container,
     ): Promise<PreparedDockerSandbox> => {
         if (sandboxRuntime === undefined) {
-            const pending = prepareDockerSandbox(container, contextId);
+            const pending = prepareDockerSandbox(container);
             sandboxRuntime = pending;
             void pending.catch(() => {
                 if (sandboxRuntime === pending) sandboxRuntime = undefined;

@@ -29,7 +29,7 @@ describe("createNodeFileSystemContext", () => {
         await expect(context.writeFile("inside.txt", "inside\n")).resolves.toBeUndefined();
     });
 
-    it("reads user skill trees without exposing other private home files", async () => {
+    it("uses Codex-style host reads without allowing outside writes on Linux", async () => {
         const root = await mkdtemp(join(tmpdir(), "rig-fs-user-skills-"));
         temporaryDirectories.push(root);
         const home = join(root, "home");
@@ -47,6 +47,7 @@ describe("createNodeFileSystemContext", () => {
         const context = createNodeFileSystemContext(workspace, {
             home,
             permissionMode: () => mode,
+            platform: "linux",
         });
 
         for (const restrictedMode of ["read_only", "workspace_write", "auto"] as const) {
@@ -56,12 +57,8 @@ describe("createNodeFileSystemContext", () => {
                 "SKILL.md",
                 "private-link.txt",
             ]);
-            await expect(context.readFile(privateDocument)).rejects.toThrow(
-                "private files outside the workspace",
-            );
-            await expect(context.readFile(escapedReference)).rejects.toThrow(
-                "private files outside the workspace",
-            );
+            await expect(context.readFile(privateDocument)).resolves.toBe("private\n");
+            await expect(context.readFile(escapedReference)).resolves.toBe("private\n");
         }
 
         mode = "workspace_write";
@@ -71,7 +68,7 @@ describe("createNodeFileSystemContext", () => {
         await expect(readFile(skillFile, "utf8")).resolves.toBe("# Review\n");
     });
 
-    it("blocks direct and symlinked private home reads in every restricted mode", async () => {
+    it("allows direct and symlinked host reads in every restricted mode on Linux", async () => {
         const root = await mkdtemp(join(tmpdir(), "rig-fs-security-"));
         temporaryDirectories.push(root);
         const home = join(root, "home");
@@ -99,35 +96,30 @@ describe("createNodeFileSystemContext", () => {
         const context = createNodeFileSystemContext(workspace, {
             home,
             permissionMode: () => mode,
+            platform: "linux",
         });
 
         for (const restrictedMode of ["read_only", "workspace_write", "auto"] as const) {
             mode = restrictedMode;
             await expect(context.readFile("ordinary.txt")).resolves.toBe("ordinary");
-            await expect(context.readFile(privateDocument)).rejects.toThrow(
-                "private files outside the workspace",
+            await expect(context.readFile(privateDocument)).resolves.toBe(
+                "synthetic medical details",
             );
-            await expect(context.readFile(desktopFile)).rejects.toThrow(
-                "private files outside the workspace",
+            await expect(context.readFile(desktopFile)).resolves.toBe("synthetic personal note");
+            await expect(context.readFile(browserHistory)).resolves.toBe(
+                "synthetic browser history",
             );
-            await expect(context.readFile(browserHistory)).rejects.toThrow(
-                "private files outside the workspace",
+            await expect(context.readFile("private-link")).resolves.toBe(
+                "synthetic medical details",
             );
-            await expect(context.readFile("private-link")).rejects.toThrow(
-                "private files outside the workspace",
+            await expect(context.readFileBuffer(privateDocument)).resolves.toEqual(
+                Buffer.from("synthetic medical details"),
             );
-            await expect(context.readFileBuffer(privateDocument)).rejects.toThrow(
-                "private files outside the workspace",
+            await expect(context.readdir(home)).resolves.toEqual(
+                expect.arrayContaining(["Desktop", "Documents", "Library", "projects"]),
             );
-            await expect(context.readdir(home)).rejects.toThrow(
-                "private files outside the workspace",
-            );
-            await expect(context.stat(privateDocument)).rejects.toThrow(
-                "private files outside the workspace",
-            );
-            await expect(context.exists(privateDocument)).rejects.toThrow(
-                "private files outside the workspace",
-            );
+            await expect(context.stat(privateDocument)).resolves.toMatchObject({ size: 25 });
+            await expect(context.exists(privateDocument)).resolves.toBe(true);
         }
 
         mode = "full_access";
@@ -135,5 +127,29 @@ describe("createNodeFileSystemContext", () => {
         await expect(context.readFile(desktopFile)).resolves.toBe("synthetic personal note");
         await expect(context.readFile(browserHistory)).resolves.toBe("synthetic browser history");
         await expect(readFile(privateDocument, "utf8")).resolves.toBe("synthetic medical details");
+    });
+
+    it("uses Codex-style host reads without allowing outside writes on macOS", async () => {
+        const root = await mkdtemp(join(tmpdir(), "rig-fs-macos-"));
+        temporaryDirectories.push(root);
+        const home = join(root, "home");
+        const workspace = join(root, "workspace");
+        const outside = join(home, ".gitconfig");
+        await mkdir(home);
+        await mkdir(workspace);
+        await writeFile(outside, "[core]\n");
+        let mode: PermissionMode = "workspace_write";
+        const context = createNodeFileSystemContext(workspace, {
+            home,
+            permissionMode: () => mode,
+            platform: "darwin",
+        });
+
+        for (const restrictedMode of ["read_only", "workspace_write", "auto"] as const) {
+            mode = restrictedMode;
+            await expect(context.readFile(outside)).resolves.toBe("[core]\n");
+            await expect(context.writeFile(outside, "changed\n")).rejects.toThrow();
+        }
+        await expect(readFile(outside, "utf8")).resolves.toBe("[core]\n");
     });
 });

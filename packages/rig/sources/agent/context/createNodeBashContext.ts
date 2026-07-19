@@ -10,6 +10,7 @@ import type { PermissionContext } from "../../permissions/index.js";
 import type { BashContext, BashSessionSnapshot } from "./BashContext.js";
 import { assertCanUseCustomShell } from "./assertCanUseCustomShell.js";
 import { createSandboxedCommand } from "./createSandboxedCommand.js";
+import { createProtectedPathMonitor } from "./createProtectedPathMonitor.js";
 import { createToolEnvironment } from "./createToolEnvironment.js";
 import { waitForBashSessionCompletion } from "./waitForBashSessionCompletion.js";
 import { MAX_ACTIVE_BASH_SESSIONS, MAX_RETAINED_BASH_SESSIONS } from "./bashSessionLimits.js";
@@ -142,6 +143,7 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
             );
             const sandboxedCommand = await createSandboxedCommand({
                 command: runOptions.command,
+                commandCwd: cwd,
                 cwd: options.cwd,
                 mode: options.permissions.mode,
                 ...(toolEnvironment.PATH === undefined ? {} : { path: toolEnvironment.PATH }),
@@ -161,11 +163,23 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
             }
             if (runOptions.signal !== undefined) processRunOptions.signal = runOptions.signal;
 
-            const result = await options.processManager.run(processRunOptions);
+            const protectedPathMonitor = await createProtectedPathMonitor(
+                sandboxedCommand.protectedCreatePaths ?? [],
+            );
+            let result: ProcessRunResult;
+            let protectedPathViolation = false;
+            try {
+                result = await options.processManager.run(processRunOptions);
+            } finally {
+                protectedPathViolation = await protectedPathMonitor.stop();
+            }
             return {
                 stdout: result.stdout,
-                stderr: result.stderr,
-                exitCode: result.exitCode,
+                stderr:
+                    protectedPathViolation && result.exitCode === 0
+                        ? `${result.stderr}Sandbox blocked creation of protected agent metadata.\n`
+                        : result.stderr,
+                exitCode: protectedPathViolation && result.exitCode === 0 ? 1 : result.exitCode,
                 timedOut: result.timedOut,
             };
         },
@@ -182,6 +196,7 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
                 );
                 const sandboxedCommand = await createSandboxedCommand({
                     command: runOptions.command,
+                    commandCwd: cwd,
                     cwd: options.cwd,
                     mode: options.permissions.mode,
                     ...(toolEnvironment.PATH === undefined ? {} : { path: toolEnvironment.PATH }),
@@ -203,7 +218,16 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
                 } else {
                     processStartOptions.shell = shell;
                 }
-                const process = options.processManager.start(processStartOptions);
+                const protectedPathMonitor = await createProtectedPathMonitor(
+                    sandboxedCommand.protectedCreatePaths ?? [],
+                );
+                let process: ManagedProcess;
+                try {
+                    process = options.processManager.start(processStartOptions);
+                } catch (error) {
+                    await protectedPathMonitor.stop();
+                    throw error;
+                }
                 const completion = process.wait();
                 const sessionId = nextSessionId;
                 nextSessionId += 1;
@@ -226,8 +250,16 @@ export function createNodeBashContext(options: CreateNodeBashContextOptions): Ba
                     }, runOptions.timeoutMs);
                     session.timeout.unref();
                 }
-                void completion.then((result) => {
-                    session.result = result;
+                void completion.then(async (result) => {
+                    const protectedPathViolation = await protectedPathMonitor.stop();
+                    session.result =
+                        protectedPathViolation && result.exitCode === 0
+                            ? {
+                                  ...result,
+                                  exitCode: 1,
+                                  stderr: `${result.stderr}Sandbox blocked creation of protected agent metadata.\n`,
+                              }
+                            : result;
                     if (session.timeout !== undefined) clearTimeout(session.timeout);
                     for (const finish of session.completionWaiters) finish();
                     onActiveSessionCountChange?.(activeSessionCount());

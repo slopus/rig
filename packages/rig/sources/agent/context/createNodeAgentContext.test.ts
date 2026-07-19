@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { NativeProcessManager } from "../../processes/index.js";
@@ -9,6 +11,7 @@ import { createNodeAgentContext } from "./createNodeAgentContext.js";
 import { SecretRegistry, SessionSecretContext } from "../../secrets/index.js";
 
 const tempDirs: string[] = [];
+const execFileAsync = promisify(execFile);
 
 describe("createNodeAgentContext", () => {
     afterEach(async () => {
@@ -320,6 +323,112 @@ describe("createNodeAgentContext", () => {
         expect(fullAccess.exitCode).toBe(0);
         await expect(readFile(join(root, "allowed.txt"), "utf8")).resolves.toBe("allowed");
     });
+
+    it.runIf(process.platform === "darwin" || process.platform === "linux")(
+        "lets Git read a global ignore file outside the workspace without allowing protected writes",
+        async () => {
+            const root = await makeWorkspaceRoot();
+            const cwd = join(root, "workspace");
+            const home = join(root, "home");
+            const globalConfig = join(home, ".gitconfig");
+            const globalIgnore = join(home, ".gitignore_global");
+            await mkdir(cwd);
+            await mkdir(home);
+            await execFileAsync("git", ["init", "--quiet", cwd]);
+            await writeFile(globalIgnore, "ignored-by-global-config.txt\n");
+            await writeFile(globalConfig, `[core]\n\texcludesfile = ${globalIgnore}\n`);
+            await writeFile(join(cwd, "ignored-by-global-config.txt"), "ignored\n");
+            const previousHome = process.env.HOME;
+            const previousGlobalConfig = process.env.GIT_CONFIG_GLOBAL;
+            process.env.HOME = home;
+            process.env.GIT_CONFIG_GLOBAL = globalConfig;
+
+            try {
+                const context = createNodeAgentContext({
+                    cwd,
+                    permissionMode: "workspace_write",
+                    processManager: new NativeProcessManager(),
+                });
+
+                const status = await context.bash.run({ command: "git status --short" });
+                expect(status).toMatchObject({ exitCode: 0, stderr: "", stdout: "" });
+
+                const gitConfigBefore = await readFile(join(cwd, ".git", "config"), "utf8");
+                const gitMetadataWrite = await context.bash.run({
+                    command: "printf blocked > .git/config",
+                });
+                expect(gitMetadataWrite.exitCode).not.toBe(0);
+                await expect(readFile(join(cwd, ".git", "config"), "utf8")).resolves.toBe(
+                    gitConfigBefore,
+                );
+
+                const outsideWrite = await context.bash.run({
+                    command: `printf blocked > ${JSON.stringify(join(home, "blocked.txt"))}`,
+                });
+                expect(outsideWrite.exitCode).not.toBe(0);
+                await expect(readFile(join(home, "blocked.txt"), "utf8")).rejects.toThrow();
+            } finally {
+                restoreEnvironment("HOME", previousHome);
+                restoreEnvironment("GIT_CONFIG_GLOBAL", previousGlobalConfig);
+            }
+        },
+    );
+
+    it.runIf(process.platform === "darwin")(
+        "keeps Rig control paths protected inside the writable temporary directory",
+        async () => {
+            const cwd = await makeWorkspaceRoot();
+            const controlDirectory = await makeTempDir();
+            const tokenPath = join(controlDirectory, "token");
+            const previousTokenPath = process.env.RIG_SERVER_TOKEN_PATH;
+            process.env.RIG_SERVER_TOKEN_PATH = tokenPath;
+
+            try {
+                const context = createNodeAgentContext({
+                    cwd,
+                    permissionMode: "workspace_write",
+                    processManager: new NativeProcessManager(),
+                });
+                const result = await context.bash.run({
+                    command: `printf poisoned > ${JSON.stringify(tokenPath)}`,
+                });
+
+                expect(result.exitCode).not.toBe(0);
+                await expect(readFile(tokenPath, "utf8")).rejects.toThrow();
+            } finally {
+                restoreEnvironment("RIG_SERVER_TOKEN_PATH", previousTokenPath);
+            }
+        },
+    );
+
+    it.runIf(process.platform === "darwin")(
+        "protects both lexical and resolved workspace metadata paths",
+        async () => {
+            const root = await makeWorkspaceRoot();
+            const cwd = join(root, "workspace");
+            const metadata = join(root, "metadata");
+            await mkdir(cwd);
+            await mkdir(metadata);
+            await writeFile(join(metadata, "config"), "protected\n");
+            await symlink(metadata, join(cwd, ".git"));
+            const context = createNodeAgentContext({
+                cwd,
+                permissionMode: "workspace_write",
+                processManager: new NativeProcessManager(),
+            });
+
+            const replaceAlias = await context.bash.run({ command: "rm .git" });
+            const writeTarget = await context.bash.run({
+                command: "printf poisoned > .git/config",
+            });
+
+            expect(replaceAlias.exitCode).not.toBe(0);
+            expect(writeTarget.exitCode).not.toBe(0);
+            await expect(readFile(join(cwd, ".git", "config"), "utf8")).resolves.toBe(
+                "protected\n",
+            );
+        },
+    );
 
     it("blocks shell network access unless Full access is selected", async () => {
         const cwd = await makeTempDir();
