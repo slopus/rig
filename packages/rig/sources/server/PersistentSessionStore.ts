@@ -47,6 +47,7 @@ import { normalizeProjectCwd } from "./normalizeProjectCwd.js";
 import { initializeSessionDatabase } from "./initializeSessionDatabase.js";
 import type { ExternalToolCall, ExternalToolDefinition } from "../external-tools/index.js";
 import type { DurableSkillDefinition } from "../external-skills/index.js";
+import type { DurableUserInputCall } from "../user-input/index.js";
 
 export interface PersistentSessionStoreOptions {
     createRuntime?: InMemorySessionOptions["createRuntime"];
@@ -615,8 +616,8 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
 
             const state = session.state();
             const runId = state.activeRunId ?? state.queuedRuns.at(0)?.runId;
-            if (session.hasDurableExternalRun()) {
-                session.resumeDurableExternalRun();
+            if (session.hasDurableToolRun()) {
+                session.resumeDurableToolRun();
                 continue;
             }
             if (session.isSubagent() && state.status === "suspended") {
@@ -964,6 +965,73 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             );
     }
 
+    handoffDurablePermissionToExternalTool(
+        externalCall: ExternalToolCall,
+        permissionCall: DurableUserInputCall,
+    ): void {
+        this.#database.exec("BEGIN IMMEDIATE");
+        try {
+            this.upsertExternalToolCall(externalCall);
+            this.upsertDurableUserInput(permissionCall);
+            this.#database.exec("COMMIT");
+        } catch (error) {
+            this.#database.exec("ROLLBACK");
+            throw error;
+        }
+    }
+
+    upsertDurableUserInput(call: DurableUserInputCall): void {
+        this.#database
+            .prepare(
+                `
+                INSERT INTO durable_user_inputs (
+                    session_id,
+                    request_id,
+                    run_id,
+                    batch_id,
+                    tool_call_id,
+                    tool_call_index,
+                    tool_name,
+                    tool_arguments_json,
+                    kind,
+                    permission_json,
+                    request_json,
+                    response_json,
+                    result_json,
+                    status,
+                    consumed,
+                    created_at_ms,
+                    resolved_at_ms
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(session_id, request_id) DO UPDATE SET
+                    response_json = excluded.response_json,
+                    result_json = excluded.result_json,
+                    status = excluded.status,
+                    consumed = excluded.consumed,
+                    resolved_at_ms = excluded.resolved_at_ms
+                `,
+            )
+            .run(
+                call.sessionId,
+                call.request.requestId,
+                call.runId,
+                call.batchId,
+                call.toolCallId,
+                call.toolCallIndex,
+                call.toolName,
+                JSON.stringify(call.toolArguments),
+                call.kind,
+                call.permission === undefined ? null : JSON.stringify(call.permission),
+                JSON.stringify(call.request),
+                call.response === undefined ? null : JSON.stringify(call.response),
+                call.result === undefined ? null : JSON.stringify(call.result),
+                call.status,
+                call.consumed ? 1 : 0,
+                call.createdAt,
+                call.resolvedAt ?? null,
+            );
+    }
+
     pruneExternalToolCalls(sessionId: string, retain: number): void {
         this.#database
             .prepare(
@@ -974,6 +1042,27 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     AND id NOT IN (
                         SELECT id
                         FROM external_tool_calls
+                        WHERE session_id = ?
+                            AND (status = 'cancelled' OR consumed = 1)
+                        ORDER BY COALESCE(resolved_at_ms, created_at_ms) DESC,
+                            tool_call_index DESC
+                        LIMIT ?
+                    )
+                `,
+            )
+            .run(sessionId, sessionId, retain);
+    }
+
+    pruneDurableUserInputs(sessionId: string, retain: number): void {
+        this.#database
+            .prepare(
+                `
+                DELETE FROM durable_user_inputs
+                WHERE session_id = ?
+                    AND (status = 'cancelled' OR consumed = 1)
+                    AND request_id NOT IN (
+                        SELECT request_id
+                        FROM durable_user_inputs
                         WHERE session_id = ?
                             AND (status = 'cancelled' OR consumed = 1)
                         ORDER BY COALESCE(resolved_at_ms, created_at_ms) DESC,
@@ -1168,6 +1257,45 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             .map(readExternalToolCallRow);
     }
 
+    #loadDurableUserInputs(sessionId: string): DurableUserInputCall[] {
+        return this.#database
+            .prepare(
+                `
+                SELECT *
+                FROM durable_user_inputs
+                WHERE session_id = ?
+                ORDER BY created_at_ms ASC, tool_call_index ASC
+                `,
+            )
+            .all(sessionId)
+            .map((row) => {
+                const permissionJson = readOptionalString(row, "permission_json");
+                const responseJson = readOptionalString(row, "response_json");
+                const resultJson = readOptionalString(row, "result_json");
+                const resolvedAt = readOptionalNumber(row, "resolved_at_ms");
+                return {
+                    batchId: readString(row, "batch_id"),
+                    consumed: readNumber(row, "consumed") !== 0,
+                    createdAt: readNumber(row, "created_at_ms"),
+                    kind: readString(row, "kind") as DurableUserInputCall["kind"],
+                    ...(permissionJson === undefined
+                        ? {}
+                        : { permission: JSON.parse(permissionJson) }),
+                    request: JSON.parse(readString(row, "request_json")),
+                    ...(responseJson === undefined ? {} : { response: JSON.parse(responseJson) }),
+                    ...(resolvedAt === undefined ? {} : { resolvedAt }),
+                    ...(resultJson === undefined ? {} : { result: JSON.parse(resultJson) }),
+                    runId: readString(row, "run_id"),
+                    sessionId: readString(row, "session_id"),
+                    status: readString(row, "status") as DurableUserInputCall["status"],
+                    toolArguments: JSON.parse(readString(row, "tool_arguments_json")),
+                    toolCallId: readString(row, "tool_call_id"),
+                    toolCallIndex: readNumber(row, "tool_call_index"),
+                    toolName: readString(row, "tool_name"),
+                };
+            });
+    }
+
     #loadSession(sessionId: string): InMemorySession | undefined {
         const row = this.#database
             .prepare(
@@ -1241,6 +1369,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                 : {}),
             ...(lastMessageAt !== undefined ? { lastMessageAt } : {}),
             messages: this.#loadMessages(sessionId),
+            durableUserInputs: this.#loadDurableUserInputs(sessionId),
             externalToolCalls: this.#loadExternalToolCalls(sessionId),
             externalTools: JSON.parse(
                 readString(row, "external_tools_json"),

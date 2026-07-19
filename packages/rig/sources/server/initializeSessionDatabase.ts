@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
 
 const sessionColumnMigrations = [
     ["title", "TEXT"],
@@ -166,6 +166,27 @@ export function initializeSessionDatabase(database: DatabaseSync): void {
                 resolved_at_ms INTEGER
             );
 
+            CREATE TABLE IF NOT EXISTS durable_user_inputs (
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                request_id TEXT NOT NULL,
+                run_id TEXT NOT NULL,
+                batch_id TEXT NOT NULL,
+                tool_call_id TEXT NOT NULL,
+                tool_call_index INTEGER NOT NULL,
+                tool_name TEXT NOT NULL,
+                tool_arguments_json TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                permission_json TEXT,
+                request_json TEXT NOT NULL,
+                response_json TEXT,
+                result_json TEXT,
+                status TEXT NOT NULL,
+                consumed INTEGER NOT NULL DEFAULT 0,
+                created_at_ms INTEGER NOT NULL,
+                resolved_at_ms INTEGER,
+                PRIMARY KEY (session_id, request_id)
+            );
+
             CREATE TABLE IF NOT EXISTS secret_registrations (
                 id TEXT PRIMARY KEY,
                 description TEXT NOT NULL,
@@ -227,6 +248,8 @@ export function initializeSessionDatabase(database: DatabaseSync): void {
                 ON sessions(parent_session_id, created_at_ms);
             CREATE INDEX IF NOT EXISTS external_tool_calls_session_created
                 ON external_tool_calls(session_id, created_at_ms);
+            CREATE INDEX IF NOT EXISTS durable_user_inputs_session_created
+                ON durable_user_inputs(session_id, created_at_ms);
             PRAGMA user_version = ${String(CURRENT_SCHEMA_VERSION)};
             COMMIT;
         `);

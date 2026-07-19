@@ -7,6 +7,7 @@ import type { Static, TSchema } from "@sinclair/typebox";
 import type { AgentContext } from "./context/AgentContext.js";
 import type { Usage } from "../providers/types.js";
 import type { ToolResultPresentation } from "./ToolResultPresentation.js";
+import type { UserInputResponse } from "../user-input/types.js";
 
 /** Plain text content. */
 export interface TextBlock {
@@ -139,6 +140,10 @@ export interface DefinedTool<
         context: AgentContext,
         options: ToolExecutionOptions,
     ) => Promise<Static<TReturnSchema>> | Static<TReturnSchema>;
+    resolveUserInput?: (
+        response: UserInputResponse,
+        args: Static<TArgsSchema>,
+    ) => Static<TReturnSchema>;
     isError?: (result: Static<TReturnSchema>) => boolean;
     toLLM: (result: Static<TReturnSchema>) => readonly ContentBlock[];
     toPresentation?: (
@@ -175,6 +180,7 @@ export interface AnyDefinedTool {
         context: AgentContext,
         options: ToolExecutionOptions,
     ) => Promise<unknown> | unknown;
+    resolveUserInput?: (response: UserInputResponse, args: never) => unknown;
     isError?: (result: never) => boolean;
     toLLM: (result: never) => readonly ContentBlock[];
     toPresentation?: (result: never, args: never) => ToolResultPresentation | undefined;
@@ -212,6 +218,10 @@ export function defineTool<
         context: AgentContext,
         options: ToolExecutionOptions,
     ) => Promise<Static<TReturnSchema>> | Static<TReturnSchema>;
+    resolveUserInput?: (
+        response: UserInputResponse,
+        args: Static<TArgsSchema>,
+    ) => Static<TReturnSchema>;
     isError?: (result: Static<TReturnSchema>) => boolean;
     toLLM: (result: Static<TReturnSchema>) => readonly ContentBlock[];
     toPresentation?: (

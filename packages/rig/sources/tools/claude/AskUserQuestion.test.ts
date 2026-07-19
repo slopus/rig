@@ -23,7 +23,9 @@ describe("Claude AskUserQuestion tool", () => {
         ];
 
         const result = await claudeAskUserQuestionTool.execute({ questions }, harness.context, {
+            toolBatchId: "batch-2",
             toolCallId: "call-2",
+            toolCallIndex: 0,
         });
 
         expect(request).toHaveBeenCalledWith(
@@ -31,7 +33,16 @@ describe("Claude AskUserQuestion tool", () => {
                 questions: [{ ...questions[0], id: "question_1" }],
                 requestId: "call-2",
             },
-            undefined,
+            {
+                durable: {
+                    batchId: "batch-2",
+                    kind: "question",
+                    toolArguments: { questions },
+                    toolCallId: "call-2",
+                    toolCallIndex: 0,
+                    toolName: "AskUserQuestion",
+                },
+            },
         );
         expect(result).toEqual({
             answers: {

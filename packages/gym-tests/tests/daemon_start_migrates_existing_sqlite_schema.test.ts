@@ -200,9 +200,15 @@ const externalCallColumns = new Set(
 if (!externalCallColumns.has("skill_json")) {
     throw new Error("Missing migrated external_tool_calls skill column.");
 }
+const durableUserInputsTable = database
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'durable_user_inputs'")
+    .get();
+if (durableUserInputsTable?.name !== "durable_user_inputs") {
+    throw new Error("Missing migrated durable_user_inputs table.");
+}
 
 const version = database.prepare("PRAGMA user_version").get().user_version;
-if (version !== 3) throw new Error("Expected schema version 3, received " + String(version));
+if (version !== 4) throw new Error("Expected schema version 4, received " + String(version));
 
 const session = database
     .prepare("SELECT id, permission_mode, tasks_json, workflows_json FROM sessions WHERE id = ?")

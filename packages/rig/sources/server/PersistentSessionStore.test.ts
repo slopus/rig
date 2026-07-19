@@ -131,6 +131,160 @@ describe("PersistentSessionStore", () => {
         }
     });
 
+    it("resumes a structured user question after daemon restart without replaying its call", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        const model = defineModel({
+            defaultThinkingLevel: "off",
+            id: "openai/gym",
+            name: "Gym",
+            thinkingLevels: ["off"],
+        });
+        const catalog: ModelCatalog = {
+            defaultModelId: model.id,
+            defaultProviderId: "gym",
+            models: [model],
+            providers: [{ models: [model], providerId: "gym" }],
+        };
+        const requests: GymInferenceRequest[] = [];
+        const originalFetch = globalThis.fetch;
+        const originalInferenceUrl = process.env.RIG_GYM_INFERENCE_URL;
+        let store: PersistentSessionStore | undefined;
+        try {
+            process.env.RIG_GYM_INFERENCE_URL = "http://gym.test/inference";
+            globalThis.fetch = async (_input, init) => {
+                if (typeof init?.body !== "string") throw new Error("Expected request JSON.");
+                requests.push(JSON.parse(init.body) as GymInferenceRequest);
+                return new Response(
+                    JSON.stringify(
+                        requests.length === 1
+                            ? {
+                                  content: [
+                                      {
+                                          arguments: {
+                                              questions: [
+                                                  {
+                                                      header: "Database",
+                                                      id: "database",
+                                                      options: [
+                                                          {
+                                                              description: "Use PostgreSQL.",
+                                                              label: "PostgreSQL",
+                                                          },
+                                                          {
+                                                              description: "Use SQLite.",
+                                                              label: "SQLite",
+                                                          },
+                                                      ],
+                                                      question: "Which database should be used?",
+                                                  },
+                                              ],
+                                          },
+                                          id: "durable-question-one",
+                                          name: "request_user_input",
+                                          type: "toolCall",
+                                      },
+                                      {
+                                          arguments: {
+                                              questions: [
+                                                  {
+                                                      header: "Cache",
+                                                      id: "cache",
+                                                      options: [
+                                                          {
+                                                              description: "Use Redis.",
+                                                              label: "Redis",
+                                                          },
+                                                          {
+                                                              description: "Do not use a cache.",
+                                                              label: "None",
+                                                          },
+                                                      ],
+                                                      question: "Which cache should be used?",
+                                                  },
+                                              ],
+                                          },
+                                          id: "durable-question-two",
+                                          name: "request_user_input",
+                                          type: "toolCall",
+                                      },
+                                  ],
+                              }
+                            : { content: [{ text: "Question resolved.", type: "text" }] },
+                    ),
+                    { headers: { "content-type": "application/json" }, status: 200 },
+                );
+            };
+
+            store = new PersistentSessionStore({ databasePath, modelCatalog: catalog });
+            const session = store.create({
+                cwd: "/tmp/rig-durable-user-input",
+                modelId: model.id,
+                permissionMode: "full_access",
+                providerId: "gym",
+            });
+            const submitted = session.submit({ text: "Choose a database." });
+            await waitForPendingUserInputs(session, 2);
+
+            await store.prepareForShutdown("shutdown");
+            store.close();
+            store = undefined;
+
+            store = new PersistentSessionStore({ databasePath, modelCatalog: catalog });
+            const restored = store.get(session.id);
+            if (restored === undefined) throw new Error("Expected restored session.");
+            expect(restored.snapshot()).toMatchObject({
+                pendingUserInputs: [
+                    { requestId: "durable-question-one" },
+                    { requestId: "durable-question-two" },
+                ],
+                status: "running",
+            });
+
+            const databaseAnswer = { answers: { database: ["PostgreSQL"] } };
+            const cacheAnswer = { answers: { cache: ["Redis"] } };
+            expect(restored.answerUserInput("durable-question-two", cacheAnswer)).toBeDefined();
+            expect(restored.answerUserInput("durable-question-one", databaseAnswer)).toBeDefined();
+            await expect(restored.waitForRun(submitted.runId)).resolves.toEqual({
+                status: "completed",
+            });
+            expect(requests).toHaveLength(2);
+            expect(requests[1]?.context.messages.slice(-2)).toMatchObject([
+                {
+                    content: [
+                        {
+                            text: '{"answers":{"database":{"answers":["PostgreSQL"]}}}',
+                            type: "text",
+                        },
+                    ],
+                    role: "toolResult",
+                    toolCallId: "durable-question-one",
+                },
+                {
+                    content: [
+                        {
+                            text: '{"answers":{"cache":{"answers":["Redis"]}}}',
+                            type: "text",
+                        },
+                    ],
+                    role: "toolResult",
+                    toolCallId: "durable-question-two",
+                },
+            ]);
+            expect(restored.answerUserInput("durable-question-one", databaseAnswer)).toBeDefined();
+            expect(() =>
+                restored.answerUserInput("durable-question-one", {
+                    answers: { database: ["SQLite"] },
+                }),
+            ).toThrow("already has a different answer");
+        } finally {
+            store?.close();
+            globalThis.fetch = originalFetch;
+            if (originalInferenceUrl === undefined) delete process.env.RIG_GYM_INFERENCE_URL;
+            else process.env.RIG_GYM_INFERENCE_URL = originalInferenceUrl;
+            await cleanup();
+        }
+    });
+
     it("resumes a durable skill request with its configured metadata after restart", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         const model = defineModel({
@@ -2169,6 +2323,15 @@ async function waitForExternalToolCall(session: InMemorySession) {
         await new Promise((resolve) => setImmediate(resolve));
     }
     throw new Error("Timed out waiting for the external function call.");
+}
+
+async function waitForPendingUserInputs(session: InMemorySession, count: number) {
+    for (let attempt = 0; attempt < 1_000; attempt += 1) {
+        const requests = session.snapshot().pendingUserInputs;
+        if (requests.length === count) return requests;
+        await new Promise((resolve) => setImmediate(resolve));
+    }
+    throw new Error("Timed out waiting for the durable user question.");
 }
 
 async function createDatabasePath(): Promise<{

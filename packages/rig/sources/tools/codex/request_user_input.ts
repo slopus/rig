@@ -1,6 +1,7 @@
 import { Type } from "@sinclair/typebox";
 
 import { defineTool } from "../../agent/types.js";
+import type { UserInputResponse } from "../../user-input/index.js";
 
 const optionSchema = Type.Object(
     {
@@ -32,6 +33,17 @@ const questionSchema = Type.Object(
 
 const answerSchema = Type.Object({ answers: Type.Array(Type.String()) });
 
+function resolveCodexUserInput(response: UserInputResponse) {
+    return {
+        answers: Object.fromEntries(
+            Object.entries(response.answers).map(([id, answers]) => [
+                id,
+                { answers: [...answers] },
+            ]),
+        ),
+    };
+}
+
 export const codexRequestUserInputTool = defineTool({
     name: "request_user_input",
     label: "request_user_input",
@@ -43,6 +55,7 @@ export const codexRequestUserInputTool = defineTool({
         { additionalProperties: false },
     ),
     returnType: Type.Object({ answers: Type.Record(Type.String(), answerSchema) }),
+    execution: "durable",
     shouldReviewInAutoMode: () => false,
     async execute({ questions }, context, execution) {
         if (context.userInput === undefined) {
@@ -50,6 +63,9 @@ export const codexRequestUserInputTool = defineTool({
         }
         if (execution.toolCallId === undefined) {
             throw new Error("Interactive user input requires a tool call identifier.");
+        }
+        if (execution.toolBatchId === undefined || execution.toolCallIndex === undefined) {
+            throw new Error("Durable interactive user input requires its tool batch identity.");
         }
         if (new Set(questions.map((question) => question.id)).size !== questions.length) {
             throw new Error("Interactive question identifiers must be unique.");
@@ -62,17 +78,21 @@ export const codexRequestUserInputTool = defineTool({
                     multiSelect: false,
                 })),
             },
-            execution.signal === undefined ? undefined : { signal: execution.signal },
+            {
+                durable: {
+                    batchId: execution.toolBatchId,
+                    kind: "question",
+                    toolArguments: { questions },
+                    toolCallId: execution.toolCallId,
+                    toolCallIndex: execution.toolCallIndex,
+                    toolName: "request_user_input",
+                },
+                ...(execution.signal === undefined ? {} : { signal: execution.signal }),
+            },
         );
-        return {
-            answers: Object.fromEntries(
-                Object.entries(response.answers).map(([id, answers]) => [
-                    id,
-                    { answers: [...answers] },
-                ]),
-            ),
-        };
+        return resolveCodexUserInput(response);
     },
+    resolveUserInput: resolveCodexUserInput,
     toLLM: (result) => [{ type: "text", text: JSON.stringify(result) }],
     toTrustedUserEvidence: (result) => [
         {
@@ -84,5 +104,5 @@ export const codexRequestUserInputTool = defineTool({
     ],
     toUI: (_result, args) =>
         `Answered ${args.questions.length} question${args.questions.length === 1 ? "" : "s"}`,
-    locks: ["user_input"],
+    locks: [],
 });

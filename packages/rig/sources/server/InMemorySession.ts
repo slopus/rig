@@ -52,7 +52,12 @@ import type {
 } from "../protocol/index.js";
 import type { Model, Provider, ServiceTier, StopReason } from "../providers/types.js";
 import type { ProviderQuota } from "../providers/providerQuota.js";
-import type { UserInputRequest, UserInputResponse } from "../user-input/index.js";
+import type {
+    DurableUserInputCall,
+    DurableUserInputOptions,
+    UserInputRequest,
+    UserInputResponse,
+} from "../user-input/index.js";
 import {
     humanizeWorkflowName,
     serializeWorkflowValue,
@@ -117,9 +122,13 @@ import {
     type ResolveExternalToolCallResponse,
 } from "../external-tools/index.js";
 import type { AgentMessage, ToolResultBlock } from "../agent/types.js";
+import { createErrorToolResultBlock } from "../agent/createErrorToolResultBlock.js";
+import { createToolResultBlock } from "../agent/createToolResultBlock.js";
+import { executePreapprovedToolCall } from "../agent/executePreapprovedToolCall.js";
 import { createDurableSkillTool, type DurableSkillDefinition } from "../external-skills/index.js";
 
 const MAX_RETAINED_EXTERNAL_TOOL_CALLS = 1_000;
+const MAX_RETAINED_DURABLE_USER_INPUTS = 1_000;
 
 export interface PersistedSessionMessage {
     isPartial: boolean;
@@ -178,6 +187,7 @@ export interface PersistedSessionState {
     totalTokens?: number;
     tools: readonly string[];
     externalToolCalls?: readonly ExternalToolCall[];
+    durableUserInputs?: readonly DurableUserInputCall[];
     externalTools?: readonly ExternalToolDefinition[];
     skills?: readonly DurableSkillDefinition[];
     systemPrompt?: string;
@@ -199,11 +209,17 @@ export interface InMemorySessionPersistence {
     clearMessages(sessionId: string): void;
     deleteMessagesFrom(sessionId: string, position: number): void;
     deleteQueuedRun(sessionId: string, runId: string): void;
+    handoffDurablePermissionToExternalTool?(
+        externalCall: ExternalToolCall,
+        permissionCall: DurableUserInputCall,
+    ): void;
     insertQueuedRun(sessionId: string, run: PersistedQueuedRun): void;
     pruneExternalToolCalls?(sessionId: string, retain: number): void;
+    pruneDurableUserInputs?(sessionId: string, retain: number): void;
     saveSession(state: PersistedSessionState): void;
     upsertMessage(sessionId: string, message: PersistedSessionMessage): void;
     upsertExternalToolCall?(call: ExternalToolCall): void;
+    upsertDurableUserInput?(call: DurableUserInputCall): void;
 }
 
 export interface InMemorySessionOptions {
@@ -253,6 +269,7 @@ const MAX_SUBAGENT_INSPECTION_TEXT_CHARS = 32_000;
 const SESSION_SETTLEMENT_DELAY_MS = 60_000;
 
 interface PendingUserInput {
+    durable?: DurableUserInputCall;
     onAbort?: () => void;
     request: UserInputRequest;
     resolve: (response: UserInputResponse) => void;
@@ -306,6 +323,9 @@ export class InMemorySession {
     #serviceTier: ServiceTier | undefined;
     #goal: SessionGoal | undefined;
     #externalToolCalls = new Map<string, ExternalToolCall>();
+    #durableUserInputs = new Map<string, DurableUserInputCall>();
+    #resumingDurableToolRun = false;
+    #resumeDurableToolRunAgain = false;
     #externalToolDefinitions: readonly ExternalToolDefinition[] = [];
     #durableSkillDefinitions: readonly DurableSkillDefinition[] = [];
     #externalToolInstallation: ExternalToolInstallation = {
@@ -434,6 +454,9 @@ export class InMemorySession {
         this.#durableSkillDefinitions = [...(options.restore?.skills ?? [])];
         for (const call of options.restore?.externalToolCalls ?? []) {
             this.#externalToolCalls.set(call.id, cloneExternalToolCall(call));
+        }
+        for (const call of options.restore?.durableUserInputs ?? []) {
+            this.#durableUserInputs.set(call.request.requestId, structuredClone(call));
         }
         const requestedEffort = options.restore?.effort ?? options.request.effort;
         this.#effort =
@@ -626,8 +649,9 @@ export class InMemorySession {
                 : (this.#agentManager?.pauseDescendants(this.id) ?? Promise.resolve(0));
         const runningProcesses = this.#activeProcessCount();
         if (this.#activeRun === undefined && this.#queue.length === 0 && runningProcesses === 0) {
-            if (runId !== undefined && this.hasDurableExternalRun()) {
+            if (runId !== undefined && this.hasDurableToolRun()) {
                 this.#cancelExternalToolCalls(runId);
+                this.#cancelDurableUserInputs(runId);
                 this.#restoredActiveRunId = undefined;
                 this.#status = "aborted";
                 const event = this.#append("abort_requested", { runId });
@@ -654,7 +678,10 @@ export class InMemorySession {
         }
         this.#queue = [];
         this.#pauseActiveGoal();
-        if (runId !== undefined) this.#cancelExternalToolCalls(runId);
+        if (runId !== undefined) {
+            this.#cancelExternalToolCalls(runId);
+            this.#cancelDurableUserInputs(runId);
+        }
         this.#activeRun?.controller.abort();
         this.#restoredActiveRunId = undefined;
         await Promise.all([
@@ -1059,7 +1086,7 @@ export class InMemorySession {
 
     requestUserInput(
         request: UserInputRequest,
-        options: { signal?: AbortSignal } = {},
+        options: { durable?: DurableUserInputOptions; signal?: AbortSignal } = {},
     ): Promise<UserInputResponse> {
         if (this.isSubagent()) {
             throw new Error("Only the primary session can ask the user a question.");
@@ -1071,23 +1098,79 @@ export class InMemorySession {
             return Promise.reject(new Error("The user input request was cancelled."));
         }
 
+        let durable: DurableUserInputCall | undefined;
+        let createdDurable = false;
+        if (options.durable !== undefined) {
+            const runId = this.#activeRun?.runId;
+            if (runId === undefined) {
+                throw new Error("Durable interactive user input requires an active run.");
+            }
+            const existing = this.#durableUserInputs.get(request.requestId);
+            if (existing !== undefined) {
+                if (
+                    existing.runId !== runId ||
+                    existing.batchId !== options.durable.batchId ||
+                    existing.toolCallId !== options.durable.toolCallId
+                ) {
+                    throw new Error(
+                        "The durable user input identity does not match its pending request.",
+                    );
+                }
+                if (existing.response !== undefined) {
+                    return Promise.resolve(structuredClone(existing.response));
+                }
+                durable = existing;
+            } else {
+                durable = {
+                    batchId: options.durable.batchId,
+                    consumed: false,
+                    createdAt: this.#now(),
+                    kind: options.durable.kind,
+                    ...(options.durable.permission === undefined
+                        ? {}
+                        : { permission: { ...options.durable.permission } }),
+                    request: structuredClone(request),
+                    runId,
+                    sessionId: this.id,
+                    status: "pending",
+                    toolArguments: structuredClone(options.durable.toolArguments),
+                    toolCallId: options.durable.toolCallId,
+                    toolCallIndex: options.durable.toolCallIndex,
+                    toolName: options.durable.toolName,
+                };
+                this.#durableUserInputs.set(request.requestId, durable);
+                this.#persistence?.upsertDurableUserInput?.(durable);
+                createdDurable = true;
+            }
+        }
+
         const response = new Promise<UserInputResponse>((resolve, reject) => {
-            const pending: PendingUserInput = { request, resolve };
+            const pending: PendingUserInput = {
+                request,
+                resolve,
+                ...(durable === undefined ? {} : { durable }),
+            };
             if (options.signal !== undefined) pending.signal = options.signal;
             const onAbort = () => {
                 if (this.#pendingUserInputs.get(request.requestId) !== pending) return;
                 this.#pendingUserInputs.delete(request.requestId);
-                this.#append("user_input_resolved", {
-                    requestId: request.requestId,
-                    status: "cancelled",
-                });
+                if (pending.durable === undefined) {
+                    this.#append("user_input_resolved", {
+                        requestId: request.requestId,
+                        status: "cancelled",
+                    });
+                } else if (!this.#closing && pending.durable.status === "pending") {
+                    this.#cancelDurableUserInput(pending.durable);
+                }
                 reject(new Error("The user input request was cancelled."));
             };
             pending.onAbort = onAbort;
             options.signal?.addEventListener("abort", onAbort, { once: true });
             this.#pendingUserInputs.set(request.requestId, pending);
         });
-        this.#append("user_input_requested", request);
+        if (durable === undefined || createdDurable) {
+            this.#append("user_input_requested", request);
+        }
         if (isSignalAborted(options.signal)) {
             this.#pendingUserInputs.get(request.requestId)?.onAbort?.();
         }
@@ -1096,7 +1179,18 @@ export class InMemorySession {
 
     answerUserInput(requestId: string, response: UserInputResponse): ProtocolSession | undefined {
         const pending = this.#pendingUserInputs.get(requestId);
-        if (pending === undefined) return undefined;
+        const durable = this.#durableUserInputs.get(requestId);
+        if (pending === undefined && durable === undefined) return undefined;
+
+        if (durable?.response !== undefined) {
+            if (!isDeepStrictEqual(durable.response, response)) {
+                throw new Error("This question already has a different answer.");
+            }
+            return this.snapshot();
+        }
+
+        const request = pending?.request ?? durable?.request;
+        if (request === undefined) return undefined;
 
         const responseAnswers = (response as { answers?: unknown } | null)?.answers;
         if (
@@ -1108,7 +1202,7 @@ export class InMemorySession {
         }
 
         const answers: Record<string, readonly string[]> = {};
-        for (const question of pending.request.questions) {
+        for (const question of request.questions) {
             const selected = (responseAnswers as Record<string, unknown>)[question.id];
             if (
                 question.required === false &&
@@ -1129,18 +1223,37 @@ export class InMemorySession {
             answers[question.id] = [...selected];
         }
 
-        this.#pendingUserInputs.delete(requestId);
-        if (pending.onAbort !== undefined) {
-            pending.signal?.removeEventListener("abort", pending.onAbort);
+        if (pending !== undefined) {
+            this.#pendingUserInputs.delete(requestId);
+            if (pending.onAbort !== undefined) {
+                pending.signal?.removeEventListener("abort", pending.onAbort);
+            }
         }
         const normalizedResponse = { answers };
+        if (durable !== undefined) {
+            durable.response = structuredClone(normalizedResponse);
+            durable.resolvedAt = this.#now();
+            durable.status = "answered";
+            this.#persistence?.upsertDurableUserInput?.(durable);
+        }
         this.#append("user_input_resolved", {
             answers,
             requestId,
             status: "answered",
         });
-        pending.resolve(normalizedResponse);
+        if (pending !== undefined) {
+            pending.resolve(normalizedResponse);
+        } else if (durable !== undefined) {
+            this.resumeDurableToolRun();
+        }
         return this.snapshot();
+    }
+
+    markUserInputExecuting(requestId: string): void {
+        const durable = this.#durableUserInputs.get(requestId);
+        if (durable === undefined || durable.status !== "answered") return;
+        durable.status = "executing";
+        this.#persistence?.upsertDurableUserInput?.(durable);
     }
 
     createTask(request: CreateTaskRequest): SessionTask {
@@ -1385,7 +1498,7 @@ export class InMemorySession {
             if (workflow.state.status === "running") this.stopWorkflow(workflow.state.runId);
         }
         const activeRun = this.#activeRun;
-        if (activeRun !== undefined && this.hasDurableExternalRun()) {
+        if (activeRun !== undefined && this.hasDurableToolRun()) {
             this.#restoredActiveRunId = activeRun.runId;
             this.#activeRun = undefined;
             this.#status = "running";
@@ -1699,9 +1812,16 @@ export class InMemorySession {
                 : {}),
             ...(this.#metadataRunId !== undefined ? { metadataRunId: this.#metadataRunId } : {}),
             agent: this.agentMetadata(),
-            pendingUserInputs: [...this.#pendingUserInputs.values()].map(
-                (pending) => pending.request,
-            ),
+            pendingUserInputs: [
+                ...new Map(
+                    [
+                        ...[...this.#pendingUserInputs.values()].map((pending) => pending.request),
+                        ...[...this.#durableUserInputs.values()]
+                            .filter((call) => call.status === "pending")
+                            .map((call) => call.request),
+                    ].map((request) => [request.requestId, request]),
+                ).values(),
+            ],
             mcpServers: this.#mcpServers,
             tasks: this.listTasks(),
             workflowsEnabled: this.#workflowsEnabled,
@@ -1796,6 +1916,9 @@ export class InMemorySession {
             totalTokens: this.#totalTokens,
             tools: this.#tools,
             externalToolCalls: this.externalToolCalls(),
+            durableUserInputs: [...this.#durableUserInputs.values()].map((call) =>
+                structuredClone(call),
+            ),
             externalTools: this.#externalToolDefinitions.map((definition) => ({ ...definition })),
             skills: this.#durableSkillDefinitions.map((definition) => ({ ...definition })),
             ...(this.#systemPrompt !== undefined ? { systemPrompt: this.#systemPrompt } : {}),
@@ -2120,12 +2243,17 @@ export class InMemorySession {
             .map(cloneExternalToolCall);
     }
 
-    hasDurableExternalRun(): boolean {
+    hasDurableToolRun(): boolean {
         const runId = this.#activeRun?.runId ?? this.#restoredActiveRunId;
         if (runId === undefined) return false;
-        const calls = [...this.#externalToolCalls.values()].filter(
-            (call) => call.runId === runId && call.status !== "cancelled",
-        );
+        const calls = [
+            ...[...this.#externalToolCalls.values()]
+                .filter((call) => call.runId === runId && call.status !== "cancelled")
+                .map((call) => ({ consumed: call.consumed, toolCallId: call.toolCallId })),
+            ...[...this.#durableUserInputs.values()]
+                .filter((call) => call.runId === runId && call.status !== "cancelled")
+                .map((call) => ({ consumed: call.consumed, toolCallId: call.toolCallId })),
+        ];
         if (calls.length === 0) return false;
         if (calls.some((call) => !call.consumed)) return true;
         const resultIds = new Set(calls.map((call) => call.toolCallId));
@@ -2147,37 +2275,116 @@ export class InMemorySession {
         );
     }
 
-    resumeDurableExternalRun(): void {
+    resumeDurableToolRun(): void {
+        if (this.#resumingDurableToolRun) {
+            this.#resumeDurableToolRunAgain = true;
+            return;
+        }
+        this.#resumingDurableToolRun = true;
+        this.#resumeDurableToolRunAgain = false;
+        void this.#resumeDurableToolRun()
+            .catch(() => undefined)
+            .finally(() => {
+                this.#resumingDurableToolRun = false;
+                if (this.#resumeDurableToolRunAgain) this.resumeDurableToolRun();
+            });
+    }
+
+    async #resumeDurableToolRun(): Promise<void> {
         if (this.#closing || this.#activeRun !== undefined) return;
         const runId = this.#restoredActiveRunId;
-        if (runId === undefined || !this.hasDurableExternalRun()) return;
+        if (runId === undefined || !this.hasDurableToolRun()) return;
         this.#reconcileExternalToolConsumption(runId);
-        const unconsumed = [...this.#externalToolCalls.values()].filter(
-            (call) => call.runId === runId && !call.consumed && call.status !== "cancelled",
+        this.#reconcileDurableUserInputConsumption(runId);
+        this.#reconcilePermissionExternalHandoffs(runId);
+        while (true) {
+            const call = [...this.#durableUserInputs.values()].find(
+                (candidate) =>
+                    candidate.runId === runId &&
+                    !candidate.consumed &&
+                    (candidate.status === "answered" || candidate.status === "executing"),
+            );
+            if (call === undefined) break;
+            if (call.status === "executing") {
+                call.result = createErrorToolResultBlock(
+                    { id: call.toolCallId, name: call.toolName },
+                    `Tool '${call.toolName}' was interrupted after approval and was not replayed.`,
+                    { kind: "interrupted" },
+                );
+                call.status = "completed";
+                call.resolvedAt = this.#now();
+                this.#persistence?.upsertDurableUserInput?.(call);
+            } else if (call.status === "answered") {
+                await this.#resumeAnsweredDurableUserInput(call);
+                if (this.#activeRun !== undefined) return;
+            }
+        }
+        const unconsumed = [
+            ...[...this.#externalToolCalls.values()]
+                .filter(
+                    (call) => call.runId === runId && !call.consumed && call.status !== "cancelled",
+                )
+                .map((call) => ({
+                    batchId: call.batchId,
+                    call,
+                    createdAt: call.createdAt,
+                    kind: "external" as const,
+                    pending: call.status === "pending",
+                    toolCallIndex: call.toolCallIndex,
+                })),
+            ...[...this.#durableUserInputs.values()]
+                .filter(
+                    (call) => call.runId === runId && !call.consumed && call.status !== "cancelled",
+                )
+                .map((call) => ({
+                    batchId: call.batchId,
+                    call,
+                    createdAt: call.createdAt,
+                    kind: "user_input" as const,
+                    pending: call.status !== "completed",
+                    toolCallIndex: call.toolCallIndex,
+                })),
+        ].sort(
+            (left, right) =>
+                left.createdAt - right.createdAt || left.toolCallIndex - right.toolCallIndex,
         );
         if (unconsumed.length > 0) {
             const batchId = unconsumed[0]?.batchId;
             const batch = unconsumed.filter((call) => call.batchId === batchId);
-            if (batch.some((call) => call.status === "pending")) return;
+            if (batch.some((entry) => entry.pending)) return;
             const resultMessage: AgentMessage = {
                 blocks: batch
                     .sort((left, right) => left.toolCallIndex - right.toolCallIndex)
-                    .map((call) => this.#externalToolResultBlock(call)),
+                    .map((entry) => {
+                        if (entry.kind === "external") {
+                            return this.#externalToolResultBlock(entry.call);
+                        }
+                        if (entry.call.result === undefined) {
+                            throw new Error("A durable user input has no tool result.");
+                        }
+                        return structuredClone(entry.call.result);
+                    }),
                 id: createId(),
                 role: "agent",
             };
             this.#storeMessage(this.#messages.length, resultMessage, false, runId);
-            for (const call of batch) {
-                call.consumed = true;
-                this.#persistence?.upsertExternalToolCall?.(call);
+            for (const entry of batch) {
+                entry.call.consumed = true;
+                if (entry.kind === "external") {
+                    this.#persistence?.upsertExternalToolCall?.(entry.call);
+                } else {
+                    this.#persistence?.upsertDurableUserInput?.(entry.call);
+                }
             }
             this.#pruneExternalToolCalls();
+            this.#pruneDurableUserInputs();
             this.#append("agent_message", { message: resultMessage, runId });
         }
         this.#contextMessages = undefined;
-        const continuation = () => this.#continueDurableExternalRun(runId);
+        this.#runtime = undefined;
+        const continuation = () => this.#continueDurableToolRun(runId);
         const running = this.#taskDrain?.run(continuation) ?? continuation();
-        void running.catch(() => undefined);
+        await running;
     }
 
     resolveExternalToolCall(
@@ -2214,7 +2421,7 @@ export class InMemorySession {
             this.#externalToolWaiters.delete(call.id);
             waiter.resolve(cloneExternalResolution(resolution));
         } else {
-            this.resumeDurableExternalRun();
+            this.resumeDurableToolRun();
         }
         return { accepted: true, call: cloneExternalToolCall(call) };
     }
@@ -2253,11 +2460,35 @@ export class InMemorySession {
             toolCallIndex: request.toolCallIndex,
             ...(skill === undefined ? {} : { skill: { ...skill } }),
         };
+        const permissionCall = [...this.#durableUserInputs.values()].find(
+            (userInput) =>
+                userInput.runId === runId &&
+                userInput.toolCallId === request.toolCallId &&
+                userInput.kind === "permission" &&
+                !userInput.consumed,
+        );
+        if (permissionCall !== undefined) {
+            permissionCall.consumed = true;
+            permissionCall.status = "completed";
+        }
         if (existing === undefined) {
             this.#externalToolCalls.set(call.id, call);
-            this.#persistence?.upsertExternalToolCall?.(call);
+            if (
+                permissionCall !== undefined &&
+                this.#persistence?.handoffDurablePermissionToExternalTool !== undefined
+            ) {
+                this.#persistence.handoffDurablePermissionToExternalTool(call, permissionCall);
+            } else {
+                this.#persistence?.upsertExternalToolCall?.(call);
+                if (permissionCall !== undefined) {
+                    this.#persistence?.upsertDurableUserInput?.(permissionCall);
+                }
+            }
             this.#append("external_tool_call_requested", { call: cloneExternalToolCall(call) });
+        } else if (permissionCall !== undefined) {
+            this.#persistence?.upsertDurableUserInput?.(permissionCall);
         }
+        this.#pruneDurableUserInputs();
         return new Promise<ExternalToolCallResolution>((resolve, reject) => {
             let waiter: ExternalToolWaiter;
             const abort = () => {
@@ -2333,6 +2564,158 @@ export class InMemorySession {
         this.#pruneExternalToolCalls();
     }
 
+    async #resumeAnsweredDurableUserInput(call: DurableUserInputCall): Promise<void> {
+        const response = call.response;
+        if (response === undefined || call.status !== "answered") return;
+        if (call.kind === "question") {
+            const runtime = this.#ensureRuntime();
+            const tool = runtime.agent.tools.find((candidate) => candidate.name === call.toolName);
+            if (tool?.resolveUserInput === undefined) {
+                call.result = createErrorToolResultBlock(
+                    { id: call.toolCallId, name: call.toolName },
+                    `Tool '${call.toolName}' cannot restore its durable user answer.`,
+                    { kind: "execution_failed" },
+                );
+            } else {
+                const result = tool.resolveUserInput(response, call.toolArguments as never);
+                call.result = createToolResultBlock(
+                    tool,
+                    call.toolArguments,
+                    result,
+                    call.toolCallId,
+                );
+            }
+            call.status = "completed";
+            this.#persistence?.upsertDurableUserInput?.(call);
+            return;
+        }
+
+        const permission = call.permission;
+        if (permission === undefined) {
+            throw new Error("A durable permission request has no permission context.");
+        }
+        const approved = response.answers.permission?.includes("Allow once") ?? false;
+        if (!approved) {
+            call.result = createErrorToolResultBlock(
+                { id: call.toolCallId, name: call.toolName },
+                `Auto mode did not approve ${permission.action}. Reason: ${permission.reason}`,
+            );
+            call.status = "completed";
+            this.#persistence?.upsertDurableUserInput?.(call);
+            return;
+        }
+
+        const runId = this.#restoredActiveRunId;
+        if (runId === undefined) return;
+        const controller = new AbortController();
+        this.#activeRun = { controller, debug: false, kind: "user", runId };
+        this.#status = "running";
+        const runtime = this.#ensureRuntime();
+        try {
+            call.result = await executePreapprovedToolCall({
+                batchId: call.batchId,
+                context: runtime.context,
+                messages: this.#committedMessages(),
+                onBeforeExecute: () => {
+                    call.status = "executing";
+                    this.#persistence?.upsertDurableUserInput?.(call);
+                },
+                signal: controller.signal,
+                toolCall: {
+                    arguments: call.toolArguments,
+                    id: call.toolCallId,
+                    index: call.toolCallIndex,
+                    name: call.toolName,
+                },
+                tools: runtime.agent.tools,
+            });
+            if ((call as DurableUserInputCall).status === "cancelled") return;
+            call.status = "completed";
+            call.resolvedAt = this.#now();
+            this.#persistence?.upsertDurableUserInput?.(call);
+        } finally {
+            if (this.#activeRun?.runId === runId) this.#activeRun = undefined;
+        }
+    }
+
+    #reconcileDurableUserInputConsumption(runId: string): void {
+        const consumedToolCallIds = new Set(
+            this.#messages.flatMap((entry) =>
+                entry.message.role !== "agent"
+                    ? []
+                    : entry.message.blocks.flatMap((block) =>
+                          block.type === "tool_result" ? [block.toolCallId] : [],
+                      ),
+            ),
+        );
+        for (const call of this.#durableUserInputs.values()) {
+            if (
+                call.runId !== runId ||
+                call.consumed ||
+                !consumedToolCallIds.has(call.toolCallId)
+            ) {
+                continue;
+            }
+            call.consumed = true;
+            this.#persistence?.upsertDurableUserInput?.(call);
+        }
+        this.#pruneDurableUserInputs();
+    }
+
+    #reconcilePermissionExternalHandoffs(runId: string): void {
+        const externalToolCallIds = new Set(
+            [...this.#externalToolCalls.values()]
+                .filter((call) => call.runId === runId && call.status !== "cancelled")
+                .map((call) => call.toolCallId),
+        );
+        for (const call of this.#durableUserInputs.values()) {
+            if (
+                call.runId !== runId ||
+                call.kind !== "permission" ||
+                call.consumed ||
+                !externalToolCallIds.has(call.toolCallId)
+            ) {
+                continue;
+            }
+            call.consumed = true;
+            call.status = "completed";
+            this.#persistence?.upsertDurableUserInput?.(call);
+        }
+        this.#pruneDurableUserInputs();
+    }
+
+    #cancelDurableUserInput(call: DurableUserInputCall): void {
+        if (call.status === "cancelled" || call.consumed) return;
+        call.status = "cancelled";
+        call.resolvedAt = this.#now();
+        this.#persistence?.upsertDurableUserInput?.(call);
+        this.#append("user_input_resolved", {
+            requestId: call.request.requestId,
+            status: "cancelled",
+        });
+    }
+
+    #cancelDurableUserInputs(runId: string): void {
+        for (const call of this.#durableUserInputs.values()) {
+            if (call.runId === runId && !call.consumed) this.#cancelDurableUserInput(call);
+        }
+        this.#pruneDurableUserInputs();
+    }
+
+    #pruneDurableUserInputs(): void {
+        const eligible = [...this.#durableUserInputs.values()]
+            .filter((call) => call.status === "cancelled" || call.consumed)
+            .sort(
+                (left, right) =>
+                    (right.resolvedAt ?? right.createdAt) - (left.resolvedAt ?? left.createdAt) ||
+                    right.toolCallIndex - left.toolCallIndex,
+            );
+        for (const call of eligible.slice(MAX_RETAINED_DURABLE_USER_INPUTS)) {
+            this.#durableUserInputs.delete(call.request.requestId);
+        }
+        this.#persistence?.pruneDurableUserInputs?.(this.id, MAX_RETAINED_DURABLE_USER_INPUTS);
+    }
+
     #cancelExternalToolCalls(runId: string): void {
         for (const call of this.#externalToolCalls.values()) {
             if (call.runId !== runId || call.status !== "pending") continue;
@@ -2365,7 +2748,7 @@ export class InMemorySession {
         this.#persistence?.pruneExternalToolCalls?.(this.id, MAX_RETAINED_EXTERNAL_TOOL_CALLS);
     }
 
-    async #continueDurableExternalRun(runId: string): Promise<void> {
+    async #continueDurableToolRun(runId: string): Promise<void> {
         if (this.#activeRun !== undefined || this.#closing) return;
         const controller = new AbortController();
         this.#activeRun = { controller, debug: false, kind: "user", runId };
@@ -2627,7 +3010,20 @@ export class InMemorySession {
                 call.consumed = true;
                 this.#persistence?.upsertExternalToolCall?.(call);
             }
+            for (const call of this.#durableUserInputs.values()) {
+                if (call.runId !== runId || !resultIds.has(call.toolCallId)) continue;
+                const result = message.blocks.find(
+                    (block): block is ToolResultBlock =>
+                        block.type === "tool_result" && block.toolCallId === call.toolCallId,
+                );
+                if (result !== undefined) call.result = structuredClone(result);
+                call.status = "completed";
+                call.consumed = true;
+                call.resolvedAt ??= this.#now();
+                this.#persistence?.upsertDurableUserInput?.(call);
+            }
             this.#pruneExternalToolCalls();
+            this.#pruneDurableUserInputs();
         }
         if (partialPosition !== undefined) {
             this.#activePartial = undefined;
@@ -2736,6 +3132,7 @@ export class InMemorySession {
             providerId: this.#providerId,
             secrets: this.#secrets,
             userInput: {
+                markExecuting: (requestId) => this.markUserInputExecuting(requestId),
                 request: (request, requestOptions) =>
                     this.requestUserInput(request, requestOptions),
             },
@@ -3276,7 +3673,7 @@ export class InMemorySession {
             if (this.#activeRun?.runId === queued.runId) {
                 this.#activeRun = undefined;
             }
-            if (this.#restoredActiveRunId === queued.runId && this.hasDurableExternalRun()) {
+            if (this.#restoredActiveRunId === queued.runId && this.hasDurableToolRun()) {
                 this.#contextMessages = undefined;
                 this.#runtime = undefined;
             } else {

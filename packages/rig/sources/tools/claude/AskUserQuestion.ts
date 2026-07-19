@@ -1,6 +1,7 @@
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "@sinclair/typebox";
 
 import { defineTool } from "../../agent/types.js";
+import type { UserInputResponse } from "../../user-input/index.js";
 
 const optionSchema = Type.Object(
     {
@@ -25,6 +26,26 @@ const questionSchema = Type.Object(
     { additionalProperties: false },
 );
 
+function resolveClaudeUserInput(
+    response: UserInputResponse,
+    questions: readonly Static<typeof questionSchema>[],
+) {
+    const normalizedQuestions = questions.map((question, index) => ({
+        ...question,
+        id: `question_${index + 1}`,
+        multiSelect: question.multiSelect ?? false,
+    }));
+    return {
+        questions: [...questions],
+        answers: Object.fromEntries(
+            normalizedQuestions.map((question) => [
+                question.question,
+                (response.answers[question.id] ?? []).join(", "),
+            ]),
+        ),
+    };
+}
+
 export const claudeAskUserQuestionTool = defineTool({
     name: "AskUserQuestion",
     label: "AskUserQuestion",
@@ -38,6 +59,7 @@ export const claudeAskUserQuestionTool = defineTool({
         questions: Type.Array(questionSchema),
         answers: Type.Record(Type.String(), Type.String()),
     }),
+    execution: "durable",
     shouldReviewInAutoMode: () => false,
     async execute({ questions }, context, execution) {
         if (new Set(questions.map((question) => question.question)).size !== questions.length) {
@@ -49,6 +71,9 @@ export const claudeAskUserQuestionTool = defineTool({
         if (execution.toolCallId === undefined) {
             throw new Error("Interactive user input requires a tool call identifier.");
         }
+        if (execution.toolBatchId === undefined || execution.toolCallIndex === undefined) {
+            throw new Error("Durable interactive user input requires its tool batch identity.");
+        }
         const normalizedQuestions = questions.map((question, index) => ({
             ...question,
             id: `question_${index + 1}`,
@@ -56,17 +81,22 @@ export const claudeAskUserQuestionTool = defineTool({
         }));
         const response = await context.userInput.request(
             { requestId: execution.toolCallId, questions: normalizedQuestions },
-            execution.signal === undefined ? undefined : { signal: execution.signal },
+            {
+                durable: {
+                    batchId: execution.toolBatchId,
+                    kind: "question",
+                    toolArguments: { questions },
+                    toolCallId: execution.toolCallId,
+                    toolCallIndex: execution.toolCallIndex,
+                    toolName: "AskUserQuestion",
+                },
+                ...(execution.signal === undefined ? {} : { signal: execution.signal }),
+            },
         );
-        return {
-            questions,
-            answers: Object.fromEntries(
-                normalizedQuestions.map((question) => [
-                    question.question,
-                    (response.answers[question.id] ?? []).join(", "),
-                ]),
-            ),
-        };
+        return resolveClaudeUserInput(response, questions);
+    },
+    resolveUserInput(response, { questions }) {
+        return resolveClaudeUserInput(response, questions);
     },
     toLLM: (result) => [{ type: "text", text: JSON.stringify(result) }],
     toTrustedUserEvidence: (result) => [
@@ -77,5 +107,5 @@ export const claudeAskUserQuestionTool = defineTool({
     ],
     toUI: (_result, args) =>
         `Answered ${args.questions.length} question${args.questions.length === 1 ? "" : "s"}`,
-    locks: ["user_input"],
+    locks: [],
 });

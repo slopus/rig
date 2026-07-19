@@ -4,6 +4,8 @@ import { Value } from "@sinclair/typebox/value";
 import { assistantMessageToAgentMessage } from "./assistantMessageToAgentMessage.js";
 import { collectToolCallIds } from "./collectToolCallIds.js";
 import { createAmbiguousToolCallRejection } from "./createAmbiguousToolCallRejection.js";
+import { createErrorToolResultBlock } from "./createErrorToolResultBlock.js";
+import { createToolResultBlock } from "./createToolResultBlock.js";
 import type { AgentContext } from "./context/AgentContext.js";
 import type { BashSessionActivity } from "./context/BashContext.js";
 import { delayBeforeInferenceRetry } from "./delayBeforeInferenceRetry.js";
@@ -24,7 +26,6 @@ import type {
     AnyDefinedTool,
     ContentBlock,
     Message,
-    ToolResultFailure,
     ToolResultBlock,
     UserMessage,
 } from "./types.js";
@@ -155,6 +156,21 @@ export type AgentLoopEvent =
     | {
           type: "background_processes_stopped";
           count: number;
+      };
+
+type PreparedToolPermission =
+    | { kind: "skip" }
+    | { kind: "error"; result: ToolResultBlock }
+    | {
+          action: string;
+          kind: "review";
+          review: {
+              approvedByUser?: true;
+              decision: "allow" | "ask";
+              reason: string;
+              risk: "low" | "medium" | "high";
+              userAuthorization: "low" | "medium" | "high";
+          };
       };
 
 export interface AgentLoopResult {
@@ -485,10 +501,62 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
             return interrupted;
         }
 
+        const preparedPermissions = new Map(
+            await Promise.all(
+                toolCalls.map(
+                    async (toolCall) =>
+                        [
+                            toolCall.id,
+                            await prepareToolPermission(toolCall, toolsByName, toolContext, {
+                                messages: transcript,
+                                model,
+                                now,
+                                onPermissionReview: (review) =>
+                                    ignoreOptionalFailure(() =>
+                                        options.onEvent?.({
+                                            type: "permission_review",
+                                            toolCallId: toolCall.id,
+                                            ...review,
+                                        }),
+                                    ),
+                                provider: options.provider,
+                                ...(options.signal === undefined ? {} : { signal: options.signal }),
+                            }),
+                        ] as const,
+                ),
+            ),
+        );
         const executeToolCalls = (calls: readonly ProviderToolCall[]) =>
             Promise.all(
-                calls.map((toolCall) =>
-                    toolLocks.run(resolveToolLockKeys(toolCall, toolsByName), async () => {
+                calls.map(async (toolCall) => {
+                    if (options.signal?.aborted) {
+                        return {
+                            completedBeforeAbort: false,
+                            result: interruptedToolResultBlock(toolCall, toolsByName),
+                            toolCall,
+                        };
+                    }
+                    await ignoreOptionalFailure(() =>
+                        options.debug?.record("tool-call", {
+                            iteration,
+                            toolCall,
+                        }),
+                    );
+                    await ignoreOptionalFailure(() =>
+                        options.onEvent?.({ type: "tool_execution_start", toolCall }),
+                    );
+                    const toolCallIndex = toolCalls.indexOf(toolCall);
+                    const preparedPermission = await resolvePermissionPrompt(
+                        toolCall,
+                        preparedPermissions.get(toolCall.id) ?? { kind: "skip" },
+                        toolContext,
+                        {
+                            batchId: agentMessage.id,
+                            toolCallIndex,
+                            ...(options.signal === undefined ? {} : { signal: options.signal }),
+                        },
+                    );
+                    return toolLocks.run(resolveToolLockKeys(toolCall, toolsByName), async () => {
                         if (options.signal?.aborted) {
                             return {
                                 completedBeforeAbort: false,
@@ -496,21 +564,12 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                                 toolCall,
                             };
                         }
-                        await ignoreOptionalFailure(() =>
-                            options.debug?.record("tool-call", {
-                                iteration,
-                                toolCall,
-                            }),
-                        );
-                        await ignoreOptionalFailure(() =>
-                            options.onEvent?.({ type: "tool_execution_start", toolCall }),
-                        );
                         const result = await executeToolCall(toolCall, toolsByName, toolContext, {
                             batchId: agentMessage.id,
                             messages: transcript,
                             model,
                             now,
-                            toolCallIndex: toolCalls.indexOf(toolCall),
+                            toolCallIndex,
                             onProgress: (display) => {
                                 void ignoreOptionalFailure(() =>
                                     options.onEvent?.({
@@ -554,6 +613,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                                     }),
                                 ),
                             provider: options.provider,
+                            preparedPermission,
                             ...(options.signal === undefined ? {} : { signal: options.signal }),
                         });
                         const completedBeforeAbort = options.signal?.aborted !== true;
@@ -582,14 +642,18 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                             }),
                         );
                         return { completedBeforeAbort, result, toolCall };
-                    }),
-                ),
+                    });
+                }),
             );
         const immediateCalls = toolCalls.filter(
-            (toolCall) => toolsByName.get(toolCall.name)?.execution !== "durable",
+            (toolCall) =>
+                toolsByName.get(toolCall.name)?.execution !== "durable" &&
+                !isPermissionPrompt(preparedPermissions.get(toolCall.id)),
         );
         const durableCalls = toolCalls.filter(
-            (toolCall) => toolsByName.get(toolCall.name)?.execution === "durable",
+            (toolCall) =>
+                toolsByName.get(toolCall.name)?.execution === "durable" ||
+                isPermissionPrompt(preparedPermissions.get(toolCall.id)),
         );
 
         // Durable calls are an execution barrier. Finish and persist every immediate
@@ -906,6 +970,118 @@ function toProviderToolResultMessage(
     };
 }
 
+function isPermissionPrompt(prepared: PreparedToolPermission | undefined): boolean {
+    return prepared?.kind === "review" && prepared.review.decision === "ask";
+}
+
+async function resolvePermissionPrompt(
+    toolCall: ProviderToolCall,
+    prepared: PreparedToolPermission,
+    context: AgentContext,
+    options: {
+        batchId: string;
+        signal?: AbortSignal;
+        toolCallIndex: number;
+    },
+): Promise<PreparedToolPermission> {
+    if (!isPermissionPrompt(prepared) || prepared.kind !== "review") return prepared;
+    const approved = await requestAutoPermissionApproval({
+        action: prepared.action,
+        batchId: options.batchId,
+        reason: prepared.review.reason,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        toolArguments: toolCall.arguments,
+        toolCallId: toolCall.id,
+        toolCallIndex: options.toolCallIndex,
+        toolName: toolCall.name,
+        userInput: context.userInput,
+    });
+    if (!approved) {
+        return {
+            kind: "error",
+            result: createErrorToolResultBlock(
+                toolCall,
+                `Auto mode did not approve ${prepared.action}. Reason: ${prepared.review.reason}`,
+            ),
+        };
+    }
+    return {
+        ...prepared,
+        review: { ...prepared.review, approvedByUser: true, decision: "allow" },
+    };
+}
+
+async function prepareToolPermission(
+    toolCall: ProviderToolCall,
+    toolsByName: ReadonlyMap<string, AnyDefinedTool>,
+    context: AgentContext,
+    options: {
+        messages: readonly Message[];
+        model: Model;
+        now: () => number;
+        onPermissionReview?: (review: {
+            action: string;
+            decision: "allow" | "ask";
+            reason: string;
+            risk: "low" | "medium" | "high";
+            userAuthorization: "low" | "medium" | "high";
+        }) => void | Promise<void>;
+        provider: Provider;
+        signal?: AbortSignal;
+    },
+): Promise<PreparedToolPermission> {
+    const tool = toolsByName.get(toolCall.name);
+    if (
+        tool === undefined ||
+        !Value.Check(tool.arguments, toolCall.arguments) ||
+        context.permissions?.mode !== "auto"
+    ) {
+        return { kind: "skip" };
+    }
+    try {
+        if (!(await tool.shouldReviewInAutoMode(toolCall.arguments as never, context))) {
+            return { kind: "skip" };
+        }
+        if (tool.describeAutoPermissionAction === undefined) {
+            return {
+                kind: "error",
+                result: createErrorToolResultBlock(
+                    toolCall,
+                    "This tool cannot request Auto approval because its permission action is not defined.",
+                ),
+            };
+        }
+        const action = tool.describeAutoPermissionAction(toolCall.arguments as never, context);
+        const review = await reviewAutoPermission({
+            action,
+            args: toolCall.arguments,
+            messages: options.messages,
+            model: options.model,
+            now: options.now,
+            provider: options.provider,
+            ...(options.signal === undefined ? {} : { signal: options.signal }),
+            toolName: tool.name,
+        });
+        await options.onPermissionReview?.({
+            action,
+            decision: review.decision,
+            reason: review.reason,
+            risk: review.risk,
+            userAuthorization: review.userAuthorization,
+        });
+        return { action, kind: "review", review };
+    } catch (error) {
+        const message = errorToMessage(error);
+        return {
+            kind: "error",
+            result: createErrorToolResultBlock(toolCall, `Tool '${tool.name}' failed: ${message}`, {
+                kind: "execution_failed",
+                message,
+            }),
+        };
+    }
+}
+
 async function executeToolCall(
     toolCall: ProviderToolCall,
     toolsByName: ReadonlyMap<string, AnyDefinedTool>,
@@ -926,6 +1102,7 @@ async function executeToolCall(
         }) => void | Promise<void>;
         onError?: (error: unknown) => void | Promise<void>;
         onRawResult?: (result: unknown) => void | Promise<void>;
+        preparedPermission: PreparedToolPermission;
         provider: Provider;
         signal?: AbortSignal;
         toolCallIndex: number;
@@ -933,7 +1110,7 @@ async function executeToolCall(
 ): Promise<ToolResultBlock> {
     const tool = toolsByName.get(toolCall.name);
     if (!tool) {
-        return errorToolResultBlock(
+        return createErrorToolResultBlock(
             toolCall,
             `Unknown tool '${toolCall.name}' requested by model`,
             { kind: "tool_unavailable" },
@@ -941,13 +1118,13 @@ async function executeToolCall(
     }
 
     if (!Value.Check(tool.arguments, toolCall.arguments)) {
-        return errorToolResultBlock(toolCall, `Invalid arguments for tool '${tool.name}'`, {
+        return createErrorToolResultBlock(toolCall, `Invalid arguments for tool '${tool.name}'`, {
             kind: "invalid_arguments",
         });
     }
 
     if (context.permissions === undefined) {
-        return errorToolResultBlock(
+        return createErrorToolResultBlock(
             toolCall,
             "This action requires an available permission context.",
         );
@@ -958,56 +1135,25 @@ async function executeToolCall(
         context.permissions.mode !== "auto" &&
         context.permissions.mode !== "full_access"
     ) {
-        return errorToolResultBlock(
+        return createErrorToolResultBlock(
             toolCall,
             "This action requires Auto or Full access because it can operate outside Rig's local sandbox.",
         );
     }
 
     try {
+        if (options.preparedPermission.kind === "error") {
+            return options.preparedPermission.result;
+        }
         let runWithFullAccess = false;
-        if (
-            context.permissions?.mode === "auto" &&
-            (await tool.shouldReviewInAutoMode(toolCall.arguments as never, context))
-        ) {
-            if (tool.describeAutoPermissionAction === undefined) {
-                return errorToolResultBlock(
-                    toolCall,
-                    "This tool cannot request Auto approval because its permission action is not defined.",
-                );
-            }
-            const action = tool.describeAutoPermissionAction(toolCall.arguments as never, context);
-            const review = await reviewAutoPermission({
-                action,
-                args: toolCall.arguments,
-                messages: options.messages,
-                model: options.model,
-                now: options.now,
-                provider: options.provider,
-                ...(options.signal === undefined ? {} : { signal: options.signal }),
-                toolName: tool.name,
-            });
-            await options.onPermissionReview?.({
-                action,
-                decision: review.decision,
-                reason: review.reason,
-                risk: review.risk,
-                userAuthorization: review.userAuthorization,
-            });
+        if (options.preparedPermission.kind === "review") {
+            const { review } = options.preparedPermission;
             if (review.decision === "ask") {
-                const approved = await requestAutoPermissionApproval({
-                    action,
-                    reason: review.reason,
-                    ...(options.signal === undefined ? {} : { signal: options.signal }),
-                    toolCallId: toolCall.id,
-                    userInput: context.userInput,
-                });
-                if (!approved) {
-                    return errorToolResultBlock(
-                        toolCall,
-                        `Auto mode did not approve ${action}. Reason: ${review.reason}`,
-                    );
-                }
+                return createErrorToolResultBlock(
+                    toolCall,
+                    `Tool '${tool.name}' could not resolve its Auto approval before execution.`,
+                    { kind: "execution_failed" },
+                );
             }
             runWithFullAccess = await tool.shouldRunInFullAccessInAutoMode(
                 toolCall.arguments as never,
@@ -1028,15 +1174,6 @@ async function executeToolCall(
                 toolCallIndex?: number;
             },
         ) => Promise<unknown> | unknown;
-        const isError = tool.isError as ((result: unknown) => boolean) | undefined;
-        const toLLM = tool.toLLM as (result: unknown) => readonly ContentBlock[];
-        const toPresentation = tool.toPresentation as
-            | ((result: unknown, args: unknown) => ToolResultBlock["presentation"])
-            | undefined;
-        const toTrustedUserEvidence = tool.toTrustedUserEvidence as
-            | ((result: unknown, args: unknown) => readonly ContentBlock[])
-            | undefined;
-        const toUI = tool.toUI as (result: unknown, args: unknown) => string;
         const executionOptions: {
             messages?: readonly Message[];
             onProgress?: (display: string) => void;
@@ -1057,58 +1194,26 @@ async function executeToolCall(
         if (options.onStatus !== undefined) executionOptions.onStatus = options.onStatus;
         if (options.signal !== undefined) executionOptions.signal = options.signal;
         const run = () => execute(toolCall.arguments, context, executionOptions);
+        if (
+            options.preparedPermission.kind === "review" &&
+            options.preparedPermission.review.approvedByUser
+        ) {
+            context.userInput?.markExecuting?.(`${toolCall.id}:permission`);
+        }
         const result =
             runWithFullAccess && context.permissions !== undefined
                 ? await context.permissions.runWithMode("full_access", run)
                 : await run();
         await options.onRawResult?.(result);
-        const resultIsError = isError?.(result);
-        const presentation =
-            resultIsError === true ? undefined : toPresentation?.(result, toolCall.arguments);
-        const trustedUserEvidence =
-            resultIsError === true
-                ? undefined
-                : toTrustedUserEvidence?.(result, toolCall.arguments);
-
-        return {
-            type: "tool_result",
-            toolCallId: toolCall.id,
-            toolName: tool.name,
-            rendered: toLLM(result),
-            display: toUI(result, toolCall.arguments),
-            ...(resultIsError === undefined ? {} : { isError: resultIsError }),
-            ...(presentation === undefined ? {} : { presentation }),
-            ...(trustedUserEvidence === undefined ? {} : { trustedUserEvidence }),
-        };
+        return createToolResultBlock(tool, toolCall.arguments, result, toolCall.id);
     } catch (error) {
         await options.onError?.(error);
         const message = errorToMessage(error);
-        return errorToolResultBlock(toolCall, `Tool '${tool.name}' failed: ${message}`, {
+        return createErrorToolResultBlock(toolCall, `Tool '${tool.name}' failed: ${message}`, {
             kind: "execution_failed",
             message,
         });
     }
-}
-
-function errorToolResultBlock(
-    toolCall: ProviderToolCall,
-    message: string,
-    failure?: ToolResultFailure,
-): ToolResultBlock {
-    return {
-        type: "tool_result",
-        toolCallId: toolCall.id,
-        toolName: toolCall.name,
-        rendered: [
-            {
-                type: "text",
-                text: message,
-            },
-        ],
-        display: message,
-        isError: true,
-        ...(failure === undefined ? {} : { failure }),
-    };
 }
 
 function interruptedToolResultBlock(
@@ -1116,7 +1221,7 @@ function interruptedToolResultBlock(
     toolsByName: ReadonlyMap<string, AnyDefinedTool>,
 ): ToolResultBlock {
     const message = toolsByName.get(toolCall.name)?.interruptionMessage ?? "Interrupted by user.";
-    return errorToolResultBlock(toolCall, message, { kind: "interrupted" });
+    return createErrorToolResultBlock(toolCall, message, { kind: "interrupted" });
 }
 
 function isProviderToolCall(content: ProviderAssistantContent): content is ProviderToolCall {
