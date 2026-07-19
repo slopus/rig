@@ -99,6 +99,11 @@ This file tracks known defects, verified coverage gaps, and concrete follow-up w
     - Shutdown can close the database while `PersistentSessionStore.saveSession()` is still running, producing `database is not open`.
     - Track and drain run cleanup, title/recap generation, workflows, and subagent notifications before closing SQLite; reject new mutations once shutdown begins.
 
+- [ ] Handle local daemon replacement without crashing stale TUI clients.
+    - When another Rig process restarts the daemon and rotates its token, an existing client's SSE reconnect receives HTTP 401 and the unhandled watcher rejection terminates Node with a raw stack trace.
+    - Stop affected watchers and exit cleanly with a human-readable message that the local daemon restarted and Rig must reconnect; do not present this as a provider authentication failure.
+    - Add a real Gym regression that replaces the daemon beneath an active TUI and verifies the session remains resumable without a raw exception.
+
 - [x] Fix transcript-preserving resize behavior while reading scrollback.
     - Resize notifications settle for 75 ms, then one full redraw clears Rig-owned scrollback and rebuilds from canonical transcript entries at the final size.
     - The TUI defers input and activity renders during the resize quiet period instead of replaying intermediate dimensions.
