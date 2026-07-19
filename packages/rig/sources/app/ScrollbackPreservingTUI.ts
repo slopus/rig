@@ -21,6 +21,8 @@ interface TuiRenderState {
     previousLines: string[];
     previousViewportTop: number;
     previousWidth: number;
+    renderRequested: boolean;
+    renderTimer: NodeJS.Timeout | undefined;
 }
 
 interface ResizeLiveTailComponent {
@@ -65,6 +67,10 @@ export class ScrollbackPreservingTUI extends TUI {
         if (this.terminal instanceof ScrollbackPreservingTerminal && this.terminal.resizePending) {
             if (!this.#resizePending) {
                 this.#resizePending = true;
+                const state = this as unknown as TuiRenderState;
+                if (state.renderTimer !== undefined) clearTimeout(state.renderTimer);
+                state.renderTimer = undefined;
+                state.renderRequested = false;
                 for (const child of this.children) {
                     if (isTerminalResizeComponent(child)) child.beginTerminalResize();
                 }
@@ -93,20 +99,23 @@ export class ScrollbackPreservingTUI extends TUI {
 
     #shouldProbeCursor(): boolean {
         const state = this as unknown as TuiRenderState;
+        const widthChanged = state.previousWidth !== this.terminal.columns;
+        const heightChanged = state.previousHeight !== this.terminal.rows;
         return (
             this.#cursorProbeSupport !== "unsupported" &&
             state.previousLines.length > 0 &&
-            state.previousWidth === this.terminal.columns &&
-            state.previousHeight !== this.terminal.rows
+            widthChanged !== heightChanged
         );
     }
 
-    // Emulators disagree about what a vertical resize does to the rows already on screen:
-    // some keep every row in place and add blank rows at the bottom, while others pull
-    // history back out of scrollback and keep content anchored to the bottom. The cursor
-    // rides along with the content, so asking the terminal where the cursor actually is
-    // reveals how far our rows moved without assuming either behavior.
+    // Emulators disagree about what a resize does to the rows already on screen. Vertical
+    // growth may pull history back into view, while width reflow may move hard-positioned
+    // live-tail rows independently of the stable transcript. The cursor rides along with
+    // the painted content, so its actual row reveals how far those rows moved.
     #beginCursorProbe(): void {
+        const state = this as unknown as TuiRenderState;
+        const widthChanged = state.previousWidth !== this.terminal.columns;
+        const timeoutMs = widthChanged && !this.#resizePending ? 0 : CURSOR_REPORT_TIMEOUT_MS;
         const generation = (this.#cursorProbeGeneration += 1);
         this.#activeCursorProbeGeneration = generation;
         this.#issuedCursorProbeGenerations.push(generation);
@@ -121,7 +130,7 @@ export class ScrollbackPreservingTUI extends TUI {
                 this.#cursorProbeSupport = "unsupported";
             }
             this.#completeRender(false);
-        }, CURSOR_REPORT_TIMEOUT_MS);
+        }, timeoutMs);
     }
 
     #abortCursorProbe(): void {
@@ -207,13 +216,25 @@ export class ScrollbackPreservingTUI extends TUI {
             lines = [...padding, ...lines];
         }
         const finalRow = Math.max(0, lines.length - 1);
+        const expectedCursorRow = clamp(
+            state.hardwareCursorRow - state.previousViewportTop,
+            0,
+            Math.max(0, state.previousHeight - 1),
+        );
+        const measuredRowShift =
+            measuredCursorRow === undefined ? 0 : measuredCursorRow - expectedCursorRow;
+        const liveTailShrankAtSameHeight =
+            state.previousHeight === height && previousLiveTailLineCount > liveTailLineCount;
+        const liveTailRowShift =
+            widthChanged && !liveTailShrankAtSameHeight ? 0 : measuredRowShift;
         let viewportTop: number;
         let output = "\x1b[?2026h";
         if (widthChanged) {
             // History has reflowed at the new width, so stable rows cannot be repainted
             // without duplicating scrollback; adopt the terminal's reflow and redraw only
             // the live tail unless the entire source still fits a never-scrolled screen.
-            viewportTop = Math.max(0, lines.length - height);
+            const bottomViewportTop = Math.max(0, lines.length - height);
+            viewportTop = bottomViewportTop;
             if (lines.length <= height && state.previousViewportTop === 0) {
                 for (let row = 0; row < height; row += 1) {
                     output += `\x1b[${row + 1};1H\x1b[2K${lines[row] ?? ""}`;
@@ -221,21 +242,38 @@ export class ScrollbackPreservingTUI extends TUI {
             } else {
                 const previousLiveTailStart = Math.max(
                     0,
-                    state.previousHeight - previousLiveTailLineCount,
+                    state.previousHeight - previousLiveTailLineCount + liveTailRowShift,
                 );
-                const liveTailStart = height - liveTailLineCount;
-                const repaintRows = new Set<number>();
-                for (
-                    let row = previousLiveTailStart;
-                    row < Math.min(state.previousHeight, height);
-                    row += 1
-                ) {
-                    repaintRows.add(row);
+                const liveTailStart = lines.length - liveTailLineCount - viewportTop;
+                const repaintLines = new Map<number, string>();
+                const revealedStableStart = Math.min(
+                    previousLiveTailStart,
+                    Math.max(0, state.previousHeight - previousLiveTailLineCount),
+                );
+                const reanchorShrunkenTail =
+                    measuredCursorRow !== undefined &&
+                    this.#resizePending &&
+                    liveTailShrankAtSameHeight &&
+                    revealedStableStart < liveTailStart;
+                if (reanchorShrunkenTail) {
+                    for (let row = 0; row < height; row += 1) {
+                        repaintLines.set(row, lines[viewportTop + row] ?? "");
+                    }
+                } else {
+                    for (
+                        let row = previousLiveTailStart;
+                        row < Math.min(state.previousHeight, height);
+                        row += 1
+                    ) {
+                        repaintLines.set(row, "");
+                    }
+                    for (let row = liveTailStart; row < height; row += 1) {
+                        repaintLines.set(row, liveTailLines[row - liveTailStart] ?? "");
+                    }
                 }
-                for (let row = liveTailStart; row < height; row += 1) repaintRows.add(row);
-                for (const row of [...repaintRows].sort((left, right) => left - right)) {
-                    const line =
-                        row < liveTailStart ? "" : (liveTailLines[row - liveTailStart] ?? "");
+                for (const [row, line] of [...repaintLines].sort(
+                    ([left], [right]) => left - right,
+                )) {
                     output += `\x1b[${row + 1};1H\x1b[2K${line}`;
                 }
             }
@@ -243,14 +281,7 @@ export class ScrollbackPreservingTUI extends TUI {
             // Pure vertical resize. The cursor probe tells us how far the emulator moved
             // the rows we previously painted, so the transcript stays exactly where the
             // emulator put it and only the live tail is repainted at its true position.
-            const expectedCursorRow = clamp(
-                state.hardwareCursorRow - state.previousViewportTop,
-                0,
-                Math.max(0, state.previousHeight - 1),
-            );
-            const shift =
-                measuredCursorRow === undefined ? 0 : measuredCursorRow - expectedCursorRow;
-            const alignedViewportTop = state.previousViewportTop - shift;
+            const alignedViewportTop = state.previousViewportTop - measuredRowShift;
             viewportTop = clamp(
                 alignedViewportTop,
                 Math.max(0, lines.length - height),

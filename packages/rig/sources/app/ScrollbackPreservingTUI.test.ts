@@ -92,6 +92,46 @@ describe("ScrollbackPreservingTUI", () => {
         tui.stop();
     });
 
+    it("clears a previously painted tail from its measured row after width reflow moves it", async () => {
+        const terminal = new ProbeAnsweringTerminal(20, 8);
+        const tui = new ScrollbackPreservingTUI(terminal, false);
+        let liveTailLineCount = 4;
+        const component = {
+            invalidate: () => {},
+            render: () => [
+                "history 1",
+                "history 2",
+                "history 3",
+                "history 4",
+                "history 5",
+                "history 6",
+                "history 7",
+                "history 8",
+                ...(liveTailLineCount === 4
+                    ? ["old input", "old status", "old footer", "old spacer"]
+                    : ["new input"]),
+            ],
+            resizeLiveTailLineCount: () => liveTailLineCount,
+        };
+        tui.addChild(component);
+        tui.start();
+        await renderCycle();
+        terminal.output.length = 0;
+
+        liveTailLineCount = 1;
+        terminal.columns = 30;
+        terminal.cursorReportRow = 5;
+        tui.requestRender();
+        await renderCycle();
+
+        const output = terminal.output.join("");
+        expect(output).toContain("\x1b[6n");
+        expect(output).not.toContain("\x1b[2;1H\x1b[2K");
+        expect(output).toContain("\x1b[3;1H\x1b[2K");
+        expect(output).toContain("\x1b[8;1H\x1b[2Knew input");
+        tui.stop();
+    });
+
     it("keeps a widened short frame bottom-aligned for the next incremental render", async () => {
         const terminal = new RecordingTerminal(10, 6);
         const tui = new ScrollbackPreservingTUI(terminal, false);

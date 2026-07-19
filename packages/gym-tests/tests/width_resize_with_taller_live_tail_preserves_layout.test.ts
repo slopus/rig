@@ -3,8 +3,7 @@ import { describe, expect, it } from "vitest";
 import { captureScrollback, createGym, type Gym } from "@slopus/rig-gym";
 
 describe("width resize with a changing live-tail height", () => {
-    // Real-emulator regression: the shorter-tail resize duplicates active-work and queued rows.
-    it.fails("preserves history and queued rows when the popup grows and shrinks the painted tail", async () => {
+    it("preserves history and queued rows when the popup grows and shrinks the painted tail", async () => {
         const releaseInference = deferred<void>();
         const queuedPrompt = "QUEUE_AFTER_WIDTH_RESIZE";
         const history = [

@@ -105,6 +105,18 @@ describe("GhosttyTerminal cell styles", () => {
         expect(responses).toEqual(["\x1b[?62;22c"]);
     });
 
+    it("returns cursor-position reports to the PTY", async () => {
+        const terminal = await GhosttyTerminal.create(20, 4);
+        running.add(terminal);
+        const responses: string[] = [];
+        terminal.onPtyWrite((data) => responses.push(data));
+
+        terminal.write("\x1b[3;4H\x1b[6n");
+        await terminal.snapshot();
+
+        expect(responses).toEqual(["\x1b[3;4R"]);
+    });
+
     it("preserves UTF-8 code points split across output chunks", async () => {
         const terminal = await GhosttyTerminal.create(20, 4);
         running.add(terminal);

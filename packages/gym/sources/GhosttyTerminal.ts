@@ -16,6 +16,7 @@ export class GhosttyTerminal {
     #outputHandlers = new Set<(data: string) => void>();
     #outputDecoder = new TextDecoder();
     #outputRevision = 0;
+    #ptyWriteHandlers = new Set<(data: string) => void>();
     #rows: number;
     readonly #terminal: WasmGhosttyTerminal;
     #topArrivalCount = 0;
@@ -55,7 +56,14 @@ export class GhosttyTerminal {
     }
 
     onPtyWrite(handler: (data: string) => void): () => void {
-        return this.#terminal.onPtyWrite((data) => handler(Buffer.from(data).toString("utf8")));
+        this.#ptyWriteHandlers.add(handler);
+        const removeNativeHandler = this.#terminal.onPtyWrite((data) =>
+            handler(Buffer.from(data).toString("utf8")),
+        );
+        return () => {
+            this.#ptyWriteHandlers.delete(handler);
+            removeNativeHandler();
+        };
     }
 
     onOutput(handler: (data: string) => void): () => void {
@@ -103,6 +111,11 @@ export class GhosttyTerminal {
         this.#outputRevision += 1;
         const text = this.#outputDecoder.decode(data, { stream: true });
         for (const handler of this.#outputHandlers) handler(text);
+        if (text.includes("\x1b[6n")) {
+            const cursor = this.#terminal.snapshot().cursor;
+            const response = `\x1b[${(cursor?.y ?? 0) + 1};${(cursor?.x ?? 0) + 1}R`;
+            for (const handler of this.#ptyWriteHandlers) handler(response);
+        }
     }
 
     #assertActive(): void {
