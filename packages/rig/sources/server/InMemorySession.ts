@@ -3213,6 +3213,13 @@ export class InMemorySession {
         const agentManager = this.#agentManager;
         if (agentManager !== undefined) {
             options.subagents = {
+                availableModels: this.#modelCatalog.providers.flatMap((provider) =>
+                    provider.models.map((model) => ({
+                        id: model.id,
+                        name: model.name,
+                        providerId: provider.providerId,
+                    })),
+                ),
                 canSpawn: this.#agentMetadata.depth < agentManager.maxDepth,
                 depth: this.#agentMetadata.depth,
                 followUp: (target, message) => agentManager.followUp(this.id, target, message),

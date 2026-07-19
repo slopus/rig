@@ -69,6 +69,7 @@ export type { TaskContext } from "./context/TaskContext.js";
 export type { WorkflowContext } from "../workflows/index.js";
 export type { SessionSecretContext } from "../secrets/index.js";
 export type {
+    AvailableSubagentModel,
     ManagedSubagent,
     SpawnSubagentRequest,
     SpawnSubagentResult,

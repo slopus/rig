@@ -1,4 +1,5 @@
 import type { AgentContext } from "./context/AgentContext.js";
+import { createAvailableModelsInstructions } from "./createAvailableModelsInstructions.js";
 import { createPermissionInstructions } from "./createPermissionInstructions.js";
 import { loadAgentsMdInstructions } from "./loadAgentsMdInstructions.js";
 import { selectSystemPromptForModel } from "./selectSystemPromptForModel.js";
@@ -58,6 +59,15 @@ export async function createSystemPrompt(
     );
     if (skillInstructions !== undefined) {
         parts.push(skillInstructions);
+    }
+
+    if (options.context.subagents?.canSpawn === true) {
+        const availableModelsInstructions = createAvailableModelsInstructions(
+            options.context.subagents.availableModels ?? [],
+        );
+        if (availableModelsInstructions !== undefined) {
+            parts.push(availableModelsInstructions);
+        }
     }
 
     if (options.context.permissions !== undefined) {

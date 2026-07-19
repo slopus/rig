@@ -3,6 +3,12 @@ import type { Message } from "../types.js";
 export type SubagentRunStatus = "aborted" | "completed" | "error" | "running" | "suspended";
 export type SubagentContextMode = "parent" | "task";
 
+export interface AvailableSubagentModel {
+    id: string;
+    name: string;
+    providerId: string;
+}
+
 export interface ManagedSubagent {
     description: string;
     path: string;
@@ -38,6 +44,7 @@ export interface WaitForSubagentResult {
 }
 
 export interface SubagentContext {
+    availableModels?: readonly AvailableSubagentModel[];
     canSpawn: boolean;
     depth: number;
     followUp(target: string, message: string): ManagedSubagent;

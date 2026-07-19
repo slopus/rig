@@ -260,6 +260,66 @@ describe("createSystemPrompt", () => {
         expect(prompt?.endsWith("Final API instructions.")).toBe(true);
     });
 
+    it("lists the models available for subagents and explains bare model requests", async () => {
+        const cwd = await makeTempDir();
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const context = contextFor(cwd);
+        context.subagents = {
+            availableModels: [
+                {
+                    id: "anthropic/sonnet-test",
+                    name: "Sonnet Test",
+                    providerId: "claude",
+                },
+                {
+                    id: "anthropic/opus-test",
+                    name: "Opus Test",
+                    providerId: "bedrock",
+                },
+                { id: model.id, name: model.name, providerId: "codex" },
+            ],
+            canSpawn: true,
+            depth: 0,
+            followUp: () => {
+                throw new Error("not used");
+            },
+            interrupt: () => {
+                throw new Error("not used");
+            },
+            list: () => [],
+            maxDepth: 3,
+            resume: () => {
+                throw new Error("not used");
+            },
+            spawn: async () => {
+                throw new Error("not used");
+            },
+            wait: async () => ({ agents: [], timedOut: false }),
+        };
+
+        const prompt = await createSystemPrompt({
+            provider: providerFor("codex", model),
+            model,
+            instructions: "Base instructions.",
+            messages: [],
+            context,
+        });
+
+        expect(prompt).toContain("# Available models");
+        expect(prompt).toContain("- claude: Sonnet Test (`anthropic/sonnet-test`)");
+        expect(prompt).toContain("- bedrock: Opus Test (`anthropic/opus-test`)");
+        expect(prompt).toContain("- codex: GPT Test (`openai/gpt-test`)");
+        expect(prompt).toContain("bare model or family name");
+        expect(prompt).toContain("usually means they want you to run that model");
+        expect(prompt).toContain("spawn a subagent");
+        expect(prompt).toContain("without asking for confirmation");
+    });
+
     it("adds the active shell tool's provider-specific Auto escalation instructions", async () => {
         const cwd = await makeTempDir();
         const model = defineModel({
