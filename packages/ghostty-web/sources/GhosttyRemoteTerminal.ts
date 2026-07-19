@@ -74,6 +74,8 @@ export class GhosttyRemoteTerminalServerDriver {
     readonly #maxBufferedBytes: number;
     #operation = Promise.resolve();
     #queuedOutputBytes = 0;
+    #resizeSettled = Promise.resolve();
+    #resolveResizeSettled: (() => void) | undefined;
     readonly #protocol: RemoteTerminalProtocolServer;
     readonly #terminal: GhosttyTerminalLike;
     readonly #unsubscribePtyWrite: (() => void) | undefined;
@@ -132,6 +134,9 @@ export class GhosttyRemoteTerminalServerDriver {
         if (this.#waitingForResize)
             throw new Error("A canonical terminal resize is already pending.");
         this.#waitingForResize = true;
+        this.#resizeSettled = new Promise((resolve) => {
+            this.#resolveResizeSettled = resolve;
+        });
         await this.#operation;
     }
 
@@ -166,13 +171,14 @@ export class GhosttyRemoteTerminalServerDriver {
                     held.reject(failure);
                 }
             }
+            this.#resolveResizeSettled?.();
+            this.#resolveResizeSettled = undefined;
         }
     }
 
     async publishExit(exitCode: number | null): Promise<void> {
-        if (this.#waitingForResize)
-            throw new Error("Cannot exit while a terminal resize is pending.");
         this.#exiting = true;
+        await this.#resizeSettled;
         await this.#operation;
         this.#protocol.publishExit(exitCode);
     }

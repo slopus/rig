@@ -275,7 +275,7 @@ export class RemoteTerminalProtocolServer {
     }
 
     requestResize(
-        requester: ServerConnection,
+        requester: ServerConnection | undefined,
         requestSequence: number,
         cols: number,
         rows: number,
@@ -309,6 +309,10 @@ export class RemoteTerminalProtocolServer {
         });
         this.#resizeOperation = operation.catch(() => undefined);
         return operation;
+    }
+
+    resize(cols: number, rows: number): Promise<void> {
+        return this.requestResize(undefined, 0, cols, rows);
     }
 
     scrollback(

@@ -1,4 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
+import type { Duplex } from "node:stream";
+
+import {
+    RemoteTerminalProtocolClient,
+    type RemoteTerminalReconnectState,
+} from "@slopus/ghostty-web";
 
 import type {
     AbortRunOptions,
@@ -59,12 +66,12 @@ import type {
     CreateRemoteTerminalResponse,
     ListRemoteTerminalsResponse,
     RemoteTerminalResponse,
-    RemoteTerminalScrollbackResponse,
     ResizeRemoteTerminalRequest,
-    WatchRemoteTerminalOptions,
 } from "../terminal/index.js";
-import { parseRemoteTerminalSseEvent } from "./parseRemoteTerminalSseEvent.js";
 import type { ExternalToolCall } from "../external-tools/index.js";
+import { connectRemoteTerminalWebSocket } from "./connectRemoteTerminalWebSocket.js";
+import { RemoteTerminalAttachment } from "./RemoteTerminalAttachment.js";
+import { RemoteTerminalClientReplica } from "./RemoteTerminalClientReplica.js";
 
 export interface ProtocolHttpClientOptions {
     socketPath: string;
@@ -82,6 +89,13 @@ export interface WatchGlobalEventsOptions {
     after?: number;
     signal?: AbortSignal;
     onEvent: (entry: GlobalEventQueueEntry) => void | Promise<void>;
+}
+
+export interface AttachRemoteTerminalOptions {
+    clientId?: string;
+    creditBytes?: number;
+    reconnectState?: RemoteTerminalReconnectState;
+    replica?: RemoteTerminalClientReplica;
 }
 
 export class ProtocolHttpClient {
@@ -258,23 +272,58 @@ export class ProtocolHttpClient {
         );
     }
 
-    getRemoteTerminal(sessionId: string, terminalId: string): Promise<RemoteTerminalResponse> {
-        return this.#requestJson("GET", this.#remoteTerminalPath(sessionId, terminalId));
-    }
-
-    getRemoteTerminalScrollback(
+    async attachRemoteTerminal(
         sessionId: string,
         terminalId: string,
-        options: { limit?: number; start?: number } = {},
-    ): Promise<RemoteTerminalScrollbackResponse> {
-        const parameters = new URLSearchParams();
-        if (options.start !== undefined) parameters.set("start", String(options.start));
-        if (options.limit !== undefined) parameters.set("limit", String(options.limit));
-        const query = parameters.size === 0 ? "" : `?${parameters.toString()}`;
-        return this.#requestJson(
-            "GET",
-            `${this.#remoteTerminalPath(sessionId, terminalId)}/scrollback${query}`,
+        options: AttachRemoteTerminalOptions = {},
+    ): Promise<RemoteTerminalAttachment> {
+        const replica = options.replica ?? (await RemoteTerminalClientReplica.create());
+        let stream: Duplex;
+        try {
+            stream = await connectRemoteTerminalWebSocket({
+                path: `${this.#remoteTerminalPath(sessionId, terminalId)}/attach`,
+                socketPath: this.socketPath,
+                token: this.token,
+            });
+        } catch (error) {
+            if (options.replica === undefined) replica.close();
+            throw error;
+        }
+        const reconnect = options.reconnectState;
+        const clientId = options.clientId ?? randomUUID();
+        const attachment = new RemoteTerminalAttachment(
+            clientId,
+            replica,
+            (onExit) =>
+                new RemoteTerminalProtocolClient({
+                    clientId,
+                    ...(options.creditBytes === undefined
+                        ? {}
+                        : { creditBytes: options.creditBytes }),
+                    ...(reconnect?.epoch === undefined ? {} : { epoch: reconnect.epoch }),
+                    ...(reconnect?.inputLease === undefined
+                        ? {}
+                        : { inputLease: reconnect.inputLease }),
+                    ...(reconnect === undefined
+                        ? {}
+                        : {
+                              pendingInputs: reconnect.pendingInputs,
+                              resumeInputSequence: reconnect.resumeInputSequence,
+                              resumeOutputOffset: reconnect.resumeOutputOffset,
+                          }),
+                    onExit,
+                    replica,
+                    stream,
+                }),
         );
+        try {
+            await attachment.protocol.ready;
+            return attachment;
+        } catch (error) {
+            attachment.close();
+            if (options.replica === undefined) replica.close();
+            throw error;
+        }
     }
 
     listRemoteTerminals(sessionId: string): Promise<ListRemoteTerminalsResponse> {
@@ -291,18 +340,6 @@ export class ProtocolHttpClient {
 
     stopRemoteTerminal(sessionId: string, terminalId: string): Promise<RemoteTerminalResponse> {
         return this.#requestJson("DELETE", this.#remoteTerminalPath(sessionId, terminalId));
-    }
-
-    writeRemoteTerminal(
-        sessionId: string,
-        terminalId: string,
-        data: string,
-    ): Promise<{ accepted: true }> {
-        return this.#requestJson(
-            "POST",
-            `${this.#remoteTerminalPath(sessionId, terminalId)}/input`,
-            { data },
-        );
     }
 
     updateSession(
@@ -501,37 +538,6 @@ export class ProtocolHttpClient {
         }
     }
 
-    async watchRemoteTerminal(
-        sessionId: string,
-        terminalId: string,
-        options: WatchRemoteTerminalOptions,
-    ): Promise<void> {
-        let after = options.after;
-        let exited = false;
-        while (!exited && options.signal?.aborted !== true) {
-            try {
-                after = await this.#watchRemoteTerminalOnce(sessionId, terminalId, after, {
-                    ...options,
-                    onFrame: async (frame) => {
-                        await options.onFrame(frame);
-                        after = frame.revision;
-                        exited = frame.status === "exited";
-                    },
-                });
-            } catch (error) {
-                if (options.signal?.aborted) return;
-                if (
-                    error instanceof EventStreamHttpError &&
-                    error.statusCode >= 400 &&
-                    error.statusCode < 500
-                ) {
-                    throw error;
-                }
-                await delay(50, options.signal);
-            }
-        }
-    }
-
     async #requestJson<T>(method: string, path: string, body?: unknown): Promise<T> {
         const payload = body === undefined ? undefined : JSON.stringify(body);
         const headers: Record<string, string | number> = {
@@ -649,83 +655,6 @@ export class ProtocolHttpClient {
                 request.destroy();
             };
             options.signal?.addEventListener("abort", abort, { once: true });
-            request.on("error", settle);
-            request.end();
-        });
-    }
-
-    #watchRemoteTerminalOnce(
-        sessionId: string,
-        terminalId: string,
-        after: number | undefined,
-        options: WatchRemoteTerminalOptions,
-    ): Promise<number | undefined> {
-        return new Promise((resolve, reject) => {
-            let application = Promise.resolve();
-            let cursor = after;
-            let removeAbort: () => void = () => undefined;
-            let settled = false;
-            const settle = (error?: unknown) => {
-                if (settled) return;
-                settled = true;
-                removeAbort();
-                void application.then(
-                    () => (error === undefined ? resolve(cursor) : reject(error)),
-                    reject,
-                );
-            };
-            const query = after === undefined ? "" : `?after=${encodeURIComponent(after)}`;
-            const request = httpRequest(
-                {
-                    headers: {
-                        accept: "text/event-stream",
-                        authorization: `Bearer ${this.token}`,
-                    },
-                    method: "GET",
-                    path: `${this.#remoteTerminalPath(sessionId, terminalId)}/stream${query}`,
-                    socketPath: this.socketPath,
-                },
-                (response) => {
-                    if ((response.statusCode ?? 500) >= 400) {
-                        settle(new EventStreamHttpError(response.statusCode ?? 500));
-                        response.resume();
-                        return;
-                    }
-                    let buffer = "";
-                    response.setEncoding("utf8");
-                    response.on("data", (chunk: string) => {
-                        if (settled) return;
-                        buffer += chunk;
-                        for (;;) {
-                            const boundary = buffer.indexOf("\n\n");
-                            if (boundary < 0) break;
-                            const rawEvent = buffer.slice(0, boundary);
-                            buffer = buffer.slice(boundary + 2);
-                            const frame = parseRemoteTerminalSseEvent(rawEvent);
-                            if (frame === undefined) continue;
-                            application = application.then(async () => {
-                                await options.onFrame(frame);
-                                cursor = frame.revision;
-                            });
-                            void application.catch((error: unknown) => {
-                                response.destroy();
-                                settle(error);
-                            });
-                        }
-                    });
-                    response.on("end", () => settle());
-                    response.on("error", settle);
-                },
-            );
-            const abort = () => {
-                request.destroy();
-                settle();
-            };
-            if (options.signal?.aborted) abort();
-            else {
-                options.signal?.addEventListener("abort", abort, { once: true });
-                removeAbort = () => options.signal?.removeEventListener("abort", abort);
-            }
             request.on("error", settle);
             request.end();
         });

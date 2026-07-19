@@ -52,8 +52,10 @@ export interface RemoteTerminalScrollbackPage {
     count: number;
     historyEpoch: string;
     historyRevision: number;
+    palette?: readonly string[];
     rows: readonly RemoteTerminalGridRow[];
     start: number;
+    styles?: readonly Readonly<Record<string, unknown>>[];
     totalRows: number;
 }
 

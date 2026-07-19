@@ -8,10 +8,12 @@ export {
 export { stopLocalProtocolServer } from "./stopLocalProtocolServer.js";
 export {
     ProtocolHttpClient,
+    type AttachRemoteTerminalOptions,
     type ProtocolHttpClientOptions,
     type WatchGlobalEventsOptions,
     type WatchSessionEventsOptions,
 } from "./ProtocolHttpClient.js";
-export type { WatchRemoteTerminalOptions } from "../terminal/index.js";
+export { RemoteTerminalAttachment } from "./RemoteTerminalAttachment.js";
+export { RemoteTerminalClientReplica } from "./RemoteTerminalClientReplica.js";
 export { RemoteAgent, type RemoteAgentOptions } from "./RemoteAgent.js";
 export { RemoteAgentRunError } from "./RemoteAgentRunError.js";

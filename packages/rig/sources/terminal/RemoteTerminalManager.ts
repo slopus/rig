@@ -52,7 +52,7 @@ export class RemoteTerminalManager {
         );
         if (this.#terminals.size >= MAX_TERMINALS) {
             const exited = [...this.#terminals.values()].find(
-                (terminal) => terminal.frame().status === "exited",
+                (terminal) => terminal.summary().status === "exited",
             );
             if (exited === undefined)
                 throw new Error("This session already has too many terminals.");

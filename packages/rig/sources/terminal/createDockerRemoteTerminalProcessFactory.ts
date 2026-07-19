@@ -71,8 +71,14 @@ export function createDockerRemoteTerminalProcessFactory(
                         if (dataListener === listener) dataListener = undefined;
                     };
                 },
+                pause() {
+                    stream.pause();
+                },
                 async resize(cols, rows) {
                     await exec.resize({ h: rows, w: cols });
+                },
+                resume() {
+                    stream.resume();
                 },
                 wait: () => exit,
                 write(data) {

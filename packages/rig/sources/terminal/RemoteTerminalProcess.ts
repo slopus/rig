@@ -5,7 +5,9 @@ export interface RemoteTerminalProcessExit {
 export interface RemoteTerminalProcess {
     kill(): void | Promise<void>;
     onData(listener: (data: Uint8Array) => void): () => void;
+    pause(): void;
     resize(cols: number, rows: number): void | Promise<void>;
+    resume(): void;
     wait(): Promise<RemoteTerminalProcessExit>;
     write(data: string | Uint8Array): boolean | Promise<boolean>;
 }

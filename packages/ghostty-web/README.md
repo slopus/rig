@@ -37,8 +37,8 @@ The important ordering rules are part of the wire contract:
   covers the exit barrier. Attaching after exit produces the same final display and exit event.
 - Output, grid, input, and resize acknowledgements are monotonic and bounded by state the server
   actually sent. Input deduplication uses bounded, single-attachment leases.
-- Scrollback pages carry a history epoch, revision, and absolute base row so a client can detect an
-  evicted or shifting paging basis.
+- Scrollback pages carry a history epoch, revision, absolute base row, and optional palette/style
+  tables so a client can render cells and detect an evicted or shifting paging basis.
 - Replay, per-client VT backlog, canonical parsing, resize-held output, inflated frames, and packet
   batches all have explicit byte or item caps. Output is split into fixed server-sized chunks,
   encoded once for fanout, and clients must advertise at least one chunk of credit, so hostile tiny

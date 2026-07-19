@@ -1,52 +1,52 @@
 import { randomUUID } from "node:crypto";
+import type { Duplex } from "node:stream";
 
-import { GhosttyState } from "./GhosttyState.js";
+import {
+    createGhosttyRemoteTerminalServer,
+    ghosttySnapshotToGrid,
+    type GhosttyRemoteTerminalServerDriver,
+    type RemoteTerminalProtocolMetrics,
+    type RemoteTerminalProtocolServer,
+    type RemoteTerminalScrollbackPage,
+} from "@slopus/ghostty-web";
+
+import { GhosttyWebTerminal } from "./GhosttyWebTerminal.js";
 import type {
     RemoteTerminalProcess,
     RemoteTerminalProcessFactory,
     RemoteTerminalProcessOptions,
 } from "./RemoteTerminalProcess.js";
-import type { RemoteTerminalFrame, RemoteTerminalViewport } from "./types.js";
-
-const RETAINED_REVISIONS = 256;
-const OUTPUT_COALESCE_MS = 16;
+import type { RemoteTerminalSummary } from "./types.js";
 
 export class RemoteTerminal {
     readonly id = randomUUID();
 
-    #current: RemoteTerminalFrame | undefined;
+    readonly #driver: GhosttyRemoteTerminalServerDriver;
     #exitCode: number | null = null;
-    #operation = Promise.resolve();
-    #output: Uint8Array[] = [];
-    #outputTimer: ReturnType<typeof setTimeout> | undefined;
-    #process: RemoteTerminalProcess;
-    #revision = 0;
-    #state: GhosttyState;
+    readonly #exited: Promise<void>;
+    readonly #process: RemoteTerminalProcess;
+    readonly #protocol: RemoteTerminalProtocolServer;
     #status: "exited" | "running" = "running";
-    #subscribers = new Set<(frame: RemoteTerminalFrame) => void>();
-    #unsubscribeData: () => void;
-    #unsubscribePtyWrite: () => void;
+    readonly #state: GhosttyWebTerminal;
+    readonly #unsubscribeData: () => void;
 
-    private constructor(state: GhosttyState, process: RemoteTerminalProcess) {
+    private constructor(
+        state: GhosttyWebTerminal,
+        process: RemoteTerminalProcess,
+        created: ReturnType<typeof createGhosttyRemoteTerminalServer>,
+    ) {
         this.#state = state;
         this.#process = process;
-        this.#operation = this.#operation.then(() => this.#capture(false)).then(() => undefined);
-        this.#unsubscribeData = process.onData((data) => this.#queueOutput(data));
-        this.#unsubscribePtyWrite = state.onPtyWrite((data) => {
-            void process.write(data);
+        this.#driver = created.driver;
+        this.#protocol = created.protocol;
+        this.#unsubscribeData = process.onData((data) => {
+            void this.#driver.publishOutput(data).catch(() => process.kill());
         });
-        void process.wait().then(({ exitCode }) => {
-            void this.#enqueue(async () => {
-                if (this.#outputTimer !== undefined) clearTimeout(this.#outputTimer);
-                this.#outputTimer = undefined;
-                await this.#flushOutput();
-                this.#status = "exited";
-                this.#exitCode = exitCode;
-                this.#revision += 1;
-                await this.#capture(true);
-                this.#unsubscribeData();
-                this.#unsubscribePtyWrite();
-            });
+        this.#exited = process.wait().then(async ({ exitCode }) => {
+            this.#exitCode = exitCode;
+            this.#status = "exited";
+            this.#unsubscribeData();
+            await this.#driver.publishExit(exitCode).catch(() => undefined);
         });
     }
 
@@ -57,118 +57,109 @@ export class RemoteTerminal {
         processOptions: RemoteTerminalProcessOptions;
         rows: number;
     }): Promise<RemoteTerminal> {
-        const state = await GhosttyState.create(options);
+        const state = await GhosttyWebTerminal.create(options);
+        let process: RemoteTerminalProcess | undefined;
         try {
-            const process = await options.processFactory.start(options.processOptions);
-            const terminal = new RemoteTerminal(state, process);
-            await terminal.#operation;
+            process = await options.processFactory.start(options.processOptions);
+            const historyEpoch = randomUUID();
+            const created = createGhosttyRemoteTerminalServer(state, {
+                initialCols: options.cols,
+                initialRows: options.rows,
+                onFlowControl(paused) {
+                    if (paused) process?.pause();
+                    else process?.resume();
+                },
+                async onInput(data) {
+                    if (!(await process?.write(data))) throw new Error("The terminal has exited.");
+                },
+                onResize(cols, rows) {
+                    return process?.resize(cols, rows);
+                },
+                onScrollback(start, count, basis) {
+                    return createScrollbackPage(state, historyEpoch, start, count, basis);
+                },
+                async onTerminalResponse(data) {
+                    await process?.write(data);
+                },
+            });
+            created.protocol.publishGrid({
+                ...ghosttySnapshotToGrid(state.snapshot(), options.cols),
+                coversOutputOffset: 0,
+            });
+            const terminal = new RemoteTerminal(state, process, created);
             return terminal;
         } catch (error) {
+            await process?.kill();
             state.close();
             throw error;
         }
     }
 
+    attach(stream: Duplex): () => void {
+        return this.#protocol.attach(stream);
+    }
+
     async dispose(): Promise<void> {
         await this.stop();
+        this.#driver.close();
         this.#state.close();
     }
 
-    async stop(): Promise<RemoteTerminalFrame> {
-        if (this.#status === "running") await this.#process.kill();
-        await this.#process.wait();
-        await this.#operation;
-        return this.frame();
+    metrics(): Readonly<RemoteTerminalProtocolMetrics> {
+        return this.#protocol.metrics;
     }
 
-    frame(): RemoteTerminalFrame {
-        if (this.#current === undefined) throw new Error("The terminal is still starting.");
-        return this.#current;
-    }
-
-    framesSince(after: number | undefined): readonly RemoteTerminalFrame[] | undefined {
-        if (after === undefined) return [this.frame()];
-        if (!Number.isSafeInteger(after) || after < 0) return undefined;
-        if (after === this.#revision) return [];
-        if (after < Math.max(0, this.#revision - RETAINED_REVISIONS) || after > this.#revision) {
-            return undefined;
-        }
-        return [this.frame()];
-    }
-
-    async resize(cols: number, rows: number): Promise<RemoteTerminalFrame> {
+    async resize(cols: number, rows: number): Promise<RemoteTerminalSummary> {
         validateSize(cols, rows);
-        return this.#enqueue(async () => {
-            if (this.#status !== "running") throw new Error("The terminal has exited.");
-            await this.#flushOutput();
-            await this.#process.resize(cols, rows);
-            this.#state.resize(cols, rows);
-            this.#revision += 1;
-            return this.#capture(true);
-        });
+        await this.#protocol.resize(cols, rows);
+        return this.summary();
     }
 
-    async scrollback(startRow: number, rowCount: number): Promise<RemoteTerminalViewport> {
-        return this.#enqueue(async () => {
-            await this.#flushOutput();
-            const viewport = await this.#state.snapshot(startRow, rowCount);
-            return { ...withoutRequestId(viewport), revision: this.#revision };
-        });
+    async stop(): Promise<RemoteTerminalSummary> {
+        if (this.#status === "running") await this.#process.kill();
+        await this.#exited;
+        return this.summary();
     }
 
-    subscribe(listener: (frame: RemoteTerminalFrame) => void): () => void {
-        this.#subscribers.add(listener);
-        return () => this.#subscribers.delete(listener);
+    summary(): RemoteTerminalSummary {
+        const dimensions = this.#protocol.dimensions();
+        return {
+            ...dimensions,
+            epoch: this.#protocol.epoch,
+            exitCode: this.#exitCode,
+            id: this.id,
+            status: this.#status,
+        };
     }
+}
 
-    async write(data: string): Promise<boolean> {
-        if (this.#status !== "running") return false;
-        return this.#process.write(data);
+function createScrollbackPage(
+    state: GhosttyWebTerminal,
+    historyEpoch: string,
+    start: number,
+    count: number,
+    basis?: { historyEpoch: string; historyRevision: number },
+): RemoteTerminalScrollbackPage {
+    const historyRevision = state.historyRevision();
+    if (
+        basis !== undefined &&
+        (basis.historyEpoch !== historyEpoch || basis.historyRevision !== historyRevision)
+    ) {
+        throw new Error("The terminal scrollback basis is stale.");
     }
-
-    #capture(publish: boolean): Promise<RemoteTerminalFrame> {
-        return this.#state.snapshot().then((viewport) => {
-            const frame: RemoteTerminalFrame = {
-                ...withoutRequestId(viewport),
-                exitCode: this.#exitCode,
-                id: this.id,
-                revision: this.#revision,
-                status: this.#status,
-            };
-            this.#current = frame;
-            if (publish) {
-                for (const subscriber of this.#subscribers) subscriber(frame);
-            }
-            return frame;
-        });
-    }
-
-    #enqueue<T>(operation: () => T | Promise<T>): Promise<T> {
-        const result = this.#operation.then(operation);
-        this.#operation = result.then(
-            () => undefined,
-            () => undefined,
-        );
-        return result;
-    }
-
-    async #flushOutput(): Promise<void> {
-        const output = this.#output;
-        if (output.length === 0) return;
-        this.#output = [];
-        this.#state.write(Buffer.concat(output.map((chunk) => Buffer.from(chunk))));
-        this.#revision += 1;
-        await this.#capture(true);
-    }
-
-    #queueOutput(data: Uint8Array): void {
-        this.#output.push(data);
-        if (this.#outputTimer !== undefined) return;
-        this.#outputTimer = setTimeout(() => {
-            this.#outputTimer = undefined;
-            void this.#enqueue(() => this.#flushOutput());
-        }, OUTPUT_COALESCE_MS);
-    }
+    const snapshot = state.snapshotPage(start, count);
+    const grid = ghosttySnapshotToGrid(snapshot);
+    return {
+        baseRow: 0,
+        count,
+        historyEpoch,
+        historyRevision,
+        palette: grid.palette,
+        rows: grid.rows,
+        start,
+        styles: grid.styles,
+        totalRows: snapshot.scroll.totalRows,
+    };
 }
 
 function validateSize(cols: number, rows: number): void {
@@ -178,9 +169,4 @@ function validateSize(cols: number, rows: number): void {
     if (!Number.isSafeInteger(rows) || rows < 1 || rows > 200) {
         throw new Error("The terminal row count must be between 1 and 200.");
     }
-}
-
-function withoutRequestId<T extends { requestId: number }>(value: T): Omit<T, "requestId"> {
-    const { requestId: _requestId, ...rest } = value;
-    return rest;
 }

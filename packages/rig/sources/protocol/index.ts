@@ -5,20 +5,10 @@ export type {
     CreateRemoteTerminalRequest,
     CreateRemoteTerminalResponse,
     ListRemoteTerminalsResponse,
-    RemoteTerminalCell,
-    RemoteTerminalColor,
-    RemoteTerminalCursor,
-    RemoteTerminalFrame,
     RemoteTerminalResponse,
-    RemoteTerminalRow,
-    RemoteTerminalScrollbackResponse,
     RemoteTerminalStatus,
-    RemoteTerminalStyle,
-    RemoteTerminalUnderline,
-    RemoteTerminalViewport,
+    RemoteTerminalSummary,
     ResizeRemoteTerminalRequest,
-    WatchRemoteTerminalOptions,
-    WriteRemoteTerminalRequest,
 } from "../terminal/index.js";
 export type { GoalStatus, SessionGoal } from "../goals/index.js";
 export type { DurableSkillDefinition } from "../external-skills/index.js";

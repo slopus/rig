@@ -194,6 +194,10 @@ export class RemoteTerminalProtocolClient {
     }
 
     async #receive(packet: WirePacket): Promise<void> {
+        if (packet.type === WirePacketType.Error) {
+            const value = decodeJsonPayload<{ error: string }>(packet.payload);
+            throw new Error(value.error);
+        }
         if (packet.type === WirePacketType.Welcome) {
             if (this.#readySettled) throw new Error("Duplicate server welcome.");
             const welcome = decodeJsonPayload<Welcome>(packet.payload);
@@ -332,10 +336,6 @@ export class RemoteTerminalProtocolClient {
                 throw new Error("Exit grid barrier mismatch.");
             this.#options.onExit?.(value.exitCode);
             return;
-        }
-        if (packet.type === WirePacketType.Error) {
-            const value = decodeJsonPayload<{ error: string }>(packet.payload);
-            throw new Error(value.error);
         }
         throw new Error("Packet is invalid in the current client state.");
     }

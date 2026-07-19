@@ -78,12 +78,10 @@ import type {
     CreateRemoteTerminalResponse,
     ListRemoteTerminalsResponse,
     RemoteTerminalResponse,
-    RemoteTerminalScrollbackResponse,
     ResizeRemoteTerminalRequest,
-    WriteRemoteTerminalRequest,
 } from "../terminal/index.js";
-import { streamRemoteTerminalFrames } from "./streamRemoteTerminalFrames.js";
 import { isAuthorizedProtocolRequest } from "./isAuthorizedProtocolRequest.js";
+import { attachRemoteTerminalWebSocketServer } from "./attachRemoteTerminalWebSocketServer.js";
 
 export interface ProtocolHttpServerOptions {
     defaultDocker?: DockerExecutionConfig;
@@ -119,6 +117,8 @@ export function createProtocolHttpServer(
         globalEventQueue: options.globalEventQueue,
         onDurableGlobalEventQueueChange: options.onDurableGlobalEventQueueChange,
     };
+
+    attachRemoteTerminalWebSocketServer({ server, store, token: options.token });
 
     server.on("request", (request, response) => {
         const mutating = isMutatingProtocolRequest(request);
@@ -506,7 +506,7 @@ async function handleRequest(
     if (route.name === "terminals") {
         if (request.method === "GET") {
             sendJson<ListRemoteTerminalsResponse>(response, 200, {
-                terminals: session.remoteTerminals().map((terminal) => terminal.frame()),
+                terminals: session.remoteTerminals().map((terminal) => terminal.summary()),
             });
             return;
         }
@@ -519,7 +519,7 @@ async function handleRequest(
             try {
                 const terminal = await session.createRemoteTerminal(body);
                 sendJson<CreateRemoteTerminalResponse>(response, 201, {
-                    terminal: terminal.frame(),
+                    terminal: terminal.summary(),
                 });
             } catch (error) {
                 sendJson(response, 400, {
@@ -538,10 +538,6 @@ async function handleRequest(
             sendJson(response, 404, { error: "Terminal not found" });
             return;
         }
-        if (request.method === "GET" && route.name === "terminal") {
-            sendJson<RemoteTerminalResponse>(response, 200, { terminal: terminal.frame() });
-            return;
-        }
         if (request.method === "DELETE" && route.name === "terminal") {
             sendJson<RemoteTerminalResponse>(response, 200, { terminal: await terminal.stop() });
             return;
@@ -557,38 +553,6 @@ async function handleRequest(
                     error: error instanceof Error ? error.message : String(error),
                 });
             }
-            return;
-        }
-        if (request.method === "POST" && route.name === "terminal-input") {
-            const body = await readJson<WriteRemoteTerminalRequest>(request);
-            if (typeof body.data !== "string") {
-                sendJson(response, 400, { error: "Terminal input must be text." });
-                return;
-            }
-            const written = await terminal.write(body.data);
-            if (!written) {
-                sendJson(response, 409, { error: "The terminal has exited." });
-                return;
-            }
-            sendJson(response, 202, { accepted: true });
-            return;
-        }
-        if (request.method === "GET" && route.name === "terminal-scrollback") {
-            const startRow = parseBoundedWholeNumber(url.searchParams.get("start"), 0, 0, 100_000);
-            const rowCount = parseBoundedWholeNumber(url.searchParams.get("limit"), 200, 1, 500);
-            if (startRow === undefined || rowCount === undefined) {
-                sendJson(response, 400, {
-                    error: "Terminal scrollback start and limit must be whole numbers in range.",
-                });
-                return;
-            }
-            sendJson<RemoteTerminalScrollbackResponse>(response, 200, {
-                viewport: await terminal.scrollback(startRow, rowCount),
-            });
-            return;
-        }
-        if (request.method === "GET" && route.name === "terminal-stream") {
-            streamRemoteTerminalFrames(request, response, terminal, url.searchParams.get("after"));
             return;
         }
         sendJson(response, 405, { error: "Method not allowed" });
@@ -1084,7 +1048,7 @@ function matchRoute(pathname: string):
           sessionId: string;
       }
     | {
-          name: "terminal" | "terminal-input" | "terminal-scrollback" | "terminal-stream";
+          name: "terminal";
           sessionId: string;
           terminalId: string;
       }
@@ -1123,24 +1087,6 @@ function matchRoute(pathname: string):
     if (parts.length === 4 && parts[2] === "terminals" && parts[3] !== undefined) {
         return {
             name: "terminal",
-            sessionId,
-            terminalId: decodeURIComponent(parts[3]),
-        };
-    }
-    if (
-        parts.length === 5 &&
-        parts[2] === "terminals" &&
-        parts[3] !== undefined &&
-        ["input", "scrollback", "stream"].includes(parts[4] ?? "")
-    ) {
-        const suffix = parts[4];
-        return {
-            name:
-                suffix === "input"
-                    ? "terminal-input"
-                    : suffix === "scrollback"
-                      ? "terminal-scrollback"
-                      : "terminal-stream",
             sessionId,
             terminalId: decodeURIComponent(parts[3]),
         };
@@ -1224,7 +1170,6 @@ function isSessionMutation(routeName: string, method: string | undefined): boole
                 "rewind",
                 "secrets",
                 "steer",
-                "terminal-input",
                 "terminals",
             ].includes(routeName)) ||
         (method === "POST" && routeName === "workflow-stop") ||
@@ -1251,20 +1196,6 @@ function isMutatingProtocolRequest(request: IncomingMessage): boolean {
     if (route.name === "sessions") return request.method === "POST";
     if (route.sessionId === undefined) return false;
     return isSessionMutation(route.name, request.method);
-}
-
-function parseBoundedWholeNumber(
-    value: string | null,
-    fallback: number,
-    minimum: number,
-    maximum: number,
-): number | undefined {
-    if (value === null) return fallback;
-    if (!/^\d+$/.test(value)) return undefined;
-    const parsed = Number(value);
-    return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum
-        ? parsed
-        : undefined;
 }
 
 async function readJson<T>(request: IncomingMessage, maximumBytes?: number): Promise<T> {

@@ -46,8 +46,14 @@ export function createNodeRemoteTerminalProcessFactory(
                         if (dataListener === listener) dataListener = undefined;
                     };
                 },
+                pause() {
+                    pty.pause();
+                },
                 resize(cols, rows) {
                     pty.resize(cols, rows);
+                },
+                resume() {
+                    pty.resume();
                 },
                 wait: () => exit,
                 write(data) {

@@ -10,7 +10,7 @@ afterEach(async () => {
 });
 
 describe("remote terminal API", () => {
-    it("streams a real PTY as Ghostty frames and retains scrollback", async () => {
+    it("replays a real PTY through the hybrid WebSocket protocol and pages scrollback", async () => {
         const gym = await createGym({
             mode: "docker",
             files: { "remote-terminal-client.mjs": REMOTE_TERMINAL_CLIENT },
@@ -23,15 +23,16 @@ describe("remote terminal API", () => {
         const result = JSON.parse(stdout) as {
             finalStatus: string;
             greenStyled: boolean;
-            revisions: number[];
+            mode: string;
+            outputOffset: number;
             text: string;
             totalRows: number;
         };
 
         expect(result.finalStatus).toBe("exited");
         expect(result.greenStyled).toBe(true);
-        expect(result.revisions.length).toBeGreaterThan(0);
-        expect(result.revisions).toEqual([...result.revisions].sort((left, right) => left - right));
+        expect(result.mode).toBe("vt");
+        expect(result.outputOffset).toBeGreaterThan(0);
         expect(result.text).toContain("reply:hello");
         expect(result.text).toContain("history-4");
         expect(result.totalRows).toBeGreaterThan(3);
@@ -41,6 +42,14 @@ describe("remote terminal API", () => {
 const REMOTE_TERMINAL_CLIENT = String.raw`
 import { readFile } from "node:fs/promises";
 import { request } from "node:http";
+import { createGhosttyTerminal } from "/app/packages/rig/node_modules/@slopus/ghostty-wasm/dist/node.js";
+import {
+    GhosttyRemoteTerminalReplica,
+    RemoteTerminalProtocolClient,
+} from "/app/packages/rig/node_modules/@slopus/ghostty-web/dist/index.js";
+import WebSocket from "/app/packages/rig/node_modules/ws/wrapper.mjs";
+import { WebSocketDuplex } from "/app/packages/rig/dist/terminal/WebSocketDuplex.js";
+import { createNodeBinaryWebSocket } from "/app/packages/rig/dist/terminal/createNodeBinaryWebSocket.js";
 
 const directory = "/tmp/rig-" + process.getuid();
 const socketPath = directory + "/server.sock";
@@ -79,43 +88,14 @@ function requestJson(method, path, body) {
     });
 }
 
-function waitForExit(sessionId, terminalId, after, revisions) {
+function openWebSocket(path) {
     return new Promise((resolve, reject) => {
-        const req = request({
-            socketPath,
-            method: "GET",
-            path: "/sessions/" + encodeURIComponent(sessionId) + "/terminals/" +
-                encodeURIComponent(terminalId) + "/stream?after=" + after,
-            headers: {
-                authorization: "Bearer " + token,
-                accept: "text/event-stream",
-            },
-        }, (response) => {
-            if ((response.statusCode ?? 500) >= 400) {
-                reject(new Error("Stream failed with HTTP " + response.statusCode));
-                response.resume();
-                return;
-            }
-            let buffer = "";
-            response.setEncoding("utf8");
-            response.on("data", (chunk) => {
-                buffer += chunk;
-                for (;;) {
-                    const boundary = buffer.indexOf("\n\n");
-                    if (boundary < 0) break;
-                    const raw = buffer.slice(0, boundary);
-                    buffer = buffer.slice(boundary + 2);
-                    const data = raw.split("\n").find((line) => line.startsWith("data: "));
-                    if (data === undefined) continue;
-                    const frame = JSON.parse(data.slice(6));
-                    revisions.push(frame.revision);
-                    if (frame.status === "exited") resolve(frame);
-                }
-            });
-            response.on("error", reject);
+        const webSocket = new WebSocket("ws+unix://" + socketPath + ":" + path, {
+            headers: { authorization: "Bearer " + token },
+            perMessageDeflate: false,
         });
-        req.on("error", reject);
-        req.end();
+        webSocket.once("error", reject);
+        webSocket.once("open", () => resolve(webSocket));
     });
 }
 
@@ -131,25 +111,48 @@ function rowText(row) {
 
 const sessions = await requestJson("GET", "/sessions");
 const sessionId = sessions.sessions[0].id;
-const created = await requestJson("POST", "/sessions/" + encodeURIComponent(sessionId) + "/terminals", {
+const terminalPath = "/sessions/" + encodeURIComponent(sessionId) + "/terminals";
+const created = await requestJson("POST", terminalPath, {
     cols: 30,
     rows: 3,
     command: "printf '\\033[32mhistory-1\\033[0m\\nhistory-2\\nhistory-3\\nhistory-4\\n'; IFS= read -r value; printf 'reply:%s\\n' \"$value\"",
 });
-const revisions = [];
-const exited = waitForExit(sessionId, created.terminal.id, created.terminal.revision, revisions);
-await requestJson("POST", "/sessions/" + encodeURIComponent(sessionId) + "/terminals/" +
-    encodeURIComponent(created.terminal.id) + "/input", { data: "hello\n" });
-const finalFrame = await exited;
-const history = await requestJson("GET", "/sessions/" + encodeURIComponent(sessionId) +
-    "/terminals/" + encodeURIComponent(created.terminal.id) + "/scrollback?start=0&limit=20");
-const cells = history.viewport.rows.flatMap((row) => row.cells);
-process.stdout.write(JSON.stringify({
-    finalStatus: finalFrame.status,
-    greenStyled: cells.some((cell) => cell.text === "h" && cell.style.foreground?.kind === "palette" &&
-        cell.style.foreground.index === 2),
-    revisions,
-    text: history.viewport.rows.map(rowText).join("\n"),
-    totalRows: history.viewport.totalRows,
+const attachPath = terminalPath + "/" + encodeURIComponent(created.terminal.id) + "/attach";
+const terminal = await createGhosttyTerminal({ cols: 30, rows: 3, maxScrollback: 10_000 });
+const vtReplica = new GhosttyRemoteTerminalReplica({
+    resize: (cols, rows) => terminal.resize(cols, rows),
+    snapshot() { throw new Error("not used"); },
+    writeBytes: (data) => terminal.write(data),
+});
+const webSocket = await openWebSocket(attachPath);
+const stream = new WebSocketDuplex(createNodeBinaryWebSocket(webSocket));
+let resolveExit;
+const exited = new Promise((resolve) => { resolveExit = resolve; });
+const protocol = new RemoteTerminalProtocolClient({
+    capabilities: { grid: false, vt: true },
+    clientId: "gym-client",
+    onExit: resolveExit,
+    replica: vtReplica,
+    stream,
+});
+await protocol.ready;
+protocol.writeInput("hello\n");
+await exited;
+const page = await protocol.requestScrollback(0, 20);
+const status = await requestJson("GET", terminalPath);
+const styles = page.styles ?? protocol.grid?.styles ?? [];
+const greenStyled = page.rows.some((row) => row.cells.some((cell) => {
+    const foreground = styles[cell.styleId]?.foreground;
+    return cell.text === "h" && foreground?.kind === "palette" && foreground.index === 2;
 }));
+process.stdout.write(JSON.stringify({
+    finalStatus: status.terminals.find((item) => item.id === created.terminal.id)?.status,
+    greenStyled,
+    mode: protocol.mode,
+    outputOffset: protocol.appliedOutputOffset,
+    text: page.rows.map(rowText).join("\n"),
+    totalRows: page.totalRows,
+}));
+protocol.close();
+terminal.dispose();
 `;

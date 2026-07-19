@@ -1,126 +1,174 @@
+import { Duplex, PassThrough } from "node:stream";
+
+import { RemoteTerminalProtocolClient } from "@slopus/ghostty-web";
 import { describe, expect, it, vi } from "vitest";
 
 import type { RemoteTerminalProcess } from "./RemoteTerminalProcess.js";
 import { RemoteTerminal } from "./RemoteTerminal.js";
-import type { RemoteTerminalRow } from "./types.js";
 
 describe("RemoteTerminal", () => {
-    it("tracks a bounded visible frame and pages through Ghostty scrollback", async () => {
+    it("publishes each PTY write immediately, encodes it once for concurrent viewers, and routes input through leases", async () => {
         const process = new FakeTerminalProcess();
         const terminal = await RemoteTerminal.create({
-            cols: 8,
+            cols: 20,
             maxScrollback: 100,
-            processFactory: { start: async () => process },
-            processOptions: { cols: 8, cwd: "/tmp", rows: 2 },
-            rows: 2,
+            processFactory: { start: () => Promise.resolve(process) },
+            processOptions: { cols: 20, cwd: globalThis.process.cwd(), rows: 4 },
+            rows: 4,
         });
+        const firstOutput: Buffer[] = [];
+        const secondOutput: Buffer[] = [];
+        const first = attachClient(terminal, "first", firstOutput);
+        const second = attachClient(terminal, "second", secondOutput);
+        const timeout = vi.spyOn(globalThis, "setTimeout");
+        try {
+            await Promise.all([first.ready, second.ready]);
+            const encodedBefore = terminal.metrics().encodedPackets;
 
-        expect(terminal.frame()).toMatchObject({ revision: 0, status: "running", totalRows: 2 });
-        process.emit("one\r\ntwo\r\nthree\r\nfour");
-        await vi.waitFor(() => expect(terminal.frame().revision).toBe(1));
+            process.emit("instant");
+            await vi.waitFor(() => {
+                expect(Buffer.concat(firstOutput).toString()).toBe("instant");
+                expect(Buffer.concat(secondOutput).toString()).toBe("instant");
+            });
 
-        expect(terminal.frame().rows.map(rowText)).toEqual(["three", "four"]);
-        const scrollback = await terminal.scrollback(0, 20);
-        expect(scrollback.rows.map(rowText)).toEqual(["one", "two", "three", "four"]);
-        expect(scrollback).toMatchObject({ revision: 1, startRow: 0, totalRows: 4 });
+            expect(timeout.mock.calls.some((call) => call[1] === 16)).toBe(false);
+            expect(terminal.metrics().encodedPackets - encodedBefore).toBe(1);
+            first.writeInput("leased-input");
+            await vi.waitFor(() => expect(process.writes.map(String)).toContain("leased-input"));
 
-        const resized = await terminal.resize(12, 3);
-        expect(resized).toMatchObject({ cols: 12, revision: 2 });
-        expect(process.resizes).toEqual([{ cols: 12, rows: 3 }]);
-        expect(terminal.framesSince(0)?.map((frame) => frame.revision)).toEqual([2]);
+            process.exit(7);
+            await vi.waitFor(() =>
+                expect(terminal.summary()).toMatchObject({ exitCode: 7, status: "exited" }),
+            );
+        } finally {
+            first.close();
+            second.close();
+            timeout.mockRestore();
+            await terminal.dispose();
+        }
+    });
 
-        process.finish(7);
-        await vi.waitFor(() => expect(terminal.frame().status).toBe("exited"));
-        expect(terminal.frame()).toMatchObject({ exitCode: 7, revision: 3, status: "exited" });
-        expect(terminal.framesSince(2)?.map((frame) => frame.revision)).toEqual([3]);
-        await terminal.dispose();
-    }, 60_000);
-
-    it("coalesces output while preserving styled cells and monotonic frames", async () => {
+    it("publishes durable exit after an in-flight resize barrier settles", async () => {
         const process = new FakeTerminalProcess();
+        process.blockResize();
         const terminal = await RemoteTerminal.create({
-            cols: 10,
-            maxScrollback: 10,
-            processFactory: { start: async () => process },
-            processOptions: { cols: 10, cwd: "/tmp", rows: 2 },
-            rows: 2,
+            cols: 20,
+            maxScrollback: 100,
+            processFactory: { start: () => Promise.resolve(process) },
+            processOptions: { cols: 20, cwd: globalThis.process.cwd(), rows: 4 },
+            rows: 4,
         });
-        const revisions: number[] = [];
-        terminal.subscribe((frame) => revisions.push(frame.revision));
-
-        process.emit("\x1b[1;31mred");
-        await new Promise((resolve) => setTimeout(resolve, 1));
-        process.emit(" text\x1b[0m");
-        await vi.waitFor(() => expect(terminal.frame().revision).toBeGreaterThan(0));
-        await new Promise((resolve) => setTimeout(resolve, 10));
-
-        const red = terminal
-            .frame()
-            .rows.flatMap((row) => row.cells)
-            .find((cell) => cell.text === "r");
-        expect(red?.style).toMatchObject({
-            bold: true,
-            foreground: { index: 1, kind: "palette" },
+        const exits: (number | null)[] = [];
+        const client = attachClient(terminal, "resize-exit", [], (exitCode) => {
+            exits.push(exitCode);
         });
-        expect(revisions).toEqual([...revisions].sort((left, right) => left - right));
-        expect(revisions).toEqual([1]);
-        await terminal.dispose();
-    }, 60_000);
+        try {
+            await client.ready;
+
+            const resize = client.resize(30, 6);
+            await vi.waitFor(() => expect(process.resizeStarted).toBe(true));
+            process.exit(0);
+            await Promise.resolve();
+            expect(exits).toEqual([]);
+
+            process.releaseResize();
+            await resize;
+            await vi.waitFor(() => expect(exits).toEqual([0]));
+            expect(terminal.summary()).toMatchObject({ exitCode: 0, status: "exited" });
+        } finally {
+            process.releaseResize();
+            client.close();
+            await terminal.dispose();
+        }
+    });
 });
 
-class FakeTerminalProcess implements RemoteTerminalProcess {
-    readonly resizes: { cols: number; rows: number }[] = [];
-    readonly writes: Uint8Array[] = [];
-    #data = new Set<(data: Uint8Array) => void>();
-    #exit: Promise<{ exitCode: number | null }>;
-    #resolveExit!: (exit: { exitCode: number | null }) => void;
-    #finished = false;
+function attachClient(
+    terminal: RemoteTerminal,
+    clientId: string,
+    output: Buffer[],
+    onExit?: (exitCode: number | null) => void,
+): RemoteTerminalProtocolClient {
+    const [serverStream, clientStream] = duplexPair();
+    terminal.attach(serverStream);
+    return new RemoteTerminalProtocolClient({
+        capabilities: { grid: false, vt: true },
+        clientId,
+        ...(onExit === undefined ? {} : { onExit }),
+        replica: {
+            applyGrid() {},
+            applyVt(data) {
+                output.push(Buffer.from(data));
+            },
+            resize() {},
+        },
+        stream: clientStream,
+    });
+}
 
-    constructor() {
-        this.#exit = new Promise((resolve) => {
-            this.#resolveExit = resolve;
+function duplexPair(): [Duplex, Duplex] {
+    const firstToSecond = new PassThrough();
+    const secondToFirst = new PassThrough();
+    return [
+        Duplex.from({ readable: secondToFirst, writable: firstToSecond }),
+        Duplex.from({ readable: firstToSecond, writable: secondToFirst }),
+    ];
+}
+
+class FakeTerminalProcess implements RemoteTerminalProcess {
+    resizeStarted = false;
+    readonly writes: (string | Uint8Array)[] = [];
+    #dataListeners = new Set<(data: Uint8Array) => void>();
+    #exit!: (value: { exitCode: number | null }) => void;
+    readonly #exited = new Promise<{ exitCode: number | null }>((resolve) => {
+        this.#exit = resolve;
+    });
+    #releaseResize: (() => void) | undefined;
+    #resizeGate = Promise.resolve();
+
+    blockResize(): void {
+        this.#resizeGate = new Promise((resolve) => {
+            this.#releaseResize = resolve;
         });
     }
 
     emit(data: string): void {
-        for (const listener of this.#data) listener(Buffer.from(data));
+        for (const listener of this.#dataListeners) listener(Buffer.from(data));
     }
 
-    finish(exitCode: number | null): void {
-        if (this.#finished) return;
-        this.#finished = true;
-        this.#resolveExit({ exitCode });
+    exit(exitCode: number | null): void {
+        this.#exit({ exitCode });
     }
 
     kill(): void {
-        this.finish(null);
+        this.exit(143);
     }
 
     onData(listener: (data: Uint8Array) => void): () => void {
-        this.#data.add(listener);
-        return () => this.#data.delete(listener);
+        this.#dataListeners.add(listener);
+        return () => this.#dataListeners.delete(listener);
     }
 
-    resize(cols: number, rows: number): void {
-        this.resizes.push({ cols, rows });
+    pause(): void {}
+
+    releaseResize(): void {
+        this.#releaseResize?.();
+        this.#releaseResize = undefined;
     }
+
+    resize(): Promise<void> {
+        this.resizeStarted = true;
+        return this.#resizeGate;
+    }
+
+    resume(): void {}
 
     wait(): Promise<{ exitCode: number | null }> {
-        return this.#exit;
+        return this.#exited;
     }
 
     write(data: string | Uint8Array): boolean {
-        this.writes.push(Buffer.from(data));
+        this.writes.push(typeof data === "string" ? data : Buffer.from(data).toString("utf8"));
         return true;
     }
-}
-
-function rowText(row: RemoteTerminalRow): string {
-    const cells = Array.from({ length: 256 }, () => " ");
-    let width = 0;
-    for (const cell of row.cells) {
-        cells[cell.x] = cell.text;
-        width = Math.max(width, cell.x + cell.width);
-    }
-    return cells.slice(0, width).join("").trimEnd();
 }
