@@ -9,8 +9,8 @@ afterEach(async () => {
     running.clear();
 });
 
-describe("terminal resize reflows without losing history", () => {
-    it("preserves one copy of the transcript through narrow and wide layouts", async () => {
+describe("terminal resize rebuilds from source", () => {
+    it("redraws one complete copy of the transcript through narrow and wide layouts", async () => {
         const response = [
             "REFLOW_HISTORY_BEGIN",
             ...Array.from(
@@ -34,8 +34,6 @@ describe("terminal resize reflows without losing history", () => {
             rows: 20,
         });
         running.add(gym);
-        const startupScroll = (await gym.terminal.snapshot()).scroll;
-
         gym.terminal.type("Create a transcript that can be checked across resizes.");
         gym.terminal.press("enter");
         await gym.terminal.waitUntil(
@@ -47,12 +45,14 @@ describe("terminal resize reflows without losing history", () => {
             30_000,
         );
 
+        const resizeOutput: string[] = [];
+        const stopResizeOutput = gym.terminal.onOutput((data) => resizeOutput.push(data));
         gym.terminal.resize(44, 14);
         const narrow = await settleResize(gym, 44, 14, "narrow-settled");
+        stopResizeOutput();
+        expect(resizeOutput.join("")).toContain("\x1b[2J\x1b[H\x1b[3J");
         expect(narrow.scroll.totalRows).toBeGreaterThan(narrow.scroll.visibleRows);
         expect(narrow.scroll.offset + narrow.scroll.visibleRows).toBe(narrow.scroll.totalRows);
-        expect(narrow.scroll.bottomDepartureCount).toBe(startupScroll.bottomDepartureCount);
-        expect(narrow.scroll.topArrivalCount).toBe(startupScroll.topArrivalCount);
         expect(narrow.text).toContain("gym off · /workspace");
         expect(narrow.text).not.toContain("�");
         expect(narrow.cursor.x).toBeLessThan(44);
@@ -64,13 +64,10 @@ describe("terminal resize reflows without losing history", () => {
         expect(countOccurrences(narrowHistory, "REFLOW_HISTORY_END")).toBe(1);
         expect(narrowHistory).not.toContain("narrow-settled");
 
-        const beforeWideResize = (await gym.terminal.snapshot()).scroll;
         gym.terminal.resize(112, 28);
         const wide = await settleResize(gym, 112, 28, "wide-settled");
         expect(wide.scroll.totalRows).toBeGreaterThan(wide.scroll.visibleRows);
         expect(wide.scroll.offset + wide.scroll.visibleRows).toBe(wide.scroll.totalRows);
-        expect(wide.scroll.bottomDepartureCount).toBe(beforeWideResize.bottomDepartureCount);
-        expect(wide.scroll.topArrivalCount).toBe(beforeWideResize.topArrivalCount);
         expect(wide.text).toContain("gym off · /workspace");
         expect(wide.text).not.toContain("�");
         expect(wide.cursor.x).toBeLessThan(112);
@@ -82,7 +79,6 @@ describe("terminal resize reflows without losing history", () => {
         expect(countOccurrences(wideHistory, "REFLOW_HISTORY_END")).toBe(1);
         expect(wideHistory).not.toContain("wide-settled");
 
-        const beforeFollowUp = (await gym.terminal.snapshot()).scroll;
         gym.terminal.type("Confirm input still works after both resizes.");
         gym.terminal.press("enter");
         const followUp = await gym.terminal.waitUntil(
@@ -98,8 +94,6 @@ describe("terminal resize reflows without losing history", () => {
         expect(followUp.scroll.offset + followUp.scroll.visibleRows).toBe(
             followUp.scroll.totalRows,
         );
-        expect(followUp.scroll.bottomDepartureCount).toBe(beforeFollowUp.bottomDepartureCount);
-        expect(followUp.scroll.topArrivalCount).toBe(beforeFollowUp.topArrivalCount);
         expect(followUp.text).toContain("gym off · /workspace");
         expect(followUp.text).not.toContain("�");
         expect(followUp.cursor.x).toBeLessThan(112);

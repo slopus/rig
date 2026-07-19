@@ -94,7 +94,9 @@ All strings displayed to users must be human-readable English. Prefer natural, h
 
 ## Terminal layout stability
 
-Treat the visible transcript as append-only. Once a timeline row has rendered, do not remove it, replace it, or mutate it after later stable content appears. Ephemeral background-terminal polling belongs only in the live tail and must not create waiting or waited history rows. Keep actual terminal input and terminal completion as durable history.
+Treat the logical transcript as append-only. Once a timeline row has rendered, do not remove it, replace it, or mutate it after later stable content appears. Ephemeral background-terminal polling belongs only in the live tail and must not create waiting or waited history rows. Keep actual terminal input and terminal completion as durable history.
+
+Use Pi TUI's authoritative full-frame redraw behavior for terminal resizes. Clearing and rebuilding native terminal scrollback from the logical transcript during a resize is acceptable. Do not maintain a parallel partial-resize renderer, infer emulator reflow, or reach into Pi TUI's private render state.
 
 Keep above-composer live UI compact and predictable, with at most one truncated summary row per active-work category. Live components may grow downward, but shrinking or completing work must not pull transcript content downward or make the composer jump upward. Pair the removal of a final live status row with its corresponding history event in the same render so the occupied height moves into history instead of collapsing.
 

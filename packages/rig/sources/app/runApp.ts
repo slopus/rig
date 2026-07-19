@@ -1,5 +1,7 @@
 import { basename } from "node:path";
 
+import { TUI } from "@earendil-works/pi-tui";
+
 import { createNodeAgentContext } from "../agent/index.js";
 import { ensureLocalProtocolServer, RemoteAgent } from "../client/index.js";
 import {
@@ -24,8 +26,7 @@ import { providerQuotaToStartupStatusUsage } from "./providerQuotaToStartupStatu
 import { readPackageVersion } from "../readPackageVersion.js";
 import { resolveTerminalTheme } from "./resolveTerminalTheme.js";
 import { resolveStartupProviderQuota } from "./resolveStartupProviderQuota.js";
-import { ScrollbackPreservingTerminal } from "./ScrollbackPreservingTerminal.js";
-import { ScrollbackPreservingTUI } from "./ScrollbackPreservingTUI.js";
+import { RigTerminal } from "./RigTerminal.js";
 import { sessionAgentFooterLabel } from "./sessionAgentFooterLabel.js";
 import { StartupStatusApp } from "./StartupStatusApp.js";
 import { getDebugRootDirectory } from "../debug/index.js";
@@ -97,9 +98,9 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     const runtimeTheme = loadedConfig.sources.runtime.values.theme;
 
     // Keep the terminal in TUI mode while the daemon starts so startup work is visible.
-    const terminal = new ScrollbackPreservingTerminal();
+    const terminal = new RigTerminal();
     terminal.setTitle(`Rig - ${sanitizeTerminalTitle(basename(cwd))}`);
-    const tui = new ScrollbackPreservingTUI(terminal, false);
+    const tui = new TUI(terminal, false);
     const startup = new StartupStatusApp({
         cwd,
         theme: startupTheme,

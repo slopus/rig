@@ -6,16 +6,9 @@ import {
 } from "./createTerminalInputBurstHandler.js";
 import { TerminalOutputTrace } from "./TerminalOutputTrace.js";
 
-const RESIZE_SETTLE_MS = 75;
-
-export class ScrollbackPreservingTerminal extends ProcessTerminal {
+export class RigTerminal extends ProcessTerminal {
     #inputBurstHandler: TerminalInputBurstHandler | undefined;
-    #resizeTimer: NodeJS.Timeout | undefined;
     readonly #trace = new TerminalOutputTrace();
-
-    get resizePending(): boolean {
-        return this.#resizeTimer !== undefined;
-    }
 
     override start(onInput: (data: string) => void, onResize: () => void): void {
         this.#inputBurstHandler?.dispose();
@@ -27,12 +20,6 @@ export class ScrollbackPreservingTerminal extends ProcessTerminal {
             },
             () => {
                 this.#trace.recordResize("signal", this.#dimensions());
-                if (this.#resizeTimer !== undefined) clearTimeout(this.#resizeTimer);
-                this.#resizeTimer = setTimeout(() => {
-                    this.#resizeTimer = undefined;
-                    this.#trace.recordResize("settled", this.#dimensions());
-                    onResize();
-                }, RESIZE_SETTLE_MS);
                 onResize();
             },
         );
@@ -44,8 +31,6 @@ export class ScrollbackPreservingTerminal extends ProcessTerminal {
     }
 
     override stop(): void {
-        if (this.#resizeTimer !== undefined) clearTimeout(this.#resizeTimer);
-        this.#resizeTimer = undefined;
         this.#inputBurstHandler?.dispose();
         this.#inputBurstHandler = undefined;
         super.stop();
