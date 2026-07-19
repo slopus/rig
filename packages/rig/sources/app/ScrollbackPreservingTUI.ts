@@ -33,15 +33,27 @@ interface TerminalResizeComponent {
 }
 
 export class ScrollbackPreservingTUI extends TUI {
+    #bottomAnchorLineCount = 0;
     #cursorReportPending = 0;
     #forceRenderAfterResize = false;
     #measuredCursorRow: number | undefined;
+    #paintedLiveTailLineCount = 0;
     #probeTimer: NodeJS.Timeout | undefined;
     #resizePending = false;
 
     constructor(terminal: Terminal, showHardwareCursor?: boolean) {
         super(terminal, showHardwareCursor);
         this.addInputListener((data) => this.#consumeCursorReports(data));
+    }
+
+    override render(width: number): string[] {
+        const lines = super.render(width);
+        this.#paintedLiveTailLineCount = Math.min(
+            this.terminal.rows,
+            this.#liveTailLineCount(width, this.terminal.rows),
+        );
+        if (lines.length >= this.#bottomAnchorLineCount) return lines;
+        return [...Array<string>(this.#bottomAnchorLineCount - lines.length).fill(""), ...lines];
     }
 
     override requestRender(force = false): void {
@@ -155,7 +167,7 @@ export class ScrollbackPreservingTUI extends TUI {
             return false;
         }
 
-        const previousLiveTailLineCount = this.#liveTailLineCount(state.previousWidth);
+        const previousLiveTailLineCount = this.#paintedLiveTailLineCount;
         let lines = this.render(width);
         if (state.overlayStack.length > 0) {
             lines = state.compositeOverlays(lines, width, height);
@@ -163,9 +175,14 @@ export class ScrollbackPreservingTUI extends TUI {
         state.extractCursorPosition(lines, height);
         lines = state.applyLineResets(lines);
 
-        const liveTailLineCount = Math.min(height, this.#liveTailLineCount());
+        const liveTailLineCount = Math.min(height, this.#liveTailLineCount(width, height));
         const liveTailLines = lines.slice(lines.length - liveTailLineCount);
         const widthChanged = state.previousWidth !== width;
+        if (widthChanged && lines.length < height && state.previousViewportTop > 0) {
+            this.#bottomAnchorLineCount = height;
+            const padding = state.applyLineResets(Array<string>(height - lines.length).fill(""));
+            lines = [...padding, ...lines];
+        }
         const finalRow = Math.max(0, lines.length - 1);
         let viewportTop: number;
         let output = "\x1b[?2026h";
@@ -237,16 +254,15 @@ export class ScrollbackPreservingTUI extends TUI {
         state.hardwareCursorRow = viewportTop + finalScreenRow;
         state.maxLinesRendered = lines.length;
         state.previousViewportTop = viewportTop;
+        this.#paintedLiveTailLineCount = liveTailLineCount;
         return true;
     }
 
-    #liveTailLineCount(width = this.terminal.columns): number {
+    #liveTailLineCount(width: number, height: number): number {
         return this.children.reduce(
             (total, child) =>
                 total +
-                (isResizeLiveTailComponent(child)
-                    ? child.resizeLiveTailLineCount(width)
-                    : this.terminal.rows),
+                (isResizeLiveTailComponent(child) ? child.resizeLiveTailLineCount(width) : height),
             0,
         );
     }

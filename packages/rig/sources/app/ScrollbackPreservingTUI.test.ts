@@ -54,6 +54,107 @@ describe("ScrollbackPreservingTUI", () => {
         tui.stop();
     });
 
+    it("clears the live tail height that was actually painted before a width resize", async () => {
+        const terminal = new RecordingTerminal(20, 5);
+        const tui = new ScrollbackPreservingTUI(terminal, false);
+        let liveTailLineCount = 3;
+        const component = {
+            invalidate: () => {},
+            render: () => [
+                "history 1",
+                "history 2",
+                "history 3",
+                "history 4",
+                "history 5",
+                "history 6",
+                ...(liveTailLineCount === 3
+                    ? ["old input", "old status", "old footer"]
+                    : ["new input"]),
+            ],
+            resizeLiveTailLineCount: () => liveTailLineCount,
+        };
+        tui.addChild(component);
+        tui.start();
+        await renderCycle();
+        terminal.output.length = 0;
+
+        liveTailLineCount = 1;
+        terminal.columns = 30;
+        tui.requestRender();
+        await renderCycle();
+
+        const output = terminal.output.join("");
+        expect(output).not.toContain("\x1b[2;1H\x1b[2K");
+        expect(output).toContain("\x1b[3;1H\x1b[2K");
+        expect(output).toContain("\x1b[4;1H\x1b[2K");
+        expect(output).toContain("\x1b[5;1H\x1b[2Knew input");
+        tui.stop();
+    });
+
+    it("keeps a widened short frame bottom-aligned for the next incremental render", async () => {
+        const terminal = new RecordingTerminal(10, 6);
+        const tui = new ScrollbackPreservingTUI(terminal, false);
+        let footer = "footer";
+        const component = {
+            invalidate: () => {},
+            render: (width: number) =>
+                width === 10
+                    ? [
+                          "history 1",
+                          "history 2",
+                          "history 3",
+                          "history 4",
+                          "history 5",
+                          "history 6",
+                          "history 7",
+                          "input",
+                          "status",
+                          footer,
+                      ]
+                    : ["reflowed history", "input", "status", footer],
+            resizeLiveTailLineCount: () => 3,
+        };
+        tui.addChild(component);
+        tui.start();
+        await renderCycle();
+        terminal.output.length = 0;
+
+        terminal.columns = 30;
+        tui.requestRender();
+        await renderCycle();
+
+        const resizeOutput = terminal.output.join("");
+        const state = tui as unknown as {
+            cursorRow: number;
+            hardwareCursorRow: number;
+            maxLinesRendered: number;
+            previousLines: string[];
+            previousViewportTop: number;
+        };
+        expect(resizeOutput).toContain("\x1b[4;1H\x1b[2Kinput");
+        expect(resizeOutput).toContain("\x1b[6;1H\x1b[2Kfooter");
+        expect(state.previousLines).toHaveLength(6);
+        expect(state.previousLines[2]).toContain("reflowed history");
+        expect(state.previousLines[5]).toContain("footer");
+        expect(state.previousViewportTop).toBe(0);
+        expect(state.cursorRow).toBe(5);
+        expect(state.hardwareCursorRow).toBe(5);
+        expect(state.maxLinesRendered).toBe(6);
+        terminal.output.length = 0;
+
+        footer = "updated footer";
+        tui.requestRender();
+        await renderCycle();
+
+        const incrementalOutput = terminal.output.join("");
+        expect(incrementalOutput.match(/updated footer/gu)).toHaveLength(1);
+        expect(incrementalOutput).not.toContain("input");
+        expect(incrementalOutput).not.toContain("reflowed history");
+        expect(incrementalOutput).not.toContain("\x1b[2J");
+        expect(incrementalOutput).not.toContain("\x1b[3J");
+        tui.stop();
+    });
+
     it("source-renders the complete top viewport when all stable content still fits", async () => {
         const terminal = new RecordingTerminal(30, 6);
         const tui = new ScrollbackPreservingTUI(terminal, false);
