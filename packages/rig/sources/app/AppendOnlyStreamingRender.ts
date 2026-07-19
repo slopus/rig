@@ -1,3 +1,5 @@
+import { endsAfterOpeningCodeFence } from "./endsAfterOpeningCodeFence.js";
+
 export class AppendOnlyStreamingRender<Entry extends object> {
     #entries = new WeakMap<Entry, StreamingRenderState>();
 
@@ -27,8 +29,13 @@ export class AppendOnlyStreamingRender<Entry extends object> {
             return [...state.frozenLines, ...rendered.slice(state.frozenLines.length)];
         }
 
-        const stableRender = options.render(options.text.slice(0, lastCompleteLine + 1));
-        const freezeUntil = Math.min(Math.max(0, stableRender.length - 1), rendered.length);
+        const stableText = options.text.slice(0, lastCompleteLine + 1);
+        const stableRender = options.render(stableText);
+        const mutableTailLines = endsAfterOpeningCodeFence(stableText) ? 2 : 1;
+        const freezeUntil = Math.min(
+            Math.max(0, stableRender.length - mutableTailLines),
+            rendered.length,
+        );
         for (let index = state.frozenLines.length; index < freezeUntil; index += 1) {
             state.frozenLines.push(rendered[index] ?? "");
         }

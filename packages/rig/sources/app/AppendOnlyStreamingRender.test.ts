@@ -111,4 +111,44 @@ describe("AppendOnlyStreamingRender", () => {
             }),
         ).toEqual(["stab", "le", "part", "ial ", "line"]);
     });
+
+    it("does not freeze the temporary empty row after an opening code fence", () => {
+        const stream = new AppendOnlyStreamingRender<object>();
+        const entry = {};
+        const command = "(cd packages/ghostty-web && pnpm publish --access public)";
+        const render = (text: string): string[] =>
+            text.includes(command)
+                ? ["intro", "```sh", command, "```"]
+                : ["intro", "```sh", "", "```"];
+
+        expect(
+            stream.render({
+                entry,
+                isStreaming: true,
+                render,
+                text: "intro\n```sh\n",
+                width: 80,
+            }),
+        ).toEqual(["intro", "```sh", "", "```"]);
+
+        expect(
+            stream.render({
+                entry,
+                isStreaming: true,
+                render,
+                text: `intro\n\`\`\`sh\n${command}\n\`\`\``,
+                width: 80,
+            }),
+        ).toEqual(["intro", "```sh", command, "```"]);
+
+        expect(
+            stream.render({
+                entry,
+                isStreaming: false,
+                render,
+                text: `intro\n\`\`\`sh\n${command}\n\`\`\``,
+                width: 80,
+            }),
+        ).toEqual(["intro", "```sh", command, "```"]);
+    });
 });
