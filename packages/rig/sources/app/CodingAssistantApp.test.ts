@@ -1226,7 +1226,7 @@ describe("CodingAssistantApp", () => {
         );
     });
 
-    it("keeps retained input immutable while repainting the live composer theme", async () => {
+    it("repaints retained input and the live composer when the theme changes", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
             name: "GPT Test",
@@ -1267,8 +1267,194 @@ describe("CodingAssistantApp", () => {
         const updated = app.render(80).join("\n");
         expect(updated).toContain("Change the palette.");
         expect(updated).toContain("\x1b[48;5;254m");
-        expect(updated).toContain("\x1b[48;5;235m");
+        expect(updated).not.toContain("\x1b[48;5;235m");
         expect(tui.requestRender).toHaveBeenCalledWith(false);
+    });
+
+    it("repaints cached header and transcript lines when the terminal theme changes", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream: () => streamText("unused"),
+        });
+        const harness = createJustBashToolHarness();
+        const oldBrand = "\x1b[38;5;201m";
+        const oldPrimary = "\x1b[38;5;202m";
+        const oldSecondary = "\x1b[38;5;203m";
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProcessManager(),
+            theme: {
+                ...DEFAULT_TERMINAL_THEME,
+                brand: oldBrand,
+                primary: oldPrimary,
+                secondary: oldSecondary,
+            },
+            tui: fakeTui(),
+        });
+        app.applySessionEvent({
+            createdAt: 1,
+            data: {
+                message: {
+                    blocks: [{ text: "Cached transcript colors.", type: "text" }],
+                    id: "assistant-theme",
+                    role: "agent",
+                },
+                runId: "run-1",
+            },
+            id: "assistant-theme-event",
+            sessionId: "session-1",
+            type: "agent_message",
+        });
+
+        const initial = app.render(80).join("\n");
+        expect(initial).toContain(oldBrand);
+        expect(initial).toContain(oldPrimary);
+        expect(initial).toContain(oldSecondary);
+
+        const newBrand = "\x1b[38;5;211m";
+        const newPrimary = "\x1b[38;5;212m";
+        const newSecondary = "\x1b[38;5;213m";
+        app.setTheme({
+            ...DEFAULT_TERMINAL_THEME,
+            brand: newBrand,
+            primary: newPrimary,
+            secondary: newSecondary,
+        });
+
+        const updated = app.render(80).join("\n");
+        expect(updated).toContain(newBrand);
+        expect(updated).toContain(newPrimary);
+        expect(updated).toContain(newSecondary);
+        expect(updated).not.toContain(oldBrand);
+        expect(updated).not.toContain(oldPrimary);
+        expect(updated).not.toContain(oldSecondary);
+    });
+
+    it("renders every markdown table row after streaming finishes", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream: () => streamText("unused"),
+        });
+        const harness = createJustBashToolHarness();
+        const tui = fakeTui({ rows: 12 });
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProcessManager(),
+            sessionBacked: true,
+            tui,
+        });
+        const table = [
+            "| Name | Value |",
+            "| --- | --- |",
+            ...Array.from({ length: 30 }, (_, index) =>
+                `| row-${String(index + 1)} | value-${String(index + 1)} |`,
+            ),
+        ].join("\n");
+        const partial: AssistantMessage = {
+            api: "test",
+            content: [],
+            model: model.id,
+            provider: "codex",
+            role: "assistant",
+            stopReason: "stop",
+            timestamp: 1,
+            usage: zeroUsage(),
+        };
+        app.applySessionEvent({
+            createdAt: 1,
+            data: {
+                event: {
+                    contentIndex: 0,
+                    delta: table,
+                    partial,
+                    type: "text_delta",
+                },
+                runId: "run-1",
+            },
+            id: "streaming-table-delta",
+            sessionId: "session-1",
+            type: "agent_event",
+        });
+
+        expect(stripAnsi(app.render(100).join("\n"))).not.toContain("row-5");
+
+        (tui.terminal as { rows: number }).rows = 20;
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("row-5");
+
+        app.applySessionEvent({
+            createdAt: 2,
+            data: {
+                message: {
+                    blocks: [{ text: table, type: "text" }],
+                    id: "assistant-table",
+                    role: "agent",
+                },
+                runId: "run-1",
+            },
+            id: "assistant-table-event",
+            sessionId: "session-1",
+            type: "agent_message",
+        });
+
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("row-30");
+    });
+
+    it("keeps only the current width in the header render cache", () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream: () => streamText("unused"),
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProcessManager(),
+            tui: fakeTui(),
+        });
+
+        for (let width = 40; width < 80; width += 1) app.render(width);
+
+        expect(app.headerRenderCacheSizeForTesting()).toBe(1);
+        expect(app.render(40).every((line) => visibleWidth(line) <= 40)).toBe(true);
+        expect(app.headerRenderCacheSizeForTesting()).toBe(1);
     });
 
     it("opens Codex-style backtracking on Escape and restores the selected prompt", async () => {

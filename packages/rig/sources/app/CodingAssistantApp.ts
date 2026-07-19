@@ -1285,6 +1285,8 @@ export class CodingAssistantApp implements Component, Focusable {
 
     setTheme(theme: TerminalTheme): void {
         Object.assign(this.#theme, theme);
+        this.#entryRenderCache.clear();
+        this.#headerLinesByWidth.clear();
         this.invalidate();
         this.#requestRender();
     }
@@ -1295,6 +1297,10 @@ export class CodingAssistantApp implements Component, Focusable {
         const transcript = this.#renderTranscript(safeWidth);
         if (this.#exiting) return [...header, ...transcript];
         return [...header, ...transcript, ...this.#renderLiveTail(safeWidth)];
+    }
+
+    headerRenderCacheSizeForTesting(): number {
+        return this.#headerLinesByWidth.size;
     }
 
     beginTerminalResize(): void {
@@ -3256,6 +3262,7 @@ export class CodingAssistantApp implements Component, Focusable {
             }),
             "",
         ];
+        this.#headerLinesByWidth.clear();
         this.#headerLinesByWidth.set(width, lines);
         return lines;
     }
@@ -3307,6 +3314,17 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #entryRenderState(entry: AppTranscriptEntry): string {
+        if (entry.role === "assistant") {
+            const isStreaming = entry.id === this.#streamEntryId;
+            const tableRowBudget =
+                isStreaming && containsMarkdownTable(entry.text)
+                    ? Math.max(1, this.#tui.terminal.rows - 8)
+                    : "";
+            return `assistant:${String(isStreaming)}:${String(tableRowBudget)}`;
+        }
+        if (entry.role === "thinking") {
+            return `thinking:${String(this.#streamingThinkingEntryIds.has(entry.id))}`;
+        }
         if (entry.role !== "tool" && entry.role !== "error") return "";
         return [
             this.#activeToolCallIds.has(entry.id),

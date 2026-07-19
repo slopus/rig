@@ -16,6 +16,7 @@ interface CachedEntryRender {
     readonly role: AppTranscriptEntry["role"];
     readonly text: string;
     readonly theme: object;
+    readonly themeSnapshot: object;
     readonly title: string | undefined;
     readonly turnElapsedMs: number | undefined;
     readonly width: number;
@@ -49,6 +50,7 @@ export class TranscriptEntryRenderCache {
             role: entry.role,
             text: entry.text,
             theme: options.theme,
+            themeSnapshot: { ...options.theme },
             title: entry.title,
             turnElapsedMs: entry.turnElapsedMs,
             width: options.width,
@@ -81,8 +83,19 @@ function matches(
         cached.role === entry.role &&
         cached.text === entry.text &&
         cached.theme === options.theme &&
+        matchesObjectSnapshot(cached.themeSnapshot, options.theme) &&
         cached.title === entry.title &&
         cached.turnElapsedMs === entry.turnElapsedMs &&
         cached.width === options.width
+    );
+}
+
+function matchesObjectSnapshot(snapshot: object, current: object): boolean {
+    const snapshotRecord = snapshot as Record<string, unknown>;
+    const currentRecord = current as Record<string, unknown>;
+    const keys = Object.keys(currentRecord);
+    return (
+        keys.length === Object.keys(snapshotRecord).length &&
+        keys.every((key) => Object.is(snapshotRecord[key], currentRecord[key]))
     );
 }
