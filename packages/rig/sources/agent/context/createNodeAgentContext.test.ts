@@ -338,39 +338,32 @@ describe("createNodeAgentContext", () => {
             await writeFile(globalIgnore, "ignored-by-global-config.txt\n");
             await writeFile(globalConfig, `[core]\n\texcludesfile = ${globalIgnore}\n`);
             await writeFile(join(cwd, "ignored-by-global-config.txt"), "ignored\n");
-            const previousHome = process.env.HOME;
-            const previousGlobalConfig = process.env.GIT_CONFIG_GLOBAL;
-            process.env.HOME = home;
-            process.env.GIT_CONFIG_GLOBAL = globalConfig;
+            const context = createNodeAgentContext({
+                cwd,
+                permissionMode: "workspace_write",
+                processManager: new NativeProcessManager(),
+            });
 
-            try {
-                const context = createNodeAgentContext({
-                    cwd,
-                    permissionMode: "workspace_write",
-                    processManager: new NativeProcessManager(),
-                });
+            // Keep the fixture scoped to Git so the login shell starts with the real home.
+            const status = await context.bash.run({
+                command: `GIT_CONFIG_GLOBAL=${JSON.stringify(globalConfig)} git status --short`,
+            });
+            expect(status).toMatchObject({ exitCode: 0, stderr: "", stdout: "" });
 
-                const status = await context.bash.run({ command: "git status --short" });
-                expect(status).toMatchObject({ exitCode: 0, stderr: "", stdout: "" });
+            const gitConfigBefore = await readFile(join(cwd, ".git", "config"), "utf8");
+            const gitMetadataWrite = await context.bash.run({
+                command: "printf blocked > .git/config",
+            });
+            expect(gitMetadataWrite.exitCode).not.toBe(0);
+            await expect(readFile(join(cwd, ".git", "config"), "utf8")).resolves.toBe(
+                gitConfigBefore,
+            );
 
-                const gitConfigBefore = await readFile(join(cwd, ".git", "config"), "utf8");
-                const gitMetadataWrite = await context.bash.run({
-                    command: "printf blocked > .git/config",
-                });
-                expect(gitMetadataWrite.exitCode).not.toBe(0);
-                await expect(readFile(join(cwd, ".git", "config"), "utf8")).resolves.toBe(
-                    gitConfigBefore,
-                );
-
-                const outsideWrite = await context.bash.run({
-                    command: `printf blocked > ${JSON.stringify(join(home, "blocked.txt"))}`,
-                });
-                expect(outsideWrite.exitCode).not.toBe(0);
-                await expect(readFile(join(home, "blocked.txt"), "utf8")).rejects.toThrow();
-            } finally {
-                restoreEnvironment("HOME", previousHome);
-                restoreEnvironment("GIT_CONFIG_GLOBAL", previousGlobalConfig);
-            }
+            const outsideWrite = await context.bash.run({
+                command: `printf blocked > ${JSON.stringify(join(home, "blocked.txt"))}`,
+            });
+            expect(outsideWrite.exitCode).not.toBe(0);
+            await expect(readFile(join(home, "blocked.txt"), "utf8")).rejects.toThrow();
         },
     );
 
