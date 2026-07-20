@@ -271,18 +271,21 @@ describe("InMemorySession", () => {
 
     it("keeps fast inference across Codex model changes and rejects unsupported providers", () => {
         const firstCodexModel = defineModel({
+            contextCompatibilityGroup: "codex",
             defaultThinkingLevel: "off",
             id: "openai/first",
             name: "First Codex model",
             thinkingLevels: ["off"],
         });
         const secondCodexModel = defineModel({
+            contextCompatibilityGroup: "codex",
             defaultThinkingLevel: "off",
             id: "openai/second",
             name: "Second Codex model",
             thinkingLevels: ["off"],
         });
         const claudeModel = defineModel({
+            contextCompatibilityGroup: "claude",
             defaultThinkingLevel: "off",
             id: "anthropic/test",
             name: "Claude model",
@@ -294,11 +297,16 @@ describe("InMemorySession", () => {
             models: [firstCodexModel, secondCodexModel, claudeModel],
             providers: [
                 {
+                    contextCompatibility: "model_group",
                     providerId: "codex",
                     models: [firstCodexModel, secondCodexModel],
                     serviceTiers: ["fast"],
                 },
-                { providerId: "claude", models: [claudeModel] },
+                {
+                    contextCompatibility: "model_group",
+                    providerId: "claude",
+                    models: [claudeModel],
+                },
             ],
         };
         const store = new InMemorySessionStore({ modelCatalog: catalog });
@@ -317,6 +325,7 @@ describe("InMemorySession", () => {
             serviceTier: "fast",
             snapshot: { serviceTier: "fast" },
         });
+        expect(session.snapshot().snapshot.contextMessages).toBeUndefined();
         expect(session.state().serviceTier).toBe("fast");
 
         session.changeServiceTier({});
@@ -327,6 +336,7 @@ describe("InMemorySession", () => {
         });
 
         session.changeModel({ modelId: claudeModel.id, providerId: "claude" });
+        expect(session.snapshot().snapshot.contextMessages).toBeUndefined();
         expect(() => session.changeServiceTier({ serviceTier: "fast" })).toThrow(
             "does not support fast inference",
         );

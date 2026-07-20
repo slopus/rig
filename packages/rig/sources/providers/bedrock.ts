@@ -49,6 +49,10 @@ export function createBedrockProvider(options: BedrockProviderOptions = {}): Pro
     });
 
     return defineProvider({
+        contextCompatibility: "model_group",
+        contextCompatibilityKind: "bedrock",
+        contextCompatibilityKey: (model) =>
+            resolveBedrockModelRegion(model.id, defaultRegion, options.modelOverrides),
         id: options.id ?? BEDROCK_PROVIDER_ID,
         imageProfile: (model) =>
             getBedrockModelRoute(model.id)?.provider === "anthropic" ? "claude" : "codex",

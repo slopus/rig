@@ -15,6 +15,13 @@ export function createDebugProvider(
     let inference = 0;
 
     return defineProvider({
+        contextCompatibility: provider.contextCompatibility,
+        ...(provider.contextCompatibilityKind === undefined
+            ? {}
+            : { contextCompatibilityKind: provider.contextCompatibilityKind }),
+        ...(provider.contextCompatibilityKey === undefined
+            ? {}
+            : { contextCompatibilityKey: (model) => provider.contextCompatibilityKey!(model) }),
         id: provider.id,
         imageProfile: (model) => provider.imageProfile(model),
         models: provider.models,

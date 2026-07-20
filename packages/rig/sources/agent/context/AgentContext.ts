@@ -1,4 +1,5 @@
 import type { BashContext } from "./BashContext.js";
+import type { ChatHistoryContext } from "./ChatHistoryContext.js";
 import type { FileReadState } from "./FileReadState.js";
 import type { FileSystemContext } from "./FileSystemContext.js";
 import type { GoalContext } from "./GoalContext.js";
@@ -12,6 +13,7 @@ import type { SessionSecretContext } from "../../secrets/index.js";
 export interface AgentContext {
     fs: FileSystemContext;
     bash: BashContext;
+    chatHistory?: ChatHistoryContext;
     fileReads?: FileReadState;
     goals?: GoalContext;
     permissions?: PermissionContext;

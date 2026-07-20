@@ -87,6 +87,7 @@ export function createCodexProvider(options: CodexProviderOptions = {}): Provide
     );
 
     return defineProvider({
+        contextCompatibility: "model_group",
         id: options.id ?? "codex",
         imageProfile: () => "codex",
         toolProfile: () => "codex",

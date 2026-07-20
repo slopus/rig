@@ -1,6 +1,8 @@
 import {
     createSubagentInstructions,
     findLastAgentResponseText,
+    type ChatHistoryPage,
+    selectChatHistoryPage,
     type ManagedSubagent,
     type SpawnSubagentRequest,
     type SpawnSubagentResult,
@@ -167,6 +169,61 @@ export class AgentSessionManager {
         return pathPrefix === undefined
             ? agents
             : agents.filter((agent) => agent.path.startsWith(pathPrefix));
+    }
+
+    readChatHistory(
+        currentSessionId: string,
+        options: {
+            cursor?: number;
+            from?: "end" | "start";
+            limit: number;
+            query?: string;
+            roles?: readonly ("assistant" | "system" | "user")[];
+            target?: string;
+        },
+    ): ChatHistoryPage {
+        const current = this.#repository.get(currentSessionId);
+        if (current === undefined) throw new Error("The current session is no longer available.");
+        const root = this.#rootFor(currentSessionId);
+        const sessions = [root, ...this.#repository.listByRoot(root.id)];
+        const target = (() => {
+            if (options.target === undefined || options.target === "current") return current;
+            const matches = sessions.filter((session) => {
+                const metadata = session.agentMetadata();
+                return (
+                    session.id === options.target ||
+                    metadata.taskName === options.target ||
+                    this.#pathFor(session) === options.target
+                );
+            });
+            if (matches.length === 0) {
+                throw new Error(`Agent '${options.target}' was not found in this session tree.`);
+            }
+            if (matches.length > 1) {
+                throw new Error(`Agent name '${options.target}' is ambiguous. Use its full path.`);
+            }
+            return matches[0] as InMemorySession;
+        })();
+        const agents = sessions
+            .map((session) => {
+                const snapshot = session.snapshot();
+                return {
+                    ...(snapshot.agent.description === undefined
+                        ? {}
+                        : { description: snapshot.agent.description }),
+                    messageCount: snapshot.snapshot.messages.length,
+                    path: this.#pathFor(session),
+                    sessionId: session.id,
+                    status: snapshot.status,
+                };
+            })
+            .sort((left, right) => left.path.localeCompare(right.path));
+        const messages = target.snapshot().snapshot.messages;
+        return {
+            agent: agents.find((agent) => agent.sessionId === target.id) as (typeof agents)[number],
+            agents,
+            ...selectChatHistoryPage(messages, options),
+        };
     }
 
     hasActiveDescendantWork(rootSessionId: string): boolean {
@@ -519,7 +576,7 @@ export class AgentSessionManager {
                     ? undefined
                     : this.#repository.get(metadata.parentSessionId);
         }
-        return `/root/${names.join("/")}`;
+        return names.length === 0 ? "/root" : `/root/${names.join("/")}`;
     }
 
     #resolveTarget(parentSessionId: string, target: string): InMemorySession {

@@ -81,6 +81,7 @@ describe("Grok Build provider", () => {
 
     it("uses the model catalog's selectable reasoning efforts", () => {
         expect(modelXaiGrok45).toEqual({
+            contextCompatibilityGroup: "grok",
             contextWindow: 500_000,
             defaultThinkingLevel: "high",
             id: "xai/grok-4.5",
@@ -88,6 +89,7 @@ describe("Grok Build provider", () => {
             thinkingLevels: ["low", "medium", "high"],
         });
         expect(modelXaiGrokComposer25Fast).toEqual({
+            contextCompatibilityGroup: "grok",
             contextWindow: 200_000,
             defaultThinkingLevel: "off",
             id: "xai/grok-composer-2.5-fast",

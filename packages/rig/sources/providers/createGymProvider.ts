@@ -13,6 +13,7 @@ import {
 } from "./types.js";
 
 export const gymModel = defineModel({
+    contextCompatibilityGroup: "codex",
     id: "openai/gym",
     name: "Gym",
     thinkingLevels: ["off", "low", "medium", "high"],
@@ -22,6 +23,9 @@ export const gymModel = defineModel({
 
 export interface CreateGymProviderOptions {
     contextWindow?: number;
+    contextCompatibility?: Provider["contextCompatibility"];
+    contextCompatibilityKind?: Provider["contextCompatibilityKind"];
+    contextCompatibilityKey?: Provider["contextCompatibilityKey"];
     endpoint: string;
     fetch?: typeof globalThis.fetch;
     imageProfile?: Provider["imageProfile"];
@@ -40,6 +44,13 @@ export function createGymProvider(options: CreateGymProviderOptions) {
     const configuredModels =
         contextWindow === undefined ? models : models.map((model) => ({ ...model, contextWindow }));
     return defineProvider({
+        contextCompatibility: options.contextCompatibility ?? "model_group",
+        ...(options.contextCompatibilityKind === undefined
+            ? {}
+            : { contextCompatibilityKind: options.contextCompatibilityKind }),
+        ...(options.contextCompatibilityKey === undefined
+            ? {}
+            : { contextCompatibilityKey: options.contextCompatibilityKey }),
         id: providerId,
         ...(options.imageProfile === undefined ? {} : { imageProfile: options.imageProfile }),
         toolProfile: options.toolProfile ?? (() => "codex"),

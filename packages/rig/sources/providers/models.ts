@@ -7,6 +7,7 @@
 import { defineModel } from "./types.js";
 
 export const modelAnthropicFable5 = defineModel({
+    contextCompatibilityGroup: "claude",
     id: "anthropic/fable-5",
     name: "Fable 5",
     thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max", "ultra"],
@@ -15,6 +16,7 @@ export const modelAnthropicFable5 = defineModel({
 });
 
 export const modelAnthropicOpus48 = defineModel({
+    contextCompatibilityGroup: "claude",
     id: "anthropic/opus-4-8",
     name: "Opus 4.8 1M",
     thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max", "ultra"],
@@ -23,6 +25,7 @@ export const modelAnthropicOpus48 = defineModel({
 });
 
 export const modelAnthropicOpus47 = defineModel({
+    contextCompatibilityGroup: "claude",
     id: "anthropic/opus-4-7",
     name: "Opus 4.7 1M",
     thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max", "ultra"],
@@ -31,6 +34,7 @@ export const modelAnthropicOpus47 = defineModel({
 });
 
 export const modelAnthropicOpus46 = defineModel({
+    contextCompatibilityGroup: "claude",
     id: "anthropic/opus-4-6",
     name: "Opus 4.6 1M",
     thinkingLevels: ["off", "low", "medium", "high", "max"],
@@ -39,6 +43,7 @@ export const modelAnthropicOpus46 = defineModel({
 });
 
 export const modelAnthropicSonnet5 = defineModel({
+    contextCompatibilityGroup: "claude",
     id: "anthropic/sonnet-5",
     name: "Sonnet 5",
     thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max", "ultra"],
@@ -47,6 +52,7 @@ export const modelAnthropicSonnet5 = defineModel({
 });
 
 export const modelAnthropicSonnet461m = defineModel({
+    contextCompatibilityGroup: "claude",
     id: "anthropic/sonnet-4-6-1m",
     name: "Sonnet 4.6 1M",
     thinkingLevels: ["off", "low", "medium", "high", "max"],
@@ -55,6 +61,7 @@ export const modelAnthropicSonnet461m = defineModel({
 });
 
 export const modelAnthropicSonnet46 = defineModel({
+    contextCompatibilityGroup: "claude",
     id: "anthropic/sonnet-4-6",
     name: "Sonnet 4.6",
     thinkingLevels: ["off", "low", "medium", "high", "max"],
@@ -63,6 +70,7 @@ export const modelAnthropicSonnet46 = defineModel({
 });
 
 export const modelAnthropicHaiku45 = defineModel({
+    contextCompatibilityGroup: "claude",
     id: "anthropic/haiku-4-5",
     name: "Haiku 4.5",
     thinkingLevels: ["off"],
@@ -71,6 +79,7 @@ export const modelAnthropicHaiku45 = defineModel({
 });
 
 export const modelOpenaiGpt55 = defineModel({
+    contextCompatibilityGroup: "codex",
     id: "openai/gpt-5.5",
     name: "GPT-5.5",
     thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh"],
@@ -79,6 +88,7 @@ export const modelOpenaiGpt55 = defineModel({
 });
 
 export const modelOpenaiGpt56Sol = defineModel({
+    contextCompatibilityGroup: "codex",
     id: "openai/gpt-5.6-sol",
     name: "GPT-5.6 Sol",
     thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max", "ultra"],
@@ -87,6 +97,7 @@ export const modelOpenaiGpt56Sol = defineModel({
 });
 
 export const modelOpenaiGpt56Terra = defineModel({
+    contextCompatibilityGroup: "codex",
     id: "openai/gpt-5.6-terra",
     name: "GPT-5.6 Terra",
     thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max", "ultra"],
@@ -95,6 +106,7 @@ export const modelOpenaiGpt56Terra = defineModel({
 });
 
 export const modelOpenaiGpt56Luna = defineModel({
+    contextCompatibilityGroup: "codex",
     id: "openai/gpt-5.6-luna",
     name: "GPT-5.6 Luna",
     thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
@@ -103,6 +115,7 @@ export const modelOpenaiGpt56Luna = defineModel({
 });
 
 export const modelOpenaiGpt54 = defineModel({
+    contextCompatibilityGroup: "codex",
     id: "openai/gpt-5.4",
     name: "GPT-5.4",
     thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh"],
@@ -111,6 +124,7 @@ export const modelOpenaiGpt54 = defineModel({
 });
 
 export const modelXaiGrokBuild = defineModel({
+    contextCompatibilityGroup: "grok",
     id: "xai/grok-build",
     name: "Grok Build",
     thinkingLevels: ["on"],
@@ -119,6 +133,7 @@ export const modelXaiGrokBuild = defineModel({
 });
 
 export const modelXaiGrok45 = defineModel({
+    contextCompatibilityGroup: "grok",
     id: "xai/grok-4.5",
     name: "Grok 4.5",
     thinkingLevels: ["low", "medium", "high"],
@@ -127,6 +142,7 @@ export const modelXaiGrok45 = defineModel({
 });
 
 export const modelXaiGrokComposer25Fast = defineModel({
+    contextCompatibilityGroup: "grok",
     id: "xai/grok-composer-2.5-fast",
     name: "Composer 2.5",
     thinkingLevels: ["off"],

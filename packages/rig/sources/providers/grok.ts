@@ -22,6 +22,7 @@ export function createGrokProvider(options: GrokProviderOptions = {}): Provider 
     const providerId = options.id ?? GROK_PROVIDER_ID;
     const models = [modelXaiGrokBuild, modelXaiGrok45, modelXaiGrokComposer25Fast];
     return defineProvider({
+        contextCompatibility: "model_group",
         id: providerId,
         imageProfile: () => "codex",
         toolProfile: () => "grok",

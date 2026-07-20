@@ -40,6 +40,20 @@ export function createModelCatalog(options: CreateModelCatalogOptions = {}): Mod
     if (gymProvider !== undefined) {
         providers.unshift(gymProvider);
         providerCatalogs.unshift({
+            contextCompatibility: gymProvider.contextCompatibility,
+            ...(gymProvider.contextCompatibilityKind === undefined
+                ? {}
+                : { contextCompatibilityKind: gymProvider.contextCompatibilityKind }),
+            ...(gymProvider.contextCompatibilityKey === undefined
+                ? {}
+                : {
+                      contextCompatibilityKeys: Object.fromEntries(
+                          gymProvider.models.map((model) => [
+                              model.id,
+                              gymProvider.contextCompatibilityKey!(model),
+                          ]),
+                      ),
+                  }),
             models: gymProvider.models,
             providerId: gymProvider.id,
             ...(gymProvider.serviceTiers === undefined
@@ -88,6 +102,20 @@ export function createModelCatalog(options: CreateModelCatalogOptions = {}): Mod
         }
         providers.push(provider);
         providerCatalogs.push({
+            contextCompatibility: provider.contextCompatibility,
+            ...(provider.contextCompatibilityKind === undefined
+                ? {}
+                : { contextCompatibilityKind: provider.contextCompatibilityKind }),
+            ...(provider.contextCompatibilityKey === undefined
+                ? {}
+                : {
+                      contextCompatibilityKeys: Object.fromEntries(
+                          provider.models.map((model) => [
+                              model.id,
+                              provider.contextCompatibilityKey!(model),
+                          ]),
+                      ),
+                  }),
             models: provider.models,
             providerId: provider.id,
             ...(provider.serviceTiers === undefined ? {} : { serviceTiers: provider.serviceTiers }),

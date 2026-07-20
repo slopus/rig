@@ -126,7 +126,9 @@ import type { AgentMessage, ToolResultBlock } from "../agent/types.js";
 import { createErrorToolResultBlock } from "../agent/createErrorToolResultBlock.js";
 import { createToolResultBlock } from "../agent/createToolResultBlock.js";
 import { executePreapprovedToolCall } from "../agent/executePreapprovedToolCall.js";
+import { createModelSwitchHistoryMessage } from "../agent/createModelSwitchHistoryMessage.js";
 import { createDurableSkillTool, type DurableSkillDefinition } from "../external-skills/index.js";
+import { areModelsContextCompatible } from "../providers/areModelsContextCompatible.js";
 
 const MAX_RETAINED_EXTERNAL_TOOL_CALLS = 1_000;
 const MAX_RETAINED_DURABLE_USER_INPUTS = 1_000;
@@ -862,6 +864,7 @@ export class InMemorySession {
             throw new Error("Wait for the active response to finish before changing models.");
         }
 
+        const previousModel = this.#selectedModel();
         const model = this.#ensureKnownModel(request.modelId, providerId);
 
         if (request.modelId === this.#modelId && providerId === this.#providerId) {
@@ -870,7 +873,55 @@ export class InMemorySession {
             );
         }
 
-        this.#syncContextMessages();
+        if (
+            areModelsContextCompatible(
+                {
+                    model: previousModel,
+                    providerContextCompatibility: this.#modelCatalog.providers.find(
+                        (provider) => provider.providerId === this.#providerId,
+                    )?.contextCompatibility,
+                    providerContextCompatibilityKind: this.#modelCatalog.providers.find(
+                        (provider) => provider.providerId === this.#providerId,
+                    )?.contextCompatibilityKind,
+                    providerContextCompatibilityKey: this.#modelCatalog.providers.find(
+                        (provider) => provider.providerId === this.#providerId,
+                    )?.contextCompatibilityKeys?.[previousModel.id],
+                    providerId: this.#providerId,
+                },
+                {
+                    model,
+                    providerContextCompatibility: this.#modelCatalog.providers.find(
+                        (provider) => provider.providerId === providerId,
+                    )?.contextCompatibility,
+                    providerContextCompatibilityKind: this.#modelCatalog.providers.find(
+                        (provider) => provider.providerId === providerId,
+                    )?.contextCompatibilityKind,
+                    providerContextCompatibilityKey: this.#modelCatalog.providers.find(
+                        (provider) => provider.providerId === providerId,
+                    )?.contextCompatibilityKeys?.[model.id],
+                    providerId,
+                },
+            )
+        ) {
+            this.#syncContextMessages();
+        } else {
+            const visibleMessages = this.#committedMessages();
+            this.#contextMessages =
+                visibleMessages.length === 0
+                    ? undefined
+                    : [
+                          createModelSwitchHistoryMessage({
+                              canReadAgentHistory: this.#agentManager !== undefined,
+                              fromModel: previousModel,
+                              fromProviderId: this.#providerId,
+                              id: createId(),
+                              messages: visibleMessages,
+                              subagentCount: this.#agentManager?.list(this.id).length ?? 0,
+                              toModel: model,
+                              toProviderId: providerId,
+                          }),
+                      ];
+        }
         void this.#killRuntimeProcesses();
         this.#releaseMcpToolLease();
         this.#runtime = undefined;
@@ -3166,12 +3217,21 @@ export class InMemorySession {
             return this.#runtime;
         }
 
+        const agentManager = this.#agentManager;
         const options: CreateCodingAssistantAgentOptions = {
             agentId: this.#agentId,
             ...(this.#appendSystemPrompt !== undefined
                 ? { appendSystemPrompt: this.#appendSystemPrompt }
                 : {}),
             cwd: this.#request.cwd,
+            ...(agentManager === undefined
+                ? {}
+                : {
+                      chatHistory: {
+                          read: (historyOptions) =>
+                              agentManager.readChatHistory(this.id, historyOptions),
+                      },
+                  }),
             messages: this.#committedMessages(),
             modelId: this.#modelId,
             permissionMode: this.#permissionMode,
@@ -3220,7 +3280,6 @@ export class InMemorySession {
         if (this.#instructions !== undefined) options.instructions = this.#instructions;
         if (this.#request.apiKey !== undefined) options.apiKey = this.#request.apiKey;
         if (this.#request.docker !== undefined) options.docker = this.#request.docker;
-        const agentManager = this.#agentManager;
         if (agentManager !== undefined) {
             options.subagents = {
                 availableModels: this.#modelCatalog.providers.flatMap((provider) =>

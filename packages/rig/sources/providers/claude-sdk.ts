@@ -98,6 +98,8 @@ export function createClaudeSdkProvider(options: ClaudeSdkProviderOptions) {
     );
 
     return defineProvider({
+        contextCompatibility: "model_group",
+        contextCompatibilityKind: "claude_code",
         id: options.id ?? CLAUDE_PROVIDER_ID,
         imageProfile: () => "claude",
         toolProfile: () => "claude",

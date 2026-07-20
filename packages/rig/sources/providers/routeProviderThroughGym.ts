@@ -17,6 +17,13 @@ export function routeProviderThroughGym(provider: Provider, env: NodeJS.ProcessE
     }
     const contextWindow = readGymContextWindow(env);
     const gymProvider = createGymProvider({
+        contextCompatibility: provider.contextCompatibility,
+        ...(provider.contextCompatibilityKind === undefined
+            ? {}
+            : { contextCompatibilityKind: provider.contextCompatibilityKind }),
+        ...(provider.contextCompatibilityKey === undefined
+            ? {}
+            : { contextCompatibilityKey: (model) => provider.contextCompatibilityKey!(model) }),
         ...(contextWindow === undefined ? {} : { contextWindow }),
         endpoint,
         imageProfile: (model) => provider.imageProfile(model),

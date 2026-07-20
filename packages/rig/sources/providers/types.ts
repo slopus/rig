@@ -12,6 +12,9 @@ export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
 export type ProviderErrorCode = "incomplete_response" | "invalid_image_request";
 export type ProviderImageProfile = "claude" | "codex";
 export type ProviderToolProfile = "claude" | "codex" | "grok" | "kimi" | "pi";
+export type ModelContextCompatibilityGroup = "claude" | "codex" | "grok";
+export type ProviderContextCompatibility = "model_group" | "none";
+export type ProviderContextCompatibilityKind = "bedrock" | "claude_code";
 export type ServiceTier = "fast";
 
 /** Plain text content block. */
@@ -115,6 +118,8 @@ export interface Usage {
 export interface Model<TThinkingLevel extends string = string> {
     id: string;
     name: string;
+    /** Optional group used only when the concrete provider opts into model-group compatibility. */
+    contextCompatibilityGroup?: ModelContextCompatibilityGroup;
     thinkingLevels: readonly TThinkingLevel[];
     defaultThinkingLevel: TThinkingLevel;
     /** Maximum input context used for automatic conversation compaction. */
@@ -160,6 +165,9 @@ export interface InferenceStream extends AsyncIterable<AssistantMessageEvent> {
 export interface Provider {
     readonly id: string;
     readonly models: readonly Model[];
+    readonly contextCompatibility: ProviderContextCompatibility;
+    readonly contextCompatibilityKind?: ProviderContextCompatibilityKind;
+    readonly contextCompatibilityKey?: (model: Model) => string;
     readonly serviceTiers?: readonly ServiceTier[];
     imageProfile(model: Model): ProviderImageProfile;
     toolProfile(model: Model): ProviderToolProfile;
@@ -182,6 +190,7 @@ export type InferModelThinkingLevel<T extends Model> =
 export function defineModel<const TThinkingLevel extends string>(model: {
     id: string;
     name: string;
+    contextCompatibilityGroup?: ModelContextCompatibilityGroup;
     thinkingLevels: readonly TThinkingLevel[];
     defaultThinkingLevel: TThinkingLevel;
     contextWindow?: number;
@@ -193,6 +202,9 @@ export function defineModel<const TThinkingLevel extends string>(model: {
 export function defineProvider(provider: {
     id: string;
     models: readonly Model[];
+    contextCompatibility?: ProviderContextCompatibility;
+    contextCompatibilityKind?: ProviderContextCompatibilityKind;
+    contextCompatibilityKey?: (model: Model) => string;
     serviceTiers?: readonly ServiceTier[];
     imageProfile?: (model: Model) => ProviderImageProfile;
     toolProfile?: (model: Model) => ProviderToolProfile;
@@ -203,5 +215,10 @@ export function defineProvider(provider: {
         options?: StreamOptions<TThinkingLevel>,
     ): InferenceStream;
 }): Provider {
-    return { imageProfile: () => "codex", toolProfile: () => "codex", ...provider };
+    return {
+        contextCompatibility: "none",
+        imageProfile: () => "codex",
+        toolProfile: () => "codex",
+        ...provider,
+    };
 }

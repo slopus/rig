@@ -5,6 +5,7 @@ import {
     createNodeAgentContext,
     createDockerAgentContext,
     type AgentOptions,
+    type ChatHistoryContext,
     type GoalContext,
     type PermissionMode,
     type SessionSecretContext,
@@ -37,6 +38,7 @@ import { createGymJustBashAgentContext } from "./createGymJustBashAgentContext.j
 import { selectToolsForModel } from "./selectToolsForModel.js";
 import type { DurableSkillDefinition } from "../external-skills/types.js";
 import { resolveGeminiApiKey } from "../tools/webSearch/resolveGeminiApiKey.js";
+import { readAgentHistoryTool } from "../tools/read_agent_history.js";
 
 export interface CreateCodingAssistantAgentOptions {
     appendSystemPrompt?: string;
@@ -45,6 +47,7 @@ export interface CreateCodingAssistantAgentOptions {
     durableSkills?: readonly DurableSkillDefinition[];
     agentId?: string;
     apiKey?: string;
+    chatHistory?: ChatHistoryContext;
     effort?: string;
     env?: NodeJS.ProcessEnv;
     goals?: GoalContext;
@@ -97,6 +100,9 @@ export function createCodingAssistantAgent(
                     sessionId: options.sessionId ?? options.agentId ?? "standalone",
                 });
     const runtimeCwd = context.fs.cwd;
+    if (options.chatHistory !== undefined) {
+        context.chatHistory = options.chatHistory;
+    }
     if (options.subagents !== undefined) {
         context.subagents = options.subagents;
     }
@@ -200,7 +206,11 @@ export function createCodingAssistantAgent(
                         "SendMessage",
                     ].includes(tool.name),
                 );
-    const toolsWithoutGoals = [...baseTools, ...availableCollaborationTools];
+    const toolsWithoutGoals = [
+        ...baseTools,
+        ...(options.chatHistory === undefined ? [] : [readAgentHistoryTool]),
+        ...availableCollaborationTools,
+    ];
     const tools =
         options.goals === undefined
             ? toolsWithoutGoals

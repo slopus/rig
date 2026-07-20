@@ -27,6 +27,22 @@ describe("createModelCatalog", () => {
             catalog.providers.find((provider) => provider.providerId === "codex")?.serviceTiers,
         ).toEqual(["fast"]);
         expect(
+            catalog.providers.find((provider) => provider.providerId === "codex")
+                ?.contextCompatibility,
+        ).toBe("model_group");
+        expect(
+            catalog.providers.find((provider) => provider.providerId === "claude")
+                ?.contextCompatibility,
+        ).toBe("model_group");
+        expect(
+            catalog.providers.find((provider) => provider.providerId === "claude")
+                ?.contextCompatibilityKind,
+        ).toBe("claude_code");
+        expect(
+            catalog.providers.find((provider) => provider.providerId === "grok")
+                ?.contextCompatibility,
+        ).toBe("model_group");
+        expect(
             catalog.providers.find((provider) => provider.providerId === "claude")?.serviceTiers,
         ).toBeUndefined();
         expect(
@@ -58,6 +74,10 @@ describe("createModelCatalog", () => {
         );
         expect(bedrock?.models).toContain(modelMoonshotKimiK25);
         expect(bedrock?.models).toContain(modelZaiGlm5);
+        expect(bedrock?.contextCompatibility).toBe("model_group");
+        expect(bedrock?.contextCompatibilityKind).toBe("bedrock");
+        expect(modelMoonshotKimiK25.contextCompatibilityGroup).toBeUndefined();
+        expect(modelZaiGlm5.contextCompatibilityGroup).toBeUndefined();
         expect(bedrock?.serviceTiers).toBeUndefined();
         expect(catalog.models.filter((model) => model.id === modelOpenaiGpt55.id)).toEqual([
             modelOpenaiGpt55,
@@ -178,6 +198,7 @@ describe("createModelCatalog", () => {
                         [modelOpenaiGpt56Sol.id]: {
                             endpoint: "https://mantle.example/openai/v1",
                         },
+                        [modelOpenaiGpt56Luna.id]: { region: "us-east-1" },
                     },
                     region: "us-west-2",
                     type: "bedrock",
@@ -191,6 +212,10 @@ describe("createModelCatalog", () => {
                 expect.objectContaining({ id: modelOpenaiGpt56Luna.id }),
             ]),
             providerId: "west_bedrock",
+            contextCompatibilityKeys: {
+                [modelOpenaiGpt56Luna.id]: "us-east-1",
+                [modelOpenaiGpt56Sol.id]: "us-west-2",
+            },
         });
     });
 

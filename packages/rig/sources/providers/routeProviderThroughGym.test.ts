@@ -20,6 +20,9 @@ describe("routeProviderThroughGym", () => {
             },
         }));
         const native = defineProvider({
+            contextCompatibility: "model_group",
+            contextCompatibilityKind: "claude_code",
+            contextCompatibilityKey: () => "us-east-1",
             id: "codex",
             imageProfile: () => "claude",
             models: [model],
@@ -38,6 +41,9 @@ describe("routeProviderThroughGym", () => {
         await routed.quota?.({ fresh: true });
         expect(quota).toHaveBeenCalledWith({ fresh: true });
         expect(routed.id).toBe("codex");
+        expect(routed.contextCompatibility).toBe("model_group");
+        expect(routed.contextCompatibilityKind).toBe("claude_code");
+        expect(routed.contextCompatibilityKey?.(model)).toBe("us-east-1");
         expect(routed.imageProfile(model)).toBe("claude");
         expect(routed.toolProfile(model)).toBe("grok");
         expect(routed.models).toEqual([model]);

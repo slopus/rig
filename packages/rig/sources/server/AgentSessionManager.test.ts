@@ -19,6 +19,165 @@ describe("AgentSessionManager", () => {
         expect(manager.maxActive).toBe(8);
     });
 
+    it("reads paginated history from the root and nested subagents by task path", () => {
+        const root = historySession({
+            id: "root-1",
+            messages: ["root-one", "root-two"],
+            metadata: { depth: 0, rootSessionId: "root-1", type: "primary" },
+        });
+        const child = historySession({
+            id: "child-1",
+            messages: ["child-one", "child-two", "child-three"],
+            metadata: {
+                depth: 1,
+                parentSessionId: "root-1",
+                rootSessionId: "root-1",
+                taskName: "audit",
+                type: "subagent",
+            },
+        });
+        const nested = historySession({
+            id: "nested-1",
+            messages: ["nested-one"],
+            metadata: {
+                depth: 2,
+                parentSessionId: "child-1",
+                rootSessionId: "root-1",
+                taskName: "details",
+                type: "subagent",
+            },
+        });
+        const sessions = new Map([root, child, nested].map((session) => [session.id, session]));
+        const manager = new AgentSessionManager({
+            repository: {
+                createSubagent: vi.fn(),
+                get: (sessionId) => sessions.get(sessionId),
+                listByRoot: () => [child, nested],
+            },
+        });
+
+        const page = manager.readChatHistory(root.id, {
+            cursor: 1,
+            limit: 1,
+            target: "/root/audit",
+        });
+
+        expect(page).toMatchObject({
+            agent: { path: "/root/audit", sessionId: "child-1" },
+            agents: [
+                { messageCount: 2, path: "/root", sessionId: "root-1" },
+                { messageCount: 3, path: "/root/audit", sessionId: "child-1" },
+                {
+                    messageCount: 1,
+                    path: "/root/audit/details",
+                    sessionId: "nested-1",
+                },
+            ],
+            cursor: 1,
+            nextCursor: 2,
+            previousCursor: 0,
+            matchedMessages: 3,
+            totalMessages: 3,
+        });
+        expect(page.messages[0]).toMatchObject({
+            message: { blocks: [{ text: "child-two", type: "text" }] },
+            position: 1,
+        });
+    });
+
+    it("filters full stored content and navigates filtered matches from either end", () => {
+        const root = historyMessageSession({
+            id: "root-1",
+            messages: [
+                { blocks: [{ text: "Boot", type: "text" }], id: "system", role: "system" },
+                { blocks: [{ text: "First user", type: "text" }], id: "user-1", role: "user" },
+                {
+                    blocks: [
+                        { thinking: "Authentication hypothesis", type: "thinking" },
+                        { text: "Assistant answer", type: "text" },
+                    ],
+                    id: "assistant",
+                    role: "agent",
+                },
+                {
+                    blocks: [
+                        {
+                            arguments: { route: "secret-route" },
+                            id: "call",
+                            name: "inspect",
+                            type: "tool_call",
+                        },
+                    ],
+                    id: "tool-call",
+                    role: "agent",
+                },
+                {
+                    blocks: [
+                        {
+                            display: "Inspected route",
+                            rendered: [{ text: "Stored full tool output", type: "text" }],
+                            toolCallId: "call",
+                            toolName: "inspect",
+                            type: "tool_result",
+                        },
+                    ],
+                    id: "tool-result",
+                    role: "agent",
+                },
+                { blocks: [{ text: "Last user", type: "text" }], id: "user-2", role: "user" },
+            ],
+            metadata: { depth: 0, rootSessionId: "root-1", type: "primary" },
+        });
+        const manager = new AgentSessionManager({
+            repository: {
+                createSubagent: vi.fn(),
+                get: () => root,
+                listByRoot: () => [],
+            },
+        });
+
+        const finalUser = manager.readChatHistory(root.id, {
+            from: "end",
+            limit: 1,
+            roles: ["user"],
+        });
+        expect(finalUser).toMatchObject({
+            cursor: 5,
+            matchedMessages: 2,
+            previousCursor: 1,
+            totalMessages: 6,
+        });
+        expect(finalUser.messages.map((entry) => entry.position)).toEqual([5]);
+        expect(finalUser.matchedStats).toMatchObject({ messages: 2, userMessages: 2 });
+        expect(finalUser.totalStats).toMatchObject({ messages: 6, userMessages: 2 });
+        if (finalUser.previousCursor === undefined) {
+            throw new Error("Expected a cursor for the preceding filtered page.");
+        }
+
+        const firstUser = manager.readChatHistory(root.id, {
+            cursor: finalUser.previousCursor,
+            limit: 1,
+            roles: ["user"],
+        });
+        expect(firstUser.messages.map((entry) => entry.position)).toEqual([1]);
+        expect(firstUser.nextCursor).toBe(5);
+
+        const thinkingMatch = manager.readChatHistory(root.id, {
+            from: "start",
+            limit: 10,
+            query: "authentication",
+            roles: ["assistant"],
+        });
+        expect(thinkingMatch.messages.map((entry) => entry.position)).toEqual([2]);
+
+        const toolArgumentMatch = manager.readChatHistory(root.id, {
+            from: "start",
+            limit: 10,
+            query: "secret-route",
+        });
+        expect(toolArgumentMatch.messages.map((entry) => entry.position)).toEqual([3]);
+    });
+
     it("uses a requested model for a workflow child while inheriting the remaining session settings", async () => {
         const child = {
             agentMetadata: () => ({
@@ -977,3 +1136,43 @@ describe("AgentSessionManager", () => {
         expect(manager.taskSession("session-1")).toBe(root);
     });
 });
+
+function historySession(options: {
+    id: string;
+    messages: readonly string[];
+    metadata: SessionAgentMetadata;
+}): InMemorySession {
+    return {
+        agentMetadata: () => options.metadata,
+        id: options.id,
+        isSubagent: () => options.metadata.type === "subagent",
+        snapshot: () => ({
+            agent: options.metadata,
+            snapshot: {
+                messages: options.messages.map((text, index) => ({
+                    blocks: [{ text, type: "text" as const }],
+                    id: `${options.id}-${index}`,
+                    role: "user" as const,
+                })),
+            },
+            status: "idle",
+        }),
+    } as unknown as InMemorySession;
+}
+
+function historyMessageSession(options: {
+    id: string;
+    messages: readonly import("../agent/types.js").Message[];
+    metadata: SessionAgentMetadata;
+}): InMemorySession {
+    return {
+        agentMetadata: () => options.metadata,
+        id: options.id,
+        isSubagent: () => options.metadata.type === "subagent",
+        snapshot: () => ({
+            agent: options.metadata,
+            snapshot: { messages: options.messages },
+            status: "idle",
+        }),
+    } as unknown as InMemorySession;
+}

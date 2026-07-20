@@ -26,6 +26,7 @@ export { createSubagentInstructions } from "./createSubagentInstructions.js";
 export { findLastAgentResponseText } from "./findLastAgentResponseText.js";
 export { findFirstUserRequestText } from "./findFirstUserRequestText.js";
 export { contentBlockToText } from "./contentBlockToText.js";
+export { selectChatHistoryPage } from "./selectChatHistoryPage.js";
 export type {
     AgentBlock,
     AgentMessage,
@@ -64,6 +65,12 @@ export type {
 } from "./context/BashContext.js";
 export type { FileSystemContext, FileSystemStat } from "./context/FileSystemContext.js";
 export type { GoalContext } from "./context/GoalContext.js";
+export type {
+    ChatHistoryAgentSummary,
+    ChatHistoryContext,
+    ChatHistoryPage,
+    ChatHistoryRole,
+} from "./context/ChatHistoryContext.js";
 export type { UserInputContext } from "./context/UserInputContext.js";
 export type { TaskContext } from "./context/TaskContext.js";
 export type { WorkflowContext } from "../workflows/index.js";
