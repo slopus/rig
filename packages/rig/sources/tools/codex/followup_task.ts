@@ -8,7 +8,7 @@ export const codexFollowupTaskTool = defineTool({
     name: "followup_task",
     label: "followup_task",
     description:
-        "Send follow-up work to an existing subagent. If it is idle, this starts another turn; if it is busy, the work is queued.",
+        "Send follow-up work to an existing subagent, including one that completed or was stopped earlier. Its saved session and full context are reused. If it is idle, this starts another turn; if it is busy, the work is queued.",
     arguments: Type.Object({
         target: Type.String({ description: "Agent id, task name, or full task path." }),
         message: Type.String({ description: "The follow-up instructions." }),

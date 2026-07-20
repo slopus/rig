@@ -20,10 +20,32 @@ import { InMemorySession } from "./InMemorySession.js";
 import type { AgentSessionManager } from "./AgentSessionManager.js";
 
 describe("InMemorySession abort", () => {
-    it("pauses active descendants even when the parent has no active run", async () => {
-        const pauseDescendants = vi.fn(async () => 2);
+    it("stops active descendants instead of suspending them", async () => {
+        const pauseDescendants = vi.fn(async () => 1);
+        const stopDescendants = vi.fn(async () => 1);
         const session = new InMemorySession({
-            agentManager: { pauseDescendants } as unknown as AgentSessionManager,
+            agentManager: {
+                pauseDescendants,
+                stopDescendants,
+            } as unknown as AgentSessionManager,
+            createEventId: createEventIdFactory(),
+            modelCatalog: testCatalog(),
+            request: {
+                cwd: "/tmp/rig-parent-hard-abort-test",
+                modelId: "test/parent-abort",
+                providerId: "test",
+            },
+        });
+
+        await expect(session.abort()).resolves.toEqual({ aborted: true });
+        expect(stopDescendants).toHaveBeenCalledWith(session.id);
+        expect(pauseDescendants).not.toHaveBeenCalled();
+    });
+
+    it("stops active descendants even when the parent has no active run", async () => {
+        const stopDescendants = vi.fn(async () => 2);
+        const session = new InMemorySession({
+            agentManager: { stopDescendants } as unknown as AgentSessionManager,
             createEventId: createEventIdFactory(),
             modelCatalog: testCatalog(),
             request: {
@@ -34,7 +56,7 @@ describe("InMemorySession abort", () => {
         });
 
         await expect(session.abort()).resolves.toEqual({ aborted: true });
-        expect(pauseDescendants).toHaveBeenCalledWith(session.id);
+        expect(stopDescendants).toHaveBeenCalledWith(session.id);
     });
 
     it("stops tracked processes even after the agent run is already idle", async () => {
@@ -138,7 +160,7 @@ describe("InMemorySession abort", () => {
         });
 
         await expect(
-            session.abort({ continuePendingSteering: true, pauseDescendants: false }),
+            session.abort({ continuePendingSteering: true, stopDescendants: false }),
         ).resolves.toMatchObject({ aborted: true, continued: true });
         await expect(session.waitForRun(submitted.runId)).resolves.toEqual({
             status: "completed",
@@ -216,7 +238,7 @@ describe("InMemorySession abort", () => {
             session.abort({
                 continuePendingSteering: true,
                 expectedRunId: submitted.runId,
-                pauseDescendants: false,
+                stopDescendants: false,
                 steeringMessageIds: ["already-applied"],
             }),
         ).resolves.toMatchObject({ aborted: true, continued: true });
@@ -287,7 +309,7 @@ describe("InMemorySession abort", () => {
             session.abort({
                 continuePendingSteering: true,
                 expectedRunId: submitted.runId,
-                pauseDescendants: false,
+                stopDescendants: false,
                 steeringMessageIds: ["applied-first", "pending-second"],
             }),
         ).resolves.toMatchObject({ aborted: true, continued: true });
@@ -329,14 +351,9 @@ describe("InMemorySession abort", () => {
             },
         });
         let session: InMemorySession;
-        const pauseDescendants = vi.fn(() => {
-            session.recordSubagentsSuspended([
-                { description: "Only child", path: "/root/only_child" },
-            ]);
-            return releaseDescendants.promise;
-        });
+        const stopDescendants = vi.fn(() => releaseDescendants.promise);
         session = new InMemorySession({
-            agentManager: { pauseDescendants } as unknown as AgentSessionManager,
+            agentManager: { stopDescendants } as unknown as AgentSessionManager,
             createEventId: createEventIdFactory(),
             createRuntime: (options) => createRuntime(options, provider),
             modelCatalog: {
@@ -355,9 +372,9 @@ describe("InMemorySession abort", () => {
         const firstAbort = session.abort({ continuePendingSteering: true });
         const secondAbort = session.abort({ continuePendingSteering: true });
         expect(secondAbort).toBe(firstAbort);
-        expect(pauseDescendants).toHaveBeenCalledOnce();
+        expect(stopDescendants).toHaveBeenCalledOnce();
         await expect(
-            session.abort({ continuePendingSteering: true, pauseDescendants: false }),
+            session.abort({ continuePendingSteering: true, stopDescendants: false }),
         ).rejects.toThrow("An abort request with different options is already in progress.");
         session.steer({ text: "Submitted while interrupt settles." });
         releaseDescendants.resolve(1);
@@ -384,7 +401,7 @@ describe("InMemorySession abort", () => {
         ).toHaveLength(1);
         const events = session.events.since(undefined) ?? [];
         expect(events.filter((event) => event.type === "abort_requested")).toHaveLength(1);
-        expect(events.filter((event) => event.type === "subagents_suspended")).toHaveLength(1);
+        expect(events.filter((event) => event.type === "subagents_suspended")).toHaveLength(0);
         expect(events.filter((event) => event.type === "run_finished")).toHaveLength(1);
         const appliedIds = events.flatMap((event) =>
             event.type === "steering_applied" ? event.data.messageIds : [],
@@ -411,9 +428,9 @@ describe("InMemorySession abort", () => {
                 return abortableStream(options?.signal, started.resolve);
             },
         });
-        const pauseDescendants = vi.fn(() => releaseDescendants.promise);
+        const stopDescendants = vi.fn(() => releaseDescendants.promise);
         const session = new InMemorySession({
-            agentManager: { pauseDescendants } as unknown as AgentSessionManager,
+            agentManager: { stopDescendants } as unknown as AgentSessionManager,
             createEventId: createEventIdFactory(),
             createRuntime: (options) => createRuntime(options, provider),
             modelCatalog: {
@@ -448,7 +465,7 @@ describe("InMemorySession abort", () => {
         expect(
             session.events.since(undefined)?.filter((event) => event.type === "abort_requested"),
         ).toHaveLength(1);
-        expect(pauseDescendants).toHaveBeenCalledOnce();
+        expect(stopDescendants).toHaveBeenCalledOnce();
     });
 
     it("does not steer or abort a replacement run when the expected run already finished", async () => {

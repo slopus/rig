@@ -327,6 +327,15 @@ describe("createCodingAssistantAgent", () => {
             "resume_agent",
         ]);
         expect(deepest.agent.tools.map((tool) => tool.name)).not.toContain("spawn_agent");
+        expect(deepest.agent.tools.map((tool) => tool.name)).toEqual(
+            expect.arrayContaining([
+                "followup_task",
+                "wait_agent",
+                "list_agents",
+                "interrupt_agent",
+                "resume_agent",
+            ]),
+        );
         expect(deepest.agent.tools.map((tool) => tool.name)).not.toContain("workflow");
 
         const claudeParent = createCodingAssistantAgent({
@@ -340,6 +349,16 @@ describe("createCodingAssistantAgent", () => {
         expect(claudeParent.agent.tools.map((tool) => tool.name)).toContain("Workflow");
         expect(claudeParent.agent.tools.map((tool) => tool.name)).toContain("WaitForWorkflow");
         expect(claudeParent.agent.tools.map((tool) => tool.name)).not.toContain("spawn_agent");
+
+        const claudeDeepest = createCodingAssistantAgent({
+            cwd: "/tmp/rig-app-test",
+            modelId: modelAnthropicFable5.id,
+            subagents: { ...controls, canSpawn: false, depth: 3 },
+            workflows,
+        });
+        expect(claudeDeepest.agent.tools.map((tool) => tool.name)).toContain("SendMessage");
+        expect(claudeDeepest.agent.tools.map((tool) => tool.name)).not.toContain("Agent");
+        expect(claudeDeepest.agent.tools.map((tool) => tool.name)).not.toContain("Workflow");
     });
 
     it("omits workflow tools when workflow support is disabled", () => {

@@ -100,7 +100,7 @@ export class AgentSessionManager {
         const previous = this.#managedSubagent(child);
         void this.stopDescendants(child.id);
         if (child.subagentSummary().status === "suspended") child.clearSuspension();
-        void Promise.resolve(child.abort({ pauseDescendants: false })).catch(() => undefined);
+        void Promise.resolve(child.abort({ stopDescendants: false })).catch(() => undefined);
         this.recordChanged(child);
         return previous;
     }
@@ -135,20 +135,26 @@ export class AgentSessionManager {
     }
 
     async stopDescendants(parentSessionId: string): Promise<number> {
-        const active = this.#activeDescendantsOf(parentSessionId);
-        for (const child of this.#descendantsOf(parentSessionId)) {
-            if (child.subagentSummary().status !== "suspended") continue;
+        const descendants = this.#descendantsOf(parentSessionId);
+        const active = descendants.filter((child) => {
+            const status = child.subagentSummary().status;
+            return status === "queued" || status === "running";
+        });
+        const suspended = descendants.filter(
+            (child) => child.subagentSummary().status === "suspended",
+        );
+        for (const child of suspended) {
             child.clearSuspension();
             this.recordChanged(child);
         }
         for (const child of active) this.#stoppedExplicitly.add(child.id);
         await Promise.all(
             active.map(async (child) => {
-                await child.abort({ pauseDescendants: false });
+                await child.abort({ stopDescendants: false });
                 this.recordChanged(child);
             }),
         );
-        return active.length;
+        return active.length + suspended.length;
     }
 
     list(parentSessionId: string, pathPrefix?: string): readonly ManagedSubagent[] {

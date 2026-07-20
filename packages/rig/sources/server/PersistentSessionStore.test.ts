@@ -15,6 +15,7 @@ import type {
     PersistedSessionState,
 } from "./InMemorySession.js";
 import { PersistentSessionStore } from "./PersistentSessionStore.js";
+import { TrackedTaskDrain } from "./TrackedTaskDrain.js";
 
 describe("PersistentSessionStore", () => {
     it("resumes a durable external function after daemon restart without replaying its call", async () => {
@@ -1932,6 +1933,159 @@ describe("PersistentSessionStore", () => {
         }
     });
 
+    it("reuses a stopped subagent session for model-directed follow-up after restart", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        const model = defineModel({
+            defaultThinkingLevel: "off",
+            id: "openai/gym",
+            name: "Gym",
+            thinkingLevels: ["off"],
+        });
+        const catalog: ModelCatalog = {
+            defaultModelId: model.id,
+            defaultProviderId: "gym",
+            models: [model],
+            providers: [{ models: [model], providerId: "gym" }],
+        };
+        const requests: GymInferenceRequest[] = [];
+        const originalFetch = globalThis.fetch;
+        const originalInferenceUrl = process.env.RIG_GYM_INFERENCE_URL;
+        let restoredStore: PersistentSessionStore | undefined;
+        try {
+            const store = new PersistentSessionStore({ databasePath, modelCatalog: catalog });
+            store.saveSession(
+                sessionState({
+                    modelId: model.id,
+                    models: [model],
+                    providerId: "gym",
+                    title: "Parent",
+                    titleStatus: "ready",
+                }),
+            );
+            store.saveSession(
+                sessionState({
+                    agent: {
+                        depth: 1,
+                        description: "Inspect persisted work",
+                        parentSessionId: "session-1",
+                        rootSessionId: "session-1",
+                        taskName: "persisted_worker",
+                        type: "subagent",
+                    },
+                    agentId: "agent-2",
+                    id: "subagent-1",
+                    modelId: model.id,
+                    models: [model],
+                    providerId: "gym",
+                    status: "aborted",
+                    title: "Persisted worker",
+                    titleStatus: "ready",
+                }),
+            );
+            store.upsertMessage("subagent-1", {
+                isPartial: false,
+                message: textUserMessage("old-task", "Remember the original delegated context."),
+                position: 0,
+                runId: "old-run",
+            });
+            store.upsertMessage("subagent-1", {
+                isPartial: false,
+                message: {
+                    blocks: [{ text: "Original work stopped.", type: "text" }],
+                    id: "old-response",
+                    role: "agent",
+                },
+                position: 1,
+                runId: "old-run",
+            });
+            store.close();
+
+            process.env.RIG_GYM_INFERENCE_URL = "http://gym.test/inference";
+            globalThis.fetch = async (_input, init) => {
+                if (typeof init?.body !== "string") throw new Error("Expected request JSON.");
+                const request = JSON.parse(init.body) as GymInferenceRequest;
+                requests.push(request);
+                const userTexts = request.context.messages.flatMap((message) =>
+                    message.role === "user" ? [providerMessageText(message.content)] : [],
+                );
+                const lastMessage = request.context.messages.at(-1);
+                const lastUserText = userTexts.at(-1) ?? "";
+                const response = lastUserText.includes("<subagent-notification>")
+                    ? { content: [{ text: "PERSISTED_CHILD_REPORTED", type: "text" }] }
+                    : userTexts.includes("Continue the persisted investigation.")
+                      ? { content: [{ text: "PERSISTED_CHILD_REUSED", type: "text" }] }
+                      : lastMessage?.role === "toolResult" &&
+                          lastMessage.toolName === "followup_task"
+                        ? { content: [{ text: "FOLLOWUP_ACCEPTED", type: "text" }] }
+                        : {
+                              content: [
+                                  {
+                                      arguments: {
+                                          message: "Continue the persisted investigation.",
+                                          target: "persisted_worker",
+                                      },
+                                      id: "follow-up-persisted-worker",
+                                      name: "followup_task",
+                                      type: "toolCall",
+                                  },
+                              ],
+                          };
+                return new Response(JSON.stringify(response), {
+                    headers: { "content-type": "application/json" },
+                    status: 200,
+                });
+            };
+
+            const taskDrain = new TrackedTaskDrain();
+            restoredStore = new PersistentSessionStore({
+                databasePath,
+                modelCatalog: catalog,
+                taskDrain,
+            });
+            const parent = restoredStore.get("session-1");
+            if (parent === undefined) throw new Error("Expected the restored parent session.");
+            const submitted = parent.submit({ text: "Ask the old worker to continue." });
+            await expect(parent.waitForRun(submitted.runId)).resolves.toEqual({
+                status: "completed",
+            });
+
+            const child = restoredStore.get("subagent-1");
+            if (child === undefined) throw new Error("Expected the restored child session.");
+            const followUpEvent = child.events
+                .since(undefined)
+                ?.find(
+                    (event): event is Extract<SessionEvent, { type: "message_submitted" }> =>
+                        event.type === "message_submitted" &&
+                        event.data.displayText === "Continue the persisted investigation.",
+                );
+            const followUpRunId = followUpEvent?.data.runId;
+            if (followUpRunId === undefined) throw new Error("Expected the child follow-up run.");
+            await expect(child.waitForRun(followUpRunId)).resolves.toEqual({
+                status: "completed",
+            });
+            expect(
+                requests.some((request) => {
+                    const texts = request.context.messages.flatMap((message) =>
+                        message.role === "user" ? [providerMessageText(message.content)] : [],
+                    );
+                    return (
+                        texts.includes("Remember the original delegated context.") &&
+                        texts.includes("Continue the persisted investigation.")
+                    );
+                }),
+            ).toBe(true);
+            await restoredStore.prepareForShutdown("shutdown");
+            restoredStore.close();
+            restoredStore = undefined;
+        } finally {
+            globalThis.fetch = originalFetch;
+            if (originalInferenceUrl === undefined) delete process.env.RIG_GYM_INFERENCE_URL;
+            else process.env.RIG_GYM_INFERENCE_URL = originalInferenceUrl;
+            restoredStore?.close();
+            await cleanup();
+        }
+    });
+
     it("updates partial messages in place while streaming", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         try {
@@ -2400,6 +2554,23 @@ function textUserMessage(id: string, text: string): UserMessage {
         id,
         role: "user",
     };
+}
+
+function providerMessageText(content: unknown): string {
+    if (typeof content === "string") return content;
+    if (!Array.isArray(content)) return "";
+    return content
+        .flatMap((block) =>
+            typeof block === "object" &&
+            block !== null &&
+            "type" in block &&
+            block.type === "text" &&
+            "text" in block &&
+            typeof block.text === "string"
+                ? [block.text]
+                : [],
+        )
+        .join("\n");
 }
 
 function sessionEvent(

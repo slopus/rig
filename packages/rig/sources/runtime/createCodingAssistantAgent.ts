@@ -185,10 +185,22 @@ export function createCodingAssistantAgent(
                 "WaitForWorkflow",
             ].includes(tool.name),
     );
-    const toolsWithoutGoals =
-        options.subagents?.canSpawn !== true
-            ? [...baseTools]
-            : [...baseTools, ...collaborationTools];
+    const availableCollaborationTools =
+        options.subagents === undefined
+            ? []
+            : options.subagents.canSpawn
+              ? collaborationTools
+              : collaborationTools.filter((tool) =>
+                    [
+                        "followup_task",
+                        "wait_agent",
+                        "list_agents",
+                        "interrupt_agent",
+                        "resume_agent",
+                        "SendMessage",
+                    ].includes(tool.name),
+                );
+    const toolsWithoutGoals = [...baseTools, ...availableCollaborationTools];
     const tools =
         options.goals === undefined
             ? toolsWithoutGoals

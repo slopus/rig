@@ -574,7 +574,7 @@ export class InMemorySession {
         options: {
             continuePendingSteering?: boolean;
             expectedRunId?: string;
-            pauseDescendants?: boolean;
+            stopDescendants?: boolean;
             steeringMessageIds?: readonly string[];
         } = {},
     ): Promise<AbortRunResponse> {
@@ -631,7 +631,7 @@ export class InMemorySession {
     async #performAbort(options: {
         continuePendingSteering?: boolean;
         expectedRunId?: string;
-        pauseDescendants?: boolean;
+        stopDescendants?: boolean;
         steeringMessageIds?: readonly string[];
     }): Promise<AbortRunResponse> {
         const runId = this.#activeRun?.runId ?? this.#restoredActiveRunId;
@@ -678,10 +678,10 @@ export class InMemorySession {
                 this.#pendingSteeringContinuations.delete(runId);
             }
         }
-        const pauseDescendants =
-            options.pauseDescendants === false
+        const stopDescendants =
+            options.stopDescendants === false
                 ? Promise.resolve(0)
-                : (this.#agentManager?.pauseDescendants(this.id) ?? Promise.resolve(0));
+                : (this.#agentManager?.stopDescendants(this.id) ?? Promise.resolve(0));
         const runningProcesses = this.#activeProcessCount();
         if (this.#activeRun === undefined && this.#queue.length === 0 && runningProcesses === 0) {
             if (runId !== undefined && this.hasDurableToolRun()) {
@@ -690,18 +690,19 @@ export class InMemorySession {
                 this.#restoredActiveRunId = undefined;
                 this.#status = "aborted";
                 const event = this.#append("abort_requested", { runId });
+                await stopDescendants;
                 return { aborted: true, eventId: event.id };
             }
-            return { aborted: (await pauseDescendants) > 0 };
+            return { aborted: (await stopDescendants) > 0 };
         }
 
         if (this.#activeRun === undefined && this.#queue.length === 0) {
-            const [, pausedDescendants] = await Promise.all([
+            const [, stoppedDescendants] = await Promise.all([
                 this.#killRuntimeProcesses(),
-                pauseDescendants,
+                stopDescendants,
             ]);
             return {
-                aborted: pausedDescendants > 0,
+                aborted: stoppedDescendants > 0,
                 stoppedProcesses: runningProcesses,
             };
         }
@@ -721,7 +722,7 @@ export class InMemorySession {
         this.#restoredActiveRunId = undefined;
         await Promise.all([
             this.#killRuntimeProcesses(),
-            pauseDescendants,
+            stopDescendants,
             ...discardedQueue.map((queued) => this.#closeDebugLog(queued)),
         ]);
         continuation?.resolveReady();
@@ -760,7 +761,7 @@ export class InMemorySession {
         if (!this.isSubagent()) return;
         if (this.#activeRun !== undefined) this.#suspendedRunIds.add(this.#activeRun.runId);
         this.#suspendOnAbort = true;
-        await this.abort({ pauseDescendants: false });
+        await this.abort({ stopDescendants: false });
         this.#status = "suspended";
         if (this.#activeRun === undefined) this.#suspendOnAbort = false;
         this.#saveSession();
@@ -1670,7 +1671,7 @@ export class InMemorySession {
         this.#invalidateSessionMetadata();
         await this.#agentManager?.stopDescendants(this.id);
         const activeRunId = this.#activeRun?.runId;
-        await this.abort({ pauseDescendants: false });
+        await this.abort({ stopDescendants: false });
         if (activeRunId !== undefined) await this.waitForRun(activeRunId);
         await this.#draining?.catch(() => undefined);
         const workflowRuns = [...this.#workflowRuns.values()];

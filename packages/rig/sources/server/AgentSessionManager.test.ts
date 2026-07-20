@@ -491,6 +491,82 @@ describe("AgentSessionManager", () => {
         expect(recordSubagentChanged).toHaveBeenCalledTimes(2);
     });
 
+    it("hard-stops every descendant while keeping each saved session reusable", async () => {
+        const statuses = new Map<string, "aborted" | "running" | "suspended">([
+            ["child-1", "running"],
+            ["grandchild-1", "suspended"],
+        ]);
+        const sessions = new Map<string, InMemorySession>();
+        const makeChild = (id: string, parentSessionId: string, taskName: string) => {
+            const abort = vi.fn(() => {
+                statuses.set(id, "aborted");
+                return { aborted: true };
+            });
+            const clearSuspension = vi.fn(() => statuses.set(id, "aborted"));
+            const submit = vi.fn(() => {
+                statuses.set(id, "running");
+                return { eventId: `${id}-event`, runId: `${id}-run`, sessionId: id };
+            });
+            const session = {
+                abort,
+                agentMetadata: () => ({
+                    depth: parentSessionId === "root-1" ? 1 : 2,
+                    description: taskName,
+                    parentSessionId,
+                    rootSessionId: "root-1",
+                    taskName,
+                    type: "subagent" as const,
+                }),
+                clearSuspension,
+                id,
+                isSubagent: () => true,
+                recordSubagentChanged: vi.fn(),
+                snapshot: () => ({ snapshot: { messages: [] } }),
+                subagentSummary: () => ({
+                    description: taskName,
+                    id,
+                    parentSessionId,
+                    status: statuses.get(id),
+                }),
+                submit,
+                waitForRun: () => new Promise(() => undefined),
+            } as unknown as InMemorySession;
+            sessions.set(id, session);
+            return { abort, clearSuspension, session, submit };
+        };
+        const root = {
+            agentMetadata: () => ({ depth: 0, rootSessionId: "root-1", type: "primary" }),
+            id: "root-1",
+            isSubagent: () => false,
+            recordSubagentChanged: vi.fn(),
+        } as unknown as InMemorySession;
+        sessions.set(root.id, root);
+        const child = makeChild("child-1", root.id, "audit_code");
+        const grandchild = makeChild("grandchild-1", child.session.id, "inspect_tests");
+        const manager = new AgentSessionManager({
+            repository: {
+                createSubagent: vi.fn(),
+                get: (sessionId) => sessions.get(sessionId),
+                listByRoot: () => [child.session, grandchild.session],
+            },
+        });
+
+        await expect(manager.stopDescendants(root.id)).resolves.toBe(2);
+
+        expect(child.abort).toHaveBeenCalledWith({ stopDescendants: false });
+        expect(grandchild.abort).not.toHaveBeenCalled();
+        expect(grandchild.clearSuspension).toHaveBeenCalledOnce();
+        expect(manager.list(root.id)).toEqual([
+            expect.objectContaining({ sessionId: child.session.id, status: "aborted" }),
+            expect.objectContaining({ sessionId: grandchild.session.id, status: "aborted" }),
+        ]);
+
+        expect(manager.followUp(root.id, "audit_code", "Inspect one more file.")).toEqual(
+            expect.objectContaining({ sessionId: child.session.id, status: "running" }),
+        );
+        expect(child.submit).toHaveBeenCalledWith({ text: "Inspect one more file." });
+    });
+
     it("suspends active descendants until each retained session is explicitly resumed", async () => {
         const statuses = new Map<string, "aborted" | "completed" | "running" | "suspended">([
             ["child-1", "running"],
