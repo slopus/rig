@@ -120,6 +120,8 @@ export function createProtocolHttpServer(
         onDurableGlobalEventQueueChange: options.onDurableGlobalEventQueueChange,
         onStartInspector: options.onStartInspector,
     };
+    // The persistent store caches sessions weakly; each open SSE stream needs its own strong lease.
+    const sessionEventStreamLeases = new Set<SessionEventStreamLease>();
 
     attachRemoteTerminalWebSocketServer({ server, store, token: options.token });
 
@@ -143,6 +145,7 @@ export function createProtocolHttpServer(
                 options.defaultDocker,
                 options.taskDrain,
                 options.getProviderQuota,
+                sessionEventStreamLeases,
             );
         const handling =
             mutating && options.taskDrain !== undefined ? options.taskDrain.run(handle) : handle();
@@ -192,6 +195,7 @@ async function handleRequest(
     defaultDocker: DockerExecutionConfig | undefined,
     taskDrain: TaskDrain | undefined,
     getProviderQuota: ((providerId: string) => Promise<ProviderQuota | undefined>) | undefined,
+    sessionEventStreamLeases: Set<SessionEventStreamLease>,
 ): Promise<void> {
     if (!isAuthorizedProtocolRequest(request, token)) {
         sendJson(response, 401, { error: "Unauthorized" });
@@ -969,7 +973,13 @@ async function handleRequest(
     }
 
     if (request.method === "GET" && route.name === "stream") {
-        streamEvents(request, response, session, url.searchParams.get("after") ?? undefined);
+        streamEvents(
+            request,
+            response,
+            session,
+            url.searchParams.get("after") ?? undefined,
+            sessionEventStreamLeases,
+        );
         return;
     }
 
@@ -1269,8 +1279,9 @@ function isExternalToolCallResolution(value: unknown): value is ResolveExternalT
 function streamEvents(
     request: IncomingMessage,
     response: ServerResponse,
-    session: { events: SessionEventLog },
+    session: SessionEventSource,
     after: string | undefined,
+    sessionEventStreamLeases: Set<SessionEventStreamLease>,
 ): void {
     const cursor = request.headers["last-event-id"];
     const eventId = Array.isArray(cursor) ? cursor.at(-1) : cursor;
@@ -1300,12 +1311,23 @@ function streamEvents(
     const unsubscribe = session.events.subscribe((event) => {
         writeSseEvent(response, event);
     });
+    const lease = { session };
+    sessionEventStreamLeases.add(lease);
 
-    request.on("close", () => {
+    request.once("close", () => {
         clearInterval(heartbeat);
         unsubscribe();
+        sessionEventStreamLeases.delete(lease);
         response.end();
     });
+}
+
+interface SessionEventSource {
+    readonly events: SessionEventLog;
+}
+
+interface SessionEventStreamLease {
+    readonly session: SessionEventSource;
 }
 
 function writeSseEvent(response: ServerResponse, event: SessionEvent): void {
