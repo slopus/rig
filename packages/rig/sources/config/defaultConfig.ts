@@ -32,6 +32,7 @@ export const DEFAULT_RIG_CONFIG: RigConfig = {
         },
     },
     settings: {
+        compactCompletedTurns: false,
         completionChime: false,
         durableGlobalEventQueue: false,
         showReasoning: false,

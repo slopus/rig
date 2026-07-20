@@ -6983,6 +6983,7 @@ describe("CodingAssistantApp", () => {
             printToConsole: false,
         });
         const settingsChanges: Array<{
+            compactCompletedTurns: boolean;
             completionChime: boolean;
             durableGlobalEventQueue: boolean;
             showReasoning: boolean;
@@ -7018,6 +7019,7 @@ describe("CodingAssistantApp", () => {
         const rendered = stripAnsi(app.render(100).join("\n"));
         expect(settingsChanges).toEqual([
             {
+                compactCompletedTurns: false,
                 completionChime: false,
                 durableGlobalEventQueue: false,
                 showReasoning: true,
@@ -7034,6 +7036,7 @@ describe("CodingAssistantApp", () => {
         app.handleInput("\r");
 
         expect(settingsChanges.at(-1)).toEqual({
+            compactCompletedTurns: false,
             completionChime: true,
             durableGlobalEventQueue: false,
             showReasoning: true,
@@ -7048,6 +7051,7 @@ describe("CodingAssistantApp", () => {
         app.handleInput("\r");
 
         expect(settingsChanges.at(-1)).toEqual({
+            compactCompletedTurns: false,
             completionChime: true,
             durableGlobalEventQueue: true,
             showReasoning: true,

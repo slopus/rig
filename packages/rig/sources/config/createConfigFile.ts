@@ -30,6 +30,7 @@ export async function createConfigFile(
                     : {}),
             },
             settings: {
+                compact_completed_turns: config.settings.compactCompletedTurns,
                 completion_chime: config.settings.completionChime,
                 durable_global_event_queue: config.settings.durableGlobalEventQueue,
                 show_reasoning: config.settings.showReasoning,

@@ -38,6 +38,7 @@ import {
 
 export interface RunAppOptions {
     apiKey?: string;
+    compactCompletedTurns?: boolean;
     cwd?: string;
     debug?: boolean;
     effort?: string;
@@ -94,6 +95,8 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
     if (options.modelId !== undefined) agentOptions.modelId = options.modelId;
     if (options.providerId !== undefined) agentOptions.providerId = options.providerId;
     if (options.permissionMode !== undefined) agentOptions.permissionMode = options.permissionMode;
+    let compactCompletedTurns =
+        options.compactCompletedTurns ?? loadedConfig.config.settings.compactCompletedTurns;
     let completionChime = loadedConfig.config.settings.completionChime;
     let durableGlobalEventQueue = loadedConfig.config.settings.durableGlobalEventQueue;
     let showReasoning = options.showReasoning ?? loadedConfig.config.settings.showReasoning;
@@ -248,6 +251,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
                         serviceTier: preference.serviceTier,
                     },
                     settings: {
+                        compactCompletedTurns,
                         completionChime,
                         durableGlobalEventQueue,
                         showReasoning,
@@ -257,6 +261,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
                 }),
             ),
         onSettingsChange: async (settings) => {
+            compactCompletedTurns = settings.compactCompletedTurns;
             completionChime = settings.completionChime;
             durableGlobalEventQueue = settings.durableGlobalEventQueue;
             showReasoning = settings.showReasoning;
@@ -295,6 +300,7 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
                 .searchFiles(session.session.id, query)
                 .then((response) => response.files),
         sessionBacked: true,
+        compactCompletedTurns,
         completionChime,
         durableGlobalEventQueue,
         debugInfo: {

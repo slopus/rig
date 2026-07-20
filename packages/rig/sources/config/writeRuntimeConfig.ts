@@ -21,6 +21,7 @@ export async function writeRuntimeConfig(path: string, config: PartialRigConfig)
         };
         theme?: Record<string, string>;
         settings?: {
+            compact_completed_turns?: boolean;
             completion_chime?: boolean;
             durable_global_event_queue?: boolean;
             show_reasoning?: boolean;
@@ -53,6 +54,9 @@ export async function writeRuntimeConfig(path: string, config: PartialRigConfig)
 
     if (settings !== undefined) {
         document.settings = {};
+        if (settings.compactCompletedTurns !== undefined) {
+            document.settings.compact_completed_turns = settings.compactCompletedTurns;
+        }
         if (settings.completionChime !== undefined) {
             document.settings.completion_chime = settings.completionChime;
         }

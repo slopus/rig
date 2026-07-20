@@ -33,6 +33,7 @@ permission_mode = "auto"
 service_tier = "fast"
 
 [settings]
+compact_completed_turns = true
 completion_chime = true
 durable_global_event_queue = true
 show_reasoning = false
@@ -84,6 +85,7 @@ mounts = [
                 serviceTier: "fast",
             },
             settings: {
+                compactCompletedTurns: true,
                 completionChime: true,
                 durableGlobalEventQueue: true,
                 showReasoning: false,
@@ -252,6 +254,10 @@ bearer_token_env_var = "WORK_BEDROCK_TOKEN"
         ['defaults = "invalid"\n', "defaults must be a TOML table."],
         ['mcp_servers = "invalid"\n', "mcp_servers must be a TOML table."],
         ["[defaults]\nmodel = 5\n", "defaults.model must be a string."],
+        [
+            '[settings]\ncompact_completed_turns = "yes"\n',
+            "settings.compact_completed_turns must be a boolean.",
+        ],
         ['[settings]\nshow_usage = "yes"\n', "settings.show_usage must be a boolean."],
         ["[theme]\nprimary = 5\n", "theme.primary must be a string."],
         ['[features]\nworkflows = "yes"\n', "features.workflows must be a boolean."],
@@ -377,6 +383,7 @@ effort = "minimal"
                 providerId: "bedrock",
             });
             expect(loaded.config.settings).toEqual({
+                compactCompletedTurns: false,
                 completionChime: false,
                 durableGlobalEventQueue: false,
                 showReasoning: true,
@@ -405,6 +412,7 @@ effort = "minimal"
                 env: { RIG_HOME: join(root, "empty-rig-home") } as NodeJS.ProcessEnv,
             });
             expect(defaultLoaded.config.settings).toEqual({
+                compactCompletedTurns: false,
                 completionChime: false,
                 durableGlobalEventQueue: false,
                 showReasoning: false,
@@ -434,6 +442,7 @@ effort = "minimal"
                     permissionMode: "workspace_write",
                 },
                 settings: {
+                    compactCompletedTurns: true,
                     completionChime: true,
                     durableGlobalEventQueue: true,
                     showReasoning: true,
@@ -482,6 +491,7 @@ effort = "minimal"
                     'effort = "low"',
                     "",
                     "[settings]",
+                    "compact_completed_turns = true",
                     "completion_chime = true",
                     "durable_global_event_queue = true",
                     "show_reasoning = true",

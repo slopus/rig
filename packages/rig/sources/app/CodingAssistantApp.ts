@@ -58,6 +58,8 @@ import { createEditorTheme } from "./createEditorTheme.js";
 import { createSelectionPanel } from "./createSelectionPanel.js";
 import { createWorkflowMonitor } from "./createWorkflowMonitor.js";
 import { containsMarkdownTable } from "./containsMarkdownTable.js";
+import { compactCompletedTurnEntries } from "./compactCompletedTurnEntries.js";
+import { createCompletedTurn } from "./createCompletedTurn.js";
 import { DEFAULT_TERMINAL_THEME } from "./defaultTerminalTheme.js";
 import { createSlashCommands, type SlashCommandItem } from "./createSlashCommands.js";
 import { describeModelChoice } from "./describeModelChoice.js";
@@ -91,6 +93,7 @@ import { renderBackgroundTerminalCompletion } from "./renderBackgroundTerminalCo
 import { renderBackgroundTerminalInteraction } from "./renderBackgroundTerminalInteraction.js";
 import { renderBackgroundTerminalSummary } from "./renderBackgroundTerminalSummary.js";
 import { renderChildRows, type ChildRow } from "./renderChildRows.js";
+import { renderCompletedTurnStats } from "./renderCompletedTurnStats.js";
 import { renderCodexFileDiff } from "./renderCodexFileDiff.js";
 import { renderCodexMcpToolCall } from "./renderCodexMcpToolCall.js";
 import { renderNoticeWithChildren } from "./renderNoticeWithChildren.js";
@@ -175,6 +178,7 @@ export interface CodingAssistantAppOptions {
         options?: ReadClipboardImageOptions,
     ) => Promise<ClipboardImage | undefined>;
     searchFiles?: (query: string) => Promise<readonly FileSearchResult[]>;
+    compactCompletedTurns?: boolean;
     completionChime?: boolean;
     registerSecret?: (registration: SecretRegistration) => SecretSummary | Promise<SecretSummary>;
     unregisterSecret?: (id: string) => boolean | Promise<boolean>;
@@ -238,6 +242,7 @@ export interface DefaultModelPreference {
 }
 
 export interface AppSettings {
+    compactCompletedTurns: boolean;
     completionChime: boolean;
     durableGlobalEventQueue: boolean;
     showReasoning: boolean;
@@ -358,6 +363,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #nextSteeringSubmissionId = 1;
     #steeringInterruptIntent: SteeringInterruptIntent | undefined;
     #activeSessionRunId: string | undefined;
+    #activeTurnEntryStart: number | undefined;
     #interruptRequestInFlight = false;
     #interruptSettlementRunId: string | undefined;
     #lastEscapeAtMs: number | undefined;
@@ -374,6 +380,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #backgroundProcesses: readonly BashSessionActivity[] = [];
     #observedShellProcesses: readonly BashSessionActivity[] = [];
     #yieldedBackgroundTerminals = new Map<number, string>();
+    #compactCompletedTurns: boolean;
     #completionChime: boolean;
     #durableGlobalEventQueue: boolean;
     #showReasoning: boolean;
@@ -441,6 +448,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#processManager = options.processManager;
         this.#readClipboardImage = options.readClipboardImage ?? readClipboardImage;
         this.#sessionBacked = options.sessionBacked ?? false;
+        this.#compactCompletedTurns = options.compactCompletedTurns ?? false;
         this.#completionChime = options.completionChime ?? false;
         this.#durableGlobalEventQueue = options.durableGlobalEventQueue ?? false;
         this.#debugInfo = options.debugInfo;
@@ -692,6 +700,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#usageRequestVersion += 1;
             this.#abortNotified = false;
             this.#activeSessionRunId = event.data.runId;
+            this.#activeTurnEntryStart = this.#entries.length;
             this.#setRunning(true);
             this.#deferredTurnSeparator = true;
             this.#statusText = "Running";
@@ -851,6 +860,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#toolStatusByCallId.clear();
             this.#clearUserInputRequests();
             if (turnElapsedMs !== undefined) this.#appendTurnCompletion(turnElapsedMs);
+            else this.#activeTurnEntryStart = undefined;
             this.#startDrainQueue();
             this.#requestRender();
             return;
@@ -876,6 +886,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#runningToolCallIds.clear();
             this.#toolStatusByCallId.clear();
             this.#clearUserInputRequests();
+            this.#activeTurnEntryStart = undefined;
             this.#appendEntry({ role: "error", text: event.data.errorMessage });
             this.#startDrainQueue();
             return;
@@ -890,6 +901,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#sessionMutationBoundaryApplied = true;
             this.#lastEscapeAtMs = undefined;
             this.#activeSessionRunId = undefined;
+            this.#activeTurnEntryStart = undefined;
             this.#interruptSettlementRunId = undefined;
             this.#setRunning(false);
             this.#clearEntries();
@@ -2293,6 +2305,7 @@ export class CodingAssistantApp implements Component, Focusable {
                     }
                 }
             }
+            this.#activeTurnEntryStart = this.#entries.length;
 
             const result = await this.#agent.send(prompt.content, {
                 ...(this.#sessionBacked && prompt.transcriptEntryId !== undefined
@@ -2355,6 +2368,7 @@ export class CodingAssistantApp implements Component, Focusable {
                         ? this.#elapsedSinceLastUserInput(this.#now())
                         : undefined;
                 if (turnElapsedMs !== undefined) this.#appendTurnCompletion(turnElapsedMs);
+                else this.#activeTurnEntryStart = undefined;
                 this.#requestRender();
             }
         }
@@ -2770,6 +2784,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#runToken += 1;
         controller.abort();
         this.#abortController = undefined;
+        this.#activeTurnEntryStart = undefined;
         this.#setRunning(false);
         this.#statusText = "Idle";
         this.#discardPendingToolCallEntries();
@@ -3322,6 +3337,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
     #clearEntries(): void {
         this.#entries = [];
+        this.#activeTurnEntryStart = undefined;
         this.#pendingSubmittedUserEntries = [];
         this.#streamedToolCallEntries.clear();
         this.#stoppedToolCallIds.clear();
@@ -3384,9 +3400,12 @@ export class CodingAssistantApp implements Component, Focusable {
         const sourceEntries = this.#entries.filter(
             (entry) => !this.#activeToolCallIds.has(entry.id),
         );
-        return this.#showReasoning
+        const reasoningEntries = this.#showReasoning
             ? [...sourceEntries]
             : sourceEntries.filter((entry) => entry.role !== "thinking");
+        return this.#compactCompletedTurns
+            ? compactCompletedTurnEntries(reasoningEntries)
+            : reasoningEntries;
     }
 
     #renderTranscriptEntries(entries: readonly AppTranscriptEntry[], width: number): string[] {
@@ -3404,7 +3423,9 @@ export class CodingAssistantApp implements Component, Focusable {
             if (entryLines.length === 0) continue;
             if (lines.length > 0) lines.push("");
             lines.push(...entryLines);
-            if (entry.turnElapsedMs !== undefined) {
+            if (this.#compactCompletedTurns && entry.completedTurn !== undefined) {
+                lines.push("", renderCompletedTurnStats(entry.completedTurn.stats, width));
+            } else if (entry.turnElapsedMs !== undefined) {
                 lines.push("", renderTurnCompletionSeparator(entry.turnElapsedMs, width));
             }
         }
@@ -3870,8 +3891,18 @@ export class CodingAssistantApp implements Component, Focusable {
                         : "Enable durable event queue",
                     description: "Persist every daemon event for external synchronization.",
                 },
+                {
+                    value: "compact-turns",
+                    label: this.#compactCompletedTurns
+                        ? "Show full completed turns"
+                        : "Compact completed turns",
+                    description: "Keep turn stats and the final response after completion.",
+                },
             ],
             onSelect: (item) => {
+                if (item.value === "compact-turns") {
+                    this.#compactCompletedTurns = !this.#compactCompletedTurns;
+                }
                 if (item.value === "reasoning") this.#showReasoning = !this.#showReasoning;
                 if (item.value === "usage") this.#showUsage = !this.#showUsage;
                 if (item.value === "completion-chime") {
@@ -3883,7 +3914,9 @@ export class CodingAssistantApp implements Component, Focusable {
                 this.#persistSettings();
                 this.#closeSelectionPanel();
                 let text: string;
-                if (item.value === "reasoning") {
+                if (item.value === "compact-turns") {
+                    text = `Completed turn compaction ${this.#compactCompletedTurns ? "enabled" : "disabled"}.`;
+                } else if (item.value === "reasoning") {
                     text = `Reasoning display ${this.#showReasoning ? "enabled" : "disabled"}.`;
                 } else if (item.value === "usage") {
                     text = `Token status ${this.#showUsage ? "enabled" : "disabled"}.`;
@@ -4784,8 +4817,21 @@ export class CodingAssistantApp implements Component, Focusable {
         if (!this.#deferredTurnSeparator) return;
         this.#deferredTurnSeparator = false;
         const latest = this.#entries.at(-1);
-        if (latest === undefined) return;
+        if (latest === undefined) {
+            this.#activeTurnEntryStart = undefined;
+            return;
+        }
         latest.turnElapsedMs = elapsedMs;
+        const turnStart = this.#activeTurnEntryStart ?? this.#entries.length - 1;
+        const completedTurn = createCompletedTurn(this.#entries.slice(turnStart), elapsedMs);
+        if (completedTurn !== undefined) {
+            completedTurn.entry.completedTurn = completedTurn.turn;
+            if (completedTurn.entry !== latest) {
+                delete latest.turnElapsedMs;
+                completedTurn.entry.turnElapsedMs = elapsedMs;
+            }
+        }
+        this.#activeTurnEntryStart = undefined;
         this.#requestRender();
     }
 
@@ -5009,6 +5055,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
         void Promise.resolve(
             this.#onSettingsChange({
+                compactCompletedTurns: this.#compactCompletedTurns,
                 completionChime: this.#completionChime,
                 durableGlobalEventQueue: this.#durableGlobalEventQueue,
                 showReasoning: this.#showReasoning,

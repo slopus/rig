@@ -23,6 +23,7 @@ export interface PartialConfigDefaults {
 }
 
 export interface ConfigSettings {
+    compactCompletedTurns: boolean;
     completionChime: boolean;
     durableGlobalEventQueue: boolean;
     showReasoning: boolean;
@@ -30,6 +31,7 @@ export interface ConfigSettings {
 }
 
 export interface PartialConfigSettings {
+    compactCompletedTurns?: boolean;
     completionChime?: boolean;
     durableGlobalEventQueue?: boolean;
     showReasoning?: boolean;

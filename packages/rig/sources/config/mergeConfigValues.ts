@@ -31,6 +31,9 @@ export function mergeConfigValues(base: RigConfig, ...configs: PartialRigConfig[
         } else if (config.defaults?.serviceTier !== undefined) {
             defaults.serviceTier = config.defaults.serviceTier;
         }
+        if (config.settings?.compactCompletedTurns !== undefined) {
+            settings.compactCompletedTurns = config.settings.compactCompletedTurns;
+        }
         if (config.settings?.showReasoning !== undefined) {
             settings.showReasoning = config.settings.showReasoning;
         }

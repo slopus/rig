@@ -102,11 +102,20 @@ export function parseConfigToml(source: string): PartialRigConfig {
     const settingsTable = readTable(table.settings, "settings");
     if (settingsTable !== undefined) {
         assertKnownKeys(settingsTable, "settings", [
+            "compact_completed_turns",
             "completion_chime",
             "durable_global_event_queue",
             "show_reasoning",
             "show_usage",
         ]);
+        const compactCompletedTurns = readBoolean(
+            settingsTable,
+            "compact_completed_turns",
+            "settings.compact_completed_turns",
+        );
+        if (compactCompletedTurns !== undefined) {
+            settings.compactCompletedTurns = compactCompletedTurns;
+        }
         const completionChime = readBoolean(
             settingsTable,
             "completion_chime",
