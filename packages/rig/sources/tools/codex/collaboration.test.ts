@@ -49,6 +49,7 @@ describe("Codex collaboration tools", () => {
                 {
                     context: "task",
                     message: "Inspect the implementation.",
+                    model: "anthropic/claude-sonnet-4.6",
                     task_name: "inspect_code",
                 },
                 harness.context,
@@ -63,6 +64,7 @@ describe("Codex collaboration tools", () => {
             background: true,
             contextMode: "task",
             description: "Inspect code",
+            modelId: "anthropic/claude-sonnet-4.6",
             parentToolCallId: "tool-1",
             prompt: "Inspect the implementation.",
             taskName: "inspect_code",

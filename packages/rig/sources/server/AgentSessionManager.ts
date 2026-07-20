@@ -248,13 +248,38 @@ export class AgentSessionManager {
         if (request.providerId !== undefined && request.modelId === undefined) {
             throw new Error("A subagent provider requires an explicit model.");
         }
-        if (
-            request.modelId !== undefined &&
-            !parent.hasModel(request.modelId, request.providerId)
-        ) {
-            const providerDescription =
-                request.providerId === undefined ? "" : ` for provider '${request.providerId}'`;
-            throw new Error(`Model '${request.modelId}' is not available${providerDescription}.`);
+        let parentRequest: CreateSessionRequest | undefined;
+        let childProviderId = request.providerId;
+        if (request.modelId !== undefined) {
+            parentRequest = parent.requestForSubagent();
+            if (
+                childProviderId !== undefined &&
+                !parent.hasModel(request.modelId, childProviderId)
+            ) {
+                throw new Error(
+                    `Model '${request.modelId}' is not available for provider '${childProviderId}'.`,
+                );
+            }
+            if (childProviderId === undefined) {
+                const currentProviderId = parentRequest.providerId;
+                if (
+                    currentProviderId !== undefined &&
+                    parent.hasModel(request.modelId, currentProviderId)
+                ) {
+                    childProviderId = currentProviderId;
+                } else {
+                    const matchingProviderIds = parent.providerIdsForModel(request.modelId);
+                    if (matchingProviderIds.length === 0) {
+                        throw new Error(`Model '${request.modelId}' is not available.`);
+                    }
+                    if (matchingProviderIds.length > 1) {
+                        throw new Error(
+                            `Provider is required for model '${request.modelId}' because it is available from multiple providers: ${matchingProviderIds.map((providerId) => `'${providerId}'`).join(", ")}.`,
+                        );
+                    }
+                    childProviderId = matchingProviderIds[0];
+                }
+            }
         }
 
         const parentMetadata = parent.agentMetadata();
@@ -271,6 +296,7 @@ export class AgentSessionManager {
         let submitted: ReturnType<InMemorySession["submit"]>;
         let taskName: string;
         try {
+            parentRequest ??= parent.requestForSubagent();
             taskName = this.#taskName(parent, request.taskName, request.description);
             const metadata: SessionAgentMetadata = {
                 depth,
@@ -283,7 +309,6 @@ export class AgentSessionManager {
                 taskName,
                 type: "subagent",
             };
-            const parentRequest = parent.requestForSubagent();
             const childModelId = request.modelId ?? parentRequest.modelId;
             const childRequest = {
                 ...parentRequest,
@@ -294,7 +319,7 @@ export class AgentSessionManager {
                     childModelId,
                 ),
                 ...(request.modelId === undefined ? {} : { modelId: request.modelId }),
-                ...(request.providerId === undefined ? {} : { providerId: request.providerId }),
+                ...(childProviderId === undefined ? {} : { providerId: childProviderId }),
             };
             child =
                 request.contextMode === "parent"

@@ -19,10 +19,13 @@ export const codexSpawnAgentTool = defineTool({
         }),
         message: Type.String({ description: "Complete instructions for the new agent." }),
         model: Type.Optional(
-            Type.String({ description: "Child model ID. Provide together with provider." }),
+            Type.String({
+                description:
+                    "Child model ID. The provider is inferred from the current provider or a unique match when omitted.",
+            }),
         ),
         provider: Type.Optional(
-            Type.String({ description: "Child provider ID. Provide together with model." }),
+            Type.String({ description: "Child provider ID. Requires an explicit model." }),
         ),
     }),
     returnType: Type.Object({
@@ -36,9 +39,6 @@ export const codexSpawnAgentTool = defineTool({
         context,
         execution,
     ) => {
-        if ((model === undefined) !== (provider === undefined)) {
-            throw new Error("Subagent provider and model must be provided together.");
-        }
         const result = await requireSubagentContext(context).spawn({
             background: true,
             contextMode,

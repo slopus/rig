@@ -95,6 +95,7 @@ import { createAbortRequestKey } from "./createAbortRequestKey.js";
 import { createGoalTitle } from "./createGoalTitle.js";
 import { createdContextTokens } from "./createdContextTokens.js";
 import { getProviderIdForModel } from "./getProviderIdForModel.js";
+import { getProviderIdsForModel } from "./getProviderIdsForModel.js";
 import { resolveInitialModelSelection } from "./resolveInitialModelSelection.js";
 import { resolveSteeringContinuationMessageIds } from "./resolveSteeringContinuationMessageIds.js";
 import { SessionEventLog } from "./SessionEventLog.js";
@@ -834,6 +835,10 @@ export class InMemorySession {
 
     hasModel(modelId: string, providerId?: string): boolean {
         return getProviderIdForModel(this.#modelCatalog, modelId, providerId) !== undefined;
+    }
+
+    providerIdsForModel(modelId: string): readonly string[] {
+        return getProviderIdsForModel(this.#modelCatalog, modelId);
     }
 
     hasLocalSettlementWork(): boolean {

@@ -11,7 +11,7 @@ afterEach(async () => {
 });
 
 describe("subagent provider, model, and context selection", () => {
-    it("runs Anthropic children with parent-thread or task-only context", async () => {
+    it("infers the unique Anthropic provider for model-only children in both context modes", async () => {
         let parentSessionId: string | undefined;
         let parentContextVerified = false;
         let taskOnlyContextVerified = false;
@@ -34,7 +34,6 @@ describe("subagent provider, model, and context selection", () => {
                                     context: "parent",
                                     message: "Verify inherited context and return PARENT_CHILD_OK.",
                                     model: "anthropic/sonnet-4-6",
-                                    provider: "claude",
                                     task_name: "parent_context_child",
                                 },
                                 id: "spawn-parent-context-child",
@@ -46,7 +45,6 @@ describe("subagent provider, model, and context selection", () => {
                                     context: "task",
                                     message: "Verify isolated context and return TASK_CHILD_OK.",
                                     model: "anthropic/sonnet-4-6",
-                                    provider: "claude",
                                     task_name: "task_only_child",
                                 },
                                 id: "spawn-task-only-child",

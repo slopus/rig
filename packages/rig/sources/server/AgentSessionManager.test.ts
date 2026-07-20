@@ -248,6 +248,88 @@ describe("AgentSessionManager", () => {
         expect(createSubagent).toHaveBeenCalledOnce();
     });
 
+    it("infers a provider for model-only requests and reports ambiguous providers", async () => {
+        const providerModels = new Map([
+            ["codex", new Set(["shared/current"])],
+            ["claude", new Set(["shared/current", "claude/unique", "shared/ambiguous"])],
+            ["grok", new Set(["shared/ambiguous"])],
+        ]);
+        const child = {
+            agentMetadata: () => ({
+                depth: 1,
+                parentSessionId: "root-1",
+                rootSessionId: "root-1",
+                taskName: "model_check",
+                type: "subagent" as const,
+            }),
+            id: "child-1",
+            isSubagent: () => true,
+            subagentSummary: () => ({ status: "running" }),
+            submit: vi.fn(() => ({ runId: "child-run" })),
+        } as unknown as InMemorySession;
+        const parent = {
+            agentMetadata: () => ({ depth: 0, rootSessionId: "root-1", type: "primary" }),
+            hasModel: (modelId: string, providerId?: string) =>
+                providerId === undefined
+                    ? [...providerModels.values()].some((models) => models.has(modelId))
+                    : (providerModels.get(providerId)?.has(modelId) ?? false),
+            id: "root-1",
+            isSubagent: () => false,
+            providerIdsForModel: (modelId: string) =>
+                [...providerModels.entries()]
+                    .filter(([, models]) => models.has(modelId))
+                    .map(([providerId]) => providerId),
+            recordSubagentChanged: vi.fn(),
+            requestForSubagent: () => ({
+                cwd: "/tmp/rig-manager-test",
+                modelId: "openai/gpt-5.5",
+                permissionMode: "auto",
+                providerId: "codex",
+            }),
+        } as unknown as InMemorySession;
+        const createSubagent = vi.fn(() => child);
+        const manager = new AgentSessionManager({
+            repository: {
+                createSubagent,
+                get: (sessionId) => (sessionId === parent.id ? parent : undefined),
+                listByRoot: () => [],
+            },
+        });
+
+        await manager.spawn(parent.id, {
+            background: true,
+            description: "Use current provider",
+            modelId: "shared/current",
+            prompt: "Use the current provider when possible.",
+        });
+        expect(createSubagent).toHaveBeenLastCalledWith(
+            expect.objectContaining({ modelId: "shared/current", providerId: "codex" }),
+            expect.anything(),
+        );
+
+        await manager.spawn(parent.id, {
+            background: true,
+            description: "Use unique provider",
+            modelId: "claude/unique",
+            prompt: "Use the only matching provider.",
+        });
+        expect(createSubagent).toHaveBeenLastCalledWith(
+            expect.objectContaining({ modelId: "claude/unique", providerId: "claude" }),
+            expect.anything(),
+        );
+
+        await expect(
+            manager.spawn(parent.id, {
+                description: "Require provider",
+                modelId: "shared/ambiguous",
+                prompt: "Do not guess between providers.",
+            }),
+        ).rejects.toThrow(
+            "Provider is required for model 'shared/ambiguous' because it is available from multiple providers: 'claude', 'grok'.",
+        );
+        expect(createSubagent).toHaveBeenCalledTimes(2);
+    });
+
     it("does not propagate session-scoped attachments to spawned subagents", async () => {
         const child = {
             agentMetadata: () => ({

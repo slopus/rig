@@ -36,10 +36,13 @@ export const agentTool = defineTool({
             description: "Complete instructions for the subagent.",
         }),
         model: Type.Optional(
-            Type.String({ description: "Child model ID. Provide together with provider." }),
+            Type.String({
+                description:
+                    "Child model ID. The provider is inferred from the current provider or a unique match when omitted.",
+            }),
         ),
         provider: Type.Optional(
-            Type.String({ description: "Child provider ID. Provide together with model." }),
+            Type.String({ description: "Child provider ID. Requires an explicit model." }),
         ),
         run_in_background: Type.Optional(
             Type.Boolean({
@@ -58,10 +61,6 @@ export const agentTool = defineTool({
         if (context.subagents === undefined || !context.subagents.canSpawn) {
             throw new Error("This agent has reached the maximum subagent depth.");
         }
-        if ((model === undefined) !== (provider === undefined)) {
-            throw new Error("Subagent provider and model must be provided together.");
-        }
-
         const result = await context.subagents.spawn(
             {
                 description,
