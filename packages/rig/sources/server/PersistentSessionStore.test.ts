@@ -1480,6 +1480,155 @@ describe("PersistentSessionStore", () => {
         }
     });
 
+    it("persists internal context messages without exposing them in the session snapshot", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        const internalContinuation: UserMessage = {
+            blocks: [{ text: "Continue after the inference crash.", type: "text" }],
+            id: "internal-crash-continuation",
+            internal: true,
+            role: "user",
+        };
+        try {
+            const store = new PersistentSessionStore({ databasePath });
+            const state = sessionState({ contextMessages: [internalContinuation] });
+            store.saveSession(state);
+            store.close();
+
+            const restoredStore = new PersistentSessionStore({ databasePath });
+            try {
+                const restored = restoredStore.get(state.id);
+
+                expect(restored?.state().contextMessages).toEqual([internalContinuation]);
+                expect(restored?.snapshot().snapshot.messages).toEqual([]);
+                expect(restored?.snapshot().snapshot.contextMessages).toEqual([]);
+                expect(JSON.stringify(restored?.events.since(undefined))).not.toContain(
+                    "Continue after the inference crash.",
+                );
+            } finally {
+                restoredStore.close();
+            }
+        } finally {
+            await cleanup();
+        }
+    });
+
+    it("checkpoints Claude's internal crash continuation before the retry completes", async () => {
+        const { cleanup, databasePath } = await createDatabasePath();
+        const model = defineModel({
+            defaultThinkingLevel: "off",
+            id: "anthropic/sonnet-4-6",
+            name: "Claude Test",
+            thinkingLevels: ["off"],
+        });
+        const catalog: ModelCatalog = {
+            defaultModelId: model.id,
+            defaultProviderId: "claude",
+            models: [model],
+            providers: [{ models: [model], providerId: "claude" }],
+        };
+        const originalFetch = globalThis.fetch;
+        const originalInferenceUrl = process.env.RIG_GYM_INFERENCE_URL;
+        const originalOverrides = process.env.RIG_GYM_PROVIDER_OVERRIDES;
+        const requests: GymInferenceRequest[] = [];
+        let releaseContinuation: (response: Response) => void = () => {};
+        const continuation = new Promise<Response>((resolve) => {
+            releaseContinuation = resolve;
+        });
+        let store: PersistentSessionStore | undefined;
+        try {
+            process.env.RIG_GYM_INFERENCE_URL = "http://gym.test/inference";
+            process.env.RIG_GYM_PROVIDER_OVERRIDES = "claude";
+            globalThis.fetch = async (_input, init) => {
+                if (typeof init?.body !== "string") throw new Error("Expected request JSON.");
+                requests.push(JSON.parse(init.body) as GymInferenceRequest);
+                if (requests.length === 1) {
+                    return new Response(
+                        JSON.stringify({
+                            content: [{ text: "DURABLE_PARTIAL_UNSENT", type: "text" }],
+                            errorAfterTextDeltas: 1,
+                            errorMessage: "WebSocket error",
+                            stopReason: "error",
+                            textDeltaChunkSize: 15,
+                        }),
+                        { headers: { "content-type": "application/json" }, status: 200 },
+                    );
+                }
+                if (requests.length === 2) return continuation;
+                return new Response(
+                    JSON.stringify({ content: [{ text: "Recovered session", type: "text" }] }),
+                    { headers: { "content-type": "application/json" }, status: 200 },
+                );
+            };
+
+            store = new PersistentSessionStore({ databasePath, modelCatalog: catalog });
+            const session = store.create({
+                cwd: "/tmp/rig-internal-crash-continuation",
+                modelId: model.id,
+                permissionMode: "full_access",
+                providerId: "claude",
+            });
+            const submitted = session.submit({ text: "Recover this response." });
+            await waitForInferenceRequests(requests, 2);
+
+            expect(session.state().contextMessages?.slice(-2)).toMatchObject([
+                {
+                    role: "agent",
+                    blocks: [{ type: "text", text: "DURABLE_PARTIAL" }],
+                },
+                {
+                    role: "user",
+                    internal: true,
+                    blocks: [{ type: "text", text: "Continue after the inference crash." }],
+                },
+            ]);
+            expect(JSON.stringify(session.snapshot().snapshot)).not.toContain(
+                "Continue after the inference crash.",
+            );
+
+            releaseContinuation(
+                new Response(
+                    JSON.stringify({ content: [{ text: "DURABLE_RECOVERED", type: "text" }] }),
+                    { headers: { "content-type": "application/json" }, status: 200 },
+                ),
+            );
+            await expect(session.waitForRun(submitted.runId)).resolves.toEqual({
+                status: "completed",
+            });
+            store.close();
+            store = undefined;
+
+            const restoredStore = new PersistentSessionStore({
+                databasePath,
+                modelCatalog: catalog,
+            });
+            try {
+                const restored = restoredStore.get(session.id);
+                expect(restored?.state().contextMessages).toContainEqual(
+                    expect.objectContaining({ internal: true, role: "user" }),
+                );
+                expect(JSON.stringify(restored?.snapshot().snapshot)).not.toContain(
+                    "Continue after the inference crash.",
+                );
+            } finally {
+                restoredStore.close();
+            }
+        } finally {
+            releaseContinuation(
+                new Response(JSON.stringify({ content: [] }), {
+                    headers: { "content-type": "application/json" },
+                    status: 200,
+                }),
+            );
+            store?.close();
+            globalThis.fetch = originalFetch;
+            if (originalInferenceUrl === undefined) delete process.env.RIG_GYM_INFERENCE_URL;
+            else process.env.RIG_GYM_INFERENCE_URL = originalInferenceUrl;
+            if (originalOverrides === undefined) delete process.env.RIG_GYM_PROVIDER_OVERRIDES;
+            else process.env.RIG_GYM_PROVIDER_OVERRIDES = originalOverrides;
+            await cleanup();
+        }
+    });
+
     it("persists the permission mode in session details and summaries", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         try {
@@ -2486,6 +2635,18 @@ async function waitForPendingUserInputs(session: InMemorySession, count: number)
         await new Promise((resolve) => setImmediate(resolve));
     }
     throw new Error("Timed out waiting for the durable user question.");
+}
+
+async function waitForInferenceRequests(
+    requests: readonly GymInferenceRequest[],
+    count: number,
+): Promise<void> {
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+        if (requests.length >= count) return;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    throw new Error("Timed out waiting for inference requests.");
 }
 
 async function createDatabasePath(): Promise<{

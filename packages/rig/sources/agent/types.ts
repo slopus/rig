@@ -73,12 +73,16 @@ export interface SystemMessage {
     role: "system";
     id: string;
     blocks: readonly ContentBlock[];
+    /** Durable model context that must never be presented as transcript content. */
+    internal?: true;
 }
 
 export interface UserMessage {
     role: "user";
     id: string;
     blocks: readonly ContentBlock[];
+    /** Durable model context that must never be presented as user-authored content. */
+    internal?: true;
 }
 
 export interface AgentMessage {
@@ -91,6 +95,8 @@ export interface AgentMessage {
     providerId?: string;
     requestedModelId?: string;
     responseModel?: string;
+    /** Durable model context that must never be presented as transcript content. */
+    internal?: true;
 }
 
 export type Message = SystemMessage | UserMessage | AgentMessage;

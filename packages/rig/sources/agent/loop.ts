@@ -81,6 +81,8 @@ export interface RunAgentLoopOptions {
     now?: () => number;
     onEvent?: (event: AgentLoopEvent) => void | Promise<void>;
     onMessage?: (message: Message) => void | Promise<void>;
+    /** Checkpoints model-only context before a recovery inference begins. */
+    onContextChanged?: (messages: readonly Message[]) => void | Promise<void>;
     takeSteering?: () => readonly UserMessage[];
     context: AgentContext;
 }
@@ -106,7 +108,7 @@ export type AgentLoopEvent =
           type: "inference_retry";
           attempt: number;
           maxAttempts: number;
-          reason: "incomplete_response";
+          reason: "connection_lost" | "incomplete_response";
       }
     | {
           type: "tool_execution_start";
@@ -236,6 +238,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                 pendingStartEvent = undefined;
                 deferredErrorEvents = [];
                 let emittedContent = false;
+                let latestPartial: ProviderAssistantMessage | undefined;
                 try {
                     const preparedProviderMessages = await prepareProviderMessageImages(
                         providerMessages,
@@ -250,9 +253,11 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                     for await (const event of stream) {
                         if (event.type === "start") {
                             pendingStartEvent = event;
+                            latestPartial = event.partial;
                             continue;
                         }
                         if (event.type === "error") {
+                            latestPartial = event.error;
                             deferredErrorEvents.push(event);
                             continue;
                         }
@@ -260,6 +265,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                             await options.onEvent?.(pendingStartEvent);
                             pendingStartEvent = undefined;
                         }
+                        if ("partial" in event) latestPartial = event.partial;
                         if (hasResponseContentBegun(event)) emittedContent = true;
                         await options.onEvent?.(event);
                     }
@@ -267,12 +273,39 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                     assistantMessage = await stream.result();
                 } catch (error) {
                     if (
-                        !emittedContent &&
                         inferenceRetryCount < INFERENCE_MAX_RETRIES &&
                         isRetryableInferenceError(error)
                     ) {
                         inferenceRetryCount += 1;
+                        if (emittedContent && latestPartial !== undefined) {
+                            await appendInferenceCrashContinuation({
+                                assistantMessage: latestPartial,
+                                contextTranscript,
+                                idFactory,
+                                model,
+                                now,
+                                onContextChanged: options.onContextChanged,
+                                onMessage: options.onMessage,
+                                provider: options.provider,
+                                providerMessages,
+                                transcript,
+                                usedToolCallIds,
+                            });
+                        }
+                        await options.onEvent?.({
+                            type: "inference_retry",
+                            attempt: inferenceRetryCount,
+                            maxAttempts: INFERENCE_MAX_RETRIES,
+                            reason: "connection_lost",
+                        });
                         await delayBeforeInferenceRetry(inferenceRetryCount, options.signal);
+                        if (emittedContent) {
+                            iteration += 1;
+                            await options.onEvent?.({
+                                type: "inference_iteration_start",
+                                iteration,
+                            });
+                        }
                         continue;
                     }
                     throw error;
@@ -281,20 +314,42 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                 if (
                     assistantMessage.stopReason === "error" &&
                     inferenceRetryCount < INFERENCE_MAX_RETRIES &&
-                    !emittedContent &&
                     (assistantMessage.errorCode === "incomplete_response" ||
                         isRetryableInferenceError(assistantMessage))
                 ) {
                     inferenceRetryCount += 1;
-                    if (assistantMessage.errorCode === "incomplete_response") {
-                        await options.onEvent?.({
-                            type: "inference_retry",
-                            attempt: inferenceRetryCount,
-                            maxAttempts: INFERENCE_MAX_RETRIES,
-                            reason: "incomplete_response",
+                    if (emittedContent) {
+                        await appendInferenceCrashContinuation({
+                            assistantMessage,
+                            contextTranscript,
+                            idFactory,
+                            model,
+                            now,
+                            onContextChanged: options.onContextChanged,
+                            onMessage: options.onMessage,
+                            provider: options.provider,
+                            providerMessages,
+                            transcript,
+                            usedToolCallIds,
                         });
                     }
+                    await options.onEvent?.({
+                        type: "inference_retry",
+                        attempt: inferenceRetryCount,
+                        maxAttempts: INFERENCE_MAX_RETRIES,
+                        reason:
+                            assistantMessage.errorCode === "incomplete_response"
+                                ? "incomplete_response"
+                                : "connection_lost",
+                    });
                     await delayBeforeInferenceRetry(inferenceRetryCount, options.signal);
+                    if (emittedContent) {
+                        iteration += 1;
+                        await options.onEvent?.({
+                            type: "inference_iteration_start",
+                            iteration,
+                        });
+                    }
                     continue;
                 }
                 break;
@@ -692,6 +747,77 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         });
         await appendSteering(options, transcript, contextTranscript, providerMessages, now);
     }
+}
+
+async function appendInferenceCrashContinuation(options: {
+    assistantMessage: ProviderAssistantMessage;
+    contextTranscript: Message[];
+    idFactory: () => string;
+    model: Model;
+    now: () => number;
+    onContextChanged: RunAgentLoopOptions["onContextChanged"];
+    onMessage: RunAgentLoopOptions["onMessage"];
+    provider: Provider;
+    providerMessages: ProviderMessage[];
+    transcript: Message[];
+    usedToolCallIds: Set<string>;
+}): Promise<void> {
+    const resumableAssistant = toResumableAssistantMessage(options.assistantMessage);
+    options.providerMessages.push(resumableAssistant);
+    const agentMessage = assistantMessageToAgentMessage(resumableAssistant, options.idFactory, {
+        providerId: options.provider.id,
+        requestedModelId: options.model.id,
+    });
+    options.transcript.push(agentMessage);
+    options.contextTranscript.push(agentMessage);
+
+    const unexecutedToolCalls = resumableAssistant.content.filter(isProviderToolCall);
+    if (unexecutedToolCalls.length > 0) {
+        const resultBlocks = unexecutedToolCalls.map((toolCall) => {
+            options.usedToolCallIds.add(toolCall.id);
+            return createErrorToolResultBlock(
+                toolCall,
+                "Not run because the model connection was lost before the response completed.",
+                { kind: "interrupted" },
+            );
+        });
+        for (const resultBlock of resultBlocks) {
+            options.providerMessages.push(toProviderToolResultMessage(resultBlock, options.now));
+        }
+        options.contextTranscript.push({
+            role: "agent",
+            id: options.idFactory(),
+            internal: true,
+            blocks: resultBlocks,
+        });
+    }
+
+    const continuationUserMessage = options.provider.inferenceCrashContinuation?.userMessage;
+    if (continuationUserMessage !== undefined) {
+        const message: UserMessage = {
+            role: "user",
+            id: options.idFactory(),
+            internal: true,
+            blocks: [{ type: "text", text: continuationUserMessage }],
+        };
+        options.contextTranscript.push(message);
+        options.providerMessages.push(toProviderUserMessage(message, options.now));
+    }
+
+    await options.onContextChanged?.(options.contextTranscript);
+    await options.onMessage?.(agentMessage);
+}
+
+function toResumableAssistantMessage(message: ProviderAssistantMessage): ProviderAssistantMessage {
+    const { errorCode: _errorCode, errorMessage: _errorMessage, ...rest } = message;
+    const content = message.content.map((block) =>
+        block.type === "toolCall" ? { ...block, arguments: { ...block.arguments } } : { ...block },
+    );
+    return {
+        ...rest,
+        content,
+        stopReason: content.some(isProviderToolCall) ? "toolUse" : "stop",
+    };
 }
 
 async function ignoreOptionalFailure(callback: () => void | Promise<void>): Promise<void> {

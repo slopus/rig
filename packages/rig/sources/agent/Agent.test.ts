@@ -7,6 +7,7 @@ import { validPng32Base64 } from "../tools/testing/validImageFixtures.js";
 import { getImageProcessor } from "../images/getImageProcessor.js";
 import { selectToolsForModel } from "../runtime/selectToolsForModel.js";
 import { Agent } from "./Agent.js";
+import type { AgentLoopEvent } from "./loop.js";
 import { defineTool, type Message } from "./types.js";
 import {
     defineModel,
@@ -847,7 +848,7 @@ describe("Agent", () => {
                 });
             },
         });
-        const observedEventTypes: string[] = [];
+        const observedEvents: AgentLoopEvent[] = [];
         const harness = createJustBashToolHarness();
         const agent = new Agent({
             provider,
@@ -855,7 +856,7 @@ describe("Agent", () => {
             context: harness.context,
             printToConsole: false,
             onEvent: (event) => {
-                observedEventTypes.push(event.type);
+                observedEvents.push(event);
             },
         });
 
@@ -864,14 +865,24 @@ describe("Agent", () => {
 
         expect(result.stopReason).toBe("stop");
         expect(requestCount).toBe(2);
-        expect(observedEventTypes).toEqual(["inference_iteration_start", "start", "done"]);
+        expect(observedEvents).toMatchObject([
+            { type: "inference_iteration_start" },
+            {
+                type: "inference_retry",
+                attempt: 1,
+                maxAttempts: 5,
+                reason: "connection_lost",
+            },
+            { type: "start" },
+            { type: "done" },
+        ]);
         expect(agent.messages.at(-1)).toMatchObject({
             role: "agent",
             blocks: [{ type: "text", text: "recovered" }],
         });
     });
 
-    it("does not retry an incomplete response after visible content begins", async () => {
+    it("continues an incomplete response from the emitted assistant content", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
             name: "GPT Test",
@@ -879,21 +890,32 @@ describe("Agent", () => {
             defaultThinkingLevel: "off",
         });
         let requestCount = 0;
+        const contexts: Context[] = [];
         const provider = defineProvider({
             id: "codex",
             models: [model],
-            stream() {
+            stream(_model, context) {
                 requestCount += 1;
+                contexts.push(context);
                 const message: AssistantMessage = {
                     role: "assistant",
-                    content: [{ type: "text", text: "partial answer" }],
+                    content: [
+                        {
+                            type: "text",
+                            text: requestCount === 1 ? "partial answer" : " continued answer",
+                        },
+                    ],
                     api: "test",
                     provider: "codex",
                     model: model.id,
                     usage: zeroUsage(),
-                    stopReason: "error",
-                    errorCode: "incomplete_response",
-                    errorMessage: "The response ended early.",
+                    stopReason: requestCount === 1 ? "error" : "stop",
+                    ...(requestCount === 1
+                        ? {
+                              errorCode: "incomplete_response" as const,
+                              errorMessage: "The response ended early.",
+                          }
+                        : {}),
                     timestamp: requestCount,
                 };
                 return {
@@ -905,7 +927,15 @@ describe("Agent", () => {
                             delta: "partial answer",
                             partial: message,
                         };
-                        yield { type: "error" as const, reason: "error" as const, error: message };
+                        if (message.stopReason === "error") {
+                            yield {
+                                type: "error" as const,
+                                reason: "error" as const,
+                                error: message,
+                            };
+                        } else {
+                            yield { type: "done" as const, reason: "stop" as const, message };
+                        }
                     },
                     async result() {
                         return message;
@@ -927,13 +957,109 @@ describe("Agent", () => {
 
         const result = await agent.send("Answer once.");
 
-        expect(result.stopReason).toBe("error");
-        expect(requestCount).toBe(1);
-        expect(observedEventTypes).not.toContain("inference_retry");
-        expect(result.messages.at(-1)).toMatchObject({
+        expect(result.stopReason).toBe("stop");
+        expect(requestCount).toBe(2);
+        expect(observedEventTypes).toContain("inference_retry");
+        expect(contexts[1]?.messages.at(-1)).toMatchObject({
+            role: "assistant",
+            content: [{ type: "text", text: "partial answer" }],
+        });
+        expect(result.messages.at(-2)).toMatchObject({
             role: "agent",
             blocks: [{ type: "text", text: "partial answer" }],
         });
+        expect(result.messages.at(-1)).toMatchObject({
+            role: "agent",
+            blocks: [{ type: "text", text: " continued answer" }],
+        });
+    });
+
+    it("adds Claude's internal user continuation only to model context", async () => {
+        const model = defineModel({
+            id: "anthropic/test",
+            name: "Claude Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const contexts: Context[] = [];
+        const deliveredMessages: Message[] = [];
+        const provider = defineProvider({
+            id: "claude",
+            inferenceCrashContinuation: {
+                userMessage: "Continue after the inference crash.",
+            },
+            models: [model],
+            stream(_model, context) {
+                contexts.push(context);
+                const message: AssistantMessage = {
+                    role: "assistant",
+                    content: [
+                        {
+                            type: "text",
+                            text: contexts.length === 1 ? "Claude partial" : "Claude continued",
+                        },
+                    ],
+                    api: "test",
+                    provider: "claude",
+                    model: model.id,
+                    usage: zeroUsage(),
+                    stopReason: contexts.length === 1 ? "error" : "stop",
+                    ...(contexts.length === 1 ? { errorMessage: "WebSocket error" } : {}),
+                    timestamp: contexts.length,
+                };
+                if (contexts.length !== 1) return streamFor(message);
+                return {
+                    async *[Symbol.asyncIterator]() {
+                        yield { type: "start" as const, partial: message };
+                        yield {
+                            type: "text_delta" as const,
+                            contentIndex: 0,
+                            delta: "Claude partial",
+                            partial: message,
+                        };
+                        yield {
+                            type: "error" as const,
+                            reason: "error" as const,
+                            error: message,
+                        };
+                    },
+                    async result() {
+                        return message;
+                    },
+                };
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: harness.context,
+            printToConsole: false,
+        });
+
+        const result = await agent.send("Recover Claude.", {
+            onMessage: (message) => {
+                deliveredMessages.push(message);
+            },
+        });
+
+        expect(result.stopReason).toBe("stop");
+        expect(contexts[1]?.messages.slice(-2)).toMatchObject([
+            { role: "assistant", content: [{ type: "text", text: "Claude partial" }] },
+            {
+                role: "user",
+                content: [{ type: "text", text: "Continue after the inference crash." }],
+            },
+        ]);
+        expect(deliveredMessages).not.toContainEqual(expect.objectContaining({ internal: true }));
+        expect(agent.snapshot().contextMessages?.at(-2)).toMatchObject({
+            role: "user",
+            internal: true,
+            blocks: [{ type: "text", text: "Continue after the inference crash." }],
+        });
+        expect(agent.snapshot().messages).not.toContainEqual(
+            expect.objectContaining({ internal: true }),
+        );
     });
 
     it("manually compacts with the active reasoning and service tier without changing history", async () => {

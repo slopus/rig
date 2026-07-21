@@ -182,6 +182,8 @@ export interface Provider {
     readonly contextCompatibilityKind?: ProviderContextCompatibilityKind;
     readonly contextCompatibilityKey?: (model: Model) => string;
     readonly serviceTiers?: readonly ServiceTier[];
+    /** Extra user turn required by adapters that cannot continue after an assistant turn. */
+    readonly inferenceCrashContinuation?: { readonly userMessage: string };
     imageProfile(model: Model): ProviderImageProfile;
     toolProfile(model: Model): ProviderToolProfile;
     quota?(options?: { fresh?: boolean }): Promise<ProviderQuota>;
@@ -219,6 +221,7 @@ export function defineProvider(provider: {
     contextCompatibilityKind?: ProviderContextCompatibilityKind;
     contextCompatibilityKey?: (model: Model) => string;
     serviceTiers?: readonly ServiceTier[];
+    inferenceCrashContinuation?: { readonly userMessage: string };
     imageProfile?: (model: Model) => ProviderImageProfile;
     toolProfile?: (model: Model) => ProviderToolProfile;
     quota?: (options?: { fresh?: boolean }) => Promise<ProviderQuota>;

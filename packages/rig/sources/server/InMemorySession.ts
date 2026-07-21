@@ -5,6 +5,7 @@ import { createId } from "@paralleldrive/cuid2";
 
 import { errorToMessage } from "../errorToMessage.js";
 import { assistantMessageToAgentMessage } from "../agent/assistantMessageToAgentMessage.js";
+import { isInternalMessage } from "../agent/isInternalMessage.js";
 import { findFirstUserRequestText, findLastAgentResponseText } from "../agent/index.js";
 import type {
     AgentContext,
@@ -3094,7 +3095,7 @@ export class InMemorySession {
                 ? {
                       contextMessages: [
                           ...(runtimeSnapshot?.contextMessages ?? this.#contextMessages ?? []),
-                      ],
+                      ].filter((message) => !isInternalMessage(message)),
                   }
                 : {}),
             ...(this.#instructions !== undefined ? { instructions: this.#instructions } : {}),

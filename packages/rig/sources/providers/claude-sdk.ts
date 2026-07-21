@@ -101,6 +101,9 @@ export function createClaudeSdkProvider(options: ClaudeSdkProviderOptions) {
         contextCompatibility: "model_group",
         contextCompatibilityKind: "claude_code",
         id: options.id ?? CLAUDE_PROVIDER_ID,
+        inferenceCrashContinuation: {
+            userMessage: "Continue after the inference crash.",
+        },
         imageProfile: () => "claude",
         toolProfile: () => "claude",
         models: [

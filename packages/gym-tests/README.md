@@ -406,6 +406,9 @@ interface GymInferenceResponse {
     content: readonly AssistantContent[];
     completionDelayMs?: number;
     delayMs?: number;
+    disconnectAfterTextDeltas?: number;
+    errorAfterContentStart?: boolean;
+    errorAfterTextDeltas?: number;
     errorMessage?: string;
     responseModel?: string;
     stopReason?: StopReason;
@@ -422,6 +425,9 @@ interface GymInferenceResponse {
 - `completionDelayMs` delays the final provider result after content has streamed. It intentionally
   continues through cancellation so tests can reproduce a completion already in flight.
 - `delayMs` delays the response inside the container-side provider and respects abort signals. Use it for interruption and concurrency scenarios.
+- `disconnectAfterTextDeltas` throws a transport-shaped stream error after the requested number of text deltas, preserving the emitted partial message.
+- `errorAfterContentStart` emits the first block's structural start event, then skips its payload events. Pair it with an error stop reason to reproduce a connection failure after an empty content marker.
+- `errorAfterTextDeltas` stops text streaming after the requested number of deltas. Pair it with an error stop reason to reproduce a connection failure after a deterministic visible prefix.
 - `thinkingDeltaChunkSize` splits thinking blocks into deterministic streaming deltas of at most that many UTF-16 code units.
 - `thinkingDeltaDelayMs` pauses between thinking deltas and respects abort signals. Pair it with `thinkingDeltaChunkSize` for live reasoning-stream scenarios.
 - `textDeltaChunkSize` splits text blocks into deterministic streaming deltas of at most that many UTF-16 code units.

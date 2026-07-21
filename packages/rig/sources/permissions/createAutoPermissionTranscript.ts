@@ -1,4 +1,5 @@
 import type { ContentBlock, Message } from "../agent/types.js";
+import { isInternalMessage } from "../agent/isInternalMessage.js";
 
 interface TranscriptEntry {
     category: "message" | "tool";
@@ -71,6 +72,7 @@ export function createAutoPermissionTranscript(
 function collectEntries(messages: readonly Message[]): TranscriptEntry[] {
     const entries: TranscriptEntry[] = [];
     for (const message of messages) {
+        if (isInternalMessage(message)) continue;
         if (message.role === "system") continue;
         if (message.role === "user") {
             if (isGeneratedConversationSummary(message.blocks)) continue;

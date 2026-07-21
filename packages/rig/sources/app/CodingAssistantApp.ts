@@ -3109,7 +3109,10 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#streamingThinkingEntryIds.clear();
             this.#toolCallEntryIdsByContentIndex.clear();
         } else if (event.type === "inference_retry") {
-            this.#statusText = `Retrying incomplete response · ${event.attempt} of ${event.maxAttempts}`;
+            this.#statusText =
+                event.reason === "connection_lost"
+                    ? `Reconnecting · ${event.attempt} of ${event.maxAttempts}`
+                    : `Retrying incomplete response · ${event.attempt} of ${event.maxAttempts}`;
         } else if (event.type === "text_start") {
             this.#statusText = "Running";
         } else if (event.type === "text_delta") {

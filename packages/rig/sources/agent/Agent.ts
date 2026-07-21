@@ -399,6 +399,11 @@ export class Agent {
                 context: this.context,
                 onEvent: async (event) => this.#handleEvent(event, options),
                 onMessage: async (message) => this.#handleMessage(message, options),
+                onContextChanged: (messages) => {
+                    if (this.#resetVersion === resetVersion) {
+                        this.#contextMessages = [...messages];
+                    }
+                },
                 takeSteering: () => this.#takeSteering(),
                 compactContext: async (messages, compaction) => {
                     try {

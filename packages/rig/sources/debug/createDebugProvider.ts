@@ -24,6 +24,9 @@ export function createDebugProvider(
             : { contextCompatibilityKey: (model) => provider.contextCompatibilityKey!(model) }),
         id: provider.id,
         imageProfile: (model) => provider.imageProfile(model),
+        ...(provider.inferenceCrashContinuation === undefined
+            ? {}
+            : { inferenceCrashContinuation: provider.inferenceCrashContinuation }),
         models: provider.models,
         toolProfile: (model) => provider.toolProfile(model),
         ...(provider.serviceTiers === undefined ? {} : { serviceTiers: provider.serviceTiers }),

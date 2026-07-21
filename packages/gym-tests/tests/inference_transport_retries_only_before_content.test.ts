@@ -24,6 +24,8 @@ describe("inference transport retries", () => {
 
         submit(gym, "Recover this turn without asking me to continue.");
 
+        const reconnecting = await gym.terminal.waitForText("Reconnecting · 1 of 5", 30_000);
+        expect(reconnecting.text).not.toContain("Error fetch failed");
         const completed = await gym.terminal.waitForText("SAFE_TRANSPORT_RECOVERY", 30_000);
         expect(completed.text).not.toContain("Error fetch failed");
         expect(agentRequests(gym)).toHaveLength(2);
@@ -74,56 +76,69 @@ describe("inference transport retries", () => {
         120_000,
     );
 
-    it("does not retry a transport failure after streamed text", async () => {
+    it("continues from streamed text without replaying its visible prefix", async () => {
         const gym = await createGym({
-            inference: [
-                {
-                    content: [{ text: "TEXT_BEFORE_TRANSPORT_FAILURE", type: "text" }],
-                    errorMessage: "WebSocket error",
-                    stopReason: "error",
-                },
-                { content: [{ text: "FORBIDDEN_TEXT_REPLAY", type: "text" }] },
-            ],
+            inference(request, callIndex) {
+                if (callIndex === 0) {
+                    return {
+                        content: [{ text: "PARTIAL_UNSENT_SUFFIX", type: "text" }],
+                        disconnectAfterTextDeltas: 1,
+                        textDeltaChunkSize: 8,
+                    };
+                }
+                expect(request.context.messages.at(-1)).toMatchObject({
+                    content: [{ text: "PARTIAL_", type: "text" }],
+                    role: "assistant",
+                });
+                return { content: [{ text: "CONTINUED_AFTER_PREFIX", type: "text" }] };
+            },
         });
         running.add(gym);
 
-        submit(gym, "Do not replay text after a transport failure.");
+        submit(gym, "Continue after a transport failure without replaying text.");
 
-        const failed = await gym.terminal.waitForText("WebSocket error", 30_000);
-        expect(failed.text).toContain("TEXT_BEFORE_TRANSPORT_FAILURE");
-        expect(failed.text).not.toContain("FORBIDDEN_TEXT_REPLAY");
-        expect(agentRequests(gym)).toHaveLength(1);
+        const completed = await gym.terminal.waitForText("CONTINUED_AFTER_PREFIX", 30_000);
+        expect(completed.text).not.toContain("WebSocket error");
+        expect(occurrences(completed.text, "PARTIAL_")).toBe(1);
+        expect(agentRequests(gym)).toHaveLength(2);
     }, 120_000);
 
-    it("does not retry a transport failure after a streamed tool call", async () => {
+    it("continues after a streamed tool call without executing the incomplete call", async () => {
         const gym = await createGym({
-            inference: [
-                {
-                    content: [
-                        {
-                            arguments: { cmd: "printf 'must-not-run\\n' >> streamed-tool.txt" },
-                            id: "streamed-before-failure",
-                            name: "exec_command",
-                            type: "toolCall",
-                        },
-                    ],
-                    errorMessage: "WebSocket error",
-                    stopReason: "error",
-                },
-                { content: [{ text: "FORBIDDEN_TOOL_CALL_REPLAY", type: "text" }] },
-            ],
+            inference(request, callIndex) {
+                if (callIndex === 0) {
+                    return {
+                        content: [
+                            {
+                                arguments: { cmd: "printf 'must-not-run\\n' >> streamed-tool.txt" },
+                                id: "streamed-before-failure",
+                                name: "exec_command",
+                                type: "toolCall",
+                            },
+                        ],
+                        errorMessage: "WebSocket error",
+                        stopReason: "error",
+                    };
+                }
+                expect(request.context.messages.at(-1)).toMatchObject({
+                    isError: true,
+                    role: "toolResult",
+                    toolCallId: "streamed-before-failure",
+                });
+                return { content: [{ text: "TOOL_CALL_CRASH_RECOVERED", type: "text" }] };
+            },
         });
         running.add(gym);
 
-        submit(gym, "Do not replay a tool call from an incomplete response.");
+        submit(gym, "Recover after an incomplete tool call without running it.");
 
-        const failed = await gym.terminal.waitForText("WebSocket error", 30_000);
-        expect(failed.text).not.toContain("FORBIDDEN_TOOL_CALL_REPLAY");
-        expect(agentRequests(gym)).toHaveLength(1);
+        const completed = await gym.terminal.waitForText("TOOL_CALL_CRASH_RECOVERED", 30_000);
+        expect(completed.text).not.toContain("WebSocket error");
+        expect(agentRequests(gym)).toHaveLength(2);
         await expect(gym.readFile("streamed-tool.txt")).rejects.toThrow();
     }, 120_000);
 
-    it("does not retry after text follows a completed mutating tool", async () => {
+    it("continues after text follows a completed mutating tool without rerunning it", async () => {
         const gym = await createGym({
             inference(request, callIndex) {
                 if (callIndex === 0) {
@@ -138,30 +153,73 @@ describe("inference transport retries", () => {
                         ],
                     };
                 }
-                expect(request.context.messages.at(-1)).toMatchObject({
-                    isError: false,
-                    role: "toolResult",
-                    toolName: "exec_command",
-                });
                 if (callIndex === 1) {
+                    expect(request.context.messages.at(-1)).toMatchObject({
+                        isError: false,
+                        role: "toolResult",
+                        toolName: "exec_command",
+                    });
                     return {
-                        content: [{ text: "TEXT_AFTER_MUTATION", type: "text" }],
+                        content: [{ text: "TEXT_AFTER_MUTATION_UNSENT", type: "text" }],
+                        errorAfterTextDeltas: 1,
                         errorMessage: "WebSocket error",
                         stopReason: "error",
+                        textDeltaChunkSize: 19,
                     };
                 }
-                return { content: [{ text: "FORBIDDEN_MUTATION_REPLAY", type: "text" }] };
+                expect(request.context.messages.at(-1)).toMatchObject({
+                    content: [{ text: "TEXT_AFTER_MUTATION", type: "text" }],
+                    role: "assistant",
+                });
+                return { content: [{ text: "MUTATION_CONTINUED", type: "text" }] };
             },
         });
         running.add(gym);
 
-        submit(gym, "Mutate once and do not replay a partial continuation.");
+        submit(gym, "Mutate once and continue a partial response after a crash.");
 
-        const failed = await gym.terminal.waitForText("WebSocket error", 30_000);
-        expect(failed.text).toContain("TEXT_AFTER_MUTATION");
-        expect(failed.text).not.toContain("FORBIDDEN_MUTATION_REPLAY");
-        expect(agentRequests(gym)).toHaveLength(2);
+        const completed = await gym.terminal.waitForText("MUTATION_CONTINUED", 30_000);
+        expect(completed.text).not.toContain("WebSocket error");
+        expect(occurrences(completed.text, "TEXT_AFTER_MUTATION")).toBe(1);
+        expect(agentRequests(gym)).toHaveLength(3);
         expect(await gym.readFile("mutation-runs.txt")).toBe("mutation\n");
+    }, 120_000);
+
+    it("gives Claude an internal continuation turn that never reaches the TUI", async () => {
+        const gym = await createGym({
+            environment: { ANTHROPIC_API_KEY: "claude-test-key" },
+            inference(request, callIndex) {
+                if (callIndex === 0) {
+                    return {
+                        content: [{ text: "CLAUDE_PARTIAL_UNSENT", type: "text" }],
+                        errorAfterTextDeltas: 1,
+                        errorMessage: "WebSocket error",
+                        stopReason: "error",
+                        textDeltaChunkSize: 15,
+                    };
+                }
+                expect(request.context.messages.at(-2)).toMatchObject({
+                    content: [{ text: "CLAUDE_PARTIAL_", type: "text" }],
+                    role: "assistant",
+                });
+                expect(request.context.messages.at(-1)).toMatchObject({
+                    content: [{ text: "Continue after the inference crash.", type: "text" }],
+                    role: "user",
+                });
+                return { content: [{ text: "CLAUDE_CONTINUED", type: "text" }] };
+            },
+            providerId: "claude",
+            providerOverrides: ["claude"],
+        });
+        running.add(gym);
+
+        submit(gym, "Recover Claude without exposing an invented user turn.");
+
+        const completed = await gym.terminal.waitForText("CLAUDE_CONTINUED", 30_000);
+        expect(completed.text).not.toContain("Continue after the inference crash.");
+        expect(completed.text).not.toContain("WebSocket error");
+        expect(occurrences(completed.text, "CLAUDE_PARTIAL")).toBe(1);
+        expect(agentRequests(gym)).toHaveLength(2);
     }, 120_000);
 
     it("retries a zero-content continuation without rerunning its completed tool", async () => {
@@ -209,6 +267,57 @@ describe("inference transport retries", () => {
         expect(await gym.readFile("tool-runs.txt")).toBe("tool-ran\n");
         expect(agentRequests(gym)).toHaveLength(3);
     }, 120_000);
+
+    it("retries when a continuation opens an empty content block before disconnecting", async () => {
+        const gym = await createGym({
+            inference(request, callIndex) {
+                if (callIndex === 0) {
+                    return {
+                        content: [
+                            {
+                                arguments: { cmd: "printf 'tool-ran\\n' >> marker-tool-runs.txt" },
+                                id: "run-once-before-empty-content-marker",
+                                name: "exec_command",
+                                type: "toolCall",
+                            },
+                        ],
+                    };
+                }
+                expect(request.context.messages.at(-1)).toMatchObject({
+                    isError: false,
+                    role: "toolResult",
+                    toolName: "exec_command",
+                });
+                if (callIndex === 1) {
+                    return {
+                        content: [{ text: "", type: "text" }],
+                        errorAfterContentStart: true,
+                        errorMessage: "WebSocket error",
+                        stopReason: "error",
+                    };
+                }
+                expect(callIndex).toBe(2);
+                return {
+                    content: [{ text: "EMPTY_CONTENT_MARKER_RECOVERED", type: "text" }],
+                };
+            },
+        });
+        running.add(gym);
+
+        submit(gym, "Run the tool and recover from an empty streamed content marker.");
+
+        const completedOrFailed = await gym.terminal.waitUntil(
+            (snapshot) =>
+                snapshot.text.includes("EMPTY_CONTENT_MARKER_RECOVERED") ||
+                snapshot.text.includes("WebSocket error"),
+            "recovery or terminal transport failure",
+            30_000,
+        );
+        expect(completedOrFailed.text).toContain("EMPTY_CONTENT_MARKER_RECOVERED");
+        expect(completedOrFailed.text).not.toContain("Error WebSocket error");
+        expect(await gym.readFile("marker-tool-runs.txt")).toBe("tool-ran\n");
+        expect(agentRequests(gym)).toHaveLength(3);
+    }, 120_000);
 });
 
 function submit(gym: Gym, text: string): void {
@@ -220,6 +329,10 @@ function agentRequests(gym: Gym): Gym["inference"]["requests"] {
     return gym.inference.requests.filter(
         (request) => request.options.sessionId?.endsWith(":title") !== true,
     );
+}
+
+function occurrences(text: string, needle: string): number {
+    return text.split(needle).length - 1;
 }
 
 async function captureProof(gym: Gym, fileName: string): Promise<void> {

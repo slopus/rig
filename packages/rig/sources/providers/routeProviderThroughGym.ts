@@ -27,6 +27,9 @@ export function routeProviderThroughGym(provider: Provider, env: NodeJS.ProcessE
         ...(contextWindow === undefined ? {} : { contextWindow }),
         endpoint,
         imageProfile: (model) => provider.imageProfile(model),
+        ...(provider.inferenceCrashContinuation === undefined
+            ? {}
+            : { inferenceCrashContinuation: provider.inferenceCrashContinuation }),
         models: provider.models,
         providerId: provider.id,
         toolProfile: (model) => provider.toolProfile(model),

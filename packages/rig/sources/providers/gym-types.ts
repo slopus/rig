@@ -11,6 +11,9 @@ export interface GymInferenceResponse {
     completionDelayMs?: number;
     content: readonly AssistantContent[];
     delayMs?: number;
+    disconnectAfterTextDeltas?: number;
+    errorAfterContentStart?: boolean;
+    errorAfterTextDeltas?: number;
     errorMessage?: string;
     responseModel?: string;
     stopReason?: StopReason;

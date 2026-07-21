@@ -29,6 +29,7 @@ export interface CreateGymProviderOptions {
     endpoint: string;
     fetch?: typeof globalThis.fetch;
     imageProfile?: Provider["imageProfile"];
+    inferenceCrashContinuation?: Provider["inferenceCrashContinuation"];
     models?: readonly Model[];
     providerId?: string;
     serviceTiers?: readonly ServiceTier[];
@@ -52,6 +53,9 @@ export function createGymProvider(options: CreateGymProviderOptions) {
             ? {}
             : { contextCompatibilityKey: options.contextCompatibilityKey }),
         id: providerId,
+        ...(options.inferenceCrashContinuation === undefined
+            ? {}
+            : { inferenceCrashContinuation: options.inferenceCrashContinuation }),
         ...(options.imageProfile === undefined ? {} : { imageProfile: options.imageProfile }),
         toolProfile: options.toolProfile ?? (() => "codex"),
         models: configuredModels,
@@ -114,11 +118,13 @@ export function createGymProvider(options: CreateGymProviderOptions) {
 
                 for (const block of reply.content) {
                     const contentIndex = message.content.length;
-                    message.content = [...message.content, block];
-                    yield* eventsForBlock(
+                    const stopped = yield* eventsForBlock(
                         contentIndex,
                         message,
                         block,
+                        reply.errorAfterContentStart === true,
+                        reply.disconnectAfterTextDeltas,
+                        reply.errorAfterTextDeltas,
                         reply.thinkingDeltaChunkSize,
                         reply.thinkingDeltaDelayMs,
                         reply.textDeltaChunkSize,
@@ -126,6 +132,7 @@ export function createGymProvider(options: CreateGymProviderOptions) {
                         reply.toolCallDeltaDelayMs,
                         streamOptions,
                     );
+                    if (stopped) break;
                 }
 
                 if (reply.completionDelayMs !== undefined && reply.completionDelayMs > 0) {
@@ -160,15 +167,21 @@ async function* eventsForBlock(
     contentIndex: number,
     message: AssistantMessage,
     block: AssistantMessage["content"][number],
+    stopAfterStart: boolean,
+    disconnectAfterTextDeltas: number | undefined,
+    errorAfterTextDeltas: number | undefined,
     thinkingDeltaChunkSize: number | undefined,
     thinkingDeltaDelayMs: number | undefined,
     textDeltaChunkSize: number | undefined,
     textDeltaDelayMs: number | undefined,
     toolCallDeltaDelayMs: number | undefined,
     streamOptions: StreamOptions,
-): AsyncGenerator<AssistantMessageEvent> {
+): AsyncGenerator<AssistantMessageEvent, boolean> {
     if (block.type === "text") {
+        const partialBlock = { type: "text" as const, text: "" };
+        message.content = [...message.content, partialBlock];
         yield { type: "text_start", contentIndex, partial: message };
+        if (stopAfterStart) return true;
         const requestedChunkSize = Math.floor(textDeltaChunkSize ?? block.text.length);
         const chunkSize = Number.isFinite(requestedChunkSize)
             ? Math.max(1, requestedChunkSize)
@@ -176,22 +189,38 @@ async function* eventsForBlock(
         if (block.text.length === 0) {
             yield { type: "text_delta", contentIndex, delta: "", partial: message };
         }
+        let emittedDeltas = 0;
         for (let offset = 0; offset < block.text.length; offset += chunkSize) {
+            const delta = block.text.slice(offset, offset + chunkSize);
+            partialBlock.text += delta;
             yield {
                 type: "text_delta",
                 contentIndex,
-                delta: block.text.slice(offset, offset + chunkSize),
+                delta,
                 partial: message,
             };
+            emittedDeltas += 1;
+            if (
+                disconnectAfterTextDeltas !== undefined &&
+                emittedDeltas >= disconnectAfterTextDeltas
+            ) {
+                throw new Error("WebSocket error");
+            }
+            if (errorAfterTextDeltas !== undefined && emittedDeltas >= errorAfterTextDeltas) {
+                return true;
+            }
             if (textDeltaDelayMs !== undefined && offset + chunkSize < block.text.length) {
                 await delay(textDeltaDelayMs, streamOptions);
             }
         }
         yield { type: "text_end", contentIndex, content: block.text, partial: message };
-        return;
+        return false;
     }
     if (block.type === "thinking") {
+        const partialBlock = { type: "thinking" as const, thinking: "" };
+        message.content = [...message.content, partialBlock];
         yield { type: "thinking_start", contentIndex, partial: message };
+        if (stopAfterStart) return true;
         const requestedChunkSize = Math.floor(thinkingDeltaChunkSize ?? block.thinking.length);
         const chunkSize = Number.isFinite(requestedChunkSize)
             ? Math.max(1, requestedChunkSize)
@@ -200,10 +229,12 @@ async function* eventsForBlock(
             yield { type: "thinking_delta", contentIndex, delta: "", partial: message };
         }
         for (let offset = 0; offset < block.thinking.length; offset += chunkSize) {
+            const delta = block.thinking.slice(offset, offset + chunkSize);
+            partialBlock.thinking += delta;
             yield {
                 type: "thinking_delta",
                 contentIndex,
-                delta: block.thinking.slice(offset, offset + chunkSize),
+                delta,
                 partial: message,
             };
             if (thinkingDeltaDelayMs !== undefined && offset + chunkSize < block.thinking.length) {
@@ -216,9 +247,11 @@ async function* eventsForBlock(
             content: block.thinking,
             partial: message,
         };
-        return;
+        return false;
     }
+    message.content = [...message.content, block];
     yield { type: "toolcall_start", contentIndex, partial: message };
+    if (stopAfterStart) return true;
     if (toolCallDeltaDelayMs !== undefined) {
         await delay(toolCallDeltaDelayMs, streamOptions);
     }
@@ -229,6 +262,7 @@ async function* eventsForBlock(
         partial: message,
     };
     yield { type: "toolcall_end", contentIndex, toolCall: block, partial: message };
+    return false;
 }
 
 function zeroUsage(): Usage {
