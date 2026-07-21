@@ -685,6 +685,17 @@ describe("createProtocolHttpServer", () => {
         }
     });
 
+    it("hot-reloads Happy credentials through the authenticated local protocol", async () => {
+        const onReloadHappy = vi.fn(async () => true);
+        const { client, close } = await startServer({ onReloadHappy });
+        try {
+            await expect(client.reloadHappy()).resolves.toEqual({ enabled: true });
+            expect(onReloadHappy).toHaveBeenCalledOnce();
+        } finally {
+            await close();
+        }
+    });
+
     it("enables and disables the durable queue through daemon configuration", async () => {
         const store = new PersistentSessionStore({ databasePath: ":memory:" });
         const { client, close } = await startServer({
@@ -1568,6 +1579,7 @@ async function startServer(
             enabled: boolean,
         ) => GlobalEventQueue | undefined | Promise<GlobalEventQueue | undefined>;
         onShutdown?: () => void;
+        onReloadHappy?: () => boolean | Promise<boolean>;
         onStartInspector?: () => Promise<{ inspectorUrl: string }>;
         store?: SessionStore;
         taskDrain?: TrackedTaskDrain;
@@ -1593,6 +1605,7 @@ async function startServer(
             ? {}
             : { getProviderQuota: options.getProviderQuota }),
         ...(options.onShutdown !== undefined ? { onShutdown: options.onShutdown } : {}),
+        ...(options.onReloadHappy !== undefined ? { onReloadHappy: options.onReloadHappy } : {}),
         ...(options.onStartInspector !== undefined
             ? { onStartInspector: options.onStartInspector }
             : {}),

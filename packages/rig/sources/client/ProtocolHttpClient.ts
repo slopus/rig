@@ -434,6 +434,10 @@ export class ProtocolHttpClient {
         return this.#requestJson("POST", "/shutdown");
     }
 
+    reloadHappy(): Promise<{ enabled: boolean }> {
+        return this.#requestJson("POST", "/happy/reload");
+    }
+
     startInspector(): Promise<StartInspectorResponse> {
         return this.#requestJson("POST", "/debug/inspector");
     }

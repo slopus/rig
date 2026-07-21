@@ -7,6 +7,7 @@ import { errorToMessage } from "../errorToMessage.js";
 import { assistantMessageToAgentMessage } from "../agent/assistantMessageToAgentMessage.js";
 import { findFirstUserRequestText, findLastAgentResponseText } from "../agent/index.js";
 import type {
+    AgentContext,
     AgentLoopEvent,
     AgentCompactionResult,
     AgentRunResult,
@@ -356,6 +357,7 @@ export class InMemorySession {
     #metadataTimer: ReturnType<typeof setTimeout> | undefined;
     #metadataUpdatedAt: number | undefined;
     #messages: PersistedSessionMessage[] = [];
+    #submittedUserMessages = new Map<string, PersistedSessionMessage>();
     #mcpLoaded = false;
     #mcpServers: readonly McpServerSummary[] = [];
     #mcpToolNames = new Set<string>();
@@ -550,6 +552,9 @@ export class InMemorySession {
         for (const message of this.#messages) {
             if (message.isPartial) {
                 this.#partialPositions.add(message.position);
+            }
+            if (message.message.role === "user" && message.runId !== undefined) {
+                this.#submittedUserMessages.set(message.message.id, message);
             }
         }
         const eventLogOptions: ConstructorParameters<typeof SessionEventLog>[0] = {};
@@ -1742,6 +1747,7 @@ export class InMemorySession {
         this.#restoredActiveRunId = undefined;
         this.#lastSessionRunId = undefined;
         this.#messages = [];
+        this.#submittedUserMessages.clear();
         this.#contextMessages = undefined;
         this.#partialPositions.clear();
         this.#activePartial = undefined;
@@ -1782,6 +1788,13 @@ export class InMemorySession {
         this.#mcpToolNames.clear();
         this.#tools = [];
         this.#messages = this.#messages.filter((entry) => entry.position < target.position);
+        this.#submittedUserMessages = new Map(
+            this.#messages.flatMap((entry) =>
+                entry.message.role === "user" && entry.runId !== undefined
+                    ? [[entry.message.id, entry] as const]
+                    : [],
+            ),
+        );
         this.#invalidateSessionMetadata();
         const retainedRunIds = new Set(
             this.#messages.flatMap((entry) => (entry.runId === undefined ? [] : [entry.runId])),
@@ -1876,6 +1889,10 @@ export class InMemorySession {
 
     activeRunDebug(): boolean {
         return this.#activeRun?.debug === true;
+    }
+
+    externalControlContext(): AgentContext {
+        return this.#ensureRuntime().context;
     }
 
     snapshot(): ProtocolSession {
@@ -2044,6 +2061,31 @@ export class InMemorySession {
         options: { source?: "notification" } = {},
     ): SubmitMessageResponse {
         this.#assertAcceptingWork();
+        if (request.clientSubmissionId !== undefined) {
+            const existingEvent = this.events.messageSubmission(request.clientSubmissionId);
+            if (existingEvent !== undefined) {
+                return {
+                    eventId: existingEvent.id,
+                    runId: existingEvent.data.runId,
+                    sessionId: this.id,
+                };
+            }
+            const existingMessage = this.#submittedUserMessages.get(request.clientSubmissionId);
+            if (existingMessage?.message.role === "user" && existingMessage.runId !== undefined) {
+                const recoveredEvent = this.#append("message_submitted", {
+                    delivery: "run",
+                    displayText: request.displayText ?? request.text,
+                    message: existingMessage.message,
+                    runId: existingMessage.runId,
+                    ...(options.source === undefined ? {} : { source: options.source }),
+                });
+                return {
+                    eventId: recoveredEvent.id,
+                    runId: existingMessage.runId,
+                    sessionId: this.id,
+                };
+            }
+        }
         this.#restartMetadataSettlement();
         const runId = createId();
         const createdAt = this.#now();
@@ -3905,6 +3947,10 @@ export class InMemorySession {
     }
 
     #storeMessage(position: number, message: Message, isPartial: boolean, runId: string): void {
+        const replaced = this.#messages.find((candidate) => candidate.position === position);
+        if (replaced?.message.role === "user") {
+            this.#submittedUserMessages.delete(replaced.message.id);
+        }
         const entry: PersistedSessionMessage = {
             isPartial,
             message,
@@ -3920,6 +3966,7 @@ export class InMemorySession {
         } else {
             this.#partialPositions.delete(position);
         }
+        if (message.role === "user") this.#submittedUserMessages.set(message.id, entry);
         this.#persistence?.upsertMessage(this.id, entry);
     }
 

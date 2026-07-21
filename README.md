@@ -76,6 +76,33 @@ Ask for what you want in plain English. Rig can inspect the repository, edit
 files, run commands, delegate work, and verify the result. Use `/model` at any
 time to choose an available model.
 
+### Optional: Connect Happy mobile
+
+Happy is enabled for the normal Rig CLI by default. Disable it machine-wide in
+`~/.rig/config.toml` and restart the daemon:
+
+```toml
+[settings]
+happy_integration = false
+```
+
+Repository `rig.toml` files cannot enable or disable this machine-level
+integration. When enabled, Rig automatically imports newer credentials from
+`~/.happy` when its daemon starts. To authenticate directly from Rig instead,
+run:
+
+```sh
+rig happy auth
+```
+
+Scan the QR code with Happy. Terminals with Kitty or iTerm2 image support show
+a PNG QR code; other terminals get Happy's compact text QR. Every primary Rig
+session you open is then synchronized live with Happy. Mobile messages enter
+the same session and permission boundary as terminal messages; there is no
+separate local/remote control mode.
+Happy can also send encrypted image attachments, stop the active turn, and
+select any provider-qualified Rig model and supported reasoning level.
+
 ## Why Rig?
 
 Pi is a wonderfully small, flexible foundation. Codex, Claude Code, Kimi Code,

@@ -5,10 +5,12 @@ export function createProjectConfigSecurityNoticeTitle(config: PartialRigConfig)
     const docker = config.docker !== undefined;
     const providers = config.providerDefaultEnable !== undefined || config.providers !== undefined;
     const durableEventQueue = config.settings?.durableGlobalEventQueue !== undefined;
-    if (durableEventQueue && (permission || docker || providers)) {
+    const happyIntegration = config.settings?.happyIntegration !== undefined;
+    const daemonSetting = durableEventQueue || happyIntegration;
+    if (daemonSetting && (permission || docker || providers)) {
         return "Project machine settings ignored";
     }
-    if (durableEventQueue) return "Project daemon setting ignored";
+    if (daemonSetting) return "Project daemon setting ignored";
     if (providers && (permission || docker)) return "Project machine settings ignored";
     if (providers) return "Project provider settings ignored";
     if (permission && docker) return "Project execution settings ignored";

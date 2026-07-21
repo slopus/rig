@@ -37,10 +37,10 @@ describe("initializeSessionDatabase", () => {
     it("refuses to open a database from a newer Rig schema", () => {
         const database = new DatabaseSync(":memory:");
         try {
-            database.exec("PRAGMA user_version = 5");
+            database.exec("PRAGMA user_version = 6");
 
             expect(() => initializeSessionDatabase(database)).toThrow(
-                "The session database uses schema version 5, but this Rig version supports up to 4.",
+                "The session database uses schema version 6, but this Rig version supports up to 5.",
             );
             expect(
                 database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all(),

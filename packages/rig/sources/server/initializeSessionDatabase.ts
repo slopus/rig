@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_SCHEMA_VERSION = 5;
 
 const sessionColumnMigrations = [
     ["title", "TEXT"],
@@ -205,6 +205,27 @@ export function initializeSessionDatabase(database: DatabaseSync): void {
                 secret_id TEXT NOT NULL,
                 PRIMARY KEY (cwd, secret_id)
             );
+
+            CREATE TABLE IF NOT EXISTS happy_sessions (
+                session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+                credential_fingerprint TEXT NOT NULL,
+                tag TEXT NOT NULL,
+                remote_session_id TEXT,
+                encryption_variant TEXT NOT NULL,
+                encryption_key_base64 TEXT NOT NULL,
+                last_remote_seq INTEGER NOT NULL DEFAULT 0,
+                created_at_ms INTEGER NOT NULL,
+                updated_at_ms INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS happy_outbox (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                local_id TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at_ms INTEGER NOT NULL,
+                UNIQUE (session_id, local_id)
+            );
         `);
 
         const sessionColumns = new Set(
@@ -250,6 +271,8 @@ export function initializeSessionDatabase(database: DatabaseSync): void {
                 ON external_tool_calls(session_id, created_at_ms);
             CREATE INDEX IF NOT EXISTS durable_user_inputs_session_created
                 ON durable_user_inputs(session_id, created_at_ms);
+            CREATE INDEX IF NOT EXISTS happy_outbox_session_seq
+                ON happy_outbox(session_id, seq);
             PRAGMA user_version = ${String(CURRENT_SCHEMA_VERSION)};
             COMMIT;
         `);

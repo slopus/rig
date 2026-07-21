@@ -115,6 +115,7 @@ service_tier = "fast"
 compact_completed_turns = true
 completion_chime = true
 durable_global_event_queue = true
+happy_integration = false
 show_reasoning = false
 
 [theme]
@@ -167,6 +168,7 @@ mounts = [
                 compactCompletedTurns: true,
                 completionChime: true,
                 durableGlobalEventQueue: true,
+                happyIntegration: false,
                 showReasoning: false,
             },
             theme: {
@@ -378,6 +380,16 @@ bearer_token_env_var = "WORK_BEDROCK_TOKEN"
                 settings: { durableGlobalEventQueue: true },
             }),
         ).toBe("Project daemon setting ignored");
+        expect(
+            createProjectConfigSecurityNotice({
+                settings: { happyIntegration: true },
+            }),
+        ).toContain("kept the Happy integration under your machine-level control");
+        expect(
+            createProjectConfigSecurityNoticeTitle({
+                settings: { happyIntegration: true },
+            }),
+        ).toBe("Project daemon setting ignored");
     });
 
     it("applies project preferences without allowing project permission escalation", async () => {
@@ -399,6 +411,7 @@ effort = "low"
 permission_mode = "read_only"
 [settings]
 durable_global_event_queue = false
+happy_integration = false
 show_reasoning = false
 [features]
 workflows = false
@@ -419,6 +432,7 @@ instructions = "Hide project tool activity."
 permission_mode = "full_access"
 [settings]
 durable_global_event_queue = true
+happy_integration = true
 show_reasoning = true
 show_usage = true
 [features]
@@ -462,6 +476,7 @@ effort = "minimal"
                 compactCompletedTurns: false,
                 completionChime: false,
                 durableGlobalEventQueue: false,
+                happyIntegration: false,
                 showReasoning: true,
                 showUsage: true,
             });
@@ -479,7 +494,7 @@ effort = "minimal"
                 workingDirectory: "/repo",
             });
             expect(createProjectConfigSecurityNotice(loaded.sources.local.values)).toBe(
-                "This project's rig.toml requested machine-level settings. Rig applied the other project preferences but kept permissions, container execution, provider availability, and the durable event queue under your machine-level control.",
+                "This project's rig.toml requested machine-level settings. Rig applied the other project preferences but kept permissions, container execution, provider availability, the durable event queue, and the Happy integration under your machine-level control.",
             );
 
             const emptyCwd = join(root, "empty-repo");
@@ -492,6 +507,7 @@ effort = "minimal"
                 compactCompletedTurns: false,
                 completionChime: false,
                 durableGlobalEventQueue: false,
+                happyIntegration: true,
                 showReasoning: false,
                 showUsage: false,
             });
@@ -522,6 +538,7 @@ effort = "minimal"
                     compactCompletedTurns: true,
                     completionChime: true,
                     durableGlobalEventQueue: true,
+                    happyIntegration: false,
                     showReasoning: true,
                     showUsage: true,
                 },
@@ -573,6 +590,7 @@ effort = "minimal"
                     "compact_completed_turns = true",
                     "completion_chime = true",
                     "durable_global_event_queue = true",
+                    "happy_integration = false",
                     "show_reasoning = true",
                     "show_usage = true",
                     "",

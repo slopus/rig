@@ -8,11 +8,16 @@ import {
 } from "./createDaemonStartupRequestListener.js";
 import { createModelCatalog } from "./createModelCatalog.js";
 import { getEnvironmentLocalServerPaths } from "./getEnvironmentLocalServerPaths.js";
+import {
+    loadHappyIntegration,
+    type HappyIntegrationMode,
+} from "./loadHappyIntegration.js";
 import { prepareLocalServerDirectory } from "./prepareLocalServerDirectory.js";
 import { PersistentSessionStore } from "./PersistentSessionStore.js";
 import { TrackedTaskDrain } from "./TrackedTaskDrain.js";
 import { readLocalServerToken } from "./readLocalServerToken.js";
 import { removeStaleSocket } from "./removeStaleSocket.js";
+import { resolveHappyIntegrationMode } from "./resolveHappyIntegrationMode.js";
 import { McpClientManager } from "../mcp/index.js";
 import { loadConfig, writeDaemonSettings } from "../config/index.js";
 import { createProviderQuotaService } from "../providers/createProviderQuotaService.js";
@@ -22,8 +27,10 @@ import { createCodingAssistantAgent } from "../runtime/createCodingAssistantAgen
 import { getDaemonIdentity } from "../daemon/index.js";
 import { errorToMessage } from "../errorToMessage.js";
 import { getNodeInspectorUrl, openNodeInspector, registerRigDebugRoot } from "../debug/index.js";
+import type { HappySyncService } from "../happy/index.js";
 
 export interface RunLocalProtocolServerOptions {
+    happyIntegration?: HappyIntegrationMode;
     socketPath?: string;
     tokenPath?: string;
 }
@@ -41,6 +48,8 @@ export async function runLocalProtocolServer(
 
     let startupState: DaemonStartupState = { status: "starting" };
     let mcpToolProvider: McpClientManager | undefined;
+    let happySyncService: HappySyncService | undefined;
+    let happyLifecycle = Promise.resolve();
     let store: PersistentSessionStore | undefined;
     let taskDrain: TrackedTaskDrain | undefined;
     let stopping = false;
@@ -48,6 +57,14 @@ export async function runLocalProtocolServer(
     const stopped = new Promise<void>((resolve) => {
         resolveStopped = resolve;
     });
+    const runHappyLifecycle = <T>(operation: () => Promise<T>): Promise<T> => {
+        const next = happyLifecycle.then(operation, operation);
+        happyLifecycle = next.then(
+            () => undefined,
+            () => undefined,
+        );
+        return next;
+    };
     const stopServer = () => {
         if (stopping) return;
         stopping = true;
@@ -146,6 +163,15 @@ export async function runLocalProtocolServer(
                 );
             }
         }
+        try {
+            await runHappyLifecycle(async () => {
+                const service = happySyncService;
+                happySyncService = undefined;
+                await service?.close();
+            });
+        } catch (error) {
+            console.error(`Failed to close Happy sync: ${errorToMessage(error)}`);
+        }
         store?.close();
     }
 
@@ -170,6 +196,13 @@ export async function runLocalProtocolServer(
         });
         mcpToolProvider = new McpClientManager();
         taskDrain = new TrackedTaskDrain();
+        const happyModule = await loadHappyIntegration(
+            resolveHappyIntegrationMode(
+                options.happyIntegration,
+                loadedConfig.config.settings.happyIntegration,
+            ),
+        );
+        const happyConfiguration = await happyModule?.importHappyCredentials();
         store = new PersistentSessionStore({
             createRuntime: (options) =>
                 createCodingAssistantAgent({
@@ -180,8 +213,27 @@ export async function runLocalProtocolServer(
             durableGlobalEventQueue: loadedConfig.config.settings.durableGlobalEventQueue,
             mcpToolProvider,
             modelCatalog,
+            ...(happyModule === undefined
+                ? {}
+                : {
+                      onSessionAccess: (session) => happySyncService?.attach(session),
+                      onSessionEvent: (event, session) =>
+                          happySyncService?.observe(event, session),
+                  }),
             taskDrain,
         });
+        if (happyModule !== undefined && happyConfiguration !== undefined) {
+            try {
+                happySyncService = new happyModule.HappySyncService({
+                    configuration: happyConfiguration,
+                    databasePath: paths.databasePath,
+                    getSubagents: (sessionId) => store?.listSubagents(sessionId) ?? [],
+                    modelCatalog,
+                });
+            } catch (error) {
+                console.error(`Happy sync is unavailable: ${errorToMessage(error)}`);
+            }
+        }
         registerRigDebugRoot({
             kind: "daemon",
             paths,
@@ -207,6 +259,46 @@ export async function runLocalProtocolServer(
                     await writeDaemonSettings({ durableGlobalEventQueue: enabled });
                     return store?.setDurableGlobalEventQueue(enabled);
                 },
+                ...(happyModule === undefined
+                    ? {}
+                    : {
+                          onReloadHappy: async () => {
+                              if (stopping) return false;
+                              return runHappyLifecycle(async () => {
+                                  if (stopping) return false;
+                                  const nextConfiguration =
+                                      await happyModule.importHappyCredentials();
+                                  if (stopping || nextConfiguration === undefined) return false;
+                                  let next: HappySyncService;
+                                  try {
+                                      next = new happyModule.HappySyncService({
+                                          configuration: nextConfiguration,
+                                          databasePath: paths.databasePath,
+                                          getSubagents: (sessionId) =>
+                                              store?.listSubagents(sessionId) ?? [],
+                                          modelCatalog,
+                                      });
+                                  } catch (error) {
+                                      console.error(
+                                          `Happy sync could not reload: ${errorToMessage(error)}`,
+                                      );
+                                      return false;
+                                  }
+                                  const loadedSessions = store!.loadedSessions();
+                                  const previous = happySyncService;
+                                  happySyncService = next;
+                                  try {
+                                      await previous?.close();
+                                  } catch (error) {
+                                      console.error(
+                                          `The previous Happy sync connection could not close cleanly: ${errorToMessage(error)}`,
+                                      );
+                                  }
+                                  for (const session of loadedSessions) next.attach(session);
+                                  return true;
+                              });
+                          },
+                      }),
                 onStartInspector: async () => {
                     const inspectorUrl = openNodeInspector();
                     await writeServerRegistry();

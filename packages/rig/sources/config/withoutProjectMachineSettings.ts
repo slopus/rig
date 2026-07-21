@@ -10,8 +10,11 @@ export function withoutProjectMachineSettings(config: PartialRigConfig): Partial
         ...rest
     } = config;
     const { permissionMode: _permissionMode, ...defaults } = projectDefaults ?? {};
-    const { durableGlobalEventQueue: _durableGlobalEventQueue, ...settings } =
-        projectSettings ?? {};
+    const {
+        durableGlobalEventQueue: _durableGlobalEventQueue,
+        happyIntegration: _happyIntegration,
+        ...settings
+    } = projectSettings ?? {};
 
     return {
         ...rest,

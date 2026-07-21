@@ -75,6 +75,7 @@ export async function ensureLocalProtocolServer(
     const token = await writeLocalServerToken(paths.tokenPath);
     if (process.env.RIG_GYM_IN_PROCESS_DAEMON === "1") {
         void runLocalProtocolServer({
+            happyIntegration: "enabled",
             socketPath: paths.socketPath,
             tokenPath: paths.tokenPath,
         }).catch((error: unknown) => {

@@ -1,5 +1,15 @@
 # Third-party notices
 
+## Happy
+
+Rig's Happy authentication, encrypted session transport, and session-envelope
+mapping are adapted from [Happy](https://github.com/slopus/happy).
+
+Copyright (c) 2026 Happy Coder Contributors
+
+Happy is licensed under the MIT License. The integration is modified to use
+Rig's daemon, durable sessions, shared permission model, and terminal UI.
+
 ## OpenAI Codex
 
 Rig's macOS Seatbelt base policy and Linux Bubblewrap policy are adapted from

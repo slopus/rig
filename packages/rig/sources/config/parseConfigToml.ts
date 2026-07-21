@@ -105,6 +105,7 @@ export function parseConfigToml(source: string): PartialRigConfig {
             "compact_completed_turns",
             "completion_chime",
             "durable_global_event_queue",
+            "happy_integration",
             "show_reasoning",
             "show_usage",
         ]);
@@ -130,6 +131,12 @@ export function parseConfigToml(source: string): PartialRigConfig {
         if (durableGlobalEventQueue !== undefined) {
             settings.durableGlobalEventQueue = durableGlobalEventQueue;
         }
+        const happyIntegration = readBoolean(
+            settingsTable,
+            "happy_integration",
+            "settings.happy_integration",
+        );
+        if (happyIntegration !== undefined) settings.happyIntegration = happyIntegration;
         const showReasoning = readBoolean(
             settingsTable,
             "show_reasoning",

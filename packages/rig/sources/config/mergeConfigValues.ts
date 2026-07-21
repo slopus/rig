@@ -53,6 +53,9 @@ export function mergeConfigValues(
         if (config.settings?.durableGlobalEventQueue !== undefined) {
             settings.durableGlobalEventQueue = config.settings.durableGlobalEventQueue;
         }
+        if (config.settings?.happyIntegration !== undefined) {
+            settings.happyIntegration = config.settings.happyIntegration;
+        }
         if (config.settings?.showUsage !== undefined)
             settings.showUsage = config.settings.showUsage;
         if (config.features?.workflows !== undefined) {

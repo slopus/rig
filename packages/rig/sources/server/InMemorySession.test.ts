@@ -5,6 +5,22 @@ import { defineModel } from "../providers/types.js";
 import { InMemorySessionStore } from "./InMemorySessionStore.js";
 
 describe("InMemorySession", () => {
+    it("treats repeated client submission IDs as one durable message", () => {
+        const session = new InMemorySessionStore().create({ cwd: "/tmp/rig-session-test" });
+
+        const first = session.submit({ clientSubmissionId: "mobile-message-1", text: "Continue." });
+        const repeated = session.submit({
+            clientSubmissionId: "mobile-message-1",
+            text: "Continue.",
+        });
+
+        expect(repeated).toEqual(first);
+        expect(
+            session.events.since(undefined)?.filter((event) => event.type === "message_submitted"),
+        ).toHaveLength(1);
+        session.abort();
+    });
+
     it("rejects steering when no run is active", () => {
         const session = new InMemorySessionStore().create({ cwd: "/tmp/rig-session-test" });
 

@@ -14,6 +14,7 @@ import { readPackageVersion } from "../readPackageVersion.js";
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
     if (argv.length === 1 && argv[0] === "--server") {
         await runLocalProtocolServer({
+            happyIntegration: "enabled",
             ...(process.env.RIG_SERVER_SOCKET_PATH !== undefined
                 ? { socketPath: process.env.RIG_SERVER_SOCKET_PATH }
                 : {}),
@@ -66,6 +67,14 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
             throw new Error("Usage: rig daemon <start|stop|status|reload>");
         }
         await runDaemonCommand(daemonCommand);
+        return;
+    }
+    if (command === "happy") {
+        if (commandArgs.length !== 1 || commandArgs[0] !== "auth") {
+            throw new Error("Usage: rig happy auth");
+        }
+        const { runHappyAuthCommand } = await import("../happy/index.js");
+        await runHappyAuthCommand();
         return;
     }
     if (command === "monit") {

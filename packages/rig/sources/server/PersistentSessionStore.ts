@@ -56,6 +56,8 @@ export interface PersistentSessionStoreOptions {
     mcpToolProvider?: McpToolProvider;
     modelCatalog?: ModelCatalog;
     now?: () => number;
+    onSessionAccess?: (session: InMemorySession) => void;
+    onSessionEvent?: (event: SessionEvent, session: InMemorySession | undefined) => void;
     taskDrain?: TaskDrain;
     secrets?: readonly SecretRegistration[];
 }
@@ -67,6 +69,10 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
     #modelCatalog: ModelCatalog;
     #mcpToolProvider: McpToolProvider | undefined;
     #now: () => number;
+    #onSessionAccess: ((session: InMemorySession) => void) | undefined;
+    #onSessionEvent:
+        | ((event: SessionEvent, session: InMemorySession | undefined) => void)
+        | undefined;
     #persistentGlobalEventQueue: PersistentGlobalEventQueue | undefined;
     #secrets: SecretRegistry;
     #sessions = new Map<string, WeakRef<InMemorySession>>();
@@ -84,6 +90,8 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         this.#createRuntime = options.createRuntime;
         this.#mcpToolProvider = options.mcpToolProvider;
         this.#now = options.now ?? Date.now;
+        this.#onSessionAccess = options.onSessionAccess;
+        this.#onSessionEvent = options.onSessionEvent;
         this.#taskDrain = options.taskDrain;
         if (options.databasePath !== ":memory:") {
             mkdirSync(dirname(options.databasePath), { mode: 0o700, recursive: true });
@@ -281,6 +289,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         const existingReference = this.#sessions.get(sessionId);
         const existing = existingReference?.deref();
         if (existing !== undefined) {
+            this.#notifySessionAccess(existing);
             return existing;
         }
         if (existingReference !== undefined) this.#sessions.delete(sessionId);
@@ -288,6 +297,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
         const session = this.#loadSession(sessionId);
         if (session !== undefined) {
             this.#cacheSession(session);
+            this.#notifySessionAccess(session);
         }
         return session;
     }
@@ -434,6 +444,10 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     : {}),
             };
         });
+    }
+
+    loadedSessions(): readonly InMemorySession[] {
+        return this.#cachedSessions();
     }
 
     listExternalToolCalls(
@@ -1085,6 +1099,7 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
                     `,
                 )
                 .run(event.id, this.#now(), event.sessionId);
+            this.#notifySessionEvent(event);
             return;
         }
         const globalEntry = this.#transaction(() => {
@@ -1121,6 +1136,23 @@ export class PersistentSessionStore implements SessionStore, InMemorySessionPers
             return queued;
         });
         if (globalEntry !== undefined) this.#persistentGlobalEventQueue?.publish(globalEntry);
+        this.#notifySessionEvent(event);
+    }
+
+    #notifySessionAccess(session: InMemorySession): void {
+        try {
+            this.#onSessionAccess?.(session);
+        } catch {
+            // External synchronization must never interrupt local session access.
+        }
+    }
+
+    #notifySessionEvent(event: SessionEvent): void {
+        try {
+            this.#onSessionEvent?.(event, this.#sessions.get(event.sessionId)?.deref());
+        } catch {
+            // The event is already durable; optional observers cannot roll it back.
+        }
     }
 
     #loadSecretRegistrations(): void {

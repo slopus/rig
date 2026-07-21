@@ -95,6 +95,7 @@ export interface ProtocolHttpServerOptions {
         enabled: boolean,
     ) => GlobalEventQueue | undefined | Promise<GlobalEventQueue | undefined>;
     onShutdown?: () => void;
+    onReloadHappy?: () => boolean | Promise<boolean>;
     onStartInspector?: () => StartInspectorResponse | Promise<StartInspectorResponse>;
     store?: SessionStore;
     taskDrain?: TaskDrain;
@@ -118,6 +119,7 @@ export function createProtocolHttpServer(
     const runtimeConfig: ProtocolServerRuntimeConfig = {
         globalEventQueue: options.globalEventQueue,
         onDurableGlobalEventQueueChange: options.onDurableGlobalEventQueueChange,
+        onReloadHappy: options.onReloadHappy,
         onStartInspector: options.onStartInspector,
     };
     // The persistent store caches sessions weakly; each open SSE stream needs its own strong lease.
@@ -180,6 +182,7 @@ interface ProtocolServerRuntimeConfig {
           ) => GlobalEventQueue | undefined | Promise<GlobalEventQueue | undefined>)
         | undefined;
     onStartInspector: (() => StartInspectorResponse | Promise<StartInspectorResponse>) | undefined;
+    onReloadHappy: (() => boolean | Promise<boolean>) | undefined;
 }
 
 async function handleRequest(
@@ -234,6 +237,15 @@ async function handleRequest(
             return;
         }
         sendJson<StartInspectorResponse>(response, 200, await runtimeConfig.onStartInspector());
+        return;
+    }
+
+    if (request.method === "POST" && route.name === "happy-reload") {
+        if (runtimeConfig.onReloadHappy === undefined) {
+            sendJson(response, 409, { error: "This daemon cannot reload Happy credentials." });
+            return;
+        }
+        sendJson(response, 200, { enabled: await runtimeConfig.onReloadHappy() });
         return;
     }
 
@@ -1035,6 +1047,7 @@ function matchRoute(pathname: string):
               | "config"
               | "debug-inspector"
               | "health"
+              | "happy-reload"
               | "messages"
               | "models"
               | "secret-registrations"
@@ -1082,6 +1095,7 @@ function matchRoute(pathname: string):
     | { name: "workflow-stop"; sessionId: string; workflowRunId: string }
     | undefined {
     if (pathname === "/health") return { name: "health" };
+    if (pathname === "/happy/reload") return { name: "happy-reload" };
     if (pathname === "/config") return { name: "config" };
     if (pathname === "/debug/inspector") return { name: "debug-inspector" };
     if (pathname === "/events") return { name: "global-events" };
@@ -1214,6 +1228,7 @@ function isMutatingProtocolRequest(request: IncomingMessage): boolean {
     if (route.name === "config") return request.method === "PATCH";
     if (route.name === "debug-inspector") return request.method === "POST";
     if (route.name === "global-events-trim") return request.method === "POST";
+    if (route.name === "happy-reload") return request.method === "POST";
     if (route.name === "secret-registrations") return request.method === "POST";
     if (route.name === "secret-registration") return request.method === "DELETE";
     if (route.name === "messages" && route.sessionId === undefined) {

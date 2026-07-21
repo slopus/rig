@@ -58,6 +58,18 @@ describe("SessionEventLog", () => {
         expect(listener).toHaveBeenCalledExactlyOnceWith(event(DURABLE));
     });
 
+    it("indexes durable message submissions from restored and appended events", () => {
+        const restored = messageSubmittedEvent(FIRST, "restored-message");
+        const appended = messageSubmittedEvent(DURABLE, "appended-message");
+        const log = new SessionEventLog({ events: [restored] });
+
+        log.append(appended);
+
+        expect(log.messageSubmission("restored-message")).toEqual(restored);
+        expect(log.messageSubmission("appended-message")).toEqual(appended);
+        expect(log.messageSubmission("missing-message")).toBeUndefined();
+    });
+
     it("drops transient payloads while preserving delivery, final state, and every scoped cursor", () => {
         const listener = vi.fn();
         const createId = createEventIdFactory({ now: () => 1_700_000_000_000 });
@@ -102,6 +114,25 @@ function event(id: string): SessionEvent {
         id,
         sessionId: "session-1",
         type: "session_reset",
+    };
+}
+
+function messageSubmittedEvent(id: string, messageId: string): SessionEvent {
+    return {
+        createdAt: 1_700_000_000_000,
+        data: {
+            delivery: "run",
+            displayText: "Continue.",
+            message: {
+                blocks: [{ text: "Continue.", type: "text" }],
+                id: messageId,
+                role: "user",
+            },
+            runId: "run-1",
+        },
+        id,
+        sessionId: "session-1",
+        type: "message_submitted",
     };
 }
 

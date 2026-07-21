@@ -9,6 +9,7 @@ export class SessionEventLog {
     #firstEventId: EventId | undefined;
     #lastEventId: EventId | undefined;
     #listeners = new Set<SessionEventListener>();
+    #messageSubmissions = new Map<string, SessionEvent & { type: "message_submitted" }>();
     #onAppend: SessionEventAppendHook | undefined;
 
     constructor(
@@ -21,6 +22,11 @@ export class SessionEventLog {
         this.#events = [...(options.events ?? [])].filter(
             (event) => !isTransientInferenceSessionEvent(event),
         );
+        for (const event of this.#events) {
+            if (event.type === "message_submitted") {
+                this.#messageSubmissions.set(event.data.message.id, event);
+            }
+        }
         this.#firstEventId = this.#events.at(0)?.id;
         this.#lastEventId = options.lastEventId ?? this.#events.at(-1)?.id;
         this.#onAppend = options.onAppend;
@@ -31,6 +37,9 @@ export class SessionEventLog {
         if (!isTransientInferenceSessionEvent(event)) {
             this.#events.push(event);
             this.#firstEventId ??= event.id;
+            if (event.type === "message_submitted") {
+                this.#messageSubmissions.set(event.data.message.id, event);
+            }
         }
         this.#lastEventId = event.id;
         for (const listener of this.#listeners) {
@@ -54,6 +63,12 @@ export class SessionEventLog {
 
     lastCreatedAt(): number | undefined {
         return this.#events.at(-1)?.createdAt;
+    }
+
+    messageSubmission(
+        messageId: string,
+    ): (SessionEvent & { type: "message_submitted" }) | undefined {
+        return this.#messageSubmissions.get(messageId);
     }
 
     since(eventId: EventId | undefined): readonly SessionEvent[] | undefined {
