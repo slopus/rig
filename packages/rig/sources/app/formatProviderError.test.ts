@@ -27,6 +27,21 @@ describe("formatProviderError", () => {
         ).toBe("Kirill Claude is rate limited. Try again in 1m.");
     });
 
+    it("reports overloaded and internal provider failures with useful recovery details", () => {
+        expect(
+            formatProviderError(
+                { type: "server_overloaded" },
+                { fallbackMessage: "raw overload", providerId: "codex" },
+            ),
+        ).toBe("Codex servers are overloaded. Try again later.");
+        expect(
+            formatProviderError(
+                { type: "internal_server_error", requestId: "request-123" },
+                { fallbackMessage: "raw internal error", providerId: "codex" },
+            ),
+        ).toBe("Codex encountered an internal server error. Try again. Request ID: request-123.");
+    });
+
     it("preserves the provider message for unclassified errors", () => {
         expect(
             formatProviderError(

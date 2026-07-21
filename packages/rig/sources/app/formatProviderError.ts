@@ -19,5 +19,11 @@ export function formatProviderError(
     if (error?.type === "rate_limit") {
         return `${provider} is rate limited.${reset === undefined ? "" : ` Try again in ${reset}.`}`;
     }
+    if (error?.type === "server_overloaded") {
+        return `${provider} servers are overloaded. Try again later.`;
+    }
+    if (error?.type === "internal_server_error") {
+        return `${provider} encountered an internal server error. Try again.${error.requestId === undefined ? "" : ` Request ID: ${error.requestId}.`}`;
+    }
     return options.fallbackMessage?.trim() || `${provider} returned an error.`;
 }

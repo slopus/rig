@@ -84,6 +84,41 @@ describe("codex provider", () => {
     });
 
     it.each([
+        {
+            expected: {
+                requestId: "a22a6855-605a-4f23-9955-429f689b87c1",
+                type: "internal_server_error",
+            },
+            message:
+                "An error occurred while processing your request. Please include the request ID a22a6855-605a-4f23-9955-429f689b87c1 in your message.",
+            name: "internal server",
+        },
+        {
+            expected: { type: "server_overloaded" },
+            message: "Our servers are currently overloaded. Please try again later.",
+            name: "server overload",
+        },
+    ])("classifies a Codex $name stream failure", async ({ expected, message }) => {
+        vi.stubGlobal(
+            "fetch",
+            vi.fn<typeof fetch>().mockResolvedValue(
+                new Response(`data: ${JSON.stringify({ error: { message }, type: "error" })}\n\n`, {
+                    status: 200,
+                    headers: { "content-type": "text/event-stream" },
+                }),
+            ),
+        );
+        const provider = createCodexProvider({
+            apiKey: "e30.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC10ZXN0In19.x",
+            transport: "sse",
+        });
+
+        const result = await provider.stream(modelOpenaiGpt55, emptyContext()).result();
+
+        expect(result).toMatchObject({ providerError: expected, stopReason: "error" });
+    });
+
+    it.each([
         { name: "PNG", mediaType: "image/png", base64: validPng32Base64 },
         { name: "JPEG", mediaType: "image/jpeg", base64: validJpeg32Base64 },
     ])(

@@ -14,6 +14,8 @@ export type ProviderErrorCode = "incomplete_response" | "invalid_image_request";
 export type ProviderError =
     | { type: "out_of_tokens"; resetAt?: number }
     | { type: "rate_limit"; resetAt?: number }
+    | { type: "server_overloaded" }
+    | { type: "internal_server_error"; requestId?: string }
     | { type: "unclassified" };
 export type ProviderImageProfile = "claude" | "codex";
 export type ProviderToolProfile = "claude" | "codex" | "grok" | "kimi" | "pi";

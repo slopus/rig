@@ -20,6 +20,7 @@ import type {
     Context,
     InferenceStream,
     Message,
+    ProviderError,
     ProviderErrorCode,
     TextContent,
     ThinkingContent,
@@ -33,6 +34,7 @@ import type {
 
 export interface PiStreamBridgeOptions {
     classifyError?: (message: string) => ProviderErrorCode | undefined;
+    classifyProviderError?: (message: string) => ProviderError;
 }
 
 export function toPiContext(context: Context): PiContext {
@@ -259,6 +261,10 @@ function fromPiAssistantMessage(
         message.errorMessage === undefined
             ? undefined
             : options.classifyError?.(message.errorMessage);
+    const providerError =
+        message.errorMessage === undefined
+            ? undefined
+            : options.classifyProviderError?.(message.errorMessage);
     return {
         role: "assistant",
         content: message.content.map(fromPiAssistantContent),
@@ -271,6 +277,7 @@ function fromPiAssistantMessage(
         stopReason: message.stopReason,
         ...(errorCode !== undefined ? { errorCode } : {}),
         ...(message.errorMessage !== undefined ? { errorMessage: message.errorMessage } : {}),
+        ...(providerError !== undefined ? { providerError } : {}),
         timestamp: message.timestamp,
     };
 }

@@ -13,6 +13,7 @@ import {
 
 import { applyCodexImageDetailsToPayload } from "./applyCodexImageDetailsToPayload.js";
 import { classifyCodexErrorCode } from "./classifyCodexErrorCode.js";
+import { classifyCodexProviderError } from "./classifyCodexProviderError.js";
 import { collectOriginalImageUrls } from "./collectOriginalImageUrls.js";
 import { CODEX_ULTRA_INSTRUCTIONS } from "./codexUltraInstructions.js";
 import { createPiCodexModel } from "./createPiCodexModel.js";
@@ -119,7 +120,10 @@ export function createCodexProvider(options: CodexProviderOptions = {}): Provide
                         collectOriginalImageUrls(context),
                     ),
                 ),
-                { classifyError: classifyCodexErrorCode },
+                {
+                    classifyError: classifyCodexErrorCode,
+                    classifyProviderError: classifyCodexProviderError,
+                },
             );
         },
     });
