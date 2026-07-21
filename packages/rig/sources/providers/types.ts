@@ -91,10 +91,23 @@ export interface Tool<TParameters extends TSchema = TSchema> {
     parameters: TParameters;
 }
 
+export interface XSearchServerTool {
+    type: "x_search";
+    allowed_x_handles?: readonly string[];
+    excluded_x_handles?: readonly string[];
+    from_date?: string;
+    to_date?: string;
+    enable_image_understanding?: boolean;
+    enable_video_understanding?: boolean;
+}
+
+export type ServerTool = XSearchServerTool;
+
 export interface Context {
     systemPrompt?: string;
     messages: readonly Message[];
     tools?: readonly Tool[];
+    serverTools?: readonly ServerTool[];
 }
 
 export interface Usage {

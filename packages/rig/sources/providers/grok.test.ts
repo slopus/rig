@@ -79,6 +79,33 @@ describe("Grok Build provider", () => {
         });
     });
 
+    it("only enables native X search for an explicitly delegated request", () => {
+        const request = createGrokOpenAIRequest({
+            apiModelId: "grok-4.5",
+            context: {
+                messages: [{ role: "user", content: "Find recent xAI posts", timestamp: 1 }],
+                serverTools: [
+                    {
+                        type: "x_search",
+                        allowed_x_handles: ["xai"],
+                        from_date: "2026-07-01",
+                        enable_image_understanding: true,
+                    },
+                ],
+            },
+            model: modelXaiGrok45,
+        });
+
+        expect(request.tools).toEqual([
+            {
+                type: "x_search",
+                allowed_x_handles: ["xai"],
+                from_date: "2026-07-01",
+                enable_image_understanding: true,
+            },
+        ]);
+    });
+
     it("uses the model catalog's selectable reasoning efforts", () => {
         expect(modelXaiGrok45).toEqual({
             contextCompatibilityGroup: "grok",
@@ -124,7 +151,7 @@ describe("Grok Build provider", () => {
         expect(headers).toMatchObject({
             "x-grok-agent-id": "session-123",
             "x-grok-client-identifier": "grok-shell",
-            "x-grok-client-version": "0.1.220-alpha.4",
+            "x-grok-client-version": "0.2.106",
             "x-grok-conv-id": "session-123",
             "x-grok-model-override": "grok-build",
             "x-grok-session-id": "session-123",
@@ -145,7 +172,7 @@ describe("Grok Build provider", () => {
         expect(headers["x-xai-token-auth"]).toBeUndefined();
         expect(headers["x-authenticateresponse"]).toBeUndefined();
         expect(headers["x-grok-client-mode"]).toBeUndefined();
-        expect(headers["x-grok-client-version"]).toBe("0.1.220-alpha.4");
+        expect(headers["x-grok-client-version"]).toBe("0.2.106");
     });
 
     it("does not automatically replay inference requests", () => {

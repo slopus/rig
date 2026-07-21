@@ -235,10 +235,13 @@ export async function createGym(options: GymOptions): Promise<Gym> {
     }
 }
 
-function defaultModelId(providerId: "bedrock" | "claude" | "codex" | "gym" | "kimi"): string {
+function defaultModelId(
+    providerId: "bedrock" | "claude" | "codex" | "grok" | "gym" | "kimi",
+): string {
     if (providerId === "bedrock") return "openai/gpt-5.5";
     if (providerId === "claude") return "anthropic/sonnet-4-6";
     if (providerId === "codex") return "openai/gpt-5.4";
+    if (providerId === "grok") return "xai/grok-4.5";
     if (providerId === "kimi") return "moonshot/kimi-k3";
     return "openai/gym";
 }

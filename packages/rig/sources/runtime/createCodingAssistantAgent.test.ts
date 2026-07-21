@@ -113,6 +113,66 @@ describe("createCodingAssistantAgent", () => {
         expect(runtime.agent.tools.map((tool) => tool.name)).toContain("run_terminal_command");
     });
 
+    it("adds X search when an enabled Grok provider can run Grok 4.5", () => {
+        const runtime = createCodingAssistantAgent({
+            cwd: "/tmp/rig-app-test",
+            env: { XAI_API_KEY: "xai-test-key" },
+            providers: {
+                codex: { enabled: true, type: "codex" },
+                grok: { enabled: true, type: "grok" },
+            },
+        });
+
+        expect(runtime.agent.tools.map((tool) => tool.name)).toContain("x_search");
+    });
+
+    it("omits X search when Grok is disabled or Grok 4.5 is filtered out", () => {
+        const disabled = createCodingAssistantAgent({
+            cwd: "/tmp/rig-app-test",
+            providers: {
+                codex: { enabled: true, type: "codex" },
+                grok: { enabled: false, type: "grok" },
+            },
+        });
+        const filtered = createCodingAssistantAgent({
+            cwd: "/tmp/rig-app-test",
+            env: { XAI_API_KEY: "xai-test-key" },
+            providers: {
+                codex: { enabled: true, type: "codex" },
+                grok: {
+                    enabled: true,
+                    includeModels: [modelXaiGrokBuild.id],
+                    type: "grok",
+                },
+            },
+        });
+
+        expect(disabled.agent.tools.map((tool) => tool.name)).not.toContain("x_search");
+        expect(filtered.agent.tools.map((tool) => tool.name)).not.toContain("x_search");
+    });
+
+    it("uses an eligible named Grok provider when the default filters out Grok 4.5", () => {
+        const runtime = createCodingAssistantAgent({
+            cwd: "/tmp/rig-app-test",
+            env: { XAI_API_KEY: "xai-test-key" },
+            providers: {
+                codex: { enabled: true, type: "codex" },
+                grok: {
+                    enabled: true,
+                    includeModels: [modelXaiGrokBuild.id],
+                    type: "grok",
+                },
+                research_grok: {
+                    enabled: true,
+                    includeModels: [modelXaiGrok45.id],
+                    type: "grok",
+                },
+            },
+        });
+
+        expect(runtime.agent.tools.map((tool) => tool.name)).toContain("x_search");
+    });
+
     it("creates agents for named provider instances and applies their model filters", () => {
         const providers = {
             work_codex: {

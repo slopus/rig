@@ -40,8 +40,8 @@ export interface GymOptions {
     mode?: "docker" | "just-bash";
     modelId?: string;
     permissionMode?: "auto" | "from_config" | "full_access" | "read_only" | "workspace_write";
-    providerId?: "bedrock" | "claude" | "codex" | "gym" | "kimi";
-    providerOverrides?: readonly ("claude" | "codex" | "kimi")[];
+    providerId?: "bedrock" | "claude" | "codex" | "grok" | "gym" | "kimi";
+    providerOverrides?: readonly ("claude" | "codex" | "grok" | "kimi")[];
     rows?: number;
     startupText?: string;
     terminalColorScheme?: TerminalColorScheme;

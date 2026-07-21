@@ -1,7 +1,7 @@
 import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
 
 import { toOpenAIResponseInput } from "./toOpenAIResponseInput.js";
-import { toOpenAIResponseTools } from "./toOpenAIResponseTools.js";
+import { toGrokOpenAIResponseTools } from "./toGrokOpenAIResponseTools.js";
 import { toOpenAIReasoningEffort } from "./toOpenAIReasoningEffort.js";
 import type { Context, Model, StreamOptions } from "./types.js";
 
@@ -16,7 +16,10 @@ export function createGrokOpenAIRequest(options: {
         options.model.thinkingLevels.length === 1 && options.model.thinkingLevels[0] === "off"
             ? undefined
             : toOpenAIReasoningEffort(effort);
-    const tools = options.context.tools ?? [];
+    const tools = toGrokOpenAIResponseTools(
+        options.context.tools ?? [],
+        options.context.serverTools ?? [],
+    );
     return {
         model: options.apiModelId,
         input: toOpenAIResponseInput(options.context),
@@ -32,6 +35,6 @@ export function createGrokOpenAIRequest(options: {
         ...(options.context.systemPrompt === undefined
             ? {}
             : { instructions: options.context.systemPrompt }),
-        ...(tools.length === 0 ? {} : { tools: toOpenAIResponseTools(tools) }),
+        ...(tools.length === 0 ? {} : { tools }),
     };
 }

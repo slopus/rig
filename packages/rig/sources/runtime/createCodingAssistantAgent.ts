@@ -39,6 +39,7 @@ import { selectToolsForModel } from "./selectToolsForModel.js";
 import type { DurableSkillDefinition } from "../external-skills/types.js";
 import { resolveGeminiApiKey } from "../tools/webSearch/resolveGeminiApiKey.js";
 import { readAgentHistoryTool } from "../tools/read_agent_history.js";
+import { createAvailableGrokXSearchTool } from "./createAvailableGrokXSearchTool.js";
 
 export interface CreateCodingAssistantAgentOptions {
     appendSystemPrompt?: string;
@@ -169,6 +170,15 @@ export function createCodingAssistantAgent(
         model,
         provider,
     });
+    const grokXSearchTool =
+        options.providers === undefined
+            ? undefined
+            : createAvailableGrokXSearchTool({
+                  agentContext: context,
+                  agentId,
+                  env,
+                  providers: options.providers,
+              });
     const collaborationTools = (
         usesCodexTools
             ? codexCollaborationTools
@@ -208,6 +218,7 @@ export function createCodingAssistantAgent(
                 );
     const toolsWithoutGoals = [
         ...baseTools,
+        ...(grokXSearchTool === undefined ? [] : [grokXSearchTool]),
         ...(options.chatHistory === undefined ? [] : [readAgentHistoryTool]),
         ...availableCollaborationTools,
     ];

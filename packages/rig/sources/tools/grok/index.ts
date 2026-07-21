@@ -7,6 +7,7 @@ export { grokRunTerminalCommandTool } from "./run_terminal_command.js";
 export { grokSearchReplaceTool } from "./search_replace.js";
 export { grokSpawnSubagentTool } from "./spawn_subagent.js";
 export { grokWaitCommandsOrSubagentsTool } from "./wait_commands_or_subagents.js";
+export { createGrokXSearchTool } from "./x_search.js";
 
 import { grokGetCommandOrSubagentOutputTool } from "./get_command_or_subagent_output.js";
 import { grokGrepTool } from "./grep.js";
