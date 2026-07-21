@@ -16,6 +16,21 @@ afterEach(async () => {
 });
 
 describe("resolveProviderDisabledReasons", () => {
+    it("accepts a configured Claude Code OAuth token for a named account", async () => {
+        const reasons = await resolveProviderDisabledReasons(
+            {
+                work_claude: {
+                    enabled: true,
+                    oauthToken: "claude-work-token",
+                    type: "claude",
+                },
+            },
+            {},
+        );
+
+        expect(reasons.has("work_claude")).toBe(false);
+    });
+
     it("disables configured providers when their local authentication is absent", async () => {
         const root = await mkdtemp(join(tmpdir(), "rig-provider-auth-"));
         tempDirectories.push(root);

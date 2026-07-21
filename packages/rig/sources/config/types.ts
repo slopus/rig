@@ -64,6 +64,7 @@ export interface ConfigBedrockProvider extends ConfigProviderBase {
 export interface ConfigClaudeProvider extends ConfigProviderBase {
     configDir?: string;
     executable?: string;
+    oauthToken?: string;
     type: "claude";
 }
 

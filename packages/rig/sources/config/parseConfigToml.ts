@@ -260,14 +260,17 @@ function readProviders(
                 "exclude_models",
                 "executable",
                 "include_models",
+                "oauth_token",
                 "type",
             ]);
             const configDir = readProviderString(id, rawProvider, "config_dir");
             const executable = readProviderString(id, rawProvider, "executable");
+            const oauthToken = readProviderString(id, rawProvider, "oauth_token");
             providers[id] = {
                 ...common,
                 ...(configDir === undefined ? {} : { configDir }),
                 ...(executable === undefined ? {} : { executable }),
+                ...(oauthToken === undefined ? {} : { oauthToken }),
                 type,
             };
             continue;

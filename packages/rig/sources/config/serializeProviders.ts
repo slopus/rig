@@ -52,6 +52,7 @@ function serializeProviderFields(provider: PartialConfigProvider): Record<string
         return {
             ...(provider.configDir === undefined ? {} : { config_dir: provider.configDir }),
             ...(provider.executable === undefined ? {} : { executable: provider.executable }),
+            ...(provider.oauthToken === undefined ? {} : { oauth_token: provider.oauthToken }),
         };
     }
     if (provider.type === "grok" || provider.type === "kimi") {

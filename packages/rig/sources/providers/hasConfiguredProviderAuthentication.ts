@@ -28,6 +28,7 @@ export async function hasConfiguredProviderAuthentication(options: {
         );
     }
     if (config.type === "claude") {
+        if (config.oauthToken?.trim()) return true;
         if (
             env.ANTHROPIC_API_KEY?.trim() ||
             env.ANTHROPIC_AUTH_TOKEN?.trim() ||

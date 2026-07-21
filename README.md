@@ -445,7 +445,7 @@ include_models = ["openai/gpt-5.6-sol", "openai/gpt-5.6-terra"]
 [providers.personal_claude]
 type = "claude"
 enabled = true
-config_dir = "/Users/me/.claude-personal"
+oauth_token = "token-from-claude-setup-token"
 exclude_models = ["anthropic/haiku-4-5"]
 
 [providers.work_kimi]
@@ -474,7 +474,10 @@ bearer_token_env_var = "WEST_BEDROCK_TOKEN"
 Every provider accepts `enabled`, `include_models`, and `exclude_models`.
 Filters use exact Rig model IDs; exclusions win when a model appears in both
 lists. Codex instances also accept `auth_file`, `base_url`, and `transport`.
-Claude Code instances accept `config_dir` and `executable`. Grok instances
+Claude Code instances accept `config_dir`, `executable`, and `oauth_token`.
+Run `claude setup-token` while signed in to the additional Claude account to
+create the long-lived token used by `oauth_token`. The token applies only to
+that provider instance. Grok instances
 accept `auth_file` and `base_url`; `RIG_GROK_BASE_URL` is also available for
 local proxy testing. Kimi instances accept `auth_file` and `base_url`;
 `RIG_KIMI_BASE_URL` is available for local proxy testing. Bedrock instances

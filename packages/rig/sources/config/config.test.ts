@@ -205,6 +205,7 @@ exclude_models = ["openai/gpt-5.4"]
 type = "claude"
 config_dir = "/Users/me/.claude-work"
 executable = "/opt/claude"
+oauth_token = "claude-work-token"
 
 [providers.work_grok]
 type = "grok"
@@ -241,6 +242,7 @@ bearer_token_env_var = "WORK_BEDROCK_TOKEN"
                 work_claude: {
                     configDir: "/Users/me/.claude-work",
                     executable: "/opt/claude",
+                    oauthToken: "claude-work-token",
                     type: "claude",
                 },
                 work_codex: {
@@ -684,6 +686,11 @@ effort = "minimal"
                     region: "us-west-2",
                     type: "bedrock" as const,
                 },
+                work_claude: {
+                    enabled: true,
+                    oauthToken: "claude-work-token",
+                    type: "claude" as const,
+                },
                 work_grok: {
                     authFile: "/Users/me/.grok-work/auth.json",
                     baseUrl: "https://grok.example/v1",
@@ -703,6 +710,8 @@ effort = "minimal"
 
             expect(source).toContain("[providers.work_codex]");
             expect(source).toContain("[providers.work_bedrock]");
+            expect(source).toContain("[providers.work_claude]");
+            expect(source).toContain('oauth_token = "claude-work-token"');
             expect(source).toContain("[providers.work_grok]");
             expect(source).toContain("[providers.work_kimi]");
             expect(source).not.toContain("parameters");
