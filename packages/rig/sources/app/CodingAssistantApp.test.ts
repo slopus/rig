@@ -29,6 +29,65 @@ import { DEFAULT_TERMINAL_THEME } from "./defaultTerminalTheme.js";
 import { stripAnsi } from "./testing/stripAnsi.js";
 
 describe("CodingAssistantApp", () => {
+    it("uses a leading trimmed bang as the shell prompt and exits on backspace at column zero", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const runShellCommand = vi.fn(async (command: string, options: { commandId: string }) => ({
+            command,
+            commandId: options.commandId,
+            eventId: "shell-finished",
+            exitCode: 0,
+            output: "done\n",
+            status: "finished" as const,
+            timedOut: false,
+        }));
+        const app = new CodingAssistantApp({
+            agent: Object.assign(
+                new Agent({
+                    provider,
+                    modelId: model.id,
+                    context: harness.context,
+                    printToConsole: false,
+                }),
+                { runShellCommand },
+            ),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProcessManager(),
+            sessionBacked: true,
+            tui: fakeTui(),
+        });
+
+        app.handleInput("  !");
+        const shellPrompt = stripAnsi(app.render(100).join("\n"));
+        expect(shellPrompt).toContain("! Ask Rig to do anything");
+        expect(shellPrompt).toContain("Shell mode");
+        expect(shellPrompt).not.toContain("› !");
+
+        app.handleInput("\x7f");
+        const normalPrompt = stripAnsi(app.render(100).join("\n"));
+        expect(normalPrompt).toContain("› Ask Rig to do anything");
+        expect(normalPrompt).not.toContain("Shell mode");
+
+        submit(app, "!echo done");
+        await app.waitForIdle();
+
+        expect(runShellCommand).toHaveBeenCalledWith("echo done", {
+            commandId: expect.any(String),
+        });
+    });
+
     it("backgrounds a daemon-owned shell command when foreground polling disconnects", async () => {
         const model = defineModel({
             id: "openai/gpt-test",

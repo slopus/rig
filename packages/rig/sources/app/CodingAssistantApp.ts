@@ -392,6 +392,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #backgroundTerminalViewer: BackgroundTerminalViewer | undefined;
     #backgroundTerminalViewerController: AbortController | undefined;
     #foregroundShellCommand: ForegroundShellCommand | undefined;
+    #shellMode = false;
     #sessionMutationInFlight = false;
     #activeSessionMutation: Promise<void> | undefined;
     #sessionMutationBoundaryApplied = false;
@@ -632,6 +633,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#toolStatusByCallId.clear();
         this.#fileMentionAutocomplete?.clear();
         this.#editor.setText("");
+        this.#shellMode = false;
         this.#discardLocalSteeringSubmissionsForBoundary();
         this.#pastedImagesById.clear();
         this.#requestRender();
@@ -1195,6 +1197,29 @@ export class CodingAssistantApp implements Component, Focusable {
             return;
         }
 
+        if (
+            this.#shellMode &&
+            matchesKey(data, "backspace") &&
+            this.#editor.getCursor().line === 0 &&
+            this.#editor.getCursor().col === 0
+        ) {
+            this.#shellMode = false;
+            this.#syncAutocompleteState();
+            this.#requestRender();
+            return;
+        }
+
+        const shellCommandInput = data.includes("\x1b")
+            ? undefined
+            : this.#consumeShellModePrefix(data);
+        if (shellCommandInput !== undefined) {
+            data = shellCommandInput;
+            if (data.length === 0) {
+                this.#requestRender();
+                return;
+            }
+        }
+
         if (this.#handlePastedInput(data)) {
             return;
         }
@@ -1379,16 +1404,39 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #insertPaste(text: string): void {
-        if (text.length === 0) {
+        const shellCommandInput = this.#consumeShellModePrefix(text);
+        const input = shellCommandInput ?? text;
+        if (input.length === 0) {
             this.#syncAutocompleteState();
             this.#requestRender();
             return;
         }
 
         this.#markTypingActivity();
-        this.#editor.handleInput(`${BRACKETED_PASTE_START}${text}${BRACKETED_PASTE_END}`);
+        this.#editor.handleInput(`${BRACKETED_PASTE_START}${input}${BRACKETED_PASTE_END}`);
         this.#syncAutocompleteState();
         this.#requestRender();
+    }
+
+    #consumeShellModePrefix(text: string): string | undefined {
+        if (
+            this.#shellMode ||
+            this.#freeformUserInput !== undefined ||
+            this.#editor.getText().trim().length > 0
+        ) {
+            return undefined;
+        }
+
+        const firstNonWhitespaceIndex = text.search(/\S/u);
+        if (firstNonWhitespaceIndex < 0 || text[firstNonWhitespaceIndex] !== "!") {
+            return undefined;
+        }
+
+        this.#shellMode = true;
+        this.#editor.setText("");
+        this.#fileMentionAutocomplete?.clear();
+        this.#dismissedSlashCommandText = undefined;
+        return text.slice(firstNonWhitespaceIndex + 1);
     }
 
     #isPlainPastePayload(data: string): boolean {
@@ -1475,7 +1523,9 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#submitFreeformUserInput(value);
             return;
         }
-        const submission = this.#submitAsync(value).catch((error: unknown) => {
+        const shellMode = this.#shellMode;
+        this.#shellMode = false;
+        const submission = this.#submitAsync(value, shellMode).catch((error: unknown) => {
             this.#appendEntry({ role: "error", text: errorToMessage(error) });
         });
         const trackedSubmission = submission.finally(() => {
@@ -1485,7 +1535,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#activeSubmissions.add(trackedSubmission);
     }
 
-    async #submitAsync(value: string): Promise<void> {
+    async #submitAsync(value: string, shellMode: boolean): Promise<void> {
         if (this.#compacting) {
             this.#appendEntry({
                 role: "event",
@@ -1495,7 +1545,7 @@ export class CodingAssistantApp implements Component, Focusable {
             return;
         }
 
-        const submission = this.#createPromptSubmission(value);
+        const submission = this.#createPromptSubmission(value, shellMode);
         if (submission === undefined) {
             return;
         }
@@ -1504,7 +1554,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#fileMentionAutocomplete?.clear();
         this.#editor.setText("");
 
-        if (prompt.startsWith("!")) {
+        if (submission.shellCommand !== undefined) {
             this.#editor.addToHistory(prompt);
             this.#pendingPrompts.push(submission);
             this.#startDrainQueue();
@@ -1580,20 +1630,24 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#requestRender();
     }
 
-    #createPromptSubmission(value: string): PromptSubmission | undefined {
+    #createPromptSubmission(
+        value: string,
+        shellMode = this.#shellMode,
+    ): PromptSubmission | undefined {
         const prompt = value.trim();
-        if (prompt.length === 0) {
+        if (prompt.length === 0 && !shellMode) {
             return undefined;
         }
 
-        const shellCommand = prompt.startsWith("!") ? prompt.slice(1).trim() : undefined;
+        const shellCommand = shellMode ? prompt : undefined;
+        const displayText = shellMode ? `!${prompt}` : prompt;
         const content =
             shellCommand === undefined
                 ? (createCodeReviewPrompt(prompt) ?? this.#contentFromPrompt(prompt))
                 : "";
         return {
             content,
-            displayText: prompt,
+            displayText,
             ...(shellCommand === undefined ? {} : { shellCommand }),
         };
     }
@@ -2576,6 +2630,11 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #handleMainComposerEscape(): void {
+        if (this.#shellMode && this.#editor.getText().length === 0) {
+            this.#shellMode = false;
+            return;
+        }
+
         if (this.#editor.getText().length > 0) {
             this.#clearComposerDraftToHistory();
             return;
@@ -2608,8 +2667,9 @@ export class CodingAssistantApp implements Component, Focusable {
         const editorText = this.#editor.getText();
         if (editorText.length === 0) return;
         const draft = editorText.trim();
-        if (draft.length > 0) this.#editor.addToHistory(draft);
+        if (draft.length > 0) this.#editor.addToHistory(this.#shellMode ? `!${draft}` : draft);
         this.#editor.setText("");
+        this.#shellMode = false;
         this.#fileMentionAutocomplete?.clear();
         this.#dismissedSlashCommandText = undefined;
     }
@@ -2791,6 +2851,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #finishBacktrack(messageId: string, message: UserMessage): void {
         const targetIndex = this.#entries.findIndex((entry) => entry.id === messageId);
         if (targetIndex >= 0) this.#entries = this.#entries.slice(0, targetIndex);
+        this.#shellMode = false;
         this.#editor.setText(
             message.blocks
                 .filter((block) => block.type === "text")
@@ -2806,10 +2867,15 @@ export class CodingAssistantApp implements Component, Focusable {
     #restoreQueuedPromptsToComposer(): void {
         if (this.#pendingPrompts.length === 0) return;
         const draft = this.#editor.getText().trim();
+        const shellCommand =
+            this.#pendingPrompts.length === 1 && draft.length === 0
+                ? this.#pendingPrompts[0]?.shellCommand
+                : undefined;
         const restored = this.#pendingPrompts.map((prompt) => prompt.displayText);
         if (draft.length > 0) restored.push(draft);
         this.#pendingPrompts = [];
-        this.#editor.setText(restored.join("\n"));
+        this.#shellMode = shellCommand !== undefined;
+        this.#editor.setText(shellCommand ?? restored.join("\n"));
         this.#syncAutocompleteState();
     }
 
@@ -5199,6 +5265,9 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #inputPrompt(): string {
+        if (this.#isShellMode()) {
+            return `${this.#theme.error}${BOLD}!${NOT_BOLD_OR_DIM}${this.#theme.primary} `;
+        }
         return `${this.#theme.brand}${BOLD}›${NOT_BOLD_OR_DIM}${this.#theme.primary} `;
     }
 
@@ -5432,10 +5501,7 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #isShellMode(): boolean {
-        return (
-            this.#freeformUserInput === undefined &&
-            this.#editor.getText().trimStart().startsWith("!")
-        );
+        return this.#freeformUserInput === undefined && this.#shellMode;
     }
 
     async #runShellCommand(rawCommand: string): Promise<void> {
@@ -5927,8 +5993,9 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #handleCtrlC(): void {
-        if (this.#editor.getText().length > 0) {
+        if (this.#editor.getText().length > 0 || this.#shellMode) {
             this.#editor.setText("");
+            this.#shellMode = false;
             this.#fileMentionAutocomplete?.clear();
             this.#dismissedSlashCommandText = undefined;
             this.#requestRender();
@@ -5939,9 +6006,10 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #queueCurrentInput(): boolean {
-        const submission = this.#createPromptSubmission(this.#editor.getText());
+        const submission = this.#createPromptSubmission(this.#editor.getText(), this.#shellMode);
         if (submission === undefined) return false;
         this.#editor.setText("");
+        this.#shellMode = false;
         this.#editor.addToHistory(submission.displayText);
         this.#fileMentionAutocomplete?.clear();
         if (submission.shellCommand === undefined) this.#modelLocked = true;

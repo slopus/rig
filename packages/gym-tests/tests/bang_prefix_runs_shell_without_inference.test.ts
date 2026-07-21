@@ -14,10 +14,29 @@ describe("bang-prefixed shell commands", () => {
         const gym = await createGym({});
         running.add(gym);
 
+        gym.terminal.type("  !");
+
+        const emptyShellMode = await gym.terminal.waitForText("Shell mode");
+        expect(emptyShellMode.rows.some((row) => row.trimStart().startsWith("! "))).toBe(true);
+
+        gym.terminal.press("backspace");
+
+        await gym.terminal.waitUntil(
+            (snapshot) =>
+                snapshot.text.includes("Ask Rig to do anything") &&
+                !snapshot.text.includes("Shell mode"),
+            "backspace at the empty shell prompt to return to the normal composer",
+        );
+
         gym.terminal.type("!echo direct-output > result.txt && cat result.txt");
 
         const shellMode = await gym.terminal.waitForText("Shell mode");
-        expect(shellMode.text).toContain("!echo direct-output > result.txt && cat result.txt");
+        expect(
+            shellMode.rows.some((row) =>
+                row.trimStart().startsWith("! echo direct-output > result.txt && cat result.txt"),
+            ),
+        ).toBe(true);
+        expect(shellMode.text).not.toContain("!echo direct-output > result.txt && cat result.txt");
 
         gym.terminal.press("enter");
 
