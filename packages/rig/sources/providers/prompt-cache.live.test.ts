@@ -30,6 +30,11 @@ const CACHEABLE_SYSTEM_PROMPT = [
     ),
     "Reply to the user according to their final instruction.",
 ].join("\n");
+const CACHEABLE_TOOL_RESULT = Array.from(
+    { length: 4_096 },
+    (_, index) =>
+        `Stable tool result entry ${String(index).padStart(4, "0")}: this exact payload must be reused from the prompt cache.`,
+).join("\n");
 
 interface PromptCacheCase {
     createProvider: (agentContext: AgentContext, tools: readonly AnyDefinedTool[]) => Provider;
@@ -98,8 +103,12 @@ describeLive("provider prompt caching", () => {
             ).not.toBe("error");
             expect(
                 cached.usage.cacheRead,
-                `${label} returned no cached input tokens. Warmup usage: ${JSON.stringify(warmup.usage)}; cached usage: ${JSON.stringify(cached.usage)}`,
-            ).toBeGreaterThan(0);
+                `${label} did not cache the complete identical prompt. Warmup usage: ${JSON.stringify(warmup.usage)}; cached usage: ${JSON.stringify(cached.usage)}`,
+            ).toBeGreaterThanOrEqual(
+                label === "Claude"
+                    ? warmup.usage.input + warmup.usage.cacheRead + warmup.usage.cacheWrite
+                    : 1,
+            );
         },
         180_000,
     );
@@ -112,17 +121,22 @@ describeLive("provider prompt caching", () => {
                 `${label} authentication is required for the live prompt-cache test.`,
             ).toBe(true);
 
-            let executionCount = 0;
+            const executedSteps: number[] = [];
             const cacheProbeTool = defineTool({
                 name: "CacheProbe",
                 label: "Cache probe",
                 description: "Acknowledge a prompt-cache continuation test value.",
-                arguments: Type.Object({ value: Type.String() }),
+                arguments: Type.Object({ step: Type.Number() }),
                 returnType: Type.Object({ acknowledgement: Type.String() }),
                 shouldReviewInAutoMode: () => false,
-                execute: ({ value }) => {
-                    executionCount += 1;
-                    return { acknowledgement: `Acknowledged: ${value}` };
+                execute: ({ step }) => {
+                    executedSteps.push(step);
+                    return {
+                        acknowledgement:
+                            step === 1
+                                ? `${CACHEABLE_TOOL_RESULT}\n\nThe first result is complete. Call CacheProbe with step 2 now.`
+                                : `Acknowledged step ${step}.`,
+                    };
                 },
                 toLLM: ({ acknowledgement }) => [{ type: "text", text: acknowledgement }],
                 toUI: ({ acknowledgement }) => acknowledgement,
@@ -130,13 +144,18 @@ describeLive("provider prompt caching", () => {
             });
             const agentContext = createLiveAgentContext();
             const provider = createProvider(agentContext, [cacheProbeTool]);
-            const assistantUsages: Array<{ cacheRead: number }> = [];
+            const assistantUsages: Array<{
+                cacheRead: number;
+                cacheWrite: number;
+                input: number;
+            }> = [];
+            const inferenceErrors: string[] = [];
             const result = await runAgentLoop({
                 provider,
                 modelId: model.id,
                 effort: "off",
                 tools: [cacheProbeTool],
-                instructions: `${CACHEABLE_SYSTEM_PROMPT}\n\nCall CacheProbe exactly once with the value "tool continuation" before answering. After receiving its result, reply with exactly: continuation ok`,
+                instructions: `${CACHEABLE_SYSTEM_PROMPT}\n\nCall CacheProbe with step 1. Only after receiving that result, call CacheProbe with step 2. Only after receiving the second result, reply with exactly: continuation ok. Never call both steps in parallel.`,
                 messages: [
                     {
                         role: "user",
@@ -144,7 +163,7 @@ describeLive("provider prompt caching", () => {
                         blocks: [
                             {
                                 type: "text",
-                                text: 'Call CacheProbe with the value "tool continuation", then reply with exactly: continuation ok',
+                                text: "Call CacheProbe with step 1, wait for its result, then call it with step 2, wait for that result, and reply with exactly: continuation ok",
                             },
                         ],
                     },
@@ -152,14 +171,24 @@ describeLive("provider prompt caching", () => {
                 sessionId: `prompt-cache-tool-live-${label.toLowerCase()}-${Date.now()}`,
                 context: agentContext,
                 onEvent: (event) => {
+                    if (event.type === "error" && event.error.errorMessage !== undefined) {
+                        inferenceErrors.push(event.error.errorMessage);
+                    }
                     if (event.type === "done") {
-                        assistantUsages.push({ cacheRead: event.message.usage.cacheRead });
+                        assistantUsages.push({
+                            cacheRead: event.message.usage.cacheRead,
+                            cacheWrite: event.message.usage.cacheWrite,
+                            input: event.message.usage.input,
+                        });
                     }
                 },
             });
 
-            expect(result.stopReason).toBe("stop");
-            expect(executionCount).toBe(1);
+            expect(
+                result.stopReason,
+                `Unexpected agent result: ${JSON.stringify(result.messages.at(-1))}; errors: ${JSON.stringify(inferenceErrors)}`,
+            ).toBe("stop");
+            expect(executedSteps).toEqual([1, 2]);
             expect(result.messages).toEqual(
                 expect.arrayContaining([
                     expect.objectContaining({
@@ -182,11 +211,20 @@ describeLive("provider prompt caching", () => {
                     }),
                 ]),
             );
-            expect(assistantUsages).toHaveLength(2);
+            expect(assistantUsages).toHaveLength(3);
+            const secondUsage = assistantUsages[1];
+            const thirdUsage = assistantUsages[2];
+            if (secondUsage === undefined || thirdUsage === undefined) {
+                throw new Error("Expected three Claude inference usage records.");
+            }
             expect(
-                assistantUsages[1]?.cacheRead,
-                `${label} tool continuation returned no cached input tokens. Usage by turn: ${JSON.stringify(assistantUsages)}`,
-            ).toBeGreaterThan(0);
+                thirdUsage.cacheRead,
+                `${label} did not read the complete prior tool request and result from cache. Usage by turn: ${JSON.stringify(assistantUsages)}`,
+            ).toBeGreaterThanOrEqual(
+                label === "Claude"
+                    ? secondUsage.input + secondUsage.cacheRead + secondUsage.cacheWrite
+                    : 1,
+            );
         },
         180_000,
     );

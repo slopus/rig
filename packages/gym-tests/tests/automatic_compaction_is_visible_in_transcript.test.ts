@@ -8,6 +8,7 @@ import {
     type Gym,
     type TerminalSnapshot,
 } from "@slopus/rig-gym";
+import type { GymInferenceRequest } from "../../rig/sources/providers/gym-types.js";
 
 const running = new Set<Gym>();
 const usageArtifacts = resolve(import.meta.dirname, "../../artifacts/session-usage");
@@ -21,14 +22,16 @@ describe("automatic conversation compaction", () => {
     it("shows a durable transcript row when a small context window triggers compaction", async () => {
         const firstResponseStarted = deferred<void>();
         const releaseFirstResponse = deferred<void>();
+        let firstInferenceContext: GymInferenceRequest["context"] | undefined;
         const gym = await createGym({
             cols: 92,
             contextWindow: 500,
             async inference(request, callIndex) {
-                const isCompaction = request.context.systemPrompt?.startsWith(
+                const isCompaction = lastUserText(request.context).startsWith(
                     "Create a detailed continuation brief",
                 );
                 if (callIndex === 0) {
+                    firstInferenceContext = request.context;
                     firstResponseStarted.resolve();
                     await releaseFirstResponse.promise;
                     return {
@@ -43,6 +46,12 @@ describe("automatic conversation compaction", () => {
                 }
                 if (callIndex === 1) {
                     expect(isCompaction).toBe(true);
+                    expect(request.context.systemPrompt).toBe(firstInferenceContext?.systemPrompt);
+                    expect(request.context.tools).toEqual(firstInferenceContext?.tools);
+                    expect(request.context.messages[0]).toMatchObject({
+                        role: firstInferenceContext?.messages[0]?.role,
+                        content: firstInferenceContext?.messages[0]?.content,
+                    });
                     return {
                         content: [{ text: "The earlier context was summarized.", type: "text" }],
                     };
@@ -111,6 +120,20 @@ function usage(input: number, output: number) {
         output,
         totalTokens: input + output,
     };
+}
+
+function lastUserText(context: {
+    messages: readonly {
+        role: string;
+        content?: string | readonly { type: string; text?: string }[];
+    }[];
+}): string {
+    const message = context.messages.at(-1);
+    if (message?.role !== "user") return "";
+    if (typeof message.content === "string") return message.content;
+    return (message.content ?? [])
+        .flatMap((block) => (block.type === "text" && block.text !== undefined ? [block.text] : []))
+        .join("");
 }
 
 async function captureReviewImage(snapshot: TerminalSnapshot, fileName: string): Promise<void> {

@@ -13,9 +13,7 @@ describe("standalone conversation compaction transport retries", () => {
     it("recovers when the summary request disconnects before content", async () => {
         const gym = await createGym({
             inference(request, callIndex) {
-                const isCompaction = request.context.systemPrompt?.startsWith(
-                    "Create a detailed continuation brief",
-                );
+                const isCompaction = isCompactionRequest(request);
                 if (callIndex === 0) {
                     expect(isCompaction).toBe(false);
                     return { content: [{ text: "Initial work completed.", type: "text" }] };
@@ -84,7 +82,13 @@ function agentRequests(gym: Gym): Gym["inference"]["requests"] {
 }
 
 function isCompactionRequest(request: Gym["inference"]["requests"][number]): boolean {
-    return (
-        request.context.systemPrompt?.startsWith("Create a detailed continuation brief") === true
-    );
+    const message = request.context.messages.at(-1);
+    if (message?.role !== "user") return false;
+    const text =
+        typeof message.content === "string"
+            ? message.content
+            : message.content
+                  .flatMap((block) => (block.type === "text" ? [block.text] : []))
+                  .join("");
+    return text.startsWith("Create a detailed continuation brief");
 }

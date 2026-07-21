@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
     createSdkMcpServer,
     query as defaultClaudeSdkQuery,
@@ -10,7 +12,6 @@ import {
     type SDKResultMessage,
     type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { Base64ImageSource, ContentBlockParam } from "@anthropic-ai/sdk/resources/messages.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { TSchema } from "@sinclair/typebox";
 import { parseStreamingJson } from "@earendil-works/pi-ai";
@@ -33,6 +34,7 @@ import { CLAUDE_SDK_PRIVACY_ENVIRONMENT } from "./claudeSdkPrivacyEnvironment.js
 import { classifyClaudeProviderError } from "./classifyClaudeProviderError.js";
 import { resolveClaudeCodeExecutablePath } from "./resolveClaudeCodeExecutablePath.js";
 import { createProviderQuotaCache } from "./createProviderQuotaCache.js";
+import { createClaudeSessionReplay } from "./createClaudeSessionReplay.js";
 import { createInferenceStream } from "./createInferenceStream.js";
 import { fetchClaudeProviderQuota } from "./fetchClaudeProviderQuota.js";
 import { humanizeClaudeSdkResultSubtype } from "./humanizeClaudeSdkResultSubtype.js";
@@ -74,6 +76,7 @@ export function createClaudeSdkProvider(options: ClaudeSdkProviderOptions) {
     const query = options.query ?? defaultClaudeSdkQuery;
     const tools = options.tools ?? claudeCodeTools;
     const now = options.now ?? Date.now;
+    const providerSessionId = options.sessionId ?? randomUUID();
     const pathToClaudeCodeExecutable =
         options.pathToClaudeCodeExecutable ?? resolveClaudeCodeExecutablePath();
     const quota = createProviderQuotaCache(
@@ -121,6 +124,34 @@ export function createClaudeSdkProvider(options: ClaudeSdkProviderOptions) {
             modelAnthropicHaiku45,
         ],
         quota: (quotaOptions) => quota.get(quotaOptions),
+        compact(model, context, compactionOptions) {
+            return this.stream(
+                model,
+                {
+                    ...context,
+                    messages: [
+                        ...context.messages,
+                        {
+                            role: "user",
+                            content: compactionOptions.prompt,
+                            timestamp: compactionOptions.timestamp,
+                        },
+                    ],
+                },
+                {
+                    intent: "compaction",
+                    ...(compactionOptions.signal === undefined
+                        ? {}
+                        : { signal: compactionOptions.signal }),
+                    ...(compactionOptions.serviceTier === undefined
+                        ? {}
+                        : { serviceTier: compactionOptions.serviceTier }),
+                    ...(compactionOptions.thinking === undefined
+                        ? {}
+                        : { thinking: compactionOptions.thinking }),
+                },
+            );
+        },
         stream(model, context, streamOptions) {
             const activeTools = toolsForProviderContext(tools, context);
             const sdkOptions = toClaudeSdkOptions({
@@ -129,11 +160,25 @@ export function createClaudeSdkProvider(options: ClaudeSdkProviderOptions) {
                 env: options.env ?? process.env,
                 model,
                 pathToClaudeCodeExecutable,
-                sessionId: options.sessionId,
+                sessionId: providerSessionId,
                 streamOptions,
                 tools: activeTools,
             });
-            const prompt = toClaudeSdkPrompt(context);
+            const replaySessionId = sdkOptions.sessionId;
+            const replay =
+                context.messages.length > 1 && replaySessionId !== undefined
+                    ? createClaudeSessionReplay({
+                          context,
+                          cwd: options.agentContext.fs.cwd,
+                          modelId: toClaudeSdkModelId(model),
+                          sessionId: replaySessionId,
+                      })
+                    : undefined;
+            const prompt = replay?.prompt ?? toClaudeSdkPrompt(context);
+            if (replay !== undefined) {
+                delete sdkOptions.sessionId;
+                Object.assign(sdkOptions, replay.options);
+            }
 
             const run = async function* (): AsyncGenerator<
                 AssistantMessageEvent,
@@ -367,6 +412,15 @@ function toClaudeSdkOptions(options: {
         strictMcpConfig: true,
         systemPrompt: options.context.systemPrompt ?? "",
         tools: [],
+        ...(options.streamOptions?.intent === "compaction"
+            ? {
+                  canUseTool: async () => ({
+                      behavior: "deny" as const,
+                      message: "Tool use is not allowed while compacting conversation context.",
+                  }),
+                  maxTurns: 1,
+              }
+            : {}),
     };
 
     if (abortController !== undefined) {
@@ -487,13 +541,7 @@ function toClaudeSdkPrompt(context: Context): string | AsyncIterable<SDKUserMess
         return "";
     }
 
-    if (context.messages.length <= 1) {
-        return singleMessagePrompt(toClaudeSdkUserMessage(latestUserMessage));
-    }
-
-    return singleMessagePrompt(
-        toClaudeSdkTranscriptMessage(context.messages, latestUserMessage.timestamp),
-    );
+    return singleMessagePrompt(toClaudeSdkUserMessage(latestUserMessage));
 }
 
 async function* singleMessagePrompt(message: SDKUserMessage): AsyncIterable<SDKUserMessage> {
@@ -515,69 +563,9 @@ function toClaudeSdkUserMessage(message: UserMessage): SDKUserMessage {
     };
 }
 
-function toClaudeSdkTranscriptMessage(
-    messages: readonly Context["messages"][number][],
-    timestamp: number,
-): SDKUserMessage {
-    const content: ContentBlockParam[] = [
-        {
-            type: "text",
-            text: "Continue the conversation below. Treat it as prior transcript context and answer the latest user message.\nTool calls with successful matching results are completed actions. Continue from those results without repeating the calls unless the user explicitly asks for a retry.\n\n",
-        },
-    ];
-
-    for (const message of messages) {
-        if (message.role === "user") {
-            content.push({ type: "text", text: "User: " });
-            if (typeof message.content === "string") {
-                content.push({ type: "text", text: message.content });
-            } else {
-                content.push(...message.content.map(toClaudeContentBlock));
-            }
-            content.push({ type: "text", text: "\n" });
-        } else if (message.role === "assistant") {
-            for (const block of message.content) {
-                if (block.type === "text") {
-                    content.push({ type: "text", text: `Assistant: ${block.text}\n` });
-                } else if (block.type === "toolCall") {
-                    content.push({
-                        type: "text",
-                        text: `Assistant tool call ${block.name} (${block.id}): ${JSON.stringify(block.arguments)}\n`,
-                    });
-                }
-            }
-        } else {
-            const resultStatus = message.isError ? "failed" : "successful";
-            content.push({
-                type: "text",
-                text: `${resultStatus} tool result from ${message.toolName} (${message.toolCallId}): `,
-            });
-            content.push(...message.content.map(toClaudeContentBlock));
-            content.push({ type: "text", text: "\n" });
-        }
-    }
-
-    if (messages.at(-1)?.role === "toolResult") {
-        content.push({
-            type: "text",
-            text: "\nContinue as the assistant from the completed tool results above. Do not restart the conversation or repeat successful tool calls.",
-        });
-    }
-
-    return {
-        type: "user",
-        parent_tool_use_id: null,
-        message: {
-            role: "user",
-            content,
-        },
-        timestamp: new Date(timestamp).toISOString(),
-    };
-}
-
 function toClaudeContentBlock(
     content: Extract<UserMessage["content"], readonly unknown[]>[number],
-): ContentBlockParam {
+): import("@anthropic-ai/sdk/resources/messages.js").ContentBlockParam {
     if (content.type === "text") {
         return { type: "text", text: content.text };
     }
@@ -586,7 +574,8 @@ function toClaudeContentBlock(
         type: "image",
         source: {
             type: "base64",
-            media_type: content.mimeType as Base64ImageSource["media_type"],
+            media_type:
+                content.mimeType as import("@anthropic-ai/sdk/resources/messages.js").Base64ImageSource["media_type"],
             data: content.data,
         },
     };

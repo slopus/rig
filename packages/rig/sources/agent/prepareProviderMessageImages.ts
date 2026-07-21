@@ -1,4 +1,5 @@
 import type { Message, ProviderImageProfile } from "../providers/types.js";
+import { boundToolResultContent } from "./boundToolResultContent.js";
 import { prepareProviderImageContent } from "./prepareProviderImageContent.js";
 
 export async function prepareProviderMessageImages(
@@ -23,11 +24,12 @@ export async function prepareProviderMessageImages(
                     ),
                 };
             }
+            const content = await Promise.all(
+                message.content.map((item) => prepareProviderImageContent(item, profile)),
+            );
             return {
                 ...message,
-                content: await Promise.all(
-                    message.content.map((content) => prepareProviderImageContent(content, profile)),
-                ),
+                content: boundToolResultContent(content),
             };
         }),
     );

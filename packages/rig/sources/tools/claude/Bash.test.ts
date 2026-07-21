@@ -11,8 +11,10 @@ describe("Claude Code Bash tool", () => {
         const progress: string[] = [];
         const startSession = harness.context.bash.startSession.bind(harness.context.bash);
         let observedTimeout: number | undefined;
+        let observedMaxOutputBytes: number | undefined;
         harness.context.bash.startSession = (options) => {
             observedTimeout = options.timeoutMs;
+            observedMaxOutputBytes = options.maxOutputBytes;
             return startSession(options);
         };
 
@@ -26,6 +28,30 @@ describe("Claude Code Bash tool", () => {
         expect(await harness.readFile("/workspace/note.txt")).toBe("claude\n");
         expect(progress).toContain("claude\n");
         expect(observedTimeout).toBe(120_000);
+        expect(observedMaxOutputBytes).toBe(512_000);
+    });
+
+    it("returns only a 50KB tail to Claude for large foreground output", async () => {
+        const harness = createJustBashToolHarness();
+        harness.context.bash.run = async () => ({
+            exitCode: 0,
+            stderr: "",
+            stdout: `old-head-${"x".repeat(60_000)}-new-tail`,
+            timedOut: false,
+        });
+
+        const result = await claudeBashTool.execute(
+            { command: "produce a large grep line" },
+            harness.context,
+            {},
+        );
+        const rendered = claudeBashTool.toLLM(result);
+        const text = rendered[0]?.type === "text" ? rendered[0].text : "";
+
+        expect(Buffer.byteLength(text, "utf8")).toBeLessThan(52_000);
+        expect(text).not.toContain("old-head");
+        expect(text).toContain("new-tail");
+        expect(text).toContain("Earlier output was truncated");
     });
 
     it("runs commands in the background and retrieves their output", async () => {
@@ -63,6 +89,26 @@ describe("Claude Code Bash tool", () => {
         await expect(
             harness.runTool(claudeTaskStopTool, { task_id: taskId as string }),
         ).rejects.toThrow("not running");
+    });
+
+    it("bounds large background command output before returning it to Claude", async () => {
+        const harness = createJustBashToolHarness();
+        const started = await harness.runTool(claudeBashTool, {
+            command: "printf 'old-head-'; printf '%060000d' 0; printf '%s' '-new-tail'",
+            run_in_background: true,
+        });
+
+        const output = await harness.runTool(claudeTaskOutputTool, {
+            block: true,
+            task_id: started.backgroundTaskId as string,
+            timeout: 3_000,
+        });
+        const taskOutput = output.task?.task_type === "local_bash" ? output.task.output : "";
+
+        expect(Buffer.byteLength(taskOutput, "utf8")).toBeLessThan(52_000);
+        expect(taskOutput).not.toContain("old-head");
+        expect(taskOutput).toContain("new-tail");
+        expect(taskOutput).toContain("Earlier output was truncated");
     });
 
     it("does not impose a foreground timeout on background commands", async () => {

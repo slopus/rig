@@ -444,7 +444,7 @@ describe("Claude SDK provider", () => {
         let executionCount = 0;
         let queryCount = 0;
         let firstQueryClosed = false;
-        let continuationPrompt: Parameters<ClaudeSdkQuery>[0]["prompt"] | undefined;
+        let continuationRequest: Parameters<ClaudeSdkQuery>[0] | undefined;
         const readTool = defineTool({
             name: "Read",
             label: "Read",
@@ -558,7 +558,7 @@ describe("Claude SDK provider", () => {
                     );
                 }
 
-                continuationPrompt = params.prompt;
+                continuationRequest = params;
                 return fakeClaudeQuery([
                     {
                         type: "result",
@@ -613,24 +613,35 @@ describe("Claude SDK provider", () => {
         expect(eventTypes).toContain("toolcall_start");
         expect(eventTypes).toContain("toolcall_delta");
         expect(eventTypes).toContain("toolcall_end");
-        const continuationMessages = await collectPromptMessages(continuationPrompt);
+        const continuationMessages = await collectPromptMessages(continuationRequest?.prompt);
         const continuationContent = continuationMessages[0]?.message.content;
         if (!Array.isArray(continuationContent)) {
             throw new Error("Expected structured continuation content.");
         }
-        const continuationText = continuationContent
-            .filter((block) => block.type === "text")
-            .map((block) => block.text)
-            .join("");
-        expect(continuationText).toContain(
-            'Assistant tool call Read (tool-read): {"path":"README.md"}',
-        );
-        expect(continuationText).toContain(
-            "successful tool result from Read (tool-read): contents of README.md",
-        );
-        expect(continuationText).toContain(
-            "Do not restart the conversation or repeat successful tool calls.",
-        );
+        expect(continuationContent).toEqual([
+            {
+                type: "tool_result",
+                tool_use_id: "tool-read",
+                content: [{ type: "text", text: "contents of README.md" }],
+            },
+        ]);
+        const replayEntries = await loadReplayEntries(continuationRequest);
+        expect(replayEntries.map((entry) => entry.type)).toEqual(["user", "assistant"]);
+        expect(replayEntries[0]?.message).toMatchObject({
+            role: "user",
+            content: [{ type: "text", text: "Read README.md." }],
+        });
+        expect(replayEntries[1]?.message).toMatchObject({
+            role: "assistant",
+            content: [
+                {
+                    type: "tool_use",
+                    id: "tool-read",
+                    name: "Read",
+                    input: { path: "README.md" },
+                },
+            ],
+        });
         expect(result.stopReason).toBe("stop");
         expect(result.messages).toHaveLength(4);
         expect(result.messages[1]).toMatchObject({
@@ -659,6 +670,216 @@ describe("Claude SDK provider", () => {
             role: "agent",
             blocks: [{ type: "text", text: "Finished." }],
         });
+    });
+
+    it("replays real wire messages as an append-only cacheable prefix", async () => {
+        const harness = createJustBashToolHarness();
+        const calls: Parameters<ClaudeSdkQuery>[0][] = [];
+        const provider = createClaudeSdkProvider({
+            agentContext: harness.context,
+            tools: [],
+            query: ((params) => {
+                calls.push(params);
+                return fakeClaudeQuery([successfulResult("done")]);
+            }) as ClaudeSdkQuery,
+        });
+        const firstContext: Context = {
+            messages: [
+                { role: "user", content: "Search the repository.", timestamp: 1 },
+                {
+                    role: "assistant",
+                    content: [
+                        {
+                            type: "toolCall",
+                            id: "grep-1",
+                            name: "Grep",
+                            arguments: { pattern: "needle" },
+                        },
+                    ],
+                    api: "claude-agent-sdk",
+                    provider: "claude",
+                    model: "anthropic/fable-5",
+                    usage: emptyUsage(),
+                    stopReason: "toolUse",
+                    timestamp: 2,
+                },
+                {
+                    role: "toolResult",
+                    toolCallId: "grep-1",
+                    toolName: "Grep",
+                    content: [{ type: "text", text: "first result" }],
+                    isError: false,
+                    timestamp: 3,
+                },
+            ],
+        };
+        const secondContext: Context = {
+            messages: [
+                ...firstContext.messages,
+                {
+                    role: "assistant",
+                    content: [
+                        {
+                            type: "toolCall",
+                            id: "grep-2",
+                            name: "Grep",
+                            arguments: { pattern: "second" },
+                        },
+                    ],
+                    api: "claude-agent-sdk",
+                    provider: "claude",
+                    model: "anthropic/fable-5",
+                    usage: emptyUsage(),
+                    stopReason: "toolUse",
+                    timestamp: 4,
+                },
+                {
+                    role: "toolResult",
+                    toolCallId: "grep-2",
+                    toolName: "Grep",
+                    content: [{ type: "text", text: "second result" }],
+                    isError: false,
+                    timestamp: 5,
+                },
+            ],
+        };
+
+        await provider.stream(modelAnthropicFable5, firstContext).result();
+        await provider.stream(modelAnthropicFable5, secondContext).result();
+
+        const firstEntries = await loadReplayEntries(calls[0]);
+        const secondEntries = await loadReplayEntries(calls[1]);
+        expect(calls[0]?.options).toMatchObject({
+            persistSession: true,
+            resume: expect.any(String),
+        });
+        expect(calls[0]?.options?.sessionId).toBeUndefined();
+        expect(secondEntries.slice(0, firstEntries.length)).toEqual(firstEntries);
+        expect(firstEntries.map((entry) => entry.type)).toEqual(["user", "assistant"]);
+        expect(secondEntries.map((entry) => entry.type)).toEqual([
+            "user",
+            "assistant",
+            "user",
+            "assistant",
+        ]);
+        expect(firstEntries[1]?.message).toMatchObject({
+            role: "assistant",
+            content: [
+                {
+                    type: "tool_use",
+                    id: "grep-1",
+                    name: "Grep",
+                    input: { pattern: "needle" },
+                },
+            ],
+        });
+        expect(secondEntries[2]?.message).toMatchObject({
+            role: "user",
+            content: [
+                {
+                    type: "tool_result",
+                    tool_use_id: "grep-1",
+                    content: [{ type: "text", text: "first result" }],
+                },
+            ],
+        });
+        const secondPrompt = await collectPromptMessages(calls[1]?.prompt);
+        expect(secondPrompt[0]?.message).toEqual({
+            role: "user",
+            content: [
+                {
+                    type: "tool_result",
+                    tool_use_id: "grep-2",
+                    content: [{ type: "text", text: "second result" }],
+                },
+            ],
+        });
+    });
+
+    it("compacts from the real cached wire history with tools disabled", async () => {
+        const harness = createJustBashToolHarness();
+        const calls: Parameters<ClaudeSdkQuery>[0][] = [];
+        const provider = createClaudeSdkProvider({
+            agentContext: harness.context,
+            tools: [],
+            query: ((params) => {
+                calls.push(params);
+                return fakeClaudeQuery([successfulResult("Continuation brief")]);
+            }) as ClaudeSdkQuery,
+        });
+        const context: Context = {
+            systemPrompt: "Stable system prompt.",
+            messages: [
+                { role: "user", content: "Search the repository.", timestamp: 1 },
+                {
+                    role: "assistant",
+                    content: [
+                        {
+                            type: "toolCall",
+                            id: "grep-1",
+                            name: "Grep",
+                            arguments: { pattern: "needle" },
+                        },
+                    ],
+                    api: "claude-agent-sdk",
+                    provider: "claude",
+                    model: "anthropic/fable-5",
+                    usage: emptyUsage(),
+                    stopReason: "toolUse",
+                    timestamp: 2,
+                },
+                {
+                    role: "toolResult",
+                    toolCallId: "grep-1",
+                    toolName: "Grep",
+                    content: [{ type: "text", text: "first result" }],
+                    isError: false,
+                    timestamp: 3,
+                },
+            ],
+        };
+
+        const stream = provider.compact?.(modelAnthropicFable5, context, {
+            prompt: "Create a detailed continuation brief.",
+            timestamp: 4,
+        });
+        expect(stream).toBeDefined();
+        await stream?.result();
+
+        const entries = await loadReplayEntries(calls[0]);
+        const prompt = await collectPromptMessages(calls[0]?.prompt);
+        expect(entries.map((entry) => entry.type)).toEqual(["user", "assistant", "user"]);
+        expect(entries[1]?.message).toMatchObject({
+            role: "assistant",
+            content: [
+                {
+                    type: "tool_use",
+                    id: "grep-1",
+                    name: "Grep",
+                    input: { pattern: "needle" },
+                },
+            ],
+        });
+        expect(entries[2]?.message).toMatchObject({
+            role: "user",
+            content: [
+                {
+                    type: "tool_result",
+                    tool_use_id: "grep-1",
+                    content: [{ type: "text", text: "first result" }],
+                },
+            ],
+        });
+        expect(prompt).toHaveLength(1);
+        expect(prompt[0]?.message).toEqual({
+            role: "user",
+            content: "Create a detailed continuation brief.",
+        });
+        expect(calls[0]?.options).toMatchObject({
+            maxTurns: 1,
+            systemPrompt: "Stable system prompt.",
+        });
+        expect(calls[0]?.options?.canUseTool).toEqual(expect.any(Function));
     });
 
     it("maps latest Anthropic catalog models and reasoning effort to Claude SDK options", async () => {
@@ -876,11 +1097,30 @@ describe("Claude SDK provider", () => {
 
         const promptMessages = await collectPromptMessages(calls[0]?.prompt);
         expect(promptMessages).toHaveLength(1);
-        const promptContent = promptMessages[0]?.message.content;
-        expect(Array.isArray(promptContent)).toBe(true);
-        if (!Array.isArray(promptContent)) throw new Error("Expected structured prompt content.");
-
-        expect(promptContent.filter((block) => block.type === "image")).toEqual([
+        expect(promptMessages[0]?.message).toEqual({
+            role: "user",
+            content: "What do both images show?",
+        });
+        const replayEntries = await loadReplayEntries(calls[0]);
+        const replayImages = replayEntries.flatMap((entry) => {
+            const message = entry.message as { content?: unknown } | undefined;
+            if (!Array.isArray(message?.content)) return [];
+            return message.content.flatMap((block: unknown) => {
+                if (typeof block !== "object" || block === null) return [];
+                if ((block as { type?: unknown }).type === "image") return [block];
+                if ((block as { type?: unknown }).type !== "tool_result") return [];
+                const content = (block as { content?: unknown }).content;
+                return Array.isArray(content)
+                    ? content.filter(
+                          (item) =>
+                              typeof item === "object" &&
+                              item !== null &&
+                              (item as { type?: unknown }).type === "image",
+                      )
+                    : [];
+            });
+        });
+        expect(replayImages).toEqual([
             {
                 type: "image",
                 source: {
@@ -898,14 +1138,6 @@ describe("Claude SDK provider", () => {
                 },
             },
         ]);
-        const promptText = promptContent
-            .filter((block) => block.type === "text")
-            .map((block) => block.text)
-            .join("");
-        expect(promptText).toContain("Assistant tool call view_image (image-result)");
-        expect(promptText).toContain("successful tool result from view_image (image-result): ");
-        expect(promptText).toContain("What do both images show?");
-        expect(promptText).not.toContain("[image:");
     });
 });
 
@@ -919,6 +1151,20 @@ async function collectPromptMessages(prompt: Parameters<ClaudeSdkQuery>[0]["prom
         messages.push(message);
     }
     return messages;
+}
+
+async function loadReplayEntries(request: Parameters<ClaudeSdkQuery>[0] | undefined) {
+    const sessionStore = request?.options?.sessionStore;
+    const sessionId = request?.options?.resume;
+    if (sessionStore === undefined || sessionId === undefined) {
+        throw new Error("Expected a Claude session replay store.");
+    }
+    return (
+        ((await sessionStore.load({ projectKey: "test", sessionId })) as Array<{
+            message?: unknown;
+            type: string;
+        }> | null) ?? []
+    );
 }
 
 function emptyUsage() {

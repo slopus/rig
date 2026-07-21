@@ -141,15 +141,25 @@ export interface Model<TThinkingLevel extends string = string> {
     contextCompatibilityGroup?: ModelContextCompatibilityGroup;
     thinkingLevels: readonly TThinkingLevel[];
     defaultThinkingLevel: TThinkingLevel;
-    /** Maximum input context used for automatic conversation compaction. */
+    /** Maximum input context accepted by the model. */
     contextWindow?: number;
+    /** Smaller effective window used to decide when automatic compaction begins. */
+    autoCompactWindow?: number;
 }
 
 export interface StreamOptions<TThinkingLevel extends string = string> {
+    intent?: "compaction";
     signal?: AbortSignal;
     sessionId?: string;
     serviceTier?: ServiceTier;
     thinking?: TThinkingLevel;
+}
+
+export interface ProviderCompactionOptions<
+    TThinkingLevel extends string = string,
+> extends StreamOptions<TThinkingLevel> {
+    prompt: string;
+    timestamp: number;
 }
 
 /** Streaming events emitted while building an assistant message. */
@@ -193,6 +203,11 @@ export interface Provider {
     imageProfile(model: Model): ProviderImageProfile;
     toolProfile(model: Model): ProviderToolProfile;
     quota?(options?: { fresh?: boolean }): Promise<ProviderQuota>;
+    compact?<TThinkingLevel extends string>(
+        model: Model<TThinkingLevel>,
+        context: Context,
+        options: ProviderCompactionOptions<TThinkingLevel>,
+    ): InferenceStream | undefined;
     stream<TThinkingLevel extends string>(
         model: Model<TThinkingLevel>,
         context: Context,
@@ -215,6 +230,7 @@ export function defineModel<const TThinkingLevel extends string>(model: {
     thinkingLevels: readonly TThinkingLevel[];
     defaultThinkingLevel: TThinkingLevel;
     contextWindow?: number;
+    autoCompactWindow?: number;
 }): Model<TThinkingLevel> {
     return model;
 }
@@ -231,6 +247,11 @@ export function defineProvider(provider: {
     imageProfile?: (model: Model) => ProviderImageProfile;
     toolProfile?: (model: Model) => ProviderToolProfile;
     quota?: (options?: { fresh?: boolean }) => Promise<ProviderQuota>;
+    compact?<TThinkingLevel extends string>(
+        model: Model<TThinkingLevel>,
+        context: Context,
+        options: ProviderCompactionOptions<TThinkingLevel>,
+    ): InferenceStream | undefined;
     stream<TThinkingLevel extends string>(
         model: Model<TThinkingLevel>,
         context: Context,

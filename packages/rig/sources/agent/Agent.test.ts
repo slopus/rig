@@ -512,7 +512,7 @@ describe("Agent", () => {
             name: "GPT Test",
             thinkingLevels: ["off"],
             defaultThinkingLevel: "off",
-            contextWindow: 100,
+            contextWindow: 40_000,
         });
         const contexts: Context[] = [];
         const provider = defineProvider({
@@ -520,9 +520,7 @@ describe("Agent", () => {
             models: [model],
             stream(_model, context) {
                 contexts.push(context);
-                const isCompaction = context.systemPrompt?.startsWith(
-                    "Create a detailed continuation brief",
-                );
+                const isCompaction = isCompactionContext(context);
                 return streamFor({
                     role: "assistant",
                     content: [
@@ -544,12 +542,12 @@ describe("Agent", () => {
             {
                 role: "user",
                 id: "user-old",
-                blocks: [{ type: "text", text: "A".repeat(180) }],
+                blocks: [{ type: "text", text: "A".repeat(20_000) }],
             },
             {
                 role: "agent",
                 id: "agent-old",
-                blocks: [{ type: "text", text: "B".repeat(180) }],
+                blocks: [{ type: "text", text: "B".repeat(20_000) }],
             },
         ];
         const harness = createJustBashToolHarness();
@@ -565,7 +563,7 @@ describe("Agent", () => {
         await agent.send("Continue from there.");
 
         expect(contexts).toHaveLength(2);
-        expect(contexts[0]?.tools).toEqual([]);
+        expect(contexts[0]?.tools).toBeUndefined();
         expect(contexts[1]?.messages).toMatchObject([
             {
                 role: "user",
@@ -591,8 +589,8 @@ describe("Agent", () => {
     });
 
     it.each([
-        ["reported provider usage", "tool result", 90],
-        ["the local tool-result estimate", "X".repeat(300), 0],
+        ["reported provider usage", "tool result", 10_000],
+        ["the local tool-result estimate", "X".repeat(40_000), 0],
     ])(
         "automatically compacts between tool iterations based on %s",
         async (_trigger, toolResult, reportedTokens) => {
@@ -601,7 +599,7 @@ describe("Agent", () => {
                 name: "GPT Test",
                 thinkingLevels: ["off"],
                 defaultThinkingLevel: "off",
-                contextWindow: 100,
+                contextWindow: 40_000,
             });
             const contexts: Context[] = [];
             const echoTool = defineTool({
@@ -621,9 +619,7 @@ describe("Agent", () => {
                 models: [model],
                 stream(_model, context) {
                     contexts.push(context);
-                    const isCompaction = context.systemPrompt?.startsWith(
-                        "Create a detailed continuation brief",
-                    );
+                    const isCompaction = isCompactionContext(context);
                     if (contexts.length === 1) {
                         return streamFor({
                             role: "assistant",
@@ -687,8 +683,9 @@ describe("Agent", () => {
 
             expect(result.stopReason).toBe("stop");
             expect(contexts).toHaveLength(3);
-            expect(contexts[1]?.systemPrompt).toMatch(/^Create a detailed continuation brief/u);
-            expect(contexts[1]?.tools).toEqual([]);
+            expect(contexts[1]?.systemPrompt).toBe(contexts[0]?.systemPrompt);
+            expect(contexts[1]?.tools).toEqual(contexts[0]?.tools);
+            expect(contexts[1]?.messages.slice(0, -1)).toEqual(contexts[0]?.messages.slice(0, 2));
             expect(contexts[2]?.messages).toMatchObject([
                 {
                     role: "user",
@@ -724,7 +721,7 @@ describe("Agent", () => {
             name: "GPT Test",
             thinkingLevels: ["off"],
             defaultThinkingLevel: "off",
-            contextWindow: 100,
+            contextWindow: 40_000,
         });
         const contexts: Context[] = [];
         const observedEventTypes: string[] = [];
@@ -733,9 +730,7 @@ describe("Agent", () => {
             models: [model],
             stream(_model, context) {
                 contexts.push(context);
-                const isCompaction = context.systemPrompt?.startsWith(
-                    "Create a detailed continuation brief",
-                );
+                const isCompaction = isCompactionContext(context);
                 if (contexts.length === 1) {
                     return streamFor({
                         role: "assistant",
@@ -796,7 +791,7 @@ describe("Agent", () => {
 
         expect(result.stopReason).toBe("stop");
         expect(contexts).toHaveLength(3);
-        expect(contexts[1]?.systemPrompt).toMatch(/^Create a detailed continuation brief/u);
+        expect(contexts[1]?.systemPrompt).toBe(contexts[0]?.systemPrompt);
         expect(contexts[2]?.messages).toMatchObject([
             {
                 role: "user",
@@ -1076,9 +1071,7 @@ describe("Agent", () => {
             models: [model],
             serviceTiers: ["fast"],
             stream(_model, context, options) {
-                const isCompaction = context.systemPrompt?.startsWith(
-                    "Create a detailed continuation brief",
-                );
+                const isCompaction = isCompactionContext(context);
                 if (isCompaction) {
                     compactionThinking.push(options?.thinking);
                     compactionServiceTiers.push(options?.serviceTier);
@@ -1139,9 +1132,7 @@ describe("Agent", () => {
             id: "codex",
             models: [model],
             stream(_model, context) {
-                const isCompaction = context.systemPrompt?.startsWith(
-                    "Create a detailed continuation brief",
-                );
+                const isCompaction = isCompactionContext(context);
                 if (isCompaction && !steeredDuringCompaction) {
                     steeredDuringCompaction = true;
                     void agent.steer("stale compaction steering");
@@ -1824,6 +1815,15 @@ describe("Agent", () => {
 function createDeterministicIds(): () => string {
     let next = 0;
     return () => `id-${++next}`;
+}
+
+function isCompactionContext(context: Context): boolean {
+    const message = context.messages.at(-1);
+    return (
+        message?.role === "user" &&
+        typeof message.content === "string" &&
+        message.content.startsWith("Create a detailed continuation brief")
+    );
 }
 
 function streamFor(message: AssistantMessage): InferenceStream {

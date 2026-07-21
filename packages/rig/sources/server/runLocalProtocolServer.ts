@@ -177,7 +177,10 @@ export async function runLocalProtocolServer(
         const loadedConfig = await loadConfig({ cwd: process.cwd() });
         if (stopping) return;
 
-        const providerQuotaService = createProviderQuotaService({ cwd: process.cwd() });
+        const providerQuotaService = createProviderQuotaService({
+            cwd: process.cwd(),
+            providers: loadedConfig.config.providers,
+        });
         const disabledProviderReasons = await resolveProviderDisabledReasons(
             loadedConfig.config.providers,
             process.env,

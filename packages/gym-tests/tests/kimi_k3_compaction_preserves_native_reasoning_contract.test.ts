@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createGym, type Gym } from "@slopus/rig-gym";
+import type { GymInferenceRequest } from "../../rig/sources/providers/gym-types.js";
 
 const running = new Set<Gym>();
 
@@ -14,6 +15,7 @@ describe("Kimi K3 conversation compaction", () => {
         let agentCallIndex = 0;
         const firstResponseStarted = deferred<void>();
         const releaseFirstResponse = deferred<void>();
+        let firstInferenceContext: GymInferenceRequest["context"] | undefined;
         const gym = await createGym({
             contextWindow: 500,
             environment: { KIMI_API_KEY: "kimi-test-key" },
@@ -27,6 +29,7 @@ describe("Kimi K3 conversation compaction", () => {
                 expect(request.options.thinking).toBe("max");
 
                 if (callIndex === 0) {
+                    firstInferenceContext = request.context;
                     expect(request.context.systemPrompt).toContain(
                         "You are Kimi Code, operating as Rig",
                     );
@@ -45,10 +48,15 @@ describe("Kimi K3 conversation compaction", () => {
                 }
 
                 if (callIndex === 1) {
-                    expect(request.context.systemPrompt).toMatch(
+                    expect(request.context.systemPrompt).toBe(firstInferenceContext?.systemPrompt);
+                    expect(request.context.tools).toEqual(firstInferenceContext?.tools);
+                    expect(request.context.messages[0]).toMatchObject({
+                        role: firstInferenceContext?.messages[0]?.role,
+                        content: firstInferenceContext?.messages[0]?.content,
+                    });
+                    expect(lastUserText(request.context)).toMatch(
                         /^You are about to run out of context\. Write a first-person handoff note/u,
                     );
-                    expect(request.context.tools).toEqual([]);
                     return {
                         content: [
                             {
@@ -118,6 +126,20 @@ function usage(input: number, output: number) {
         output,
         totalTokens: input + output,
     };
+}
+
+function lastUserText(context: {
+    messages: readonly {
+        role: string;
+        content?: string | readonly { type: string; text?: string }[];
+    }[];
+}): string {
+    const message = context.messages.at(-1);
+    if (message?.role !== "user") return "";
+    if (typeof message.content === "string") return message.content;
+    return (message.content ?? [])
+        .flatMap((block) => (block.type === "text" && block.text !== undefined ? [block.text] : []))
+        .join("");
 }
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value?: T) => void } {

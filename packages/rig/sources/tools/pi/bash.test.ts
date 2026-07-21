@@ -49,8 +49,9 @@ describe("pi bash tool", () => {
         );
 
         expect(lineResult.text.includes("old-head")).toBe(false);
-        expect(lineResult.text.includes("\nline-2\n")).toBe(false);
-        expect(lineResult.text.startsWith("line-3\n")).toBe(true);
+        expect(lineResult.text.includes("\nline-4\n")).toBe(false);
+        expect(lineResult.text.startsWith("line-5\n")).toBe(true);
+        expect(lineResult.text.split("\n").length).toBeLessThanOrEqual(2_000);
         expect(lineResult.text).toContain("new-tail");
         expect(lineResult.text).toContain("Earlier output was truncated");
 
@@ -60,7 +61,7 @@ describe("pi bash tool", () => {
             {},
         );
 
-        expect(Buffer.byteLength(byteResult.text, "utf8")).toBeLessThan(52_000);
+        expect(Buffer.byteLength(byteResult.text, "utf8")).toBeLessThanOrEqual(50 * 1_024);
         expect(byteResult.text.includes("old-head")).toBe(false);
         expect(byteResult.text).toContain("new-tail");
         expect(byteResult.text).toContain("Earlier output was truncated");

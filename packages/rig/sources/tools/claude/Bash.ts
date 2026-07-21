@@ -3,6 +3,9 @@ import { Type } from "@sinclair/typebox";
 import { defineTool } from "../../agent/types.js";
 import { summarizeEscalatedShellAction } from "../../permissions/summarizeEscalatedShellAction.js";
 import {
+    SHELL_CAPTURE_MAX_BYTES,
+    SHELL_OUTPUT_MAX_BYTES,
+    SHELL_OUTPUT_MAX_LINES,
     runShellCommand,
     shellOutputToText,
     shellToolOutputSchema,
@@ -12,7 +15,7 @@ import {
 export const claudeBashTool = defineTool({
     name: "Bash",
     label: "Bash",
-    description: "Run shell command",
+    description: `Run a shell command. Output returned to Claude is truncated to the last ${SHELL_OUTPUT_MAX_LINES} lines or ${SHELL_OUTPUT_MAX_BYTES / 1024}KB.`,
     arguments: Type.Object({
         command: Type.String({ description: "The command to execute" }),
         timeout: Type.Optional(Type.Number({ description: "Optional timeout in milliseconds" })),
@@ -53,6 +56,7 @@ export const claudeBashTool = defineTool({
         if (run_in_background === true) {
             const sessionId = await context.bash.startSession({
                 command,
+                maxOutputBytes: SHELL_CAPTURE_MAX_BYTES,
                 ...(secrets === undefined ? {} : { secrets }),
                 ...(timeout === undefined ? {} : { timeoutMs: timeout }),
             });
@@ -64,7 +68,9 @@ export const claudeBashTool = defineTool({
                 timedOut: false,
             };
         }
-        const options: Parameters<typeof runShellCommand>[1] = {};
+        const options: Parameters<typeof runShellCommand>[1] = {
+            maxOutputBytes: SHELL_CAPTURE_MAX_BYTES,
+        };
         if (secrets !== undefined) options.secrets = secrets;
         if (timeout !== undefined) options.timeoutMs = timeout;
         if (execution.onProgress !== undefined) options.onProgress = execution.onProgress;

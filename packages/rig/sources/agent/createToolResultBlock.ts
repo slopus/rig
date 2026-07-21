@@ -1,4 +1,5 @@
 import type { AnyDefinedTool, ToolResultBlock } from "./types.js";
+import { boundToolResultContent } from "./boundToolResultContent.js";
 
 export function createToolResultBlock(
     tool: AnyDefinedTool,
@@ -24,7 +25,7 @@ export function createToolResultBlock(
         type: "tool_result",
         toolCallId,
         toolName: tool.name,
-        rendered: toLLM(result),
+        rendered: boundToolResultContent(toLLM(result)),
         display: toUI(result, args),
         ...(resultIsError === undefined ? {} : { isError: resultIsError }),
         ...(presentation === undefined ? {} : { presentation }),

@@ -6,10 +6,13 @@ import {
 } from "./compaction/compactConversation.js";
 import type { AgentContext } from "./context/AgentContext.js";
 import { runAgentLoop, type AgentLoopEvent, type AgentLoopResult } from "./loop.js";
+import { toProviderMessages, toProviderTool } from "./loop.js";
+import { createSystemPrompt } from "./createSystemPrompt.js";
+import { prepareProviderMessageImages } from "./prepareProviderMessageImages.js";
 import { createDebugProvider, type DebugLog } from "../debug/index.js";
 import { printAgentMessageToConsole, type AgentConsole } from "./printAgentMessageToConsole.js";
 import type { AnyDefinedTool, ContentBlock, Message, SystemMessage, UserMessage } from "./types.js";
-import type { Model, Provider, ServiceTier } from "../providers/types.js";
+import type { Context, Model, Provider, ServiceTier } from "../providers/types.js";
 import type { PermissionMode } from "../permissions/index.js";
 import { isPermissionReduction } from "../permissions/index.js";
 import type { DurableSkillDefinition } from "../external-skills/types.js";
@@ -409,6 +412,7 @@ export class Agent {
                     try {
                         const result = await this.#compactMessages({
                             messages,
+                            createProviderContext: compaction.createProviderContext,
                             force: compaction.force,
                             preserveLatestUserMessage: true,
                             provider,
@@ -568,6 +572,7 @@ export class Agent {
 
     async #compactMessages(options: {
         messages: readonly Message[];
+        createProviderContext?: (messages: readonly Message[]) => Promise<Context>;
         force: boolean;
         preserveLatestUserMessage: boolean;
         provider?: Provider;
@@ -578,6 +583,42 @@ export class Agent {
             provider: options.provider ?? this.provider,
             model: this.#model,
             messages: options.messages,
+            createProviderContext:
+                options.createProviderContext ??
+                (async (messages) => {
+                    const systemPrompt = await createSystemPrompt({
+                        ...(this.#appendSystemPrompt !== undefined
+                            ? { appendSystemPrompt: this.#appendSystemPrompt }
+                            : {}),
+                        ...(this.#systemPrompt !== undefined
+                            ? { systemPrompt: this.#systemPrompt }
+                            : {}),
+                        provider: options.provider ?? this.provider,
+                        model: this.#model,
+                        ...(this.#instructions !== undefined
+                            ? { instructions: this.#instructions }
+                            : {}),
+                        messages,
+                        context: this.context,
+                        tools: this.#tools,
+                        durableSkills: this.#durableSkills,
+                    });
+                    const providerMessages = toProviderMessages(messages, {
+                        model: this.#model,
+                        now: this.#now,
+                        providerId: (options.provider ?? this.provider).id,
+                    });
+                    const preparedMessages = await prepareProviderMessageImages(
+                        providerMessages,
+                        (options.provider ?? this.provider).imageProfile(this.#model),
+                    );
+                    const providerTools = this.#tools.map(toProviderTool);
+                    return {
+                        ...(systemPrompt === undefined ? {} : { systemPrompt }),
+                        messages: preparedMessages,
+                        ...(providerTools.length === 0 ? {} : { tools: providerTools }),
+                    };
+                }),
             idFactory: this.#idFactory,
             now: this.#now,
             force: options.force,

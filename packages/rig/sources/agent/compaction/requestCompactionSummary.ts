@@ -1,12 +1,11 @@
-import { formatMessagesForCompaction } from "./formatMessagesForCompaction.js";
 import { delayBeforeInferenceRetry } from "../delayBeforeInferenceRetry.js";
 import { hasResponseContentBegun } from "../hasResponseContentBegun.js";
 import { INFERENCE_MAX_RETRIES } from "../inferenceRetryPolicy.js";
 import { isRetryableInferenceError } from "../isRetryableInferenceError.js";
 import { selectCompactionSystemPromptForModel } from "./selectCompactionSystemPromptForModel.js";
-import type { Message } from "../types.js";
 import type {
     AssistantMessage,
+    Context,
     Model,
     Provider,
     ServiceTier,
@@ -16,28 +15,24 @@ import type {
 export async function requestCompactionSummary(options: {
     provider: Provider;
     model: Model;
-    messages: readonly Message[];
+    context: Context;
     signal?: AbortSignal;
     serviceTier?: ServiceTier;
     thinking?: string;
     now: () => number;
 }): Promise<string> {
     const streamOptions: StreamOptions = {
+        intent: "compaction",
         ...(options.serviceTier !== undefined ? { serviceTier: options.serviceTier } : {}),
         ...(options.thinking !== undefined ? { thinking: options.thinking } : {}),
     };
     if (options.signal !== undefined) streamOptions.signal = options.signal;
 
-    const context = {
-        systemPrompt: selectCompactionSystemPromptForModel(options.model),
-        messages: [
-            {
-                role: "user" as const,
-                content: formatMessagesForCompaction(options.messages),
-                timestamp: options.now(),
-            },
-        ],
-        tools: [],
+    const prompt = selectCompactionSystemPromptForModel(options.model);
+    const timestamp = options.now();
+    const context: Context = {
+        ...options.context,
+        messages: [...options.context.messages, { role: "user", content: prompt, timestamp }],
     };
 
     let response: AssistantMessage;
@@ -45,7 +40,12 @@ export async function requestCompactionSummary(options: {
     for (;;) {
         let responseContentBegun = false;
         try {
-            const stream = options.provider.stream(options.model, context, streamOptions);
+            const stream =
+                options.provider.compact?.(options.model, options.context, {
+                    ...streamOptions,
+                    prompt,
+                    timestamp,
+                }) ?? options.provider.stream(options.model, context, streamOptions);
             for await (const event of stream) {
                 if (hasResponseContentBegun(event)) responseContentBegun = true;
                 if (options.signal?.aborted) {

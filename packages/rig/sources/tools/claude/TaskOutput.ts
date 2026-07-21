@@ -2,6 +2,7 @@ import { Type, type Static } from "@sinclair/typebox";
 
 import { defineTool } from "../../agent/types.js";
 import { readSessionWithProgress } from "../utils/readSessionWithProgress.js";
+import { boundShellOutput } from "../utils/boundShellOutput.js";
 import { parseBackgroundTaskId } from "./parseBackgroundTaskId.js";
 import { serializeWorkflowValue } from "../../workflows/index.js";
 
@@ -124,9 +125,11 @@ export const claudeTaskOutputTool = defineTool({
                 command: snapshot.command,
                 description: snapshot.command,
                 ...(stillRunning ? {} : { exitCode: snapshot.exitCode }),
-                output: [snapshot.stdout, snapshot.stderr]
-                    .filter((value) => value.length > 0)
-                    .join("\n"),
+                output: boundShellOutput(
+                    [snapshot.stdout, snapshot.stderr]
+                        .filter((value) => value.length > 0)
+                        .join("\n"),
+                ),
                 status: snapshot.status,
                 task_id,
                 task_type: "local_bash",

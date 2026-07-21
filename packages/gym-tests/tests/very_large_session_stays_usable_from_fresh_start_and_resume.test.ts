@@ -35,9 +35,16 @@ describe("a very large historical session", () => {
                 },
             },
             inference(request) {
-                const isCompaction = request.context.systemPrompt?.startsWith(
-                    "Create a detailed continuation brief",
-                );
+                const latestMessage = request.context.messages.at(-1);
+                const latestText =
+                    latestMessage?.role === "user"
+                        ? typeof latestMessage.content === "string"
+                            ? latestMessage.content
+                            : latestMessage.content
+                                  .flatMap((block) => (block.type === "text" ? [block.text] : []))
+                                  .join("")
+                        : "";
+                const isCompaction = latestText.startsWith("Create a detailed continuation brief");
                 if (isCompaction === true) {
                     compactionCallCount += 1;
                     return {

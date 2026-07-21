@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { Type } from "@sinclair/typebox";
 
 import { createInferenceStream } from "../../providers/createInferenceStream.js";
 import {
     defineModel,
     defineProvider,
     type AssistantMessage,
+    type Context,
     type InferenceStream,
 } from "../../providers/types.js";
 import { requestCompactionSummary } from "./requestCompactionSummary.js";
@@ -17,6 +19,64 @@ const model = defineModel({
 });
 
 describe("requestCompactionSummary", () => {
+    it("preserves the cached wire prefix and appends one summary request", async () => {
+        const observedContexts: Context[] = [];
+        const context = compactionContext();
+        const provider = defineProvider({
+            id: "test",
+            models: [model],
+            stream(_model, requestContext) {
+                observedContexts.push(requestContext);
+                return textStream("Cached summary.");
+            },
+        });
+
+        await expect(
+            requestCompactionSummary({ context, model, now: () => 4, provider }),
+        ).resolves.toBe("Cached summary.");
+
+        expect(observedContexts).toEqual([
+            {
+                ...context,
+                messages: [
+                    ...context.messages,
+                    {
+                        role: "user",
+                        content: expect.stringMatching(/^Create a detailed continuation brief/u),
+                        timestamp: 4,
+                    },
+                ],
+            },
+        ]);
+    });
+
+    it("uses provider-native compaction before the manual stream fallback", async () => {
+        let streamed = false;
+        const provider = defineProvider({
+            id: "test",
+            models: [model],
+            compact(_model, context, options) {
+                expect(context).toEqual(compactionContext());
+                expect(options.prompt).toMatch(/^Create a detailed continuation brief/u);
+                return textStream("Native summary.");
+            },
+            stream() {
+                streamed = true;
+                return textStream("Manual summary.");
+            },
+        });
+
+        await expect(
+            requestCompactionSummary({
+                context: compactionContext(),
+                model,
+                now: () => 4,
+                provider,
+            }),
+        ).resolves.toBe("Native summary.");
+        expect(streamed).toBe(false);
+    });
+
     it("retries a transport failure before summary content begins", async () => {
         let requests = 0;
         const provider = defineProvider({
@@ -32,7 +92,7 @@ describe("requestCompactionSummary", () => {
 
         await expect(
             requestCompactionSummary({
-                messages: messagesToCompact(),
+                context: compactionContext(),
                 model,
                 now: () => 1,
                 provider,
@@ -54,7 +114,7 @@ describe("requestCompactionSummary", () => {
 
         await expect(
             requestCompactionSummary({
-                messages: messagesToCompact(),
+                context: compactionContext(),
                 model,
                 now: () => 1,
                 provider,
@@ -80,7 +140,7 @@ describe("requestCompactionSummary", () => {
 
             await expect(
                 requestCompactionSummary({
-                    messages: messagesToCompact(),
+                    context: compactionContext(),
                     model,
                     now: () => 1,
                     provider,
@@ -91,15 +151,56 @@ describe("requestCompactionSummary", () => {
     });
 });
 
-function messagesToCompact() {
-    return [
-        { role: "user" as const, id: "user-1", blocks: [{ type: "text" as const, text: "Work." }] },
-        {
-            role: "agent" as const,
-            id: "agent-1",
-            blocks: [{ type: "text" as const, text: "Completed." }],
-        },
-    ];
+function compactionContext(): Context {
+    return {
+        systemPrompt: "Stable system prompt.",
+        tools: [
+            {
+                name: "read_file",
+                description: "Read one file.",
+                parameters: Type.Object({}),
+            },
+        ],
+        messages: [
+            { role: "user", content: [{ type: "text", text: "Work." }], timestamp: 1 },
+            {
+                role: "assistant",
+                content: [
+                    {
+                        type: "toolCall",
+                        id: "call-1",
+                        name: "read_file",
+                        arguments: { path: "README.md" },
+                    },
+                ],
+                api: "test",
+                provider: "test",
+                model: model.id,
+                usage: zeroUsage(),
+                stopReason: "toolUse",
+                timestamp: 2,
+            },
+            {
+                role: "toolResult",
+                toolCallId: "call-1",
+                toolName: "read_file",
+                content: [{ type: "text", text: "Contents." }],
+                isError: false,
+                timestamp: 3,
+            },
+        ],
+    };
+}
+
+function zeroUsage(): AssistantMessage["usage"] {
+    return {
+        cacheRead: 0,
+        cacheWrite: 0,
+        cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0, total: 0 },
+        input: 0,
+        output: 0,
+        totalTokens: 0,
+    };
 }
 
 function streamThrowingBeforeContent(error: Error): InferenceStream {
@@ -153,14 +254,7 @@ function assistantMessage(
         role: "assistant",
         stopReason,
         timestamp: 1,
-        usage: {
-            cacheRead: 0,
-            cacheWrite: 0,
-            cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0, total: 0 },
-            input: 0,
-            output: 0,
-            totalTokens: 0,
-        },
+        usage: zeroUsage(),
         ...(errorMessage === undefined ? {} : { errorMessage }),
     };
 }

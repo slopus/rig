@@ -1,7 +1,14 @@
 import type { ContentBlock } from "../agent/types.js";
+import { boundToolResultContent } from "../agent/boundToolResultContent.js";
 import type { ExternalToolCallResolution } from "./types.js";
 
 export function externalToolResolutionToContent(
+    resolution: ExternalToolCallResolution,
+): readonly ContentBlock[] {
+    return boundToolResultContent(unboundedExternalToolResolutionToContent(resolution));
+}
+
+function unboundedExternalToolResolutionToContent(
     resolution: ExternalToolCallResolution,
 ): readonly ContentBlock[] {
     if (resolution.status === "failed") {

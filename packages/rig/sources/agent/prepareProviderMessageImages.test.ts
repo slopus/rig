@@ -53,4 +53,27 @@ describe("prepareProviderMessageImages", () => {
             timestamp: 1,
         });
     });
+
+    it("reapplies tool-result bounds at the final provider boundary", async () => {
+        const [message] = await prepareProviderMessageImages([
+            {
+                role: "toolResult",
+                toolCallId: "call-large",
+                toolName: "external_tool",
+                content: [{ type: "text", text: "x".repeat(100_000) }],
+                isError: false,
+                timestamp: 1,
+            },
+        ]);
+        const text =
+            message?.role === "toolResult"
+                ? message.content
+                      .filter((content) => content.type === "text")
+                      .map((content) => content.text)
+                      .join("")
+                : "";
+
+        expect(Buffer.byteLength(text)).toBeLessThanOrEqual(50 * 1024);
+        expect(text).toContain("Tool result truncated");
+    });
 });

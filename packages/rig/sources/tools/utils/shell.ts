@@ -3,6 +3,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import type { AgentContext } from "../../agent/context/AgentContext.js";
 import type { ContentBlock } from "../../agent/types.js";
 import { readSessionWithProgress } from "./readSessionWithProgress.js";
+import { boundShellOutput } from "./boundShellOutput.js";
 
 const DEFAULT_FOREGROUND_TIMEOUT_MS = 120_000;
 
@@ -106,9 +107,14 @@ export function shellOutputToText(
             },
         ];
     }
-    const chunks = [
+    const output = [
         result.stdout ? `stdout:\n${result.stdout}` : "",
         result.stderr ? `stderr:\n${result.stderr}` : "",
+    ]
+        .filter((chunk) => chunk.length > 0)
+        .join("\n\n");
+    const chunks = [
+        output.length > 0 ? boundShellOutput(output) : "",
         `exit_code: ${result.exitCode ?? "null"}`,
         result.timedOut ? "timed_out: true" : "",
     ].filter((chunk) => chunk.length > 0);

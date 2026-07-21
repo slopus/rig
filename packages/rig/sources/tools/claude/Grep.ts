@@ -4,7 +4,11 @@ import { defineTool } from "../../agent/types.js";
 import { describeFileAutoPermissionAction } from "../../permissions/describeFileAutoPermissionAction.js";
 import { shouldReviewPathInAutoMode } from "../../permissions/shouldReviewPathInAutoMode.js";
 import {
+    boundGrepOutput,
     formatOutputLineCount,
+    GREP_OUTPUT_DEFAULT_LIMIT,
+    GREP_OUTPUT_MAX_BYTES,
+    GREP_OUTPUT_MAX_LINE_LENGTH,
     runRipgrep,
     textOutputSchema,
     toTextBlocks,
@@ -20,6 +24,7 @@ const CLAUDE_GREP_DESCRIPTION = `A powerful search tool built on ripgrep
   - Use Agent tool for open-ended searches requiring multiple rounds
   - Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use \`interface\\{\\}\` to find \`interface{}\` in Go code)
   - Multiline matching: By default patterns match within single lines only. For cross-line patterns like \`struct \\{[\\s\\S]*?field\`, use \`multiline: true\`
+  - Output is capped at ${GREP_OUTPUT_DEFAULT_LIMIT} entries by default or ${GREP_OUTPUT_MAX_BYTES / 1024}KB, and lines are capped at ${GREP_OUTPUT_MAX_LINE_LENGTH} characters
 `;
 
 export const claudeGrepTool = defineTool({
@@ -89,8 +94,7 @@ export const claudeGrepTool = defineTool({
         ),
         head_limit: Type.Optional(
             Type.Number({
-                description:
-                    'Limit output to first N lines/entries, equivalent to "| head -N". Works across all output modes: content (limits output lines), files_with_matches (limits file paths), count (limits count entries). Defaults to 250 when unspecified. Pass 0 for unlimited (use sparingly -- large result sets waste context).',
+                description: `Limit output to first N lines/entries, equivalent to "| head -N". Works across all output modes: content (limits output lines), files_with_matches (limits file paths), count (limits count entries). Defaults to ${GREP_OUTPUT_DEFAULT_LIMIT} when unspecified. Pass 0 to remove the entry limit; the byte and line-length limits still apply.`,
             }),
         ),
         offset: Type.Optional(
@@ -127,13 +131,13 @@ export const claudeGrepTool = defineTool({
         if (args["-A"] !== undefined) options.after = args["-A"];
         if (args["-i"] !== undefined) options.ignoreCase = args["-i"];
         if (args.type !== undefined) options.type = args.type;
-        if (args.head_limit !== undefined) options.headLimit = args.head_limit;
+        options.headLimit = args.head_limit ?? GREP_OUTPUT_DEFAULT_LIMIT;
         if (args.offset !== undefined) options.offset = args.offset;
         if (args.multiline !== undefined) options.multiline = args.multiline;
         if (execution.signal !== undefined) options.signal = execution.signal;
         const result = await runRipgrep(options, context);
         return {
-            text: result.text.length > 0 ? result.text : "No matches found",
+            text: result.text.length > 0 ? boundGrepOutput(result.text) : "No matches found",
         };
     },
     toLLM: toTextBlocks,

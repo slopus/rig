@@ -16,6 +16,7 @@ afterEach(async () => {
 
 describe("context-window recovery during a tool loop", () => {
     it("compacts older context and retries without exposing the provider rejection", async () => {
+        let currentStepContext: Gym["inference"]["requests"][number]["context"] | undefined;
         const gym = await createGym({
             files: {
                 "history.txt": `HISTORY_FIXTURE_SENTINEL\n${"x".repeat(120_000)}\n`,
@@ -23,7 +24,7 @@ describe("context-window recovery during a tool loop", () => {
             inference(request, callIndex) {
                 const context = JSON.stringify(request.context.messages);
                 const lastMessage = JSON.stringify(request.context.messages.at(-1));
-                const isCompaction = request.context.systemPrompt?.startsWith(
+                const isCompaction = lastUserText(request.context).startsWith(
                     "Create a detailed continuation brief",
                 );
 
@@ -52,6 +53,7 @@ describe("context-window recovery during a tool loop", () => {
                 }
 
                 if (callIndex === 2) {
+                    currentStepContext = request.context;
                     expect(lastMessage).toContain(RETRY_PROMPT);
                     expect(request.options.thinking).toBe("off");
                     return {
@@ -81,7 +83,11 @@ describe("context-window recovery during a tool loop", () => {
 
                 if (callIndex === 4) {
                     expect(isCompaction).toBe(true);
-                    expect(request.context.tools).toEqual([]);
+                    expect(request.context.systemPrompt).toBe(currentStepContext?.systemPrompt);
+                    expect(request.context.tools).toEqual(currentStepContext?.tools);
+                    expect(request.context.messages.slice(0, -1)).toEqual(
+                        currentStepContext?.messages.slice(0, -1),
+                    );
                     expect(request.options.thinking).toBe("off");
                     expect(context).toContain("HISTORY_FIXTURE_SENTINEL");
                     return {
@@ -135,4 +141,11 @@ function agentRequests(gym: Gym) {
     return gym.inference.requests.filter(
         (request) => request.options.sessionId?.endsWith(":title") !== true,
     );
+}
+
+function lastUserText(context: Gym["inference"]["requests"][number]["context"]): string {
+    const message = context.messages.at(-1);
+    if (message?.role !== "user") return "";
+    if (typeof message.content === "string") return message.content;
+    return message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
 }

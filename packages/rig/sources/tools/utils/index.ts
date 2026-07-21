@@ -1,4 +1,6 @@
 export * from "./content.js";
+export * from "./boundGrepOutput.js";
+export * from "./boundShellOutput.js";
 export * from "./countTextLines.js";
 export * from "./editTextFile.js";
 export * from "./editTextFileBatch.js";

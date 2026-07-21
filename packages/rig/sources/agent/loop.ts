@@ -2,6 +2,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { Value } from "@sinclair/typebox/value";
 
 import { assistantMessageToAgentMessage } from "./assistantMessageToAgentMessage.js";
+import { boundToolResultBlocks } from "./boundToolResultBlocks.js";
 import { collectToolCallIds } from "./collectToolCallIds.js";
 import { createAmbiguousToolCallRejection } from "./createAmbiguousToolCallRejection.js";
 import { createErrorToolResultBlock } from "./createErrorToolResultBlock.js";
@@ -67,7 +68,11 @@ export interface RunAgentLoopOptions {
     contextMessages?: readonly Message[];
     compactContext?: (
         messages: readonly Message[],
-        options: { force: boolean; reportedTokens?: number },
+        options: {
+            createProviderContext: (messages: readonly Message[]) => Promise<ProviderContext>;
+            force: boolean;
+            reportedTokens?: number;
+        },
     ) => Promise<
         | {
               compacted: boolean;
@@ -210,6 +215,17 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
     const toolContext = options.context;
     const toolLocks = new ToolLockManager();
     const usedToolCallIds = collectToolCallIds(transcript);
+    const compactCurrentContext = (compaction: { force: boolean; reportedTokens?: number }) =>
+        compactLoopContext({
+            compaction,
+            contextTranscript,
+            model,
+            now,
+            options,
+            providerMessages,
+            providerTools,
+            systemPrompt,
+        });
 
     let iteration = 0;
     let contextOverflowRecoveryAttempted = false;
@@ -386,16 +402,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
 
             if (!contextOverflowRecoveryAttempted && isContextWindowExceededError(error)) {
                 contextOverflowRecoveryAttempted = true;
-                if (
-                    await compactLoopContext(
-                        options,
-                        contextTranscript,
-                        providerMessages,
-                        model,
-                        now,
-                        { force: true },
-                    )
-                ) {
+                if (await compactCurrentContext({ force: true })) {
                     continue;
                 }
             }
@@ -429,11 +436,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
             isContextWindowExceededError(assistantMessage)
         ) {
             contextOverflowRecoveryAttempted = true;
-            if (
-                await compactLoopContext(options, contextTranscript, providerMessages, model, now, {
-                    force: true,
-                })
-            ) {
+            if (await compactCurrentContext({ force: true })) {
                 continue;
             }
         }
@@ -507,7 +510,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
 
         if (assistantMessage.stopReason !== "toolUse") {
             if (assistantMessage.endTurn === false) {
-                await compactLoopContext(options, contextTranscript, providerMessages, model, now, {
+                await compactCurrentContext({
                     force: false,
                     reportedTokens: assistantMessage.usage.totalTokens,
                 });
@@ -716,10 +719,12 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         for (const calls of [immediateCalls, durableCalls]) {
             if (calls.length === 0) continue;
             const outcomes = await executeToolCalls(calls);
-            const toolResultBlocks = outcomes.map((outcome) =>
-                options.signal?.aborted && !outcome.completedBeforeAbort
-                    ? interruptedToolResultBlock(outcome.toolCall, toolsByName)
-                    : outcome.result,
+            const toolResultBlocks = boundToolResultBlocks(
+                outcomes.map((outcome) =>
+                    options.signal?.aborted && !outcome.completedBeforeAbort
+                        ? interruptedToolResultBlock(outcome.toolCall, toolsByName)
+                        : outcome.result,
+                ),
             );
             for (const resultBlock of toolResultBlocks) {
                 providerMessages.push(toProviderToolResultMessage(resultBlock, now));
@@ -741,7 +746,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                 stopReason: "aborted",
             };
         }
-        await compactLoopContext(options, contextTranscript, providerMessages, model, now, {
+        await compactCurrentContext({
             force: false,
             reportedTokens: assistantMessage.usage.totalTokens,
         });
@@ -833,25 +838,45 @@ async function ignoreOptionalFailure(callback: () => void | Promise<void>): Prom
     }
 }
 
-async function compactLoopContext(
-    options: RunAgentLoopOptions,
-    contextTranscript: Message[],
-    providerMessages: ProviderMessage[],
-    model: Model,
-    now: () => number,
-    compaction: { force: boolean; reportedTokens?: number },
-): Promise<boolean> {
-    const result = await options.compactContext?.(contextTranscript, compaction);
+async function compactLoopContext(options: {
+    compaction: { force: boolean; reportedTokens?: number };
+    contextTranscript: Message[];
+    model: Model;
+    now: () => number;
+    options: RunAgentLoopOptions;
+    providerMessages: ProviderMessage[];
+    providerTools: readonly ProviderTool[];
+    systemPrompt: string | undefined;
+}): Promise<boolean> {
+    const result = await options.options.compactContext?.(options.contextTranscript, {
+        ...options.compaction,
+        createProviderContext: async (messages) => {
+            const providerMessageCount = toProviderMessages(messages, {
+                model: options.model,
+                now: () => 0,
+                providerId: options.options.provider.id,
+            }).length;
+            const preparedMessages = await prepareProviderMessageImages(
+                options.providerMessages.slice(0, providerMessageCount),
+                options.options.provider.imageProfile(options.model),
+            );
+            return toProviderContext(options.systemPrompt, preparedMessages, options.providerTools);
+        },
+    });
     if (result?.compacted !== true) return false;
 
-    contextTranscript.splice(0, contextTranscript.length, ...result.contextMessages);
-    providerMessages.splice(
+    options.contextTranscript.splice(
         0,
-        providerMessages.length,
-        ...toProviderMessages(contextTranscript, {
-            model,
-            now,
-            providerId: options.provider.id,
+        options.contextTranscript.length,
+        ...result.contextMessages,
+    );
+    options.providerMessages.splice(
+        0,
+        options.providerMessages.length,
+        ...toProviderMessages(options.contextTranscript, {
+            model: options.model,
+            now: options.now,
+            providerId: options.options.provider.id,
         }),
     );
     return true;
@@ -942,7 +967,7 @@ function toProviderContext(
     };
 }
 
-function toProviderMessages(
+export function toProviderMessages(
     messages: readonly Message[],
     options: {
         model: Model;
@@ -985,11 +1010,11 @@ function toProviderMessagesFromAgentMessage(
     },
 ): ProviderMessage[] {
     const assistantContent: ProviderAssistantContent[] = [];
-    const toolResults: ProviderToolResultMessage[] = [];
+    const toolResultBlocks: ToolResultBlock[] = [];
 
     for (const block of message.blocks) {
         if (block.type === "tool_result") {
-            toolResults.push(toProviderToolResultMessage(block, options.now));
+            toolResultBlocks.push(block);
             continue;
         }
 
@@ -1013,7 +1038,9 @@ function toProviderMessagesFromAgentMessage(
                   },
               ]
             : []),
-        ...toolResults,
+        ...boundToolResultBlocks(toolResultBlocks).map((block) =>
+            toProviderToolResultMessage(block, options.now),
+        ),
     ];
 }
 
@@ -1079,7 +1106,7 @@ function resolveToolLockKeys(
     );
 }
 
-function toProviderTool(tool: AnyDefinedTool): ProviderTool {
+export function toProviderTool(tool: AnyDefinedTool): ProviderTool {
     return {
         name: tool.name,
         description: tool.description,

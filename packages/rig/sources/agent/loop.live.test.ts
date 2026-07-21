@@ -245,6 +245,84 @@ describe("agent loop live", () => {
         });
     });
 
+    it("bounds individual and batched tool results on the wire before the next inference", async () => {
+        const model = defineModel({
+            id: "mock/model",
+            name: "Mock Model",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const contexts: Context[] = [];
+        const provider = defineProvider({
+            id: "mock",
+            models: [model],
+            stream(_model, context) {
+                contexts.push(context);
+                return streamFor(
+                    contexts.length === 1
+                        ? assistantMessage(
+                              Array.from({ length: 5 }, (_, index) => ({
+                                  type: "toolCall" as const,
+                                  id: `call-large-${String(index)}`,
+                                  name: "large_result",
+                                  arguments: {},
+                              })),
+                              "toolUse",
+                          )
+                        : assistantMessage([{ type: "text", text: "done" }], "stop"),
+                );
+            },
+        });
+        const largeResultTool = defineTool({
+            name: "large_result",
+            label: "Large result",
+            description: "Returns a deliberately oversized result.",
+            arguments: Type.Object({}),
+            returnType: Type.Object({ text: Type.String() }),
+            shouldReviewInAutoMode: () => false,
+            execute: () => ({ text: `begin-${"x".repeat(100_000)}-end` }),
+            toLLM: (result) => [{ type: "text", text: result.text }],
+            toUI: () => "Returned a large result",
+            locks: [],
+        });
+        const harness = createJustBashToolHarness();
+
+        await runAgentLoop({
+            provider,
+            modelId: model.id,
+            tools: [largeResultTool],
+            messages: [
+                {
+                    role: "user",
+                    id: "user-1",
+                    blocks: [{ type: "text", text: "Return a large tool result." }],
+                },
+            ],
+            context: harness.context,
+        });
+
+        const toolResults =
+            contexts[1]?.messages.filter((message) => message.role === "toolResult") ?? [];
+        const wireTexts = toolResults.map((message) =>
+            message.content
+                .filter((content) => content.type === "text")
+                .map((content) => content.text)
+                .join(""),
+        );
+        expect(toolResults.map((message) => message.toolCallId)).toEqual(
+            Array.from({ length: 5 }, (_, index) => `call-large-${String(index)}`),
+        );
+        expect(
+            wireTexts.reduce((total, wireText) => total + Buffer.byteLength(wireText), 0),
+        ).toBeLessThanOrEqual(200 * 1024);
+        for (const wireText of wireTexts) {
+            expect(Buffer.byteLength(wireText)).toBeLessThanOrEqual(50 * 1024);
+            expect(wireText).toContain("begin-");
+            expect(wireText).not.toContain("-end");
+            expect(wireText).toContain("Tool result truncated");
+        }
+    });
+
     it("executes provider tool calls in parallel and preserves result order", async () => {
         const model = defineModel({
             id: "mock/model",
