@@ -58,6 +58,30 @@ describe("Kimi provider", () => {
         expect((client as unknown as { maxRetries: number }).maxRetries).toBe(0);
     });
 
+    it("reuses one Kimi client for sequential inference calls from the same agent", async () => {
+        const clientFactory = vi.fn(
+            (): KimiChatClient => ({
+                chat: {
+                    completions: {
+                        async create() {
+                            return chunks([{ choices: [{ delta: { content: "ok" } }] }]);
+                        },
+                    },
+                },
+            }),
+        );
+        const provider = createKimiProvider({
+            clientFactory,
+            env: { KIMI_CODE_HOME: "/tmp/kimi-test" },
+            resolveCredential: async () => ({ source: "session", token: "secret-token" }),
+        });
+
+        await provider.stream(modelMoonshotKimiK3, { messages: [] }).result();
+        await provider.stream(modelMoonshotKimiK3, { messages: [] }).result();
+
+        expect(clientFactory).toHaveBeenCalledOnce();
+    });
+
     it("sends the native K3 request and streams reasoning, text, parallel tools, and usage", async () => {
         let captured: KimiChatRequest | undefined;
         const clientFactory = vi.fn(

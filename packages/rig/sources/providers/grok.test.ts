@@ -185,6 +185,38 @@ describe("Grok Build provider", () => {
         expect(client.maxRetries).toBe(0);
     });
 
+    it("reuses one Grok client for sequential inference calls from the same agent", async () => {
+        const response = {
+            id: "response-reused-client",
+            model: "grok-build",
+            status: "completed",
+            usage: {
+                input_tokens: 1,
+                input_tokens_details: { cached_tokens: 0 },
+                output_tokens: 1,
+                total_tokens: 2,
+            },
+        } as unknown as OpenAIResponse;
+        const create = vi.fn(() => ({
+            async *[Symbol.asyncIterator]() {
+                yield { type: "response.completed" as const, response };
+            },
+        }));
+        const clientFactory = vi.fn(
+            () => ({ responses: { create } }) as unknown as GrokOpenAIClient,
+        );
+        const provider = createGrokProvider({
+            clientFactory,
+            resolveCredential: async () => ({ source: "session", token: "session-token" }),
+        });
+
+        await provider.stream(modelXaiGrokBuild, { messages: [] }).result();
+        await provider.stream(modelXaiGrokBuild, { messages: [] }).result();
+
+        expect(create).toHaveBeenCalledTimes(2);
+        expect(clientFactory).toHaveBeenCalledOnce();
+    });
+
     it("streams Responses API output without replaying the request", async () => {
         const response = {
             id: "response-1",

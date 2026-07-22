@@ -243,6 +243,7 @@ export interface Provider {
     readonly extendProfilePromptContext?: (
         context: ProfilePromptContext,
     ) => ProfilePromptContext | Promise<ProfilePromptContext>;
+    close?(): Promise<void> | void;
     imageProfile(model: Model): ProviderImageProfile;
     toolProfile(model: Model): ProviderToolProfile;
     quota?(options?: { fresh?: boolean }): Promise<ProviderQuota>;
@@ -291,6 +292,7 @@ export function defineProvider(provider: {
     extendProfilePromptContext?: (
         context: ProfilePromptContext,
     ) => ProfilePromptContext | Promise<ProfilePromptContext>;
+    close?(): Promise<void> | void;
     imageProfile?: (model: Model) => ProviderImageProfile;
     toolProfile?: (model: Model) => ProviderToolProfile;
     quota?: (options?: { fresh?: boolean }) => Promise<ProviderQuota>;

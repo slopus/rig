@@ -8,6 +8,11 @@ import { isKimiUnauthorizedError } from "./isKimiUnauthorizedError.js";
 import { resolveKimiCredential } from "./resolveKimiCredential.js";
 import type { Context, Model, StreamOptions } from "./types.js";
 
+export interface KimiClientCache {
+    client?: KimiChatClient;
+    token?: string;
+}
+
 export function createKimiStream(options: {
     apiKey?: string;
     apiModelId: string;
@@ -18,6 +23,7 @@ export function createKimiStream(options: {
         headers: Record<string, string>;
         token: string;
     }) => KimiChatClient;
+    clientCache: KimiClientCache;
     context: Context;
     env?: NodeJS.ProcessEnv;
     maxCompletionTokens: number;
@@ -56,11 +62,21 @@ export function createKimiStream(options: {
                             env,
                             force,
                         });
-                        return clientFactory({
-                            baseUrl: options.baseUrl,
-                            headers,
-                            token: credential.token,
-                        }).chat.completions.create(chatRequest, requestOptions);
+                        let cachedClient = options.clientCache.client;
+                        if (
+                            force ||
+                            cachedClient === undefined ||
+                            options.clientCache.token !== credential.token
+                        ) {
+                            cachedClient = clientFactory({
+                                baseUrl: options.baseUrl,
+                                headers,
+                                token: credential.token,
+                            });
+                            options.clientCache.client = cachedClient;
+                            options.clientCache.token = credential.token;
+                        }
+                        return cachedClient.chat.completions.create(chatRequest, requestOptions);
                     };
                     try {
                         return await create(false);

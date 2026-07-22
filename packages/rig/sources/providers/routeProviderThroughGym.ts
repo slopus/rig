@@ -40,7 +40,20 @@ export function routeProviderThroughGym(provider: Provider, env: NodeJS.ProcessE
         ...(provider.serviceTiers === undefined ? {} : { serviceTiers: provider.serviceTiers }),
         ...(env.RIG_GYM_TOKEN === undefined ? {} : { token: env.RIG_GYM_TOKEN }),
     });
-    return provider.quota === undefined
-        ? gymProvider
-        : { ...gymProvider, quota: (options) => provider.quota!(options) };
+    return {
+        ...gymProvider,
+        ...(provider.close === undefined && gymProvider.close === undefined
+            ? {}
+            : {
+                  close: async () => {
+                      await Promise.all([gymProvider.close?.(), provider.close?.()]);
+                  },
+              }),
+        ...(provider.quota === undefined
+            ? {}
+            : {
+                  quota: (options?: Parameters<NonNullable<Provider["quota"]>>[0]) =>
+                      provider.quota!(options),
+              }),
+    };
 }

@@ -1,4 +1,4 @@
-import type { GrokOpenAIClient } from "./createGrokOpenAIClient.js";
+import { createGrokOpenAIClient, type GrokOpenAIClient } from "./createGrokOpenAIClient.js";
 import { createGrokStream } from "./createGrokStream.js";
 import { GROK_DEFAULT_BASE_URL, GROK_PROVIDER_ID } from "./grok-constants.js";
 import { modelsForProfileProviderType } from "../profiles/impl/modelsForProfileProviderType.js";
@@ -13,6 +13,7 @@ export interface GrokProviderOptions {
     authFile?: string;
     baseUrl?: string;
     client?: GrokOpenAIClient;
+    clientFactory?: (options: Parameters<typeof createGrokOpenAIClient>[0]) => GrokOpenAIClient;
     env?: NodeJS.ProcessEnv;
     id?: string;
     resolveCredential?: typeof resolveGrokCredential;
@@ -22,6 +23,22 @@ export interface GrokProviderOptions {
 export function createGrokProvider(options: GrokProviderOptions = {}): Provider {
     const providerId = options.id ?? GROK_PROVIDER_ID;
     const models = modelsForProfileProviderType("grok");
+    let cachedClient: { client: GrokOpenAIClient; token: string } | undefined;
+    const resolveClient = async (): Promise<GrokOpenAIClient> => {
+        const credential = await (options.resolveCredential ?? resolveGrokCredential)({
+            ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
+            ...(options.authFile === undefined ? {} : { authFile: options.authFile }),
+            ...(options.env === undefined ? {} : { env: options.env }),
+        });
+        if (options.client !== undefined) return options.client;
+        if (cachedClient?.token === credential.token) return cachedClient.client;
+        const client = (options.clientFactory ?? createGrokOpenAIClient)({
+            baseUrl: options.baseUrl ?? GROK_DEFAULT_BASE_URL,
+            token: credential.token,
+        });
+        cachedClient = { client, token: credential.token };
+        return client;
+    };
     return defineProvider({
         contextCompatibility: "model_group",
         id: providerId,
@@ -41,13 +58,7 @@ export function createGrokProvider(options: GrokProviderOptions = {}): Provider 
                 model: availableModel,
                 modelId: availableModel.id,
                 providerId,
-                ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
-                ...(options.authFile === undefined ? {} : { authFile: options.authFile }),
-                ...(options.client === undefined ? {} : { client: options.client }),
-                ...(options.env === undefined ? {} : { env: options.env }),
-                ...(options.resolveCredential === undefined
-                    ? {}
-                    : { resolveCredential: options.resolveCredential }),
+                resolveClient,
                 ...(options.sessionId === undefined ? {} : { sessionId: options.sessionId }),
                 ...(streamOptions === undefined ? {} : { streamOptions }),
             });

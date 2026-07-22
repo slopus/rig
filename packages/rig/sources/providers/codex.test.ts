@@ -262,20 +262,20 @@ describe("codex provider", () => {
                 );
             });
         });
+        const provider = createCodexProvider({
+            apiKey: "e30.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC10ZXN0In19.x",
+            baseUrl: `http://127.0.0.1:${address.port}/backend-api`,
+        });
 
         try {
-            const provider = createCodexProvider({
-                apiKey: "e30.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC10ZXN0In19.x",
-                baseUrl: `http://127.0.0.1:${address.port}/backend-api`,
-            });
             const context: Context = {
                 ...emptyContext(),
                 tools: [{ kind: "custom", name: "exec", description: "Run JavaScript." }],
             };
 
-            await expect(provider.stream(modelOpenaiGpt56Sol, context).result()).resolves.toMatchObject(
-                { stopReason: "stop" },
-            );
+            await expect(
+                provider.stream(modelOpenaiGpt56Sol, context).result(),
+            ).resolves.toMatchObject({ stopReason: "stop" });
 
             expect(requestHeaders["openai-beta"]).toBe("responses_websockets=2026-02-06");
             expect(requestFrame).toMatchObject({
@@ -285,6 +285,256 @@ describe("codex provider", () => {
                 tools: [{ type: "custom", name: "exec" }],
             });
         } finally {
+            await provider.close?.();
+            server.close();
+            await once(server, "close");
+        }
+    });
+
+    it("keeps one Codex WebSocket open across sequential agent inference calls", async () => {
+        const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+        await once(server, "listening");
+        const address = server.address();
+        if (typeof address === "string" || address === null) {
+            throw new Error("Expected a TCP WebSocket test server.");
+        }
+
+        let connections = 0;
+        let requests = 0;
+        const requestFrames: Record<string, unknown>[] = [];
+        server.on("connection", (socket) => {
+            connections += 1;
+            socket.on("message", (data) => {
+                requests += 1;
+                requestFrames.push(JSON.parse(data.toString()) as Record<string, unknown>);
+                if (requests === 1) {
+                    const item = {
+                        type: "custom_tool_call",
+                        id: "custom-1",
+                        call_id: "call-1",
+                        name: "exec",
+                        input: 'text("done")',
+                    };
+                    socket.send(
+                        JSON.stringify({
+                            type: "response.output_item.added",
+                            output_index: 0,
+                            item: { ...item, input: "" },
+                        }),
+                    );
+                    socket.send(
+                        JSON.stringify({
+                            type: "response.custom_tool_call_input.done",
+                            output_index: 0,
+                            item_id: item.id,
+                            input: item.input,
+                        }),
+                    );
+                    socket.send(
+                        JSON.stringify({
+                            type: "response.output_item.done",
+                            output_index: 0,
+                            item,
+                        }),
+                    );
+                }
+                socket.send(
+                    JSON.stringify({
+                        type: "response.completed",
+                        response: {
+                            id: `response-${requests}`,
+                            model: "gpt-5.6-sol",
+                            status: "completed",
+                            usage: {
+                                input_tokens: 1,
+                                input_tokens_details: { cached_tokens: 0 },
+                                output_tokens: 1,
+                                total_tokens: 2,
+                            },
+                        },
+                    }),
+                );
+            });
+        });
+
+        const provider = createCodexProvider({
+            apiKey: "e30.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC10ZXN0In19.x",
+            baseUrl: `http://127.0.0.1:${address.port}/backend-api`,
+        });
+        const context: Context = {
+            ...emptyContext(),
+            tools: [{ kind: "custom", name: "exec", description: "Run JavaScript." }],
+        };
+
+        try {
+            const firstResponse = await provider.stream(modelOpenaiGpt56Sol, context).result();
+            expect(firstResponse).toMatchObject({ stopReason: "toolUse" });
+            await provider
+                .stream(modelOpenaiGpt56Sol, {
+                    ...context,
+                    messages: [
+                        ...context.messages,
+                        firstResponse,
+                        {
+                            role: "toolResult",
+                            toolCallId: "call-1|custom-1",
+                            toolName: "exec",
+                            content: [{ type: "text", text: "done" }],
+                            isError: false,
+                            timestamp: Date.now(),
+                        },
+                    ],
+                })
+                .result();
+
+            expect(requests).toBe(2);
+            expect(connections).toBe(1);
+            expect(requestFrames[1]).toMatchObject({
+                input: [
+                    {
+                        type: "custom_tool_call_output",
+                        call_id: "call-1",
+                        output: "done",
+                    },
+                ],
+                previous_response_id: "response-1",
+                type: "response.create",
+            });
+        } finally {
+            await provider.close?.();
+            server.close();
+            await once(server, "close");
+        }
+    });
+
+    it("reconnects the agent-scoped Codex WebSocket after the server closes it", async () => {
+        const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+        await once(server, "listening");
+        const address = server.address();
+        if (typeof address === "string" || address === null) {
+            throw new Error("Expected a TCP WebSocket test server.");
+        }
+
+        let connections = 0;
+        let requests = 0;
+        let firstSocketClosed: Promise<unknown> | undefined;
+        server.on("connection", (socket) => {
+            connections += 1;
+            socket.on("message", () => {
+                requests += 1;
+                socket.send(
+                    JSON.stringify({
+                        type: "response.completed",
+                        response: {
+                            id: `response-${requests}`,
+                            model: "gpt-5.6-sol",
+                            status: "completed",
+                            usage: {
+                                input_tokens: 1,
+                                input_tokens_details: { cached_tokens: 0 },
+                                output_tokens: 1,
+                                total_tokens: 2,
+                            },
+                        },
+                    }),
+                );
+                if (requests === 1) {
+                    firstSocketClosed = once(socket, "close");
+                    socket.close();
+                }
+            });
+        });
+        const provider = createCodexProvider({
+            apiKey: "e30.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC10ZXN0In19.x",
+            baseUrl: `http://127.0.0.1:${address.port}/backend-api`,
+        });
+        const context: Context = {
+            ...emptyContext(),
+            tools: [{ kind: "custom", name: "exec", description: "Run JavaScript." }],
+        };
+
+        try {
+            await provider.stream(modelOpenaiGpt56Sol, context).result();
+            await firstSocketClosed;
+            await provider.stream(modelOpenaiGpt56Sol, context).result();
+
+            expect(requests).toBe(2);
+            expect(connections).toBe(2);
+        } finally {
+            await provider.close?.();
+            server.close();
+            await once(server, "close");
+        }
+    });
+
+    it("reconnects with full context after a terminal Codex response failure", async () => {
+        const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+        await once(server, "listening");
+        const address = server.address();
+        if (typeof address === "string" || address === null) {
+            throw new Error("Expected a TCP WebSocket test server.");
+        }
+
+        let connections = 0;
+        const requestFrames: Record<string, unknown>[] = [];
+        server.on("connection", (socket) => {
+            connections += 1;
+            socket.once("message", (data) => {
+                requestFrames.push(JSON.parse(data.toString()) as Record<string, unknown>);
+                if (connections === 1) {
+                    socket.send(
+                        JSON.stringify({
+                            type: "response.failed",
+                            response: {
+                                id: "response-failed",
+                                model: "gpt-5.6-sol",
+                                status: "failed",
+                                error: { code: "server_error", message: "synthetic failure" },
+                            },
+                        }),
+                    );
+                    return;
+                }
+                socket.send(
+                    JSON.stringify({
+                        type: "response.completed",
+                        response: {
+                            id: "response-recovered",
+                            model: "gpt-5.6-sol",
+                            status: "completed",
+                            usage: {
+                                input_tokens: 1,
+                                input_tokens_details: { cached_tokens: 0 },
+                                output_tokens: 1,
+                                total_tokens: 2,
+                            },
+                        },
+                    }),
+                );
+            });
+        });
+        const provider = createCodexProvider({
+            apiKey: "e30.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC10ZXN0In19.x",
+            baseUrl: `http://127.0.0.1:${address.port}/backend-api`,
+        });
+        const context: Context = {
+            ...emptyContext(),
+            tools: [{ kind: "custom", name: "exec", description: "Run JavaScript." }],
+        };
+
+        try {
+            await expect(
+                provider.stream(modelOpenaiGpt56Sol, context).result(),
+            ).resolves.toMatchObject({ stopReason: "error" });
+            await expect(
+                provider.stream(modelOpenaiGpt56Sol, context).result(),
+            ).resolves.toMatchObject({ stopReason: "stop" });
+
+            expect(connections).toBe(2);
+            expect(requestFrames[1]).not.toHaveProperty("previous_response_id");
+            expect(requestFrames[1]).toMatchObject({ input: requestFrames[0]?.input });
+        } finally {
+            await provider.close?.();
             server.close();
             await once(server, "close");
         }

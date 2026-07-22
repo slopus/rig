@@ -1,12 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 
 import type { SimpleStreamOptions } from "@earendil-works/pi-ai";
-import OpenAI from "openai";
-
+import type { CodexOpenAITransport } from "./CodexOpenAITransport.js";
 import { classifyCodexErrorCode } from "./classifyCodexErrorCode.js";
 import { classifyCodexProviderError } from "./classifyCodexProviderError.js";
 import { createCodexOpenAIRequest } from "./createCodexOpenAIRequest.js";
-import { createCodexWebSocketResponseStream } from "./createCodexWebSocketResponseStream.js";
 import { createOpenAIResponsesStream } from "./createOpenAIResponsesStream.js";
 import { readCodexQuotaAuth } from "./readCodexQuotaAuth.js";
 import type { Context, Model, StreamOptions } from "./types.js";
@@ -19,6 +17,7 @@ export function createCodexOpenAIStream(options: {
     model: Model;
     modelId: string;
     providerId: string;
+    openAITransport: CodexOpenAITransport;
     streamOptions?: StreamOptions;
     transport?: SimpleStreamOptions["transport"];
 }): ReturnType<typeof createOpenAIResponsesStream> {
@@ -32,49 +31,33 @@ export function createCodexOpenAIStream(options: {
                     ? {}
                     : { streamOptions: options.streamOptions }),
             });
-            const client = new OpenAI({
-                apiKey: options.accessToken,
-                baseURL: `${options.baseUrl.replace(/\/$/, "")}/codex`,
-                defaultHeaders: {
-                    "chatgpt-account-id": accountId,
-                    originator: "codex_cli_rs",
-                    "OpenAI-Beta": "responses=experimental",
+            if (options.transport !== "sse") {
+                return options.openAITransport.createWebSocketResponseStream({
+                    accessToken: options.accessToken,
+                    accountId,
+                    baseUrl: options.baseUrl,
+                    request,
+                    useIncrementalContext: options.transport !== "websocket",
                     ...(options.streamOptions?.sessionId === undefined
                         ? {}
-                        : {
-                              "session-id": options.streamOptions.sessionId,
-                              "x-client-request-id": options.streamOptions.sessionId,
-                          }),
-                },
-                maxRetries: 0,
-            });
-            if (options.transport !== "sse") {
-                return createCodexWebSocketResponseStream({
-                    client,
-                    request: request as unknown as Record<string, unknown>,
-                    headers: {
-                        Authorization: `Bearer ${options.accessToken}`,
-                        "chatgpt-account-id": accountId,
-                        originator: "codex_cli_rs",
-                        "OpenAI-Beta": "responses_websockets=2026-02-06",
-                        ...(options.streamOptions?.sessionId === undefined
-                            ? {}
-                            : {
-                                  "session-id": options.streamOptions.sessionId,
-                                  "x-client-request-id": options.streamOptions.sessionId,
-                              }),
-                    },
+                        : { sessionId: options.streamOptions.sessionId }),
                     ...(options.streamOptions?.signal === undefined
                         ? {}
                         : { signal: options.streamOptions.signal }),
                 });
             }
-            return client.responses.create(
+            return options.openAITransport.createSseResponseStream({
+                accessToken: options.accessToken,
+                accountId,
+                baseUrl: options.baseUrl,
                 request,
+                ...(options.streamOptions?.sessionId === undefined
+                    ? {}
+                    : { sessionId: options.streamOptions.sessionId }),
                 ...(options.streamOptions?.signal === undefined
-                    ? []
-                    : [{ signal: options.streamOptions.signal }]),
-            );
+                    ? {}
+                    : { signal: options.streamOptions.signal }),
+            });
         },
         classifyError: classifyCodexErrorCode,
         classifyProviderError: classifyCodexProviderError,

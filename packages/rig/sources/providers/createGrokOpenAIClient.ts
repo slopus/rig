@@ -4,13 +4,13 @@ export type GrokOpenAIClient = Pick<OpenAI, "responses">;
 
 export function createGrokOpenAIClient(options: {
     baseUrl: string;
-    headers: Record<string, string>;
+    headers?: Record<string, string>;
     token: string;
 }): OpenAI {
     return new OpenAI({
         apiKey: options.token,
         baseURL: options.baseUrl,
-        defaultHeaders: options.headers,
+        ...(options.headers === undefined ? {} : { defaultHeaders: options.headers }),
         maxRetries: 0,
     });
 }

@@ -1290,6 +1290,38 @@ describe("Agent", () => {
         await expect(agent.reset()).rejects.toThrow("session close failed");
     });
 
+    it("closes the agent-scoped provider and tool adapter together", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const closeProvider = vi.fn();
+        const closeToolAdapter = vi.fn();
+        const provider = defineProvider({
+            close: closeProvider,
+            id: "codex",
+            models: [model],
+            stream: () => streamFor(stoppedMessage(model.id)),
+        });
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: createJustBashToolHarness().context,
+            printToConsole: false,
+            toolAdapter: {
+                adapt: (tools) => ({ exposedTools: tools, nestedTools: tools }),
+                close: closeToolAdapter,
+            },
+        });
+
+        await agent.close();
+
+        expect(closeProvider).toHaveBeenCalledOnce();
+        expect(closeToolAdapter).toHaveBeenCalledOnce();
+    });
+
     it("recovers when the provider rejects a locally valid image tool result", async () => {
         const model = defineModel({
             id: "openai/gpt-test",

@@ -27,6 +27,7 @@ import { fetchCodexProviderQuota } from "./fetchCodexProviderQuota.js";
 import { getCodexAuthPath } from "./getCodexAuthPath.js";
 import { unavailableProviderQuota } from "./unavailableProviderQuota.js";
 import { createCodexOpenAIStream } from "./createCodexOpenAIStream.js";
+import { CodexOpenAITransport } from "./CodexOpenAITransport.js";
 
 const CODEX_PROVIDER_ID = "openai-codex";
 
@@ -49,6 +50,7 @@ export interface CodexProviderOptions {
 
 const codexModels = modelsForProfileProviderType("codex");
 export function createCodexProvider(options: CodexProviderOptions = {}): Provider {
+    const openAITransport = new CodexOpenAITransport();
     const authPath = getCodexAuthPath({
         ...(options.codexAuthPath === undefined ? {} : { authFile: options.codexAuthPath }),
         ...(options.env === undefined ? {} : { env: options.env }),
@@ -87,6 +89,7 @@ export function createCodexProvider(options: CodexProviderOptions = {}): Provide
         toolProfile: () => "codex",
         models: codexModels,
         serviceTiers: serviceTiersForProfileProviderType("codex"),
+        close: () => openAITransport.close(),
         quota: (quotaOptions) => quota.get(quotaOptions),
         stream(model, context, streamOptions) {
             const piModel = piModelById.get(toPiCodexModelId(model.id));
@@ -106,6 +109,7 @@ export function createCodexProvider(options: CodexProviderOptions = {}): Provide
                     context,
                     model,
                     modelId: toPiCodexModelId(model.id),
+                    openAITransport,
                     providerId: options.id ?? "codex",
                     ...(options.transport === undefined ? {} : { transport: options.transport }),
                     ...(streamOptions === undefined ? {} : { streamOptions }),

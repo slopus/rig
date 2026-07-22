@@ -189,6 +189,39 @@ describe("Amazon Bedrock provider", () => {
         expect(client.maxRetries).toBe(0);
     });
 
+    it("reuses one Bedrock Mantle client for sequential inference calls from the same agent", async () => {
+        const response = {
+            id: "response-reused-client",
+            model: "openai.gpt-5.6-sol",
+            status: "completed",
+            usage: {
+                input_tokens: 1,
+                input_tokens_details: { cached_tokens: 0 },
+                output_tokens: 1,
+                total_tokens: 2,
+            },
+        } as unknown as Response;
+        const create = vi.fn(() => ({
+            async *[Symbol.asyncIterator]() {
+                yield { type: "response.completed" as const, response };
+            },
+        }));
+        const openAIClientFactory = vi.fn(
+            () => ({ responses: { create } }) as unknown as BedrockOpenAIClient,
+        );
+        const provider = createBedrockProvider({
+            bearerToken: "bedrock-token",
+            openAIClientFactory,
+            region: "us-east-1",
+        });
+
+        await provider.stream(modelOpenaiGpt56Sol, { messages: [] }).result();
+        await provider.stream(modelOpenaiGpt56Sol, { messages: [] }).result();
+
+        expect(create).toHaveBeenCalledTimes(2);
+        expect(openAIClientFactory).toHaveBeenCalledOnce();
+    });
+
     it("uses a custom Mantle endpoint verbatim", () => {
         const client = createBedrockOpenAIClient({
             bearerToken: "bedrock-token",

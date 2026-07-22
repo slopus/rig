@@ -69,6 +69,7 @@ export function createClaudeSdkProvider(options: ClaudeSdkProviderOptions) {
     const environment = options.env ?? process.env;
     const tools = options.tools ?? claudeCodeTools;
     const now = options.now ?? Date.now;
+    const activeQueries = new Set<ReturnType<ClaudeSdkQuery>>();
     const providerSessionId = options.sessionId ?? randomUUID();
     const pathToClaudeCodeExecutable =
         options.pathToClaudeCodeExecutable ?? resolveClaudeCodeExecutablePath();
@@ -100,6 +101,10 @@ export function createClaudeSdkProvider(options: ClaudeSdkProviderOptions) {
     return defineProvider({
         contextCompatibility: "model_group",
         contextCompatibilityKind: "claude_code",
+        close() {
+            for (const activeQuery of activeQueries) activeQuery.close();
+            activeQueries.clear();
+        },
         id: options.id ?? CLAUDE_PROVIDER_ID,
         profileType: "claude",
         inferenceCrashContinuation: {
@@ -190,59 +195,64 @@ export function createClaudeSdkProvider(options: ClaudeSdkProviderOptions) {
 
                 try {
                     const sdkStream = query({ prompt, options: sdkOptions });
+                    activeQueries.add(sdkStream);
                     const streamState = createClaudeStreamState(partial);
                     let result: SDKResultMessage | undefined;
 
-                    for await (const message of sdkStream) {
-                        if (message.type === "rate_limit_event") {
-                            rateLimitInfo = message.rate_limit_info;
-                            continue;
-                        }
-
-                        if (message.type === "assistant" && message.error !== undefined) {
-                            assistantError = message.error;
-                            continue;
-                        }
-
-                        if (message.type === "stream_event") {
-                            for (const event of applyClaudeStreamEvent(
-                                streamState,
-                                message.event,
-                            )) {
-                                yield event;
+                    try {
+                        for await (const message of sdkStream) {
+                            if (message.type === "rate_limit_event") {
+                                rateLimitInfo = message.rate_limit_info;
+                                continue;
                             }
 
-                            if (
-                                message.event.type === "message_stop" &&
-                                hasClaudeToolCalls(streamState)
-                            ) {
-                                sdkStream.close();
-                                const toolUseMessage = createAssistantMessage({
-                                    model,
-                                    now,
-                                    content: streamState.partial.content,
-                                    ...(streamState.partial.responseId !== undefined
-                                        ? { responseId: streamState.partial.responseId }
-                                        : {}),
-                                    ...(streamState.partial.responseModel !== undefined
-                                        ? { responseModel: streamState.partial.responseModel }
-                                        : {}),
-                                    stopReason: "toolUse",
-                                    usage: streamState.partial.usage,
-                                });
-                                yield {
-                                    type: "done",
-                                    reason: "toolUse",
-                                    message: toolUseMessage,
-                                };
-                                return toolUseMessage;
+                            if (message.type === "assistant" && message.error !== undefined) {
+                                assistantError = message.error;
+                                continue;
                             }
-                            continue;
-                        }
 
-                        if (message.type === "result") {
-                            result = message;
+                            if (message.type === "stream_event") {
+                                for (const event of applyClaudeStreamEvent(
+                                    streamState,
+                                    message.event,
+                                )) {
+                                    yield event;
+                                }
+
+                                if (
+                                    message.event.type === "message_stop" &&
+                                    hasClaudeToolCalls(streamState)
+                                ) {
+                                    sdkStream.close();
+                                    const toolUseMessage = createAssistantMessage({
+                                        model,
+                                        now,
+                                        content: streamState.partial.content,
+                                        ...(streamState.partial.responseId !== undefined
+                                            ? { responseId: streamState.partial.responseId }
+                                            : {}),
+                                        ...(streamState.partial.responseModel !== undefined
+                                            ? { responseModel: streamState.partial.responseModel }
+                                            : {}),
+                                        stopReason: "toolUse",
+                                        usage: streamState.partial.usage,
+                                    });
+                                    yield {
+                                        type: "done",
+                                        reason: "toolUse",
+                                        message: toolUseMessage,
+                                    };
+                                    return toolUseMessage;
+                                }
+                                continue;
+                            }
+
+                            if (message.type === "result") {
+                                result = message;
+                            }
                         }
+                    } finally {
+                        activeQueries.delete(sdkStream);
                     }
 
                     if (result === undefined) {

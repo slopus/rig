@@ -1,6 +1,6 @@
 import type { KimiChatClient } from "./kimi-chat-types.js";
 import { KIMI_API_MODEL_ID, KIMI_DEFAULT_BASE_URL, KIMI_PROVIDER_ID } from "./kimi-constants.js";
-import { createKimiStream } from "./createKimiStream.js";
+import { createKimiStream, type KimiClientCache } from "./createKimiStream.js";
 import { createProviderQuotaCache } from "./createProviderQuotaCache.js";
 import { fetchKimiProviderQuota } from "./fetchKimiProviderQuota.js";
 import { modelsForProfileProviderType } from "../profiles/impl/modelsForProfileProviderType.js";
@@ -26,6 +26,7 @@ export interface KimiProviderOptions {
 export function createKimiProvider(options: KimiProviderOptions = {}): Provider {
     const providerId = options.id ?? KIMI_PROVIDER_ID;
     const models = modelsForProfileProviderType("kimi");
+    const clientCache: KimiClientCache = {};
     const quota = createProviderQuotaCache(() =>
         fetchKimiProviderQuota({
             ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
@@ -58,6 +59,7 @@ export function createKimiProvider(options: KimiProviderOptions = {}): Provider 
                 apiModelId: profile.parameters.wireModelId ?? KIMI_API_MODEL_ID,
                 baseUrl: options.baseUrl ?? KIMI_DEFAULT_BASE_URL,
                 context,
+                clientCache,
                 maxCompletionTokens,
                 model: availableModel,
                 modelId: availableModel.id,

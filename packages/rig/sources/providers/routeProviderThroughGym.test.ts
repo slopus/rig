@@ -23,7 +23,9 @@ describe("routeProviderThroughGym", () => {
             ...context,
             shell: "/bin/zsh",
         }));
+        const close = vi.fn();
         const native = defineProvider({
+            close,
             contextCompatibility: "model_group",
             contextCompatibilityKind: "claude_code",
             contextCompatibilityKey: () => "us-east-1",
@@ -44,7 +46,9 @@ describe("routeProviderThroughGym", () => {
         });
 
         await routed.quota?.({ fresh: true });
+        await routed.close?.();
         expect(quota).toHaveBeenCalledWith({ fresh: true });
+        expect(close).toHaveBeenCalledOnce();
         expect(routed.id).toBe("codex");
         expect(routed.contextCompatibility).toBe("model_group");
         expect(routed.contextCompatibilityKind).toBe("claude_code");

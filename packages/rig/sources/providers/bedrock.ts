@@ -1,7 +1,10 @@
 import { BEDROCK_MODEL_ROUTES } from "./bedrock-model-routes.js";
 import type { BedrockModelOverrides } from "./bedrock-model-overrides.js";
 import { createBedrockMantleStream } from "./createBedrockMantleStream.js";
-import type { BedrockOpenAIClient } from "./createBedrockOpenAIClient.js";
+import {
+    createBedrockOpenAIClient,
+    type BedrockOpenAIClient,
+} from "./createBedrockOpenAIClient.js";
 import {
     createBedrockRuntimeStream,
     type PiBedrockRuntimeStream,
@@ -23,6 +26,9 @@ export interface BedrockProviderOptions {
     id?: string;
     modelOverrides?: BedrockModelOverrides;
     openAIClient?: BedrockOpenAIClient;
+    openAIClientFactory?: (
+        options: Parameters<typeof createBedrockOpenAIClient>[0],
+    ) => BedrockOpenAIClient;
     region?: string;
     streamRuntime?: PiBedrockRuntimeStream;
 }
@@ -37,6 +43,7 @@ export function createBedrockProvider(options: BedrockProviderOptions = {}): Pro
     }
 
     const defaultRegion = options.region?.trim() || resolveBedrockRegion(env);
+    const mantleClients = new Map<string, BedrockOpenAIClient>();
     const routes = BEDROCK_MODEL_ROUTES.filter((route) => {
         const endpoint = resolveBedrockModelEndpoint(route.model.id, options.modelOverrides);
         return (
@@ -94,13 +101,23 @@ export function createBedrockProvider(options: BedrockProviderOptions = {}): Pro
                 );
             }
 
+            const mantleClientKey = JSON.stringify([endpoint, region]);
+            let mantleClient = options.openAIClient ?? mantleClients.get(mantleClientKey);
+            if (mantleClient === undefined) {
+                mantleClient = (options.openAIClientFactory ?? createBedrockOpenAIClient)({
+                    bearerToken,
+                    ...(endpoint === undefined ? {} : { endpoint }),
+                    region,
+                });
+                mantleClients.set(mantleClientKey, mantleClient);
+            }
             return createBedrockMantleStream({
                 bearerToken,
+                client: mantleClient,
                 context,
                 ...(endpoint === undefined ? {} : { endpoint }),
                 modelRoute: route,
                 region,
-                ...(options.openAIClient !== undefined ? { client: options.openAIClient } : {}),
                 ...(streamOptions !== undefined ? { streamOptions } : {}),
             });
         },

@@ -7,12 +7,14 @@ export async function* createCodexWebSocketResponseStream(options: {
     headers: Readonly<Record<string, string>>;
     request: Record<string, unknown>;
     signal?: AbortSignal;
+    socket?: ResponsesWS;
     timeoutMs?: number;
 }): AsyncGenerator<ResponseStreamEvent> {
     if (options.signal?.aborted === true) {
         throw new DOMException("Request was aborted", "AbortError");
     }
-    const socket = new ResponsesWS(options.client, { headers: options.headers });
+    const ownsSocket = options.socket === undefined;
+    const socket = options.socket ?? new ResponsesWS(options.client, { headers: options.headers });
     const iterator = socket[Symbol.asyncIterator]();
     const timeoutMs = Math.max(0, options.timeoutMs ?? options.client.timeout);
     let aborted = false;
@@ -80,6 +82,6 @@ export async function* createCodexWebSocketResponseStream(options: {
     } finally {
         options.signal?.removeEventListener("abort", abort);
         await iterator.return?.();
-        if (!closeRequested) socket.close({ code: 1000, reason: "done" });
+        if (ownsSocket && !closeRequested) socket.close({ code: 1000, reason: "done" });
     }
 }

@@ -270,7 +270,7 @@ export class Agent {
     }
 
     async close(): Promise<void> {
-        await this.#toolAdapter?.close?.();
+        await Promise.all([this.#toolAdapter?.close?.(), this.provider.close?.()]);
     }
 
     addSteering(text: string): SystemMessage {
