@@ -17,6 +17,7 @@ import { toLocalDate } from "../providers/toLocalDate.js";
 import type { PermissionMode } from "../permissions/index.js";
 import { isPermissionReduction } from "../permissions/index.js";
 import type { DurableSkillDefinition } from "../external-skills/types.js";
+import type { AgentToolAdapter } from "./AgentToolAdapter.js";
 
 export type AgentStatus = "idle" | "running" | "aborted";
 
@@ -66,6 +67,7 @@ export interface AgentOptions {
     durableSkills?: readonly DurableSkillDefinition[];
     /** Selects default tools without coupling the generic agent to provider tool registries. */
     toolSelector?: AgentToolSelector;
+    toolAdapter?: AgentToolAdapter;
     idFactory?: () => string;
     now?: () => number;
     console?: AgentConsole;
@@ -111,6 +113,7 @@ export class Agent {
     #tools: readonly AnyDefinedTool[];
     #durableSkills: readonly DurableSkillDefinition[];
     #toolSelector: AgentToolSelector | undefined;
+    #toolAdapter: AgentToolAdapter | undefined;
     #usesExplicitTools: boolean;
     #idFactory: () => string;
     #now: () => number;
@@ -139,6 +142,7 @@ export class Agent {
         this.#instructions = options.instructions;
         this.#systemPrompt = options.systemPrompt;
         this.#toolSelector = options.toolSelector;
+        this.#toolAdapter = options.toolAdapter;
         this.#usesExplicitTools = options.tools !== undefined;
         this.#tools =
             options.tools ??
@@ -247,16 +251,21 @@ export class Agent {
         permissions.setMode(mode);
     }
 
-    reset(): void {
+    async reset(): Promise<void> {
         this.#messages = [];
         this.#contextMessages = undefined;
         this.#queue = [];
         this.#steeringQueue = [];
         this.#lastRunId = undefined;
         this.#resetVersion += 1;
+        await this.#toolAdapter?.reset?.();
         if (this.#activeRunId === undefined) {
             this.#status = "idle";
         }
+    }
+
+    async close(): Promise<void> {
+        await this.#toolAdapter?.close?.();
     }
 
     addSteering(text: string): SystemMessage {
@@ -395,10 +404,14 @@ export class Agent {
             }
 
             let contextCompactedDuringRun = false;
+            const adaptedTools = this.#toolAdapter?.adapt(this.#tools);
             const loopOptions: Parameters<typeof runAgentLoop>[0] = {
                 provider,
                 modelId: this.#model.id,
-                tools: this.#tools,
+                tools: adaptedTools?.exposedTools ?? this.#tools,
+                ...(adaptedTools === undefined
+                    ? {}
+                    : { nestedTools: adaptedTools.nestedTools, promptTools: this.#tools }),
                 messages: this.#messages,
                 sessionId: runId,
                 startDate: this.#startDate,
@@ -618,7 +631,9 @@ export class Agent {
                         providerMessages,
                         (options.provider ?? this.provider).imageProfile(this.#model),
                     );
-                    const providerTools = this.#tools.map(toProviderTool);
+                    const exposedTools =
+                        this.#toolAdapter?.adapt(this.#tools).exposedTools ?? this.#tools;
+                    const providerTools = exposedTools.map(toProviderTool);
                     return {
                         ...(systemPrompt === undefined ? {} : { systemPrompt }),
                         messages: preparedMessages,

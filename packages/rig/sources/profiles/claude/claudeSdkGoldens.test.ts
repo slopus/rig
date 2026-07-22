@@ -13,7 +13,7 @@ import { modelProfiles } from "../impl/modelProfiles.js";
 import { computeClaudeProfilePrompt } from "./computeClaudeProfilePrompt.js";
 import { computeClaudeProfileTools } from "./computeClaudeProfileTools.js";
 import { createClaudeProfileSummary } from "./createClaudeProfileSummary.js";
-import { createUnifiedPatch } from "./capture/createUnifiedPatch.js";
+import { createUnifiedPatch } from "../impl/createUnifiedPatch.js";
 import type { ClaudeSdkGolden } from "./capture/types.js";
 import { CLAUDE_PROFILE_ARTIFACTS, type ClaudeToolDefinition } from "./types.js";
 import { copyClaudeProfileAssets } from "./copyClaudeProfileAssets.js";

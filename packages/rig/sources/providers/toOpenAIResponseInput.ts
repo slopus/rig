@@ -10,9 +10,36 @@ import type { Context } from "./types.js";
 export function toOpenAIResponseInput(context: Context): ResponseInput {
     const input: ResponseInput = [];
     let fallbackMessageId = 0;
+    const customCallIds = new Set(
+        context.messages.flatMap((message) =>
+            message.role === "assistant"
+                ? message.content.flatMap((content) =>
+                      content.type === "toolCall" && content.kind === "custom"
+                          ? [content.id.split("|")[0] ?? content.id]
+                          : [],
+                  )
+                : [],
+        ),
+    );
 
     for (const message of context.messages) {
         if (message.role === "user") {
+            const encryptedAgentMessage = message.encryptedAgentMessage;
+            if (encryptedAgentMessage !== undefined) {
+                input.push({
+                    type: "agent_message",
+                    author: encryptedAgentMessage.author,
+                    recipient: encryptedAgentMessage.recipient,
+                    content: [
+                        { type: "input_text", text: encryptedAgentMessage.header },
+                        {
+                            type: "encrypted_content",
+                            encrypted_content: encryptedAgentMessage.encryptedContent,
+                        },
+                    ],
+                } as unknown as ResponseInputItem);
+                continue;
+            }
             input.push({
                 role: "user",
                 content:
@@ -39,7 +66,9 @@ export function toOpenAIResponseInput(context: Context): ResponseInput {
                 .join("\n");
             const images = message.content.filter((content) => content.type === "image");
             input.push({
-                type: "function_call_output",
+                type: customCallIds.has(callId ?? message.toolCallId)
+                    ? "custom_tool_call_output"
+                    : "function_call_output",
                 call_id: callId ?? message.toolCallId,
                 output:
                     images.length === 0
@@ -74,13 +103,32 @@ export function toOpenAIResponseInput(context: Context): ResponseInput {
 
             if (content.type === "toolCall") {
                 const [callId, itemId] = content.id.split("|");
-                input.push({
-                    type: "function_call",
-                    call_id: callId ?? content.id,
-                    ...(itemId !== undefined && itemId.length > 0 ? { id: itemId } : {}),
-                    name: content.name,
-                    arguments: JSON.stringify(content.arguments),
-                });
+                input.push(
+                    content.kind === "custom"
+                        ? {
+                              type: "custom_tool_call",
+                              call_id: callId ?? content.id,
+                              ...(itemId !== undefined && itemId.length > 0 ? { id: itemId } : {}),
+                              name: content.name,
+                              ...(content.namespace === undefined
+                                  ? {}
+                                  : { namespace: content.namespace }),
+                              input:
+                                  typeof content.arguments.input === "string"
+                                      ? content.arguments.input
+                                      : "",
+                          }
+                        : {
+                              type: "function_call",
+                              call_id: callId ?? content.id,
+                              ...(itemId !== undefined && itemId.length > 0 ? { id: itemId } : {}),
+                              name: content.name,
+                              ...(content.namespace === undefined
+                                  ? {}
+                                  : { namespace: content.namespace }),
+                              arguments: JSON.stringify(content.arguments),
+                          },
+                );
                 continue;
             }
 

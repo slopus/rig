@@ -5,7 +5,7 @@
 import type { Static, TSchema } from "@sinclair/typebox";
 
 import type { AgentContext } from "./context/AgentContext.js";
-import type { Usage } from "../providers/types.js";
+import type { Tool as ProviderTool, Usage } from "../providers/types.js";
 import type { ToolResultPresentation } from "./ToolResultPresentation.js";
 import type { ToolCallPresentation } from "./ToolCallPresentation.js";
 import type { UserInputResponse } from "../user-input/types.js";
@@ -40,7 +40,9 @@ export interface ToolCallBlock {
     type: "tool_call";
     id: string;
     name: string;
+    namespace?: string;
     arguments: unknown;
+    kind?: "custom" | "function";
     /** Durable model-invisible data defined by the tool for rich transcript rendering. */
     presentation?: ToolCallPresentation;
 }
@@ -84,6 +86,15 @@ export interface UserMessage {
     role: "user";
     id: string;
     blocks: readonly ContentBlock[];
+    /** Durable origin for non-human messages that use a user-role provider input shape. */
+    provenance?: "agent";
+    /** Opaque provider-reviewed payload delivered between Codex agents. */
+    encryptedAgentMessage?: {
+        author: string;
+        recipient: string;
+        header: string;
+        encryptedContent: string;
+    };
     /** Durable model context that must never be presented as user-authored content. */
     internal?: true;
 }
@@ -124,6 +135,16 @@ export interface ToolExecutionOptions {
     toolBatchId?: string;
     toolCallId?: string;
     toolCallIndex?: number;
+    /** Re-enters Rig's normal tool pipeline for an orchestration runtime such as Code Mode. */
+    invokeTool?: (invocation: NestedToolInvocation) => Promise<unknown>;
+}
+
+export interface NestedToolInvocation {
+    arguments: unknown;
+    name: string;
+    namespace?: string;
+    signal?: AbortSignal;
+    toolCallId: string;
 }
 
 export type AutoPermissionPredicate<TArgs> = (
@@ -133,6 +154,13 @@ export type AutoPermissionPredicate<TArgs> = (
 
 export type AutoPermissionActionDescriber<TArgs> = (args: TArgs, context: AgentContext) => string;
 
+export interface CodeModeToolDefinition {
+    exposure?: "direct" | "nested";
+    kind?: "freeform" | "function";
+    namespace?: string;
+    toArguments?: (input: unknown) => unknown;
+}
+
 export interface DefinedTool<
     TArgsSchema extends TSchema = TSchema,
     TReturnSchema extends TSchema = TSchema,
@@ -140,6 +168,10 @@ export interface DefinedTool<
     name: string;
     label: string;
     description: string;
+    /** Exact provider-facing definition when JSON-schema function calling cannot represent it. */
+    providerTool?: ProviderTool;
+    /** Provider-neutral metadata for exposing this tool inside a code orchestration runtime. */
+    codeMode?: CodeModeToolDefinition;
     arguments: TArgsSchema;
     returnType: TReturnSchema;
     /** Durable tools form a barrier after immediate calls in the same model batch. */
@@ -185,6 +217,8 @@ export interface AnyDefinedTool {
     name: string;
     label: string;
     description: string;
+    providerTool?: ProviderTool;
+    codeMode?: CodeModeToolDefinition;
     arguments: TSchema;
     returnType: TSchema;
     execution: "immediate" | "durable";
@@ -225,6 +259,8 @@ export function defineTool<
     name: string;
     label: string;
     description: string;
+    providerTool?: ProviderTool;
+    codeMode?: CodeModeToolDefinition;
     arguments: TArgsSchema;
     returnType: TReturnSchema;
     execute: (

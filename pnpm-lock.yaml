@@ -142,6 +142,9 @@ importers:
       '@slopus/ghostty-web':
         specifier: workspace:*
         version: link:../ghostty-web
+      '@slopus/rig-codemode-codex':
+        specifier: workspace:*
+        version: link:../rig-codemode-codex
       '@vscode/ripgrep':
         specifier: 1.18.0
         version: 1.18.0

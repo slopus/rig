@@ -167,6 +167,80 @@ describe("codex provider", () => {
         },
     );
 
+    it("sends Code Mode exec as an OpenAI custom tool with raw-input grammar", async () => {
+        let requestBody: unknown;
+        let requestUrl = "";
+        let headers = new Headers();
+        vi.stubGlobal(
+            "fetch",
+            vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+                requestUrl = String(input);
+                requestBody = parseRequestBody(init);
+                headers = new Headers(init?.headers);
+                return new Response("data: [DONE]\n\n", {
+                    status: 200,
+                    headers: { "content-type": "text/event-stream" },
+                });
+            }),
+        );
+        const accessToken =
+            "e30.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC10ZXN0In19.x";
+        const provider = createCodexProvider({ apiKey: accessToken, transport: "sse" });
+        const context: Context = {
+            ...emptyContext(),
+            tools: [
+                {
+                    kind: "custom",
+                    name: "exec",
+                    description: "Run JavaScript.",
+                    format: {
+                        type: "grammar",
+                        syntax: "lark",
+                        definition: "start: SOURCE\nSOURCE: /[\\s\\S]+/",
+                    },
+                },
+            ],
+        };
+
+        for await (const _event of provider.stream(modelOpenaiGpt56Sol, context)) {
+            // Drain the stream so the request is sent.
+        }
+
+        expect(requestUrl).toContain("/backend-api/codex/responses");
+        expect(headers.get("chatgpt-account-id")).toBe("account-test");
+        expect(headers.get("originator")).toBe("codex_cli_rs");
+        expect(requestBody).toMatchObject({
+            model: "gpt-5.6-sol",
+            parallel_tool_calls: false,
+            tools: [
+                {
+                    type: "custom",
+                    name: "exec",
+                    format: {
+                        type: "grammar",
+                        syntax: "lark",
+                        definition: "start: SOURCE\nSOURCE: /[\\s\\S]+/",
+                    },
+                },
+            ],
+        });
+    });
+
+    it("rejects WebSocket transport when Code Mode custom tools require SSE", () => {
+        const provider = createCodexProvider({
+            apiKey: "e30.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjb3VudC10ZXN0In19.x",
+            transport: "websocket",
+        });
+        const context: Context = {
+            ...emptyContext(),
+            tools: [{ kind: "custom", name: "exec", description: "Run JavaScript." }],
+        };
+
+        expect(() => provider.stream(modelOpenaiGpt56Sol, context)).toThrow(
+            "Codex Code Mode custom tools require the SSE transport.",
+        );
+    });
+
     it.each([
         { thinking: "max", expectedEffort: "max" },
         { thinking: "ultra", expectedEffort: "max" },

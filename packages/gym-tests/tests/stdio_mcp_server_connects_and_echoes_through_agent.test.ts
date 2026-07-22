@@ -113,7 +113,13 @@ describe("stdio MCP server connects and echoes through the agent", () => {
                     description: "Echo a value from the Gym MCP server.",
                     name: MCP_TOOL_NAME,
                 });
-                expect(JSON.stringify(echoTool?.parameters)).toContain("value");
+                expect(
+                    JSON.stringify(
+                        echoTool !== undefined && "parameters" in echoTool
+                            ? echoTool.parameters
+                            : undefined,
+                    ),
+                ).toContain("value");
 
                 if (callIndex === 0) {
                     return {

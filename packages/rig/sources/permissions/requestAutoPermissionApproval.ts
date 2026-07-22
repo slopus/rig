@@ -3,6 +3,7 @@ import type { UserInputContext } from "../agent/context/UserInputContext.js";
 export async function requestAutoPermissionApproval(options: {
     action: string;
     batchId: string;
+    durable?: boolean;
     reason: string;
     signal?: AbortSignal;
     toolArguments: unknown;
@@ -36,15 +37,19 @@ export async function requestAutoPermissionApproval(options: {
             ],
         },
         {
-            durable: {
-                batchId: options.batchId,
-                kind: "permission",
-                permission: { action: options.action, reason: options.reason },
-                toolArguments: options.toolArguments,
-                toolCallId: options.toolCallId,
-                toolCallIndex: options.toolCallIndex,
-                toolName: options.toolName,
-            },
+            ...(options.durable === false
+                ? {}
+                : {
+                      durable: {
+                          batchId: options.batchId,
+                          kind: "permission" as const,
+                          permission: { action: options.action, reason: options.reason },
+                          toolArguments: options.toolArguments,
+                          toolCallId: options.toolCallId,
+                          toolCallIndex: options.toolCallIndex,
+                          toolName: options.toolName,
+                      },
+                  }),
             ...(options.signal === undefined ? {} : { signal: options.signal }),
         },
     );

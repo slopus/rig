@@ -437,6 +437,9 @@ function toClaudeSdkOptions(options: {
 }
 
 function toClaudeSdkTool(sourceTool: ProviderTool) {
+    if (sourceTool.kind === "custom" || sourceTool.kind === "namespace") {
+        throw new Error(`Claude does not support custom tool '${sourceTool.name}'.`);
+    }
     return defineSdkTool(
         sourceTool.name,
         sourceTool.description,

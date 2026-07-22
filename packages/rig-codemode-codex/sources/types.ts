@@ -89,6 +89,7 @@ export interface CodeModeOptions {
 }
 
 export interface CodeModeRunOptions {
+    readonly maxOutputTokens?: number;
     readonly signal?: AbortSignal;
     readonly toolCallId?: string;
     readonly tools?: readonly CodeModeTool[];

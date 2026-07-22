@@ -38,6 +38,10 @@ export const codexApplyPatchTool = defineTool({
     label: "apply_patch",
     description:
         "Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.",
+    codeMode: {
+        kind: "freeform",
+        toArguments: (input) => ({ patch: typeof input === "string" ? input : "" }),
+    },
     arguments: Type.Object({
         patch: Type.String({
             description: "Patch content using the *** Begin Patch/End Patch format.",

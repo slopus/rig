@@ -6,8 +6,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { AgentContext } from "./context/AgentContext.js";
 import { createNodeFileSystemContext } from "./context/createNodeFileSystemContext.js";
 import { createSystemPrompt } from "./createSystemPrompt.js";
-import { GPT_5_6_SOL_SYSTEM_PROMPT } from "../profiles/codex/prompts/gpt56SolSystemPrompt.js";
-import { GPT_5_6_TERRA_SYSTEM_PROMPT } from "../profiles/codex/prompts/gpt56TerraSystemPrompt.js";
+import {
+    GPT_5_6_LUNA_SYSTEM_PROMPT,
+    GPT_5_6_SOL_SYSTEM_PROMPT,
+    GPT_5_6_TERRA_SYSTEM_PROMPT,
+} from "../profiles/codex/prompt.js";
 import { KIMI_SYSTEM_PROMPT } from "../profiles/kimi/prompts/systemPrompt.js";
 import { CODEX_ULTRA_INSTRUCTIONS } from "../profiles/codex/appends/codexUltraInstructions.js";
 import type { Message } from "./types.js";
@@ -16,8 +19,11 @@ import { defineModel, defineProvider, type Model, type Provider } from "../provi
 import { SecretRegistry, SessionSecretContext } from "../secrets/index.js";
 import { claudeBashTool } from "../tools/claude/Bash.js";
 import { codexExecCommandTool } from "../tools/codex/exec_command.js";
+import { codexFollowupTaskTool } from "../tools/codex/followup_task.js";
 import { grokRunTerminalCommandTool } from "../tools/grok/run_terminal_command.js";
 import { piBashTool } from "../tools/pi/bash.js";
+import { createCodexCollaborationNamespaceTool } from "../code-mode/createCodexCollaborationNamespaceTool.js";
+import { createRigNamespaceTool } from "../code-mode/createRigNamespaceTool.js";
 
 const tempDirs: string[] = [];
 
@@ -116,7 +122,7 @@ describe("createSystemPrompt", () => {
         });
 
         expect(prompt?.startsWith(GPT_5_6_SOL_SYSTEM_PROMPT)).toBe(true);
-        expect(prompt).toContain("You are Codex, an agent based on GPT-5.");
+        expect(prompt).toContain("You are Rig, a coding agent powered by GPT-5.6 Sol.");
         expect(prompt).not.toContain("You are GPT-5.2 running in the Codex CLI");
         expect(prompt).not.toContain("IGN-CMD");
         expect(prompt).toContain("Base instructions.");
@@ -148,6 +154,34 @@ describe("createSystemPrompt", () => {
         );
     });
 
+    it("appends concise native and provider-neutral agent tool guidance", async () => {
+        const cwd = await makeTempDir();
+        const model = defineModel({
+            id: "openai/gpt-5.6-sol",
+            name: "GPT-5.6 Sol",
+            thinkingLevels: ["off", "medium"],
+            defaultThinkingLevel: "medium",
+        });
+
+        const prompt = await createSystemPrompt({
+            provider: providerFor("codex", model),
+            model,
+            messages: [],
+            context: contextFor(cwd),
+            tools: [
+                createCodexCollaborationNamespaceTool(codexFollowupTaskTool),
+                createRigNamespaceTool(codexFollowupTaskTool),
+            ],
+        });
+
+        expect(prompt).toContain("## Agent tool portability");
+        expect(prompt).toContain("`collaboration` is Codex-native");
+        expect(prompt).toContain("same provider and region");
+        expect(prompt).toContain("Codex Cloud and Bedrock");
+        expect(prompt).toContain("`rig` is provider-neutral");
+        expect(prompt).toContain("retry with the matching `rig` tool");
+    });
+
     it("adds Codex Ultra instructions through the profile recipe", async () => {
         const cwd = await makeTempDir();
         const model = defineModel({
@@ -168,7 +202,7 @@ describe("createSystemPrompt", () => {
         expect(prompt).toContain(CODEX_ULTRA_INSTRUCTIONS);
     });
 
-    it("uses Terra's current Codex prompt for GPT-5.6 Terra and Luna", async () => {
+    it("uses each persisted Codex prompt for GPT-5.6 Terra and Luna", async () => {
         const cwd = await makeTempDir();
 
         for (const variant of ["terra", "luna"] as const) {
@@ -179,6 +213,8 @@ describe("createSystemPrompt", () => {
                 defaultThinkingLevel: "medium",
             });
 
+            const expectedPrompt =
+                variant === "terra" ? GPT_5_6_TERRA_SYSTEM_PROMPT : GPT_5_6_LUNA_SYSTEM_PROMPT;
             await expect(
                 createSystemPrompt({
                     provider: providerFor("codex", model),
@@ -186,9 +222,7 @@ describe("createSystemPrompt", () => {
                     messages: [],
                     context: contextFor(cwd),
                 }),
-            ).resolves.toBe(
-                `${GPT_5_6_TERRA_SYSTEM_PROMPT}\n\n${modelIdentityInstructions(model.id, "codex")}`,
-            );
+            ).resolves.toBe(`${expectedPrompt}\n\n${modelIdentityInstructions(model.id, "codex")}`);
         }
     });
 

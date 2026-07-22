@@ -86,20 +86,47 @@ export class AgentSessionManager {
         target: string,
         message: string,
         effort?: string,
+        encryptedMessage?: string,
     ): ManagedSubagent {
         const child = this.#resolveTarget(parentSessionId, target);
+        const parent = this.#repository.get(parentSessionId);
+        if (encryptedMessage !== undefined) {
+            const parentTransportScope = parent?.encryptedAgentTransportScope();
+            if (
+                parentTransportScope === undefined ||
+                parentTransportScope !== child.encryptedAgentTransportScope()
+            ) {
+                throw new Error(
+                    "Native encrypted collaboration only works within the same compatible provider and region. Retry with `rig.followup_task` and provide the task normally.",
+                );
+            }
+        }
         if (child.subagentSummary().status === "suspended") child.clearSuspension();
         this.#stoppedExplicitly.delete(child.id);
+        const childPath = this.#pathFor(child);
+        const parentPath = parent === undefined ? "/root" : this.#pathFor(parent);
         const submitted = child.submit({
             ...(this.#repository.get(parentSessionId)?.activeRunDebug?.() === true
                 ? { debug: true }
                 : {}),
             ...(effort === undefined ? {} : { effort }),
+            ...(encryptedMessage === undefined
+                ? {}
+                : {
+                      encryptedAgentMessage: {
+                          author: parentPath,
+                          recipient: childPath,
+                          header: `Message Type: NEW_TASK\nTask name: ${childPath}\nSender: ${parentPath}\nPayload:\n`,
+                          encryptedContent: encryptedMessage,
+                      },
+                      displayText: `Follow-up task for ${child.subagentSummary().taskName}`,
+                  }),
+            provenance: "agent",
             text: message,
         });
-        const parent = this.#parentFor(child);
+        const childParent = this.#parentFor(child);
         this.recordChanged(child);
-        this.#startBackgroundMonitor(parent, child, submitted.runId);
+        this.#startBackgroundMonitor(childParent, child, submitted.runId);
         return this.#managedSubagent(child);
     }
 
@@ -251,6 +278,16 @@ export class AgentSessionManager {
         if (parent === undefined) {
             throw new Error("The parent session is no longer available.");
         }
+        if (
+            request.encryptedPrompt !== undefined &&
+            (parent.encryptedAgentTransportScope() === undefined ||
+                request.modelId !== undefined ||
+                request.providerId !== undefined)
+        ) {
+            throw new Error(
+                "Native encrypted collaboration only works within the current compatible provider and region. Use `rig.spawn_agent` and provide the task normally when selecting or crossing a model, provider, or region.",
+            );
+        }
         if (request.providerId !== undefined && request.modelId === undefined) {
             throw new Error("A subagent provider requires an explicit model.");
         }
@@ -354,8 +391,22 @@ export class AgentSessionManager {
                           request.contextMessages,
                       )
                     : this.#repository.createSubagent(childRequest, metadata);
+            const childPath = this.#pathFor(child);
+            const parentPath = this.#pathFor(parent);
             submitted = child.submit({
                 ...(parent.activeRunDebug?.() === true ? { debug: true } : {}),
+                ...(request.encryptedPrompt === undefined
+                    ? {}
+                    : {
+                          encryptedAgentMessage: {
+                              author: parentPath,
+                              recipient: childPath,
+                              header: `Message Type: NEW_TASK\nTask name: ${childPath}\nSender: ${parentPath}\nPayload:\n`,
+                              encryptedContent: request.encryptedPrompt,
+                          },
+                          displayText: `Delegated task ${taskName}`,
+                      }),
+                provenance: "agent",
                 text: request.prompt,
             });
             this.recordChanged(child);

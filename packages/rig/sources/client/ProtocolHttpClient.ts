@@ -446,7 +446,9 @@ export class ProtocolHttpClient {
     ): Promise<{ events: SessionEvent[] }> {
         if (after !== undefined && options.messageLimit !== undefined) {
             return Promise.reject(
-                new Error("A session message limit is only supported while loading initial history."),
+                new Error(
+                    "A session message limit is only supported while loading initial history.",
+                ),
             );
         }
         const parameters = new URLSearchParams();

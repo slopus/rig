@@ -12,7 +12,7 @@ export async function createUnifiedPatch(options: {
     before: string;
     beforeName: string;
 }): Promise<string> {
-    const directory = await mkdtemp(join(tmpdir(), "rig-claude-patch-"));
+    const directory = await mkdtemp(join(tmpdir(), "rig-profile-patch-"));
     try {
         await writeFile(join(directory, options.beforeName), options.before, "utf8");
         await writeFile(join(directory, options.afterName), options.after, "utf8");

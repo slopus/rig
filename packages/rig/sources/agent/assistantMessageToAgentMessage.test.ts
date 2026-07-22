@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { assistantMessageToAgentMessage } from "./assistantMessageToAgentMessage.js";
+import { toProviderMessages } from "./loop.js";
+import { modelOpenaiGpt56Sol } from "../providers/models.js";
 import type { AssistantMessage } from "../providers/types.js";
 
 describe("assistantMessageToAgentMessage", () => {
@@ -50,6 +52,54 @@ describe("assistantMessageToAgentMessage", () => {
                     type: "exploration",
                     operations: [{ kind: "read", name: "index.ts" }],
                 },
+            },
+        ]);
+    });
+
+    it("preserves a function namespace through the durable agent transcript", () => {
+        const source = providerMessage();
+        const message = assistantMessageToAgentMessage(
+            {
+                ...source,
+                content: [
+                    {
+                        type: "toolCall",
+                        id: "call-spawn",
+                        namespace: "collaboration",
+                        name: "spawn_agent",
+                        arguments: { task_name: "audit" },
+                    },
+                ],
+            },
+            () => "fallback",
+            { providerId: "codex", requestedModelId: modelOpenaiGpt56Sol.id },
+        );
+
+        expect(message.blocks).toEqual([
+            {
+                type: "tool_call",
+                id: "call-spawn",
+                namespace: "collaboration",
+                name: "spawn_agent",
+                arguments: { task_name: "audit" },
+            },
+        ]);
+        expect(
+            toProviderMessages([message], {
+                model: modelOpenaiGpt56Sol,
+                now: () => 2,
+                providerId: "codex",
+            }),
+        ).toMatchObject([
+            {
+                content: [
+                    {
+                        type: "toolCall",
+                        id: "call-spawn",
+                        namespace: "collaboration",
+                        name: "spawn_agent",
+                    },
+                ],
             },
         ]);
     });

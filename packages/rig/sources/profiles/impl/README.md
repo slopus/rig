@@ -36,11 +36,18 @@ appended when durable skills are configured.
 
 ## Source snapshots
 
-- Codex GPT-5.6 prompts were captured from blocked main inference requests from
-  `@openai/codex` 0.144.3 with Pragmatic personality. Their bytes match
-  `codex-rs/models-manager/models.json` at commit
-  `f93c18ed0f57151b410d25e8e1dff4408440560f`. Sol and Terra used v2 code-mode
-  `exec`/`wait`/`collaboration`; Luna used the v1 spawn/send/resume/wait/close group.
+- Codex GPT-5.6 prompts are extracted directly from the official
+  `codex-rs/models-manager/models.json` source on `main` at commit
+  `d4fcb2873bf23464cfacd804a31d46529db943b0`. The extractor requires a clean source
+  checkout, verifies that the instructions template and personality variables do not add
+  unresolved dynamic content, and fails closed when the source shape changes. Sol and
+  Terra use v2 code-mode `exec`/`wait`/native `collaboration`, plus a separate
+  provider-neutral `rig` namespace for workflows and cross-provider agent controls; Luna uses the v1
+  spawn/send/resume/wait/close group. Each model's adjacent `*.capture.json`,
+  `*.golden.md`, `*.md`, and `*.patch` files preserve the official input, computed Rig
+  version, and unified diff. Run `pnpm --filter @slopus/rig capture:codex-profile` to
+  regenerate them from `~/Developer/coding-assistant-sources/codex`, or
+  `check:codex-profile` to verify byte stability without writing.
 - Claude prompts and tool schemas are captured from the official `claude_code` presets in
   `@anthropic-ai/claude-agent-sdk` 0.3.201, which bundles Claude Code 2.1.201 at commit
   `5bb45156ece6b12214696c88adec695b2dca1338`. Capture requests the complete preset,

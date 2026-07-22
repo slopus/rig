@@ -24,7 +24,7 @@ const slowTests = new Set([
     "completed_work_timer_follows_final_assistant_response.test.ts",
     "daemon_shutdown_drains_background_persistence_before_sqlite_close.test.ts",
     "session_settlement_updates_resume_metadata_and_chimes_once.test.ts",
-    "vanilla_codex_and_rig_send_the_same_main_inference_prompt.test.ts",
+    "official_codex_and_rig_send_expected_main_inference_prompts.test.ts",
 ]);
 const timingSensitiveTests = new Set([
     "account_quota_observations_survive_rollover_and_resume.test.ts",

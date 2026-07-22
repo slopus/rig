@@ -1,0 +1,30 @@
+{
+  "formatVersion": 1,
+  "source": {
+    "repository": "https://github.com/openai/codex",
+    "branch": "main",
+    "commit": "d4fcb2873bf23464cfacd804a31d46529db943b0",
+    "commitDate": "2026-07-22T02:26:16Z",
+    "commitSubject": "Honor configured proxy routes for auth refreshes (#34655)",
+    "path": "codex-rs/models-manager/models.json",
+    "captureMethod": "Read base_instructions directly from the checked-out Codex source"
+  },
+  "model": {
+    "slug": "gpt-5.6-luna",
+    "toolMode": "code_mode_only",
+    "multiAgentVersion": "v1",
+    "baseInstructionsSha256": "cbefa6b0bede0e332d957fca70ccacf9f12f4c0ecdf81b819e5cbe1a3b16e265",
+    "clientTools": [
+      "exec",
+      "wait",
+      "request_user_input"
+    ]
+  },
+  "tools": {
+    "client": "@openai/codex",
+    "version": "0.144.6",
+    "sourceDescription": "Top-level and nested tool definitions from the first Responses request emitted by the installed official Codex CLI",
+    "captureMethod": "Started the official Codex CLI against a local HTTP interception proxy and extracted the request tool definitions",
+    "sha256": "b5e6b9b174d3da16e5566f59eccd68d7f6b4feb60f3663f71358a1a81e16b585"
+  }
+}

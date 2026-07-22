@@ -13,12 +13,14 @@ import {
     type TaskContext,
     type UserInputContext,
 } from "../agent/index.js";
-import type { DockerExecutionConfig } from "../execution/index.js";
+import type { Message } from "../agent/types.js";
+import { createCodexCollaborationNamespaceTool } from "../code-mode/createCodexCollaborationNamespaceTool.js";
+import { createRigNamespaceTool } from "../code-mode/createRigNamespaceTool.js";
+import { isCodexCollaborationNamespaceTool } from "../code-mode/isCodexCollaborationNamespaceTool.js";
 import { DEFAULT_RIG_CONFIG } from "../config/defaultConfig.js";
 import { findConfiguredProvider } from "../config/findConfiguredProvider.js";
 import type { ConfigProviders } from "../config/types.js";
-import type { WorkflowContext } from "../workflows/index.js";
-import type { Message } from "../agent/types.js";
+import type { DockerExecutionConfig } from "../execution/index.js";
 import { NativeProcessManager } from "../processes/index.js";
 import { createConfiguredProvider } from "../providers/createConfiguredProvider.js";
 import { createGymProviderFromEnvironment } from "../providers/createGymProviderFromEnvironment.js";
@@ -28,6 +30,7 @@ import type { ServiceTier } from "../providers/types.js";
 import { routeProviderThroughGym } from "../providers/routeProviderThroughGym.js";
 import { goalTools } from "../tools/goals/index.js";
 import { kimiGoalTools } from "../tools/kimi/index.js";
+import type { WorkflowContext } from "../workflows/index.js";
 import type { CodingAssistantRuntime } from "./CodingAssistantRuntime.js";
 import { createDefaultInstructions } from "./createDefaultInstructions.js";
 import { createGymJustBashAgentContext } from "./createGymJustBashAgentContext.js";
@@ -38,6 +41,7 @@ import { readAgentHistoryTool } from "../tools/read_agent_history.js";
 import { createAvailableGrokXSearchTool } from "./createAvailableGrokXSearchTool.js";
 import { selectCollaborationToolsForModel } from "./selectCollaborationToolsForModel.js";
 import { resolveModelProfileForProvider } from "../profiles/impl/resolveModelProfileForProvider.js";
+import { CodeModeAgentToolAdapter } from "../code-mode/CodeModeAgentToolAdapter.js";
 
 export interface CreateCodingAssistantAgentOptions {
     appendSystemPrompt?: string;
@@ -210,10 +214,33 @@ export function createCodingAssistantAgent(
         ...(options.chatHistory === undefined ? [] : [readAgentHistoryTool]),
         ...availableCollaborationTools,
     ];
-    const tools =
+    const selectedTools =
         options.goals === undefined
             ? toolsWithoutGoals
             : [...toolsWithoutGoals, ...(usesKimiTools ? kimiGoalTools : goalTools)];
+    const referenceRequest = modelProfile?.parameters.referenceClient?.request;
+    const usesCodeMode = referenceRequest?.toolMode === "code_mode_only";
+    const usesNamespacedCollaboration = referenceRequest?.multiAgentVersion === "v2";
+    const collaborationNames = new Set(availableCollaborationTools.map((tool) => tool.name));
+    const selectedNonCollaborationTools = selectedTools.filter(
+        (tool) => !availableCollaborationTools.includes(tool),
+    );
+    const tools = usesCodeMode
+        ? usesNamespacedCollaboration
+            ? [
+                  ...selectedNonCollaborationTools,
+                  ...availableCollaborationTools
+                      .filter((tool) => isCodexCollaborationNamespaceTool(tool.name))
+                      .toSorted((left, right) => left.name.localeCompare(right.name))
+                      .map(createCodexCollaborationNamespaceTool),
+                  ...availableCollaborationTools.map(createRigNamespaceTool),
+              ]
+            : selectedTools.map((tool) =>
+                  collaborationNames.has(tool.name)
+                      ? { ...tool, codeMode: { ...tool.codeMode, exposure: "direct" as const } }
+                      : tool,
+              )
+        : selectedTools;
     const agentOptions: AgentOptions = {
         ...(options.appendSystemPrompt !== undefined
             ? { appendSystemPrompt: options.appendSystemPrompt }
@@ -235,6 +262,9 @@ export function createCodingAssistantAgent(
             : {}),
         ...(options.startDate !== undefined ? { startDate: options.startDate } : {}),
         tools,
+        ...(usesCodeMode
+            ? { toolAdapter: new CodeModeAgentToolAdapter({ sessionId: agentId }) }
+            : {}),
         printToConsole: false,
     };
     if (options.effort !== undefined) {

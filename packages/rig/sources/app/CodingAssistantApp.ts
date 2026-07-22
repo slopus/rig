@@ -2445,7 +2445,8 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#sessionMutationBoundaryApplied = false;
         this.#statusText = "Resetting session";
         this.#requestRender();
-        const mutation = Promise.resolve(this.#agent.reset())
+        const mutation = this.#agent
+            .reset()
             .then(() => {
                 if (!this.#sessionMutationBoundaryApplied) {
                     this.#clearEntries();

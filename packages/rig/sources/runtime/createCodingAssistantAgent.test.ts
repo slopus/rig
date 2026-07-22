@@ -326,6 +326,62 @@ describe("createCodingAssistantAgent", () => {
         );
     });
 
+    it("keeps Rig extensions out of Codex's reserved collaboration namespace", () => {
+        const runtime = createCodingAssistantAgent({
+            cwd: "/tmp/rig-app-test",
+            modelId: modelOpenaiGpt56Sol.id,
+            subagents: {
+                canSpawn: true,
+                depth: 0,
+                followUp: () => {
+                    throw new Error("not used");
+                },
+                interrupt: () => {
+                    throw new Error("not used");
+                },
+                list: () => [],
+                maxDepth: 3,
+                resume: () => {
+                    throw new Error("not used");
+                },
+                spawn: async () => {
+                    throw new Error("not used");
+                },
+                wait: async () => ({ agents: [], timedOut: false }),
+            },
+            workflows: {
+                get: () => undefined,
+                launch: () => {
+                    throw new Error("not used");
+                },
+                stop: () => undefined,
+                wait: async () => undefined,
+            },
+        });
+
+        expect(
+            runtime.agent.tools
+                .filter((tool) => tool.codeMode?.namespace === "collaboration")
+                .map((tool) => tool.name),
+        ).toEqual(["followup_task", "interrupt_agent", "list_agents", "spawn_agent", "wait_agent"]);
+        expect(
+            runtime.agent.tools
+                .filter((tool) => tool.codeMode?.namespace === "rig")
+                .map((tool) => tool.name),
+        ).toEqual([
+            "workflow",
+            "wait_for_workflow",
+            "workflow_status",
+            "stop_workflow",
+            "spawn_agent",
+            "followup_task",
+            "wait_agent",
+            "list_agents",
+            "interrupt_agent",
+            "resume_agent",
+        ]);
+    });
+
     it("exposes the Agent tool only while another nested level is available", () => {
         const spawn = async () => ({
             output: "done",
@@ -368,13 +424,28 @@ describe("createCodingAssistantAgent", () => {
             subagents: { ...controls, canSpawn: false, depth: 3 },
         });
 
-        expect(parent.agent.tools.map((tool) => tool.name)).toEqual([
+        expect(
+            parent.agent.tools
+                .filter((tool) => tool.codeMode?.namespace === undefined)
+                .map((tool) => tool.name),
+        ).toEqual([
             "exec_command",
             "write_stdin",
             "apply_patch",
             "view_image",
             "update_plan",
             "request_user_input",
+        ]);
+        expect(
+            parent.agent.tools
+                .filter((tool) => tool.codeMode?.namespace === "collaboration")
+                .map((tool) => tool.name),
+        ).toEqual(["followup_task", "interrupt_agent", "list_agents", "spawn_agent", "wait_agent"]);
+        expect(
+            parent.agent.tools
+                .filter((tool) => tool.codeMode?.namespace === "rig")
+                .map((tool) => tool.name),
+        ).toEqual([
             "workflow",
             "wait_for_workflow",
             "workflow_status",
@@ -542,6 +613,13 @@ describe("createCodingAssistantAgent", () => {
     });
 
     it("uses Codex-style tools for Bedrock OpenAI models", () => {
+        const managed = {
+            description: "Test",
+            path: "/root/test",
+            sessionId: "test",
+            status: "completed" as const,
+            taskName: "test",
+        };
         const runtime = createCodingAssistantAgent({
             cwd: "/tmp/rig-app-test",
             env: {
@@ -550,17 +628,49 @@ describe("createCodingAssistantAgent", () => {
             },
             modelId: modelOpenaiGpt56Sol.id,
             providerId: "bedrock",
+            subagents: {
+                canSpawn: true,
+                depth: 0,
+                followUp: () => managed,
+                interrupt: () => managed,
+                list: () => [managed],
+                maxDepth: 3,
+                resume: () => managed,
+                spawn: async () => ({ ...managed, output: "done" }),
+                wait: async () => ({ agents: [managed], timedOut: false }),
+            },
         });
 
         expect(runtime.provider.id).toBe("bedrock");
         expect(runtime.agent.model.id).toBe(modelOpenaiGpt56Sol.id);
-        expect(runtime.agent.tools.map((tool) => tool.name)).toEqual([
+        expect(
+            runtime.agent.tools
+                .filter((tool) => tool.codeMode?.namespace === undefined)
+                .map((tool) => tool.name),
+        ).toEqual([
             "exec_command",
             "write_stdin",
             "apply_patch",
             "view_image",
             "update_plan",
             "request_user_input",
+        ]);
+        expect(
+            runtime.agent.tools
+                .filter((tool) => tool.codeMode?.namespace === "collaboration")
+                .map((tool) => tool.name),
+        ).toEqual(["followup_task", "interrupt_agent", "list_agents", "spawn_agent", "wait_agent"]);
+        expect(
+            runtime.agent.tools
+                .filter((tool) => tool.codeMode?.namespace === "rig")
+                .map((tool) => tool.name),
+        ).toEqual([
+            "spawn_agent",
+            "followup_task",
+            "wait_agent",
+            "list_agents",
+            "interrupt_agent",
+            "resume_agent",
         ]);
     });
 

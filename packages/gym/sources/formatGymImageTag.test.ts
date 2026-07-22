@@ -10,8 +10,6 @@ describe("formatGymImageTag", () => {
     });
 
     it("rejects an empty fingerprint", () => {
-        expect(() => formatGymImageTag("")).toThrow(
-            "Gym runtime fingerprint must contain a hash.",
-        );
+        expect(() => formatGymImageTag("")).toThrow("Gym runtime fingerprint must contain a hash.");
     });
 });

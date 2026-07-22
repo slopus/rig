@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createGym, type Gym } from "@slopus/rig-gym";
+import type { Tool } from "../../rig/sources/providers/types.js";
 
 const running = new Set<Gym>();
 
@@ -92,9 +93,7 @@ describe("Kimi K3 subagent contracts", () => {
     }, 120_000);
 });
 
-function assertKimiToolContracts(
-    tools: readonly { description: string; name: string; parameters: unknown }[],
-): void {
+function assertKimiToolContracts(tools: readonly Tool[]): void {
     expect(tools.find((tool) => tool.name === "Agent")?.description).toContain(
         "The subagent has its own context",
     );
@@ -118,12 +117,14 @@ function assertKimiToolContracts(
 }
 
 function toolArgumentDescription(
-    tools: readonly { name: string; parameters: unknown }[],
+    tools: readonly Tool[],
     toolName: string,
     argumentName: string,
 ): string | undefined {
-    const parameters = tools.find((tool) => tool.name === toolName)?.parameters as
-        | { properties?: Record<string, { description?: string }> }
-        | undefined;
+    const tool = tools.find((candidate) => candidate.name === toolName);
+    const parameters =
+        tool !== undefined && "parameters" in tool
+            ? (tool.parameters as { properties?: Record<string, { description?: string }> })
+            : undefined;
     return parameters?.properties?.[argumentName]?.description;
 }

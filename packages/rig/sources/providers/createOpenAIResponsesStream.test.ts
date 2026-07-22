@@ -135,6 +135,146 @@ describe("createOpenAIResponsesStream", () => {
         });
     });
 
+    it("normalizes streamed custom tool source as a freeform tool call", async () => {
+        const stream = createOpenAIResponsesStream({
+            createResponseStream: () =>
+                responseEvents(
+                    {
+                        type: "response.created",
+                        response: { id: "response-code", model: "gpt-5.6-sol" },
+                    },
+                    {
+                        type: "response.output_item.added",
+                        output_index: 0,
+                        item: {
+                            type: "custom_tool_call",
+                            id: "custom-1",
+                            call_id: "call-code",
+                            name: "exec",
+                            input: "",
+                        },
+                    },
+                    {
+                        type: "response.custom_tool_call_input.delta",
+                        output_index: 0,
+                        item_id: "custom-1",
+                        delta: "const result = await tools.exec_command(",
+                    },
+                    {
+                        type: "response.custom_tool_call_input.done",
+                        output_index: 0,
+                        item_id: "custom-1",
+                        input: 'const result = await tools.exec_command({cmd: "pwd"});',
+                    },
+                    {
+                        type: "response.output_item.done",
+                        output_index: 0,
+                        item: {
+                            type: "custom_tool_call",
+                            id: "custom-1",
+                            call_id: "call-code",
+                            name: "exec",
+                            input: 'const result = await tools.exec_command({cmd: "pwd"});',
+                        },
+                    },
+                    {
+                        type: "response.completed",
+                        response: {
+                            id: "response-code",
+                            model: "gpt-5.6-sol",
+                            status: "completed",
+                            usage: {
+                                input_tokens: 2,
+                                input_tokens_details: { cached_tokens: 0 },
+                                output_tokens: 1,
+                                total_tokens: 3,
+                            },
+                        },
+                    },
+                ),
+            failureMessage: "Codex failed.",
+            modelId: "openai/gpt-5.6-sol",
+            providerId: "codex",
+        });
+
+        await expect(stream.result()).resolves.toMatchObject({
+            content: [
+                {
+                    type: "toolCall",
+                    id: "call-code|custom-1",
+                    kind: "custom",
+                    name: "exec",
+                    arguments: {
+                        input: 'const result = await tools.exec_command({cmd: "pwd"});',
+                    },
+                },
+            ],
+            stopReason: "toolUse",
+        });
+    });
+
+    it("preserves the namespace on streamed function tool calls", async () => {
+        const stream = createOpenAIResponsesStream({
+            createResponseStream: () =>
+                responseEvents(
+                    {
+                        type: "response.output_item.added",
+                        output_index: 0,
+                        item: {
+                            type: "function_call",
+                            id: "function-1",
+                            call_id: "call-function",
+                            namespace: "collaboration",
+                            name: "spawn_agent",
+                            arguments: "",
+                        },
+                    },
+                    {
+                        type: "response.output_item.done",
+                        output_index: 0,
+                        item: {
+                            type: "function_call",
+                            id: "function-1",
+                            call_id: "call-function",
+                            namespace: "collaboration",
+                            name: "spawn_agent",
+                            arguments: '{"task_name":"audit"}',
+                        },
+                    },
+                    {
+                        type: "response.completed",
+                        response: {
+                            id: "response-function",
+                            model: "gpt-5.6-sol",
+                            status: "completed",
+                            usage: {
+                                input_tokens: 2,
+                                input_tokens_details: { cached_tokens: 0 },
+                                output_tokens: 1,
+                                total_tokens: 3,
+                            },
+                        },
+                    },
+                ),
+            failureMessage: "Codex failed.",
+            modelId: "openai/gpt-5.6-sol",
+            providerId: "codex",
+        });
+
+        await expect(stream.result()).resolves.toMatchObject({
+            content: [
+                {
+                    type: "toolCall",
+                    id: "call-function|function-1",
+                    namespace: "collaboration",
+                    name: "spawn_agent",
+                    arguments: { task_name: "audit" },
+                },
+            ],
+            stopReason: "toolUse",
+        });
+    });
+
     it("uses the provider failure message and preserves aborts", async () => {
         const failed = createOpenAIResponsesStream({
             createResponseStream: () =>

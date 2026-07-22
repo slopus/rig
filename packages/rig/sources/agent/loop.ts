@@ -28,6 +28,7 @@ import type {
     AnyDefinedTool,
     ContentBlock,
     Message,
+    NestedToolInvocation,
     ToolResultBlock,
     UserMessage,
 } from "./types.js";
@@ -63,6 +64,10 @@ export interface RunAgentLoopOptions {
     effort?: string;
     serviceTier?: ServiceTier;
     tools: readonly AnyDefinedTool[];
+    /** Logical tools used for system permission guidance when provider tools are adapters. */
+    promptTools?: readonly AnyDefinedTool[];
+    /** Tools available only to an exposed orchestration tool. */
+    nestedTools?: readonly AnyDefinedTool[];
     durableSkills?: readonly DurableSkillDefinition[];
     instructions?: string;
     messages: readonly Message[];
@@ -212,11 +217,16 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         messages: contextTranscript,
         context: options.context,
         ...(options.effort === undefined ? {} : { effort: options.effort }),
-        tools: options.tools,
+        tools: options.promptTools ?? options.tools,
         ...(options.durableSkills === undefined ? {} : { durableSkills: options.durableSkills }),
     });
     const providerTools = options.tools.map(toProviderTool);
-    const toolsByName = new Map(options.tools.map((tool) => [tool.name, tool]));
+    const toolsByName = new Map(
+        [...(options.nestedTools ?? []), ...options.tools].map((tool) => [
+            toolDispatchKey(tool.name, tool.codeMode?.namespace),
+            tool,
+        ]),
+    );
     const toolContext = options.context;
     const toolLocks = new ToolLockManager();
     const usedToolCallIds = collectToolCallIds(transcript);
@@ -696,6 +706,23 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                                 ),
                             provider: options.provider,
                             preparedPermission,
+                            invokeTool: (invocation) =>
+                                invokeNestedTool(invocation, {
+                                    batchId: agentMessage.id,
+                                    messages: transcript,
+                                    model,
+                                    now,
+                                    provider: options.provider,
+                                    toolContext,
+                                    toolLocks,
+                                    toolsByName,
+                                    ...(options.onEvent === undefined
+                                        ? {}
+                                        : { onEvent: options.onEvent }),
+                                    ...(options.signal === undefined
+                                        ? {}
+                                        : { signal: options.signal }),
+                                }),
                             ...(options.signal === undefined ? {} : { signal: options.signal }),
                         });
                         const completedBeforeAbort = options.signal?.aborted !== true;
@@ -729,12 +756,12 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
             );
         const immediateCalls = toolCalls.filter(
             (toolCall) =>
-                toolsByName.get(toolCall.name)?.execution !== "durable" &&
+                resolveTool(toolCall, toolsByName)?.execution !== "durable" &&
                 !isPermissionPrompt(preparedPermissions.get(toolCall.id)),
         );
         const durableCalls = toolCalls.filter(
             (toolCall) =>
-                toolsByName.get(toolCall.name)?.execution === "durable" ||
+                resolveTool(toolCall, toolsByName)?.execution === "durable" ||
                 isPermissionPrompt(preparedPermissions.get(toolCall.id)),
         );
 
@@ -1029,6 +1056,9 @@ function toProviderUserMessage(message: UserMessage, now: () => number): Provide
     return {
         role: "user",
         content: message.blocks.map(toProviderUserContent),
+        ...(message.encryptedAgentMessage === undefined
+            ? {}
+            : { encryptedAgentMessage: message.encryptedAgentMessage }),
         timestamp: now(),
     };
 }
@@ -1120,7 +1150,9 @@ function toProviderAssistantContent(
             type: "toolCall",
             id: block.id,
             name: block.name,
+            ...(block.namespace === undefined ? {} : { namespace: block.namespace }),
             arguments: block.arguments as Record<string, unknown>,
+            ...(block.kind === undefined ? {} : { kind: block.kind }),
         };
     }
 
@@ -1131,7 +1163,7 @@ function resolveToolLockKeys(
     toolCall: ProviderToolCall,
     toolsByName: ReadonlyMap<string, AnyDefinedTool>,
 ): readonly string[] {
-    const tool = toolsByName.get(toolCall.name);
+    const tool = resolveTool(toolCall, toolsByName);
     if (tool === undefined || !Value.Check(tool.arguments, toolCall.arguments)) return [];
     return tool.locks.map((lock) =>
         typeof lock === "string" ? lock : lock(toolCall.arguments as never),
@@ -1139,6 +1171,7 @@ function resolveToolLockKeys(
 }
 
 export function toProviderTool(tool: AnyDefinedTool): ProviderTool {
+    if (tool.providerTool !== undefined) return tool.providerTool;
     return {
         name: tool.name,
         description: tool.description,
@@ -1170,6 +1203,7 @@ async function resolvePermissionPrompt(
     context: AgentContext,
     options: {
         batchId: string;
+        durable?: boolean;
         signal?: AbortSignal;
         toolCallIndex: number;
     },
@@ -1178,6 +1212,7 @@ async function resolvePermissionPrompt(
     const approved = await requestAutoPermissionApproval({
         action: prepared.action,
         batchId: options.batchId,
+        ...(options.durable === undefined ? {} : { durable: options.durable }),
         reason: prepared.review.reason,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
         toolArguments: toolCall.arguments,
@@ -1221,7 +1256,7 @@ async function prepareToolPermission(
         startDate: string;
     },
 ): Promise<PreparedToolPermission> {
-    const tool = toolsByName.get(toolCall.name);
+    const tool = resolveTool(toolCall, toolsByName);
     if (
         tool === undefined ||
         !Value.Check(tool.arguments, toolCall.arguments) ||
@@ -1274,6 +1309,151 @@ async function prepareToolPermission(
     }
 }
 
+async function invokeNestedTool(
+    invocation: NestedToolInvocation,
+    options: {
+        batchId: string;
+        messages: readonly Message[];
+        model: Model;
+        now: () => number;
+        onEvent?: (event: AgentLoopEvent) => void | Promise<void>;
+        provider: Provider;
+        signal?: AbortSignal;
+        toolContext: AgentContext;
+        toolLocks: ToolLockManager;
+        toolsByName: ReadonlyMap<string, AnyDefinedTool>;
+    },
+): Promise<unknown> {
+    const signal = combineAbortSignals(options.signal, invocation.signal);
+    const toolCall: ProviderToolCall = {
+        type: "toolCall",
+        id: invocation.toolCallId,
+        name: invocation.name,
+        ...(invocation.namespace === undefined ? {} : { namespace: invocation.namespace }),
+        arguments: invocation.arguments as Record<string, unknown>,
+    };
+    await ignoreOptionalFailure(() =>
+        options.onEvent?.({ type: "tool_execution_start", toolCall }),
+    );
+    let endEmitted = false;
+    const emitEnd = async (result: ToolResultBlock) => {
+        endEmitted = true;
+        await ignoreOptionalFailure(() =>
+            options.onEvent?.({
+                type: "tool_execution_end",
+                result: toToolExecutionEndResult(result),
+            }),
+        );
+        await ignoreOptionalFailure(() =>
+            options.onEvent?.({
+                type: "background_processes_changed",
+                processes: options.toolContext.bash.activeSessions?.() ?? [],
+                running: options.toolContext.bash.activeSessionCount?.() ?? 0,
+            }),
+        );
+    };
+    try {
+        signal?.throwIfAborted();
+        const prepared = await prepareToolPermission(
+            toolCall,
+            options.toolsByName,
+            options.toolContext,
+            {
+                messages: options.messages,
+                model: options.model,
+                now: options.now,
+                onPermissionReview: (review) =>
+                    ignoreOptionalFailure(() =>
+                        options.onEvent?.({
+                            type: "permission_review",
+                            toolCallId: toolCall.id,
+                            ...review,
+                        }),
+                    ),
+                provider: options.provider,
+                ...(signal === undefined ? {} : { signal }),
+            },
+        );
+        signal?.throwIfAborted();
+        const permission = await resolvePermissionPrompt(toolCall, prepared, options.toolContext, {
+            batchId: options.batchId,
+            durable: false,
+            toolCallIndex: 0,
+            ...(signal === undefined ? {} : { signal }),
+        });
+        signal?.throwIfAborted();
+
+        return await options.toolLocks.run(
+            resolveToolLockKeys(toolCall, options.toolsByName),
+            async () => {
+                signal?.throwIfAborted();
+                let rawResult: unknown;
+                let hasRawResult = false;
+                const result = await executeToolCall(
+                    toolCall,
+                    options.toolsByName,
+                    options.toolContext,
+                    {
+                        batchId: options.batchId,
+                        messages: options.messages,
+                        model: options.model,
+                        now: options.now,
+                        preparedPermission: permission,
+                        provider: options.provider,
+                        toolCallIndex: 0,
+                        markPermissionExecuting: false,
+                        onPermissionReview: (review) =>
+                            ignoreOptionalFailure(() =>
+                                options.onEvent?.({
+                                    type: "permission_review",
+                                    toolCallId: toolCall.id,
+                                    ...review,
+                                }),
+                            ),
+                        onProgress: (display) => {
+                            void ignoreOptionalFailure(() =>
+                                options.onEvent?.({
+                                    type: "tool_execution_progress",
+                                    display,
+                                    toolCallId: toolCall.id,
+                                }),
+                            );
+                        },
+                        onStatus: (status) => {
+                            void ignoreOptionalFailure(() =>
+                                options.onEvent?.({
+                                    type: "tool_execution_status",
+                                    status,
+                                    toolCallId: toolCall.id,
+                                }),
+                            );
+                        },
+                        onRawResult: (value) => {
+                            rawResult = value;
+                            hasRawResult = true;
+                        },
+                        ...(signal === undefined ? {} : { signal }),
+                    },
+                );
+                await emitEnd(result);
+                if (!hasRawResult) throw new Error(result.display);
+                return rawResult;
+            },
+        );
+    } catch (error) {
+        if (!endEmitted) {
+            const message = errorToMessage(error);
+            await emitEnd(
+                createErrorToolResultBlock(toolCall, `Tool '${toolCall.name}' failed: ${message}`, {
+                    kind: signal?.aborted ? "interrupted" : "execution_failed",
+                    message,
+                }),
+            );
+        }
+        throw error;
+    }
+}
+
 async function executeToolCall(
     toolCall: ProviderToolCall,
     toolsByName: ReadonlyMap<string, AnyDefinedTool>,
@@ -1294,13 +1474,15 @@ async function executeToolCall(
         }) => void | Promise<void>;
         onError?: (error: unknown) => void | Promise<void>;
         onRawResult?: (result: unknown) => void | Promise<void>;
+        invokeTool?: (invocation: NestedToolInvocation) => Promise<unknown>;
+        markPermissionExecuting?: boolean;
         preparedPermission: PreparedToolPermission;
         provider: Provider;
         signal?: AbortSignal;
         toolCallIndex: number;
     },
 ): Promise<ToolResultBlock> {
-    const tool = toolsByName.get(toolCall.name);
+    const tool = resolveTool(toolCall, toolsByName);
     if (!tool) {
         return createErrorToolResultBlock(
             toolCall,
@@ -1364,6 +1546,7 @@ async function executeToolCall(
                 toolBatchId?: string;
                 toolCallId?: string;
                 toolCallIndex?: number;
+                invokeTool?: (invocation: NestedToolInvocation) => Promise<unknown>;
             },
         ) => Promise<unknown> | unknown;
         const executionOptions: {
@@ -1377,6 +1560,7 @@ async function executeToolCall(
         } = {
             messages: options.messages,
             toolCallId: toolCall.id,
+            ...(options.invokeTool === undefined ? {} : { invokeTool: options.invokeTool }),
         };
         if (tool.execution === "durable") {
             executionOptions.toolBatchId = options.batchId;
@@ -1386,7 +1570,18 @@ async function executeToolCall(
         if (options.onStatus !== undefined) executionOptions.onStatus = options.onStatus;
         if (options.signal !== undefined) executionOptions.signal = options.signal;
         const run = () => execute(toolCall.arguments, context, executionOptions);
+        if (runWithFullAccess && context.permissions?.mode !== "auto") {
+            if (context.permissions?.mode !== "full_access") {
+                return createErrorToolResultBlock(
+                    toolCall,
+                    `Tool '${tool.name}' was not run because the permission mode changed before its Auto-approved full-access execution began.`,
+                    { kind: "interrupted" },
+                );
+            }
+            runWithFullAccess = false;
+        }
         if (
+            options.markPermissionExecuting !== false &&
             options.preparedPermission.kind === "review" &&
             options.preparedPermission.review.approvedByUser
         ) {
@@ -1408,12 +1603,33 @@ async function executeToolCall(
     }
 }
 
+function combineAbortSignals(
+    first: AbortSignal | undefined,
+    second: AbortSignal | undefined,
+): AbortSignal | undefined {
+    if (first === undefined) return second;
+    if (second === undefined || first === second) return first;
+    return AbortSignal.any([first, second]);
+}
+
 function interruptedToolResultBlock(
     toolCall: ProviderToolCall,
     toolsByName: ReadonlyMap<string, AnyDefinedTool>,
 ): ToolResultBlock {
-    const message = toolsByName.get(toolCall.name)?.interruptionMessage ?? "Interrupted by user.";
+    const message =
+        resolveTool(toolCall, toolsByName)?.interruptionMessage ?? "Interrupted by user.";
     return createErrorToolResultBlock(toolCall, message, { kind: "interrupted" });
+}
+
+function resolveTool(
+    toolCall: Pick<ProviderToolCall, "name" | "namespace">,
+    toolsByName: ReadonlyMap<string, AnyDefinedTool>,
+): AnyDefinedTool | undefined {
+    return toolsByName.get(toolDispatchKey(toolCall.name, toolCall.namespace));
+}
+
+function toolDispatchKey(name: string, namespace: string | undefined): string {
+    return `${namespace ?? ""}\u0000${name}`;
 }
 
 function isProviderToolCall(content: ProviderAssistantContent): content is ProviderToolCall {

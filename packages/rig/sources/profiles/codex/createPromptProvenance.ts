@@ -1,11 +1,13 @@
 import type { PromptProvenance } from "../impl/types.js";
+import { readCodexProfileCapture } from "./readCodexProfileArtifact.js";
 
-export function createCodexPromptProvenance(clientTools: readonly string[]): PromptProvenance {
+export function createCodexPromptProvenance(stem: string): PromptProvenance {
+    const capture = readCodexProfileCapture(stem);
     return {
         client: "@openai/codex",
-        version: "0.144.3",
-        source: "codex-rs/models-manager/models.json at f93c18ed0f57151b410d25e8e1dff4408440560f",
-        captureMethod: "Blocked main /responses inference request with Pragmatic personality",
-        clientTools,
+        version: `main@${capture.source.commit.slice(0, 12)}`,
+        source: `${capture.source.path} at ${capture.source.commit}; official and computed prompts are adjacent artifacts`,
+        captureMethod: capture.source.captureMethod,
+        clientTools: capture.model.clientTools,
     };
 }

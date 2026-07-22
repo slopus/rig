@@ -10,6 +10,7 @@ export type {
     QueuedAgentMessage,
 } from "./Agent.js";
 export { runAgentLoop } from "./loop.js";
+export type { AgentToolAdaptation, AgentToolAdapter } from "./AgentToolAdapter.js";
 export type { AgentLoopEvent, AgentLoopResult, RunAgentLoopOptions } from "./loop.js";
 export { createSystemPrompt } from "./createSystemPrompt.js";
 export type { CreateSystemPromptOptions } from "./createSystemPrompt.js";

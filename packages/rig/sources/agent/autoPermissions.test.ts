@@ -142,6 +142,56 @@ describe("Auto permissions", () => {
         expect(harness.context.permissions.mode).toBe("auto");
     });
 
+    it("does not elevate a prepared Auto review after the permission mode is reduced", async () => {
+        const harness = createJustBashToolHarness();
+        harness.context.permissions = createPermissionContext("auto");
+        const elevationCheckStarted = deferred<void>();
+        const releaseElevationCheck = deferred<void>();
+        const execute = vi.fn(() => ({ ok: true }));
+        const tool = defineTool({
+            name: "exec_command",
+            label: "Deploy probe",
+            description: "Checks a deployment target.",
+            arguments: Type.Object({
+                target: Type.String(),
+                sandbox_permissions: Type.Literal("require_escalated"),
+            }),
+            returnType: Type.Object({ ok: Type.Boolean() }),
+            describeAutoPermissionAction: ({ target }) =>
+                `checking deployment target ${JSON.stringify(target)}. Access: unrestricted filesystem and network access`,
+            shouldReviewInAutoMode: () => true,
+            shouldRunInFullAccessInAutoMode: async () => {
+                elevationCheckStarted.resolve();
+                await releaseElevationCheck.promise;
+                return true;
+            },
+            execute,
+            toLLM: () => [{ type: "text", text: "Deployment target checked." }],
+            toUI: () => "Checked deployment target",
+            locks: [],
+        });
+        const provider = autoReviewProvider("allow");
+        const agent = new Agent({
+            context: harness.context,
+            modelId: provider.models[0]?.id ?? "",
+            printToConsole: false,
+            provider,
+            tools: [tool],
+        });
+
+        const run = agent.send("Run the deployment check.");
+        await elevationCheckStarted.promise;
+        harness.context.permissions.setMode("read_only");
+        releaseElevationCheck.resolve();
+        await run;
+
+        expect(execute).not.toHaveBeenCalled();
+        expect(harness.context.permissions.mode).toBe("read_only");
+        expect(JSON.stringify(agent.messages)).toContain(
+            "the permission mode changed before its Auto-approved full-access execution began",
+        );
+    });
+
     it("sends reviewer-approved shell input without a second prompt", async () => {
         const harness = createJustBashToolHarness();
         harness.context.permissions = createPermissionContext("auto");
@@ -606,4 +656,15 @@ function zeroUsage(): Usage {
         totalTokens: 0,
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     };
+}
+
+function deferred<T>(): {
+    promise: Promise<T>;
+    resolve: (value: T | PromiseLike<T>) => void;
+} {
+    let resolve: (value: T | PromiseLike<T>) => void = () => {};
+    const promise = new Promise<T>((innerResolve) => {
+        resolve = innerResolve;
+    });
+    return { promise, resolve };
 }

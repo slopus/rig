@@ -17,7 +17,18 @@ export function toOpenAIResponsesAssistantContent(
             type: "toolCall",
             id: item.id === undefined ? item.call_id : `${item.call_id}|${item.id}`,
             name: item.name,
+            ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
             arguments: parseOpenAIToolArguments(item.arguments),
+        };
+    }
+    if (item.type === "custom_tool_call") {
+        return {
+            type: "toolCall",
+            id: item.id === undefined ? item.call_id : `${item.call_id}|${item.id}`,
+            kind: "custom",
+            name: item.name,
+            ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+            arguments: { input: item.input },
         };
     }
     return undefined;

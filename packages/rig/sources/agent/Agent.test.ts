@@ -7,6 +7,7 @@ import { validPng32Base64 } from "../tools/testing/validImageFixtures.js";
 import { getImageProcessor } from "../images/getImageProcessor.js";
 import { selectToolsForModel } from "../runtime/selectToolsForModel.js";
 import { Agent } from "./Agent.js";
+import type { AgentToolAdapter } from "./AgentToolAdapter.js";
 import type { AgentLoopEvent } from "./loop.js";
 import { defineTool, type Message } from "./types.js";
 import {
@@ -1210,12 +1211,83 @@ describe("Agent", () => {
         expect(agent.snapshot().messages.length).toBeGreaterThan(0);
         expect(agent.snapshot().queue.length).toBe(1);
 
-        agent.reset();
+        await agent.reset();
 
         expect(agent.status).toBe("idle");
         expect(agent.snapshot().messages).toEqual([]);
         expect(agent.snapshot().queue).toEqual([]);
         expect(agent.snapshot().lastRunId).toBeUndefined();
+    });
+
+    it("waits for a delayed tool adapter session close before reset completes", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream: () => streamFor(stoppedMessage(model.id)),
+        });
+        const closeStarted = deferred<void>();
+        const releaseClose = deferred<void>();
+        const toolAdapter: AgentToolAdapter = {
+            adapt: (tools) => ({ exposedTools: tools, nestedTools: tools }),
+            reset: async () => {
+                closeStarted.resolve();
+                await releaseClose.promise;
+            },
+        };
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: createJustBashToolHarness().context,
+            printToConsole: false,
+            toolAdapter,
+        });
+
+        const reset = agent.reset();
+        await closeStarted.promise;
+        let completed = false;
+        void reset.then(() => {
+            completed = true;
+        });
+        await Promise.resolve();
+
+        expect(completed).toBe(false);
+
+        releaseClose.resolve();
+        await reset;
+        expect(completed).toBe(true);
+    });
+
+    it("reports a tool adapter session close failure from reset", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream: () => streamFor(stoppedMessage(model.id)),
+        });
+        const toolAdapter: AgentToolAdapter = {
+            adapt: (tools) => ({ exposedTools: tools, nestedTools: tools }),
+            reset: () => Promise.reject(new Error("session close failed")),
+        };
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: createJustBashToolHarness().context,
+            printToConsole: false,
+            toolAdapter,
+        });
+
+        await expect(agent.reset()).rejects.toThrow("session close failed");
     });
 
     it("recovers when the provider rejects a locally valid image tool result", async () => {
@@ -1805,7 +1877,7 @@ describe("Agent", () => {
         const firstRun = agent.send("first");
         await started.promise;
 
-        agent.reset();
+        await agent.reset();
 
         expect(agent.status).toBe("running");
         await expect(agent.send("second")).rejects.toThrow("already running");
@@ -1857,6 +1929,19 @@ function streamFor(message: AssistantMessage): InferenceStream {
         async result() {
             return message;
         },
+    };
+}
+
+function stoppedMessage(model: string): AssistantMessage {
+    return {
+        role: "assistant",
+        content: [{ type: "text", text: "Done." }],
+        api: "test",
+        provider: "codex",
+        model,
+        usage: zeroUsage(),
+        stopReason: "stop",
+        timestamp: 1,
     };
 }
 

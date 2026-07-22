@@ -12,6 +12,7 @@ import type { DurableSkillDefinition } from "../external-skills/types.js";
 import { computeProfileSystemPrompt } from "../profiles/impl/computeProfileSystemPrompt.js";
 import { createProfilePromptContext } from "../profiles/impl/createProfilePromptContext.js";
 import { resolveModelProfileForProvider } from "../profiles/impl/resolveModelProfileForProvider.js";
+import { RIG_AGENT_TOOL_INSTRUCTIONS } from "../profiles/codex/appends/rigAgentToolInstructions.js";
 
 export interface CreateSystemPromptOptions {
     appendSystemPrompt?: string;
@@ -79,6 +80,10 @@ export async function createSystemPrompt(
         if (availableModelsInstructions !== undefined) {
             parts.push(availableModelsInstructions);
         }
+    }
+
+    if (options.tools?.some((tool) => tool.codeMode?.namespace === "rig") === true) {
+        parts.push(RIG_AGENT_TOOL_INSTRUCTIONS);
     }
 
     if (options.context.permissions !== undefined) {

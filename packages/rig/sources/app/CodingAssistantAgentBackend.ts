@@ -55,7 +55,7 @@ export interface CodingAssistantAgentBackend {
     changeGoalStatus?(status: GoalStatus): Promise<void>;
     clearGoal?(): Promise<void>;
     detachSecret?(secretId: string, scope?: SecretAttachmentScope): Promise<void>;
-    reset(): void | Promise<void>;
+    reset(): Promise<void>;
     runShellCommand?(
         command: string,
         options: { commandId: string },

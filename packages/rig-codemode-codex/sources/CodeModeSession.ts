@@ -51,7 +51,7 @@ export class CodeModeSession {
                     enabled_tools: tools.map((tool) => this.toWireTool(tool)),
                     source,
                     yield_time_ms: options.yieldTimeMs ?? null,
-                    max_output_tokens: null,
+                    max_output_tokens: options.maxOutputTokens ?? null,
                 },
                 (startedCellId) => {
                     cellId = startedCellId;

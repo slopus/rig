@@ -48,6 +48,7 @@ export const codexRequestUserInputTool = defineTool({
     name: "request_user_input",
     label: "request_user_input",
     description: "Request user input for one to three short questions and wait for the response.",
+    codeMode: { exposure: "direct" },
     arguments: Type.Object(
         {
             questions: Type.Array(questionSchema, { minItems: 1, maxItems: 3 }),

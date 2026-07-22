@@ -4,9 +4,10 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { createCodingAssistantAgent } from "../runtime/createCodingAssistantAgent.js";
 import { validJpeg32Base64, validPng32Base64 } from "../tools/testing/validImageFixtures.js";
 import { createCodexProvider } from "./codex.js";
-import { modelOpenaiGpt55 } from "./models.js";
+import { modelOpenaiGpt55, modelOpenaiGpt56Sol } from "./models.js";
 import type { AssistantMessage, Context, TextContent } from "./types.js";
 
 const LIVE = process.env.RIG_LIVE_TEST === "1";
@@ -38,6 +39,110 @@ function textFromAssistantMessage(message: AssistantMessage): string {
 const describeLive = LIVE && hasLocalCodexAuth() ? describe : describe.skip;
 
 describeLive("codex provider live", () => {
+    it("accepts and invokes Rig's provider-neutral agent namespace", async () => {
+        let spawnRequest:
+            | {
+                  encryptedPrompt?: string;
+                  modelId?: string;
+                  prompt: string;
+                  providerId?: string;
+              }
+            | undefined;
+        const managed = {
+            description: "Live Rig probe",
+            path: "/root/live_rig_probe",
+            sessionId: "live-rig-subagent",
+            status: "completed" as const,
+            taskName: "live_rig_probe",
+        };
+        const runtime = createCodingAssistantAgent({
+            cwd: process.cwd(),
+            modelId: modelOpenaiGpt56Sol.id,
+            subagents: {
+                canSpawn: true,
+                depth: 0,
+                followUp: () => managed,
+                interrupt: () => managed,
+                list: () => [managed],
+                maxDepth: 3,
+                resume: () => managed,
+                spawn: async (request) => {
+                    spawnRequest = request;
+                    return { ...managed, output: "ok" };
+                },
+                wait: async () => ({ agents: [managed], timedOut: false }),
+            },
+        });
+
+        try {
+            runtime.agent.enqueueUserMessage(
+                "Call rig.spawn_agent exactly once with context task, task_name live_rig_probe, message 'Reply exactly ok', model openai/gpt-5.6-sol, and provider codex. Do not call another tool. Then reply exactly: live rig ok",
+            );
+            await runtime.agent.run();
+
+            expect(spawnRequest).toMatchObject({
+                modelId: "openai/gpt-5.6-sol",
+                prompt: "Reply exactly ok",
+                providerId: "codex",
+            });
+            expect(spawnRequest?.encryptedPrompt).toBeUndefined();
+        } finally {
+            await runtime.agent.close();
+        }
+    }, 120_000);
+
+    it("accepts and invokes Rig's exact reserved collaboration schema", async () => {
+        let spawnRequest:
+            | {
+                  contextMode?: string;
+                  encryptedPrompt?: string;
+                  prompt: string;
+                  taskName?: string;
+              }
+            | undefined;
+        const managed = {
+            description: "Live probe",
+            path: "/root/live_probe",
+            sessionId: "live-subagent",
+            status: "completed" as const,
+            taskName: "live_probe",
+        };
+        const runtime = createCodingAssistantAgent({
+            cwd: process.cwd(),
+            modelId: modelOpenaiGpt56Sol.id,
+            subagents: {
+                canSpawn: true,
+                depth: 0,
+                followUp: () => managed,
+                interrupt: () => managed,
+                list: () => [managed],
+                maxDepth: 3,
+                resume: () => managed,
+                spawn: async (request) => {
+                    spawnRequest = request;
+                    return { ...managed, output: "ok" };
+                },
+                wait: async () => ({ agents: [managed], timedOut: false }),
+            },
+        });
+
+        try {
+            runtime.agent.enqueueUserMessage(
+                "Call collaboration.spawn_agent exactly once with task_name live_probe, message 'Reply exactly ok', and fork_turns none. Do not call another tool. Then reply exactly: live collaboration ok",
+            );
+            await runtime.agent.run();
+
+            expect(spawnRequest).toMatchObject({
+                contextMode: "task",
+                prompt: "",
+                taskName: "live_probe",
+            });
+            expect(spawnRequest?.encryptedPrompt).toMatch(/^gAAAA/);
+        } finally {
+            await runtime.agent.close();
+        }
+    }, 120_000);
+
     it("streams inference using local ~/.codex/auth.json authentication", async () => {
         const provider = createCodexProvider();
         const stream = provider.stream(modelOpenaiGpt55, {

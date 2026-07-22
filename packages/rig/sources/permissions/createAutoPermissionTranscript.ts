@@ -79,15 +79,18 @@ function collectEntries(messages: readonly Message[]): TranscriptEntry[] {
             const text = renderContent(message.blocks, "[Image shared by user]");
             if (text.length > 0) {
                 const isShellContext = isUserShellCommandContext(message.blocks);
+                const isAgentMessage = message.provenance === "agent";
                 entries.push({
                     category: isShellContext ? "tool" : "message",
                     ordinal: entries.length,
                     text: truncateEntry(
                         isShellContext
                             ? `Tool result (direct user shell command):\n${text}`
-                            : `User:\n${text}`,
+                            : isAgentMessage
+                              ? `Agent message:\n${text}`
+                              : `User:\n${text}`,
                     ),
-                    trustedUserEvidence: !isShellContext,
+                    trustedUserEvidence: !isShellContext && !isAgentMessage,
                 });
             }
             continue;

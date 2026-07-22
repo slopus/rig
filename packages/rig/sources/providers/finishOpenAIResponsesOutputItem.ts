@@ -64,7 +64,30 @@ export function finishOpenAIResponsesOutputItem(
             ...content,
             id: item.id === undefined ? item.call_id : `${item.call_id}|${item.id}`,
             name: item.name,
+            ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
             arguments: parseOpenAIToolArguments(item.arguments),
+        };
+        partial.content = replaceAssistantContent(
+            partial.content,
+            activeItem.contentIndex,
+            finished,
+        );
+        return {
+            type: "toolcall_end",
+            contentIndex: activeItem.contentIndex,
+            toolCall: finished,
+            partial,
+        };
+    }
+
+    if (item.type === "custom_tool_call" && content?.type === "toolCall") {
+        const finished: ToolCall = {
+            ...content,
+            id: item.id === undefined ? item.call_id : `${item.call_id}|${item.id}`,
+            kind: "custom",
+            name: item.name,
+            ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+            arguments: { input: item.input },
         };
         partial.content = replaceAssistantContent(
             partial.content,

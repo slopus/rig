@@ -81,7 +81,7 @@ describe("modelProfiles", () => {
         }
     });
 
-    it("records the exact Codex 0.144.3 request matrix used for comparison", () => {
+    it("records the exact Codex main source request matrix used for comparison", () => {
         const expected = {
             "openai/gpt-5.6-luna": [
                 true,
@@ -117,11 +117,7 @@ describe("modelProfiles", () => {
         expect(luna.prompt.original?.provenance.clientTools).toEqual([
             "exec",
             "wait",
-            "spawn_agent",
-            "send_input",
-            "resume_agent",
-            "wait_agent",
-            "close_agent",
+            "request_user_input",
         ]);
         expect(luna.prompt.appends.map((append) => append.id)).not.toContain(
             "codex-ultra-multi-agent",

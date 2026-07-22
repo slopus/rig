@@ -62,6 +62,7 @@ import type {
 } from "../protocol/index.js";
 import type { Model, Provider, ServiceTier, StopReason } from "../providers/types.js";
 import type { ProviderQuota } from "../providers/providerQuota.js";
+import { createEncryptedAgentTransportScope } from "../providers/createEncryptedAgentTransportScope.js";
 import type {
     DurableUserInputCall,
     DurableUserInputOptions,
@@ -168,7 +169,14 @@ export interface PersistedQueuedRun {
 }
 
 interface SessionSubmitMessageRequest extends SubmitMessageRequest {
+    encryptedAgentMessage?: {
+        author: string;
+        recipient: string;
+        header: string;
+        encryptedContent: string;
+    };
     effort?: string;
+    provenance?: "agent";
 }
 
 export interface PersistedSessionState {
@@ -1003,6 +1011,11 @@ export class InMemorySession {
         return this.#ensureRuntime().provider.quota?.(options) ?? Promise.resolve(undefined);
     }
 
+    encryptedAgentTransportScope(): string | undefined {
+        const runtime = this.#ensureRuntime();
+        return createEncryptedAgentTransportScope(runtime.provider, runtime.agent.model);
+    }
+
     hasModel(modelId: string, providerId?: string): boolean {
         return getProviderIdForModel(this.#modelCatalog, modelId, providerId) !== undefined;
     }
@@ -1104,6 +1117,7 @@ export class InMemorySession {
         }
         void this.#killRuntimeProcesses();
         this.#releaseMcpToolLease();
+        void this.#runtime?.agent.close();
         this.#runtime = undefined;
         this.#mcpLoaded = false;
         this.#mcpServers = [];
@@ -1775,6 +1789,7 @@ export class InMemorySession {
         this.#shutdownCleanup = Promise.all([
             this.#killRuntimeProcesses(5_000),
             this.#terminalManager?.close() ?? Promise.resolve(),
+            this.#runtime?.agent.close() ?? Promise.resolve(),
         ]).then(() => undefined);
         return this.#shutdownCleanup;
     }
@@ -1911,7 +1926,7 @@ export class InMemorySession {
         }
         await Promise.all(workflowRuns.map((run) => run.completion));
         this.#workflowRuns.clear();
-        this.#ensureRuntime().agent.reset();
+        await this.#ensureRuntime().agent.reset();
         this.#status = "idle";
         this.#interruption = undefined;
         this.#restoredActiveRunId = undefined;
@@ -1953,6 +1968,7 @@ export class InMemorySession {
         this.#shellHistoryRevision += 1;
         void this.#killRuntimeProcesses();
         this.#releaseMcpToolLease();
+        void this.#runtime?.agent.close();
         this.#runtime = undefined;
         this.#mcpLoaded = false;
         this.#mcpServers = [];
@@ -2269,10 +2285,19 @@ export class InMemorySession {
             role: "user",
             id: request.clientSubmissionId ?? createId(),
             blocks,
+            ...(options.source === "notification" || request.provenance === "agent"
+                ? { provenance: "agent" as const }
+                : {}),
+            ...(request.encryptedAgentMessage === undefined
+                ? {}
+                : { encryptedAgentMessage: request.encryptedAgentMessage }),
         };
         const visibleMessage: UserMessage = {
             role: "user",
             id: userMessage.id,
+            ...(options.source === "notification" || request.provenance === "agent"
+                ? { provenance: "agent" as const }
+                : {}),
             blocks: blocks.some((block) => block.type === "image")
                 ? blocks
                 : displayText.length > 0
@@ -2440,11 +2465,13 @@ export class InMemorySession {
         const userMessage: UserMessage = {
             blocks: request.content ?? [{ type: "text", text: request.text }],
             id: createId(),
+            provenance: "agent",
             role: "user",
         };
         const visibleMessage: UserMessage = {
             blocks: displayText.length > 0 ? [{ type: "text", text: displayText }] : [],
             id: userMessage.id,
+            provenance: "agent",
             role: "user",
         };
         const agent = this.#ensureRuntime().agent;
@@ -2690,6 +2717,7 @@ export class InMemorySession {
             this.#append("agent_message", { message: resultMessage, runId });
         }
         this.#contextMessages = undefined;
+        void this.#runtime?.agent.close();
         this.#runtime = undefined;
         const continuation = () => this.#continueDurableToolRun(runId);
         const running = this.#taskDrain?.run(continuation) ?? continuation();
@@ -3540,8 +3568,8 @@ export class InMemorySession {
                         ? []
                         : [{ id: provider.providerId, reason: provider.disabledReason }],
                 ),
-                followUp: (target, message, effort) =>
-                    agentManager.followUp(this.id, target, message, effort),
+                followUp: (target, message, effort, encryptedMessage) =>
+                    agentManager.followUp(this.id, target, message, effort, encryptedMessage),
                 interrupt: (target) => agentManager.interrupt(this.id, target),
                 list: (pathPrefix) => agentManager.list(this.id, pathPrefix),
                 maxDepth: agentManager.maxDepth,
@@ -4043,6 +4071,7 @@ export class InMemorySession {
             }
             if (this.#restoredActiveRunId === queued.runId && this.hasDurableToolRun()) {
                 this.#contextMessages = undefined;
+                void this.#runtime?.agent.close();
                 this.#runtime = undefined;
             } else {
                 this.#syncContextMessages();

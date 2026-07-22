@@ -60,6 +60,9 @@ export function wrapPiStream(
 }
 
 function toPiTool(tool: Tool): PiTool {
+    if (tool.kind === "custom" || tool.kind === "namespace") {
+        throw new Error(`The Pi bridge does not support custom tool '${tool.name}'.`);
+    }
     return {
         name: tool.name,
         description: tool.description,

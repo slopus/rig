@@ -11,7 +11,7 @@ import { computeClaudeProfileTools } from "../computeClaudeProfileTools.js";
 import { createClaudeProfileSummary } from "../createClaudeProfileSummary.js";
 import { CLAUDE_PROFILE_ARTIFACTS, type ClaudeToolDefinition } from "../types.js";
 import { captureClaudeSdkRequest } from "./captureClaudeSdkRequest.js";
-import { createUnifiedPatch } from "./createUnifiedPatch.js";
+import { createUnifiedPatch } from "../../impl/createUnifiedPatch.js";
 import { describeFirstDifference } from "./describeFirstDifference.js";
 import { extractClaudeSdkGolden } from "./extractClaudeSdkGolden.js";
 import type { ClaudeSdkGolden } from "./types.js";

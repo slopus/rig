@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { computeProfileSystemPrompt } from "./computeProfileSystemPrompt.js";
 import { codexOpenaiGpt56SolProfile } from "../codex-gpt-5-6-sol.js";
 import { codexOpenaiGpt56TerraProfile } from "../codex-gpt-5-6-terra.js";
+import { codexOpenaiGpt56LunaProfile } from "../codex-gpt-5-6-luna.js";
 import { claudeAnthropicOpus48Profile } from "../claude-opus-4-8.js";
 import { claudeAnthropicFable5Profile } from "../claude-fable-5.js";
 import { claudeAnthropicSonnet5Profile } from "../claude-sonnet-5.js";
@@ -11,21 +12,25 @@ import { CODEX_ULTRA_INSTRUCTIONS } from "../codex/appends/codexUltraInstruction
 import type { ProfilePromptAppendContext } from "./types.js";
 
 describe("computeProfileSystemPrompt", () => {
-    it("preserves the exact captured Codex prompt bytes", () => {
+    it("preserves the persisted Rig-computed Codex prompt bodies", () => {
         const captures = [
             [
                 codexOpenaiGpt56SolProfile,
-                "e9778714d505f3dd04d44db4394024c5fab5bf6554fc9faa3cdf9cf776b63bb9",
+                "482abd9194555f71cd342f4b571b86c2d3db3b2056da171a12283b2def9179ad",
             ],
             [
                 codexOpenaiGpt56TerraProfile,
-                "78a2fc84e1bffa421d865c1a2ade4185d3d33ef38e6a15157f0ff1a89b7d52ec",
+                "ec873e9934ee5046d690b95a09d881737b322eb91a433b41780a16967b6dbc1f",
+            ],
+            [
+                codexOpenaiGpt56LunaProfile,
+                "e6c93604385226ffd15aa7fefaab5ccc93334f6b435515c7978a741fff6b37ad",
             ],
         ] as const;
 
         for (const [profile, expectedHash] of captures) {
             const text = profile.prompt.original?.text;
-            expect(text).toBeDefined();
+            expect(text).toMatch(/^You are Rig, a coding agent powered by GPT-5\.6/u);
             expect(createHash("sha256").update(text!).digest("hex")).toBe(expectedHash);
         }
     });

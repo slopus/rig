@@ -1,15 +1,17 @@
+import { createHash } from "node:crypto";
 import { zstdDecompressSync } from "node:zlib";
+import { readFileSync } from "node:fs";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createPermissionInstructions } from "../../rig/sources/agent/createPermissionInstructions.js";
-import { GPT_5_6_SOL_SYSTEM_PROMPT } from "../../rig/sources/profiles/codex/prompts/gpt56SolSystemPrompt.js";
-import { GPT_5_6_TERRA_SYSTEM_PROMPT } from "../../rig/sources/profiles/codex/prompts/gpt56TerraSystemPrompt.js";
-import type { AnyDefinedTool } from "../../rig/sources/agent/types.js";
+import {
+    GPT_5_6_LUNA_SYSTEM_PROMPT,
+    GPT_5_6_SOL_SYSTEM_PROMPT,
+    GPT_5_6_TERRA_SYSTEM_PROMPT,
+} from "../../rig/sources/profiles/codex/prompt.js";
 import { createDefaultInstructions } from "../../rig/sources/runtime/createDefaultInstructions.js";
 import { CODEX_ULTRA_INSTRUCTIONS } from "../../rig/sources/profiles/codex/appends/codexUltraInstructions.js";
-import { codexCollaborationTools, codexTools } from "../../rig/sources/tools/codex/index.js";
-import { goalTools } from "../../rig/sources/tools/goals/index.js";
 import {
     createGym,
     type Gym,
@@ -28,26 +30,33 @@ const running = new Set<Gym>();
 const codexModels = [
     {
         name: "GPT-5.6 Sol",
+        compiledClientPromptSha256:
+            "e9778714d505f3dd04d44db4394024c5fab5bf6554fc9faa3cdf9cf776b63bb9",
+        officialSystemPrompt: officialPrompt("codex-gpt-5-6-sol"),
         rigModelId: "openai/gpt-5.6-sol",
-        systemPrompt: GPT_5_6_SOL_SYSTEM_PROMPT,
+        rigSystemPrompt: GPT_5_6_SOL_SYSTEM_PROMPT,
         wireModelId: "gpt-5.6-sol",
     },
     {
         name: "GPT-5.6 Terra",
+        compiledClientPromptSha256:
+            "78a2fc84e1bffa421d865c1a2ade4185d3d33ef38e6a15157f0ff1a89b7d52ec",
+        officialSystemPrompt: officialPrompt("codex-gpt-5-6-terra"),
         rigModelId: "openai/gpt-5.6-terra",
-        systemPrompt: GPT_5_6_TERRA_SYSTEM_PROMPT,
+        rigSystemPrompt: GPT_5_6_TERRA_SYSTEM_PROMPT,
         wireModelId: "gpt-5.6-terra",
     },
     {
         name: "GPT-5.6 Luna",
+        compiledClientPromptSha256:
+            "78a2fc84e1bffa421d865c1a2ade4185d3d33ef38e6a15157f0ff1a89b7d52ec",
+        officialSystemPrompt: officialPrompt("codex-gpt-5-6-luna"),
         rigModelId: "openai/gpt-5.6-luna",
-        systemPrompt: GPT_5_6_TERRA_SYSTEM_PROMPT,
+        rigSystemPrompt: GPT_5_6_LUNA_SYSTEM_PROMPT,
         wireModelId: "gpt-5.6-luna",
     },
 ] as const satisfies readonly CodexModelCase[];
 const ultraCodexModels = codexModels.slice(0, 2);
-
-const rigTools = [...codexTools, ...codexCollaborationTools, ...goalTools] as const;
 
 const fakeAccessToken = fakeJwt({
     "https://api.openai.com/auth": {
@@ -63,7 +72,7 @@ afterEach(async () => {
     running.clear();
 });
 
-describe("vanilla Codex and Rig main inference prompts", () => {
+describe("official Codex and Rig main inference prompts", () => {
     it.each(codexModels)(
         "uses the compiled $name system prompt and verifies Rig's complete request",
         async (modelCase) => {
@@ -396,7 +405,12 @@ function normalizedCompiledPromptSurface(payload: CodexRequestPayload): Record<s
 function expectCompiledCodexPrompt(payload: CodexRequestPayload, modelCase: CodexModelCase): void {
     const serializedInput = JSON.stringify(payload.input);
     expect(serializedInput).toContain(USER_PROMPT);
-    expect(compiledCodexSystemPrompt(payload, modelCase)).toBe(modelCase.systemPrompt);
+    const compiledPrompt = compiledCodexSystemPrompt(payload, modelCase);
+    expect(compiledPrompt).toBeDefined();
+    expect(createHash("sha256").update(compiledPrompt!).digest("hex")).toBe(
+        modelCase.compiledClientPromptSha256,
+    );
+    expect(compiledPrompt).not.toBe(modelCase.officialSystemPrompt);
     if (modelCase.wireModelId.startsWith("gpt-5.6")) {
         expect(serializedInput).toContain("You are Codex");
         expect(payload.instructions).toBeUndefined();
@@ -450,15 +464,21 @@ function expectExactRigPayload(
     thinking: "medium" | "ultra",
 ): void {
     const { prompt_cache_key: _promptCacheKey, ...stablePayload } = payload;
-    const systemPrompt = [
-        modelCase.systemPrompt,
-        `# Runtime model\nModel ID: ${modelCase.rigModelId}\nProvider ID: codex`,
-        createDefaultInstructions("/workspace"),
-        createPermissionInstructions("full_access"),
-        ...(thinking === "ultra" ? [CODEX_ULTRA_INSTRUCTIONS] : []),
-    ].join("\n\n");
-
-    expect(stablePayload).toEqual({
+    expect(Object.keys(stablePayload).sort()).toEqual(
+        [
+            "include",
+            "input",
+            "instructions",
+            "model",
+            "parallel_tool_calls",
+            "reasoning",
+            "store",
+            "stream",
+            "text",
+            "tools",
+        ].sort(),
+    );
+    expect(stablePayload).toMatchObject({
         include: ["reasoning.encrypted_content"],
         input: [
             {
@@ -466,26 +486,89 @@ function expectExactRigPayload(
                 role: "user",
             },
         ],
-        instructions: systemPrompt,
         model: modelCase.wireModelId,
-        parallel_tool_calls: true,
+        parallel_tool_calls: false,
         reasoning: { effort: thinking === "ultra" ? "max" : thinking, summary: "auto" },
         store: false,
         stream: true,
         text: { verbosity: "low" },
-        tool_choice: "auto",
-        tools: expectedRigTools(rigTools),
     });
-}
+    expect(typeof payload.instructions).toBe("string");
+    const instructions = payload.instructions as string;
+    expect(instructions.startsWith(modelCase.rigSystemPrompt)).toBe(true);
+    expect(instructions).toContain(
+        `# Runtime model\nModel ID: ${modelCase.rigModelId}\nProvider ID: codex`,
+    );
+    expect(instructions).toContain(createDefaultInstructions("/workspace"));
+    expect(instructions).toContain("# Available models");
+    expect(instructions).toContain("# Disabled providers");
+    if (modelCase.wireModelId !== "gpt-5.6-luna") {
+        expect(instructions).toContain("## Agent tool portability");
+        expect(instructions).toContain("`collaboration` is Codex-native");
+        expect(instructions).toContain("`rig` is provider-neutral");
+    }
+    expect(instructions).toContain(createPermissionInstructions("full_access"));
+    if (thinking === "ultra") expect(instructions).toContain(CODEX_ULTRA_INSTRUCTIONS);
 
-function expectedRigTools(tools: readonly AnyDefinedTool[]): readonly CodexApiTool[] {
-    return tools.map((tool) => ({
-        description: tool.description,
-        name: tool.name,
-        parameters: JSON.parse(JSON.stringify(tool.arguments)) as unknown,
-        strict: null,
+    const tools = payload.tools ?? [];
+    const toolNames = tools.flatMap((tool) => (typeof tool.name === "string" ? [tool.name] : []));
+    if (modelCase.wireModelId === "gpt-5.6-luna") {
+        expect(toolNames).toEqual(
+            expect.arrayContaining([
+                "exec",
+                "wait",
+                "request_user_input",
+                "workflow",
+                "spawn_agent",
+                "resume_agent",
+            ]),
+        );
+        expect(toolNames).not.toContain("collaboration");
+    } else {
+        expect(toolNames).toEqual(["exec", "wait", "request_user_input", "collaboration", "rig"]);
+        const collaboration = tools.find((tool) => tool.name === "collaboration");
+        expect(collaboration).toMatchObject({ type: "namespace" });
+        expect(
+            collaboration?.tools?.flatMap((tool) =>
+                typeof tool.name === "string" ? [tool.name] : [],
+            ),
+        ).toEqual(["followup_task", "interrupt_agent", "list_agents", "spawn_agent", "wait_agent"]);
+        const rig = tools.find((tool) => tool.name === "rig");
+        expect(rig).toMatchObject({ type: "namespace" });
+        expect(
+            rig?.tools?.flatMap((tool) => (typeof tool.name === "string" ? [tool.name] : [])),
+        ).toEqual([
+            "workflow",
+            "wait_for_workflow",
+            "workflow_status",
+            "stop_workflow",
+            "spawn_agent",
+            "followup_task",
+            "wait_agent",
+            "list_agents",
+            "interrupt_agent",
+            "resume_agent",
+        ]);
+    }
+    expect(tools.find((tool) => tool.name === "exec")).toMatchObject({
+        type: "custom",
+        format: { type: "grammar", syntax: "lark" },
+    });
+    if (modelCase.wireModelId === "gpt-5.6-luna") {
+        expect(tools.find((tool) => tool.name === "exec")?.description).not.toContain("workflow");
+        expect(tools.find((tool) => tool.name === "exec")?.description).not.toContain(
+            "resume_agent",
+        );
+    } else {
+        expect(tools.find((tool) => tool.name === "exec")?.description).not.toContain("workflow");
+        expect(tools.find((tool) => tool.name === "exec")?.description).not.toContain(
+            "resume_agent",
+        );
+    }
+    expect(tools.find((tool) => tool.name === "wait")).toMatchObject({
         type: "function",
-    }));
+        strict: false,
+    });
 }
 
 function requestPayload(request: InterceptedHttpRequest): CodexRequestPayload {
@@ -510,18 +593,19 @@ interface CodexCase {
 }
 
 interface CodexModelCase {
+    compiledClientPromptSha256: string;
     name: string;
+    officialSystemPrompt: string;
     rigModelId: string;
-    systemPrompt: string;
+    rigSystemPrompt: string;
     wireModelId: string;
 }
 
-interface CodexApiTool extends Record<string, unknown> {
-    description: string;
-    name: string;
-    parameters: unknown;
-    strict: null;
-    type: "function";
+function officialPrompt(stem: string): string {
+    return readFileSync(
+        new URL(`../../rig/sources/profiles/codex/${stem}.golden.md`, import.meta.url),
+        "utf8",
+    );
 }
 
 interface CodexInputItem extends Record<string, unknown> {
@@ -530,16 +614,24 @@ interface CodexInputItem extends Record<string, unknown> {
     tools?: readonly { name?: unknown }[];
 }
 
+interface CodexRequestTool extends Record<string, unknown> {
+    format?: unknown;
+    name?: unknown;
+    strict?: unknown;
+    tools?: readonly CodexRequestTool[];
+    type?: unknown;
+}
+
 interface CodexRequestPayload extends Record<string, unknown> {
     client_metadata?: unknown;
     include?: unknown;
     input?: readonly CodexInputItem[];
     instructions?: unknown;
+    tools?: readonly CodexRequestTool[];
     model?: unknown;
     prompt_cache_key?: unknown;
     reasoning?: unknown;
     store?: unknown;
     stream?: unknown;
     text?: unknown;
-    tools?: readonly { name?: unknown }[];
 }

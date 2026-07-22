@@ -26,6 +26,7 @@ import { createProviderQuotaCache } from "./createProviderQuotaCache.js";
 import { fetchCodexProviderQuota } from "./fetchCodexProviderQuota.js";
 import { getCodexAuthPath } from "./getCodexAuthPath.js";
 import { unavailableProviderQuota } from "./unavailableProviderQuota.js";
+import { createCodexOpenAIStream } from "./createCodexOpenAIStream.js";
 
 const CODEX_PROVIDER_ID = "openai-codex";
 
@@ -93,6 +94,24 @@ export function createCodexProvider(options: CodexProviderOptions = {}): Provide
                 throw new Error(`Unknown codex model: ${model.id}`);
             }
 
+            const accessToken = resolveApiKey();
+            if (context.tools?.some((tool) => tool.kind === "custom") === true) {
+                if (accessToken === undefined) {
+                    throw new Error("Codex authentication is unavailable.");
+                }
+                return createCodexOpenAIStream({
+                    accessToken,
+                    authPath,
+                    baseUrl: options.baseUrl ?? "https://chatgpt.com/backend-api",
+                    context,
+                    model,
+                    modelId: toPiCodexModelId(model.id),
+                    providerId: options.id ?? "codex",
+                    ...(options.transport === undefined ? {} : { transport: options.transport }),
+                    ...(streamOptions === undefined ? {} : { streamOptions }),
+                });
+            }
+
             return wrapPiStream(
                 streamOpenAICodexResponses(
                     piModel,
@@ -100,7 +119,7 @@ export function createCodexProvider(options: CodexProviderOptions = {}): Provide
                     toPiStreamOptions(
                         piModel,
                         streamOptions,
-                        resolveApiKey(),
+                        accessToken,
                         options.transport,
                         collectOriginalImageUrls(context),
                     ),

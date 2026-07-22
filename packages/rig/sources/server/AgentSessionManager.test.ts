@@ -5,6 +5,73 @@ import type { InMemorySession } from "./InMemorySession.js";
 import { AgentSessionManager } from "./AgentSessionManager.js";
 
 describe("AgentSessionManager", () => {
+    it("forwards opaque Codex follow-ups only within one compatible provider and region", () => {
+        const submit = vi.fn(() => ({ runId: "child-run" }));
+        const encryptedAgentTransportScope = vi.fn(() => '["codex",null]');
+        const child = {
+            agentMetadata: () => ({
+                depth: 1,
+                parentSessionId: "root-1",
+                rootSessionId: "root-1",
+                taskName: "audit",
+                type: "subagent" as const,
+            }),
+            id: "child-1",
+            isSubagent: () => true,
+            encryptedAgentTransportScope,
+            subagentSummary: () => ({
+                description: "Audit",
+                status: "completed" as const,
+                taskName: "audit",
+            }),
+            submit,
+            waitForRun: () => new Promise(() => undefined),
+        } as unknown as InMemorySession;
+        const parent = {
+            agentMetadata: () => ({ depth: 0, rootSessionId: "root-1", type: "primary" }),
+            id: "root-1",
+            encryptedAgentTransportScope: () => '["codex",null]',
+            isSubagent: () => false,
+            recordSubagentChanged: vi.fn(),
+        } as unknown as InMemorySession;
+        const manager = new AgentSessionManager({
+            repository: {
+                createSubagent: vi.fn(),
+                get: (id) => (id === parent.id ? parent : id === child.id ? child : undefined),
+                listByRoot: () => [child],
+            },
+        });
+
+        expect(manager.followUp(parent.id, "audit", "", undefined, "opaque-task")).toMatchObject({
+            sessionId: child.id,
+        });
+        expect(submit).toHaveBeenCalledWith({
+            displayText: "Follow-up task for audit",
+            encryptedAgentMessage: {
+                author: "/root",
+                recipient: "/root/audit",
+                header: "Message Type: NEW_TASK\nTask name: /root/audit\nSender: /root\nPayload:\n",
+                encryptedContent: "opaque-task",
+            },
+            provenance: "agent",
+            text: "",
+        });
+
+        encryptedAgentTransportScope.mockReturnValue('["bedrock","us-east-1"]');
+        expect(() => manager.followUp(parent.id, "audit", "", undefined, "opaque-task")).toThrow(
+            "Native encrypted collaboration only works within the same compatible provider and region. Retry with `rig.followup_task` and provide the task normally.",
+        );
+        expect(submit).toHaveBeenCalledOnce();
+
+        expect(manager.followUp(parent.id, "audit", "Plain cross-provider task")).toMatchObject({
+            sessionId: child.id,
+        });
+        expect(submit).toHaveBeenLastCalledWith({
+            provenance: "agent",
+            text: "Plain cross-provider task",
+        });
+    });
+
     it("allows eight active subagents by default", () => {
         const manager = new AgentSessionManager({
             repository: {
@@ -243,6 +310,10 @@ describe("AgentSessionManager", () => {
             }),
             expect.objectContaining({ taskName: "model_check" }),
         );
+        expect(child.submit).toHaveBeenCalledWith({
+            provenance: "agent",
+            text: "Inspect with the requested model.",
+        });
         await expect(
             manager.spawn(parent.id, {
                 description: "Unknown model",
@@ -265,6 +336,61 @@ describe("AgentSessionManager", () => {
             "Model 'anthropic/claude-opus-4.6' does not support 'ultra' effort. Allowed effort levels: off, low, medium, high.",
         );
         expect(createSubagent).toHaveBeenCalledOnce();
+    });
+
+    it("rejects encrypted spawn delivery across provider or region scopes", async () => {
+        const parentTransportScope = vi.fn<() => string | undefined>(() => '["codex",null]');
+        const child = {
+            id: "child-1",
+            submit: vi.fn(),
+        } as unknown as InMemorySession;
+        const parent = {
+            agentMetadata: () => ({ depth: 0, rootSessionId: "root-1", type: "primary" }),
+            encryptedAgentTransportScope: parentTransportScope,
+            id: "root-1",
+            isSubagent: () => false,
+            recordSubagentChanged: vi.fn(),
+            requestForSubagent: () => ({
+                cwd: "/tmp/rig-manager-test",
+                modelId: "openai/gpt-5.6-sol",
+                permissionMode: "auto",
+                providerId: "codex",
+            }),
+        } as unknown as InMemorySession;
+        const createSubagent = vi.fn(() => child);
+        const manager = new AgentSessionManager({
+            repository: {
+                createSubagent,
+                get: (sessionId) => (sessionId === parent.id ? parent : undefined),
+                listByRoot: () => [],
+            },
+        });
+
+        await expect(
+            manager.spawn(parent.id, {
+                encryptedPrompt: "opaque-cloud-ciphertext",
+                description: "Unsafe crossing",
+                modelId: "openai/gpt-5.6-sol",
+                prompt: "",
+                providerId: "bedrock",
+                taskName: "unsafe_crossing",
+            }),
+        ).rejects.toThrow(
+            "Native encrypted collaboration only works within the current compatible provider and region. Use `rig.spawn_agent` and provide the task normally when selecting or crossing a model, provider, or region.",
+        );
+        expect(createSubagent).not.toHaveBeenCalled();
+        expect(child.submit).not.toHaveBeenCalled();
+
+        parentTransportScope.mockReturnValue(undefined);
+        await expect(
+            manager.spawn(parent.id, {
+                encryptedPrompt: "opaque-without-native-scope",
+                description: "Missing native scope",
+                prompt: "",
+                taskName: "missing_scope",
+            }),
+        ).rejects.toThrow("Native encrypted collaboration only works within the current");
+        expect(createSubagent).not.toHaveBeenCalled();
     });
 
     it("infers a provider for model-only requests and reports ambiguous providers", async () => {
@@ -554,6 +680,7 @@ describe("AgentSessionManager", () => {
         ).toMatchObject({ sessionId: "child-1" });
         expect(childSubmit).toHaveBeenLastCalledWith({
             effort: "high",
+            provenance: "agent",
             text: "Check one more file.",
         });
         childSubmit.mockImplementationOnce(() => {
@@ -834,7 +961,10 @@ describe("AgentSessionManager", () => {
         expect(manager.followUp(root.id, "audit_code", "Inspect one more file.")).toEqual(
             expect.objectContaining({ sessionId: child.session.id, status: "running" }),
         );
-        expect(child.submit).toHaveBeenCalledWith({ text: "Inspect one more file." });
+        expect(child.submit).toHaveBeenCalledWith({
+            provenance: "agent",
+            text: "Inspect one more file.",
+        });
     });
 
     it("suspends active descendants until each retained session is explicitly resumed", async () => {

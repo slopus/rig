@@ -30,6 +30,7 @@ export interface SpawnSubagentRequest {
     contextMessages?: readonly Message[];
     description: string;
     effort?: string;
+    encryptedPrompt?: string;
     modelId?: string;
     providerId?: string;
     parentToolCallId?: string;
@@ -56,7 +57,12 @@ export interface SubagentContext {
     canSpawn: boolean;
     depth: number;
     disabledProviders?: readonly DisabledSubagentProvider[];
-    followUp(target: string, message: string, effort?: string): ManagedSubagent;
+    followUp(
+        target: string,
+        message: string,
+        effort?: string,
+        encryptedMessage?: string,
+    ): ManagedSubagent;
     interrupt(target: string): ManagedSubagent;
     list(pathPrefix?: string): readonly ManagedSubagent[];
     maxDepth: number;

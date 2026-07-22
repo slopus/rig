@@ -54,7 +54,9 @@ export interface ToolCall {
     type: "toolCall";
     id: string;
     name: string;
+    namespace?: string;
     arguments: Record<string, unknown>;
+    kind?: "custom" | "function";
 }
 
 export type UserContent = TextContent | ImageContent;
@@ -64,6 +66,12 @@ export type ToolResultContent = TextContent | ImageContent;
 export interface UserMessage {
     role: "user";
     content: string | readonly UserContent[];
+    encryptedAgentMessage?: {
+        author: string;
+        recipient: string;
+        header: string;
+        encryptedContent: string;
+    };
     timestamp: number;
 }
 
@@ -95,11 +103,35 @@ export interface ToolResultMessage {
 
 export type Message = UserMessage | AssistantMessage | ToolResultMessage;
 
-export interface Tool<TParameters extends TSchema = TSchema> {
+export interface FunctionTool<TParameters extends TSchema = TSchema> {
+    kind?: "function";
     name: string;
     description: string;
     parameters: TParameters;
 }
+
+export interface CustomTool {
+    kind: "custom";
+    name: string;
+    description: string;
+    format?: {
+        type: "grammar";
+        syntax: "lark" | "regex";
+        definition: string;
+    };
+}
+
+export interface NamespaceTool {
+    kind: "namespace";
+    name: string;
+    description: string;
+    tools: readonly (FunctionTool | CustomTool)[];
+}
+
+export type Tool<TParameters extends TSchema = TSchema> =
+    | FunctionTool<TParameters>
+    | CustomTool
+    | NamespaceTool;
 
 export interface XSearchServerTool {
     type: "x_search";

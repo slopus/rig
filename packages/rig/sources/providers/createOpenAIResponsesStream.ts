@@ -10,12 +10,15 @@ import { parseOpenAIToolArguments } from "./parseOpenAIToolArguments.js";
 import { replaceAssistantContent } from "./replaceAssistantContent.js";
 import { toOpenAIResponsesAssistantContent } from "./toOpenAIResponsesAssistantContent.js";
 import type { AssistantMessage, AssistantMessageEvent } from "./types.js";
+import type { ProviderError, ProviderErrorCode } from "./types.js";
 
 export function createOpenAIResponsesStream(options: {
     createResponseStream: () =>
         | AsyncIterable<ResponseStreamEvent>
         | Promise<AsyncIterable<ResponseStreamEvent>>;
     failureMessage: string;
+    classifyError?: (message: string) => ProviderErrorCode | undefined;
+    classifyProviderError?: (message: string) => ProviderError;
     modelId: string;
     providerId: string;
     signal?: AbortSignal;
@@ -72,6 +75,9 @@ export function createOpenAIResponsesStream(options: {
                                   : "toolCall",
                         ...(event.item.type === "function_call"
                             ? { argumentsJson: event.item.arguments }
+                            : {}),
+                        ...(event.item.type === "custom_tool_call"
+                            ? { customInput: event.item.input }
                             : {}),
                     };
                     activeItems.set(event.output_index, activeItem);
@@ -193,6 +199,52 @@ export function createOpenAIResponsesStream(options: {
                     continue;
                 }
 
+                if (event.type === "response.custom_tool_call_input.delta") {
+                    const activeItem = activeItems.get(event.output_index);
+                    const content =
+                        activeItem === undefined
+                            ? undefined
+                            : partial.content[activeItem.contentIndex];
+                    if (activeItem?.type !== "toolCall" || content?.type !== "toolCall") continue;
+                    activeItem.customInput = (activeItem.customInput ?? "") + event.delta;
+                    partial.content = replaceAssistantContent(
+                        partial.content,
+                        activeItem.contentIndex,
+                        {
+                            ...content,
+                            kind: "custom",
+                            arguments: { input: activeItem.customInput },
+                        },
+                    );
+                    yield {
+                        type: "toolcall_delta",
+                        contentIndex: activeItem.contentIndex,
+                        delta: event.delta,
+                        partial,
+                    };
+                    continue;
+                }
+
+                if (event.type === "response.custom_tool_call_input.done") {
+                    const activeItem = activeItems.get(event.output_index);
+                    const content =
+                        activeItem === undefined
+                            ? undefined
+                            : partial.content[activeItem.contentIndex];
+                    if (activeItem?.type !== "toolCall" || content?.type !== "toolCall") continue;
+                    activeItem.customInput = event.input;
+                    partial.content = replaceAssistantContent(
+                        partial.content,
+                        activeItem.contentIndex,
+                        {
+                            ...content,
+                            kind: "custom",
+                            arguments: { input: event.input },
+                        },
+                    );
+                    continue;
+                }
+
                 if (event.type === "response.output_item.done") {
                     const activeItem = activeItems.get(event.output_index);
                     if (activeItem === undefined) continue;
@@ -241,6 +293,10 @@ export function createOpenAIResponsesStream(options: {
             const aborted = options.signal?.aborted === true;
             partial.stopReason = aborted ? "aborted" : "error";
             partial.errorMessage = errorToMessage(error);
+            const errorCode = options.classifyError?.(partial.errorMessage);
+            if (errorCode !== undefined) partial.errorCode = errorCode;
+            const providerError = options.classifyProviderError?.(partial.errorMessage);
+            if (providerError !== undefined) partial.providerError = providerError;
             yield { type: "error", reason: partial.stopReason, error: partial };
             return partial;
         }

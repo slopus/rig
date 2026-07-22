@@ -2,9 +2,11 @@
     "$schema": "./node_modules/oxfmt/configuration_schema.json",
     "ignorePatterns": [
         "packages/rig/sources/profiles/claude/claude-*",
-        "packages/rig/sources/profiles/claude-*.md"
+        "packages/rig/sources/profiles/claude-*.md",
+        "packages/rig/sources/profiles/codex/codex-*",
+        "packages/rig/sources/profiles/codex-*.md",
+        "packages/rig-codemode-codex/native/**"
     ],
     "tabWidth": 4,
-    "useTabs": false,
-    "ignorePatterns": ["packages/rig-codemode-codex/native/**"]
+    "useTabs": false
 }

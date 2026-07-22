@@ -56,7 +56,9 @@ function providerToolCallToAgentBlock(
         type: "tool_call",
         id: toolCall.id,
         name: toolCall.name,
+        ...(toolCall.namespace === undefined ? {} : { namespace: toolCall.namespace }),
         arguments: toolCall.arguments,
+        ...(toolCall.kind === undefined ? {} : { kind: toolCall.kind }),
         ...(presentation === undefined ? {} : { presentation }),
     };
 }
