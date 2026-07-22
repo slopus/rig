@@ -34,7 +34,11 @@ export function createSelectionPanel(options: CreateSelectionPanelOptions): Comp
 
 class SelectionPanel implements Component {
     readonly #cancelDisabled: boolean;
-    readonly #list: SelectList;
+    readonly #items: SelectItem[];
+    #list: SelectList;
+    #maxVisible = 8;
+    readonly #onCancel: () => void;
+    readonly #onSelect: (item: SelectItem) => void;
     readonly #subtitle: string;
     readonly #title: string;
     readonly #theme: TerminalTheme;
@@ -44,29 +48,16 @@ class SelectionPanel implements Component {
         this.#title = sanitizeTerminalText(options.title);
         this.#subtitle = sanitizeTerminalText(options.subtitle);
         this.#theme = options.theme ?? DEFAULT_TERMINAL_THEME;
-        this.#list = new SelectList(
-            options.items.map((item) => ({
-                ...item,
-                label: sanitizeTerminalText(item.label),
-                ...(item.description === undefined
-                    ? {}
-                    : { description: sanitizeTerminalText(item.description) }),
-            })),
-            8,
-            {
-                selectedPrefix: (text) => `${this.#theme.brand}${text}${RESET}`,
-                selectedText: (text) => `${this.#theme.brand}${text}${RESET}${this.#theme.primary}`,
-                description: (text) => `${DIM}${this.#theme.secondary}${text}${RESET}`,
-                scrollInfo: (text) => `${DIM}${this.#theme.secondary}${text}${RESET}`,
-                noMatch: (text) => `${this.#theme.secondary}${text}${RESET}`,
-            },
-            {
-                minPrimaryColumnWidth: 18,
-                maxPrimaryColumnWidth: 28,
-            },
-        );
-        this.#list.onSelect = options.onSelect;
-        this.#list.onCancel = options.onCancel;
+        this.#items = options.items.map((item) => ({
+            ...item,
+            label: sanitizeTerminalText(item.label),
+            ...(item.description === undefined
+                ? {}
+                : { description: sanitizeTerminalText(item.description) }),
+        }));
+        this.#onSelect = options.onSelect;
+        this.#onCancel = options.onCancel;
+        this.#list = this.#createList(this.#maxVisible);
 
         const selectedIndex = options.items.findIndex(
             (item) => item.value === options.selectedValue,
@@ -74,6 +65,23 @@ class SelectionPanel implements Component {
         if (selectedIndex >= 0) {
             this.#list.setSelectedIndex(selectedIndex);
         }
+    }
+
+    fitToViewport(width: number, height: number): void {
+        const contentWidth = Math.max(1, width - 2);
+        const subtitleRows = wrapTextWithAnsi(this.#subtitle, contentWidth).length;
+        const listRowsWithoutScroll = Math.max(1, height - subtitleRows - 6);
+        const maxVisible =
+            this.#items.length <= listRowsWithoutScroll
+                ? Math.max(1, this.#items.length)
+                : Math.max(1, listRowsWithoutScroll - 1);
+        if (maxVisible === this.#maxVisible) return;
+
+        const selectedValue = this.#list.getSelectedItem()?.value;
+        this.#maxVisible = maxVisible;
+        this.#list = this.#createList(maxVisible);
+        const selectedIndex = this.#items.findIndex((item) => item.value === selectedValue);
+        if (selectedIndex >= 0) this.#list.setSelectedIndex(selectedIndex);
     }
 
     invalidate(): void {
@@ -118,4 +126,33 @@ class SelectionPanel implements Component {
         const padding = " ".repeat(Math.max(0, width - visibleWidth(fitted)));
         return `${this.#theme.inputBackground}${this.#theme.primary}${fitted}${padding}${RESET}`;
     }
+
+    #createList(maxVisible: number): SelectList {
+        const list = new SelectList(
+            this.#items,
+            maxVisible,
+            {
+                selectedPrefix: (text) => `${this.#theme.brand}${text}${RESET}`,
+                selectedText: (text) => `${this.#theme.brand}${text}${RESET}${this.#theme.primary}`,
+                description: (text) => `${DIM}${this.#theme.secondary}${text}${RESET}`,
+                scrollInfo: (text) => `${DIM}${this.#theme.secondary}${text}${RESET}`,
+                noMatch: (text) => `${this.#theme.secondary}${text}${RESET}`,
+            },
+            {
+                minPrimaryColumnWidth: 18,
+                maxPrimaryColumnWidth: 28,
+            },
+        );
+        list.onSelect = this.#onSelect;
+        list.onCancel = this.#onCancel;
+        return list;
+    }
+}
+
+export function fitSelectionPanelToViewport(
+    component: Component,
+    width: number,
+    height: number,
+): void {
+    if (component instanceof SelectionPanel) component.fitToViewport(width, height);
 }

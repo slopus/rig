@@ -2017,6 +2017,43 @@ describe("CodingAssistantApp", () => {
         expect(rendered).toContain("Ask Rig to do anything");
     });
 
+    it("uses the available fullscreen height before scrolling a model menu", () => {
+        const models = Array.from({ length: 12 }, (_, index) =>
+            defineModel({
+                id: `openai/gpt-${index + 1}`,
+                name: `GPT ${index + 1}`,
+                thinkingLevels: ["off"],
+                defaultThinkingLevel: "off",
+            }),
+        );
+        const firstModel = models[0]!;
+        const provider = defineProvider({
+            id: "codex",
+            models,
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: firstModel.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProcessManager(),
+            tui: fakeTui({ rows: 20 }),
+        });
+
+        submit(app, "/model");
+
+        const modelMenu = stripAnsi(app.render(80).join("\n"));
+        expect(modelMenu).toContain("GPT 12");
+        expect(modelMenu).not.toContain("(1/12)");
+    });
+
     it("shows Bedrock-only models and sends their provider from the TUI picker", async () => {
         const gpt = defineModel({
             id: "openai/gpt-test",
@@ -7901,6 +7938,7 @@ function fakeTui(options: { rows?: number; columns?: number } = {}): TUI {
         terminal: {
             rows: options.rows ?? 20,
             columns: options.columns ?? 80,
+            write: vi.fn(),
         },
     } as unknown as TUI;
 }

@@ -176,11 +176,14 @@ export class SecretMenuController {
                 this.#requestRender();
             })
             .catch(() => {
+                const message = `Could not ${operation} the secret for this ${scope}.`;
                 this.#appendEntry({
                     role: "error",
-                    text: `Could not ${operation} the secret for this ${scope}.`,
+                    text: message,
                 });
-                if (this.#isCurrentOperation(generation)) this.#openSecretActions(secret);
+                if (this.#isCurrentOperation(generation)) {
+                    this.#openSecretActions(secret, message);
+                }
                 this.#requestRender();
             });
     }
@@ -302,12 +305,12 @@ export class SecretMenuController {
         );
     }
 
-    #openSecretActions(secret: SecretSummary): void {
+    #openSecretActions(secret: SecretSummary, notice?: string): void {
         this.#showPanel(
             createSelectionPanel({
                 theme: this.#theme,
                 title: secret.id,
-                subtitle: `${secret.description} · ${this.#attachmentStatus(secret.id)}`,
+                subtitle: notice ?? `${secret.description} · ${this.#attachmentStatus(secret.id)}`,
                 items: [
                     {
                         value: "attach",
@@ -402,13 +405,15 @@ export class SecretMenuController {
         );
     }
 
-    #openVariableChoice(draft: SecretRegistrationDraft): void {
+    #openVariableChoice(draft: SecretRegistrationDraft, notice?: string): void {
         const variableCount = Object.keys(draft.environment).length;
         this.#showPanel(
             createSelectionPanel({
                 theme: this.#theme,
                 title: "Add Secret",
-                subtitle: `${draft.id} · ${variableCount} environment variable${variableCount === 1 ? "" : "s"}`,
+                subtitle:
+                    notice ??
+                    `${draft.id} · ${variableCount} environment variable${variableCount === 1 ? "" : "s"}`,
                 items: [
                     {
                         value: "register",
@@ -454,11 +459,15 @@ export class SecretMenuController {
                 this.#requestRender();
             })
             .catch(() => {
+                const message =
+                    "Could not register the secret. Check the ID and environment names.";
                 this.#appendEntry({
                     role: "error",
-                    text: "Could not register the secret. Check the ID and environment names.",
+                    text: message,
                 });
-                if (this.#isCurrentOperation(generation)) this.#openVariableChoice(draft);
+                if (this.#isCurrentOperation(generation)) {
+                    this.#openVariableChoice(draft, message);
+                }
                 this.#requestRender();
             });
     }
@@ -491,11 +500,14 @@ export class SecretMenuController {
                 this.#requestRender();
             })
             .catch(() => {
+                const message = "Could not remove the secret registration.";
                 this.#appendEntry({
                     role: "error",
-                    text: "Could not remove the secret registration.",
+                    text: message,
                 });
-                if (this.#isCurrentOperation(generation)) this.#openSecretActions(secret);
+                if (this.#isCurrentOperation(generation)) {
+                    this.#openSecretActions(secret, message);
+                }
                 this.#requestRender();
             });
     }

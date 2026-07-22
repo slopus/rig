@@ -615,6 +615,6 @@ function fakeTui(): TUI {
         setFocus: vi.fn(),
         start: vi.fn(),
         stop: vi.fn(),
-        terminal: { columns: 100, rows: 40 },
+        terminal: { columns: 100, rows: 40, write: vi.fn() },
     } as unknown as TUI;
 }

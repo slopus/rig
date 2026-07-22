@@ -181,13 +181,24 @@ describe("subagent observability across a nested lifecycle", () => {
         );
         expect(completed.text.match(/Completed · Top observer/gu)).toHaveLength(1);
         expect(completed.text.match(/Completed · Nested observer/gu)).toHaveLength(1);
-        expect(completed.text.match(/"Top observer" completed in/gu)).toHaveLength(1);
-        expect(completed.text.match(/"Nested observer" completed in/gu)).toHaveLength(1);
+        expect(completed.text.match(/"Top observer" completed in/gu)).toBeNull();
+        expect(completed.text.match(/"Nested observer" completed in/gu)).toBeNull();
         expect(completed.text).not.toContain("3.2k context tokens");
         expect(topSessionId).toBeTypeOf("string");
         expect(nestedSessionId).toBeTypeOf("string");
         await screenshot(completed, "completed-agents.png");
         gym.terminal.press("escape");
+
+        const restored = await gym.terminal.waitUntil(
+            (snapshot) =>
+                snapshot.text.includes('"Top observer" completed in') &&
+                snapshot.text.includes('"Nested observer" completed in') &&
+                snapshot.text.includes("Ask Rig to do anything"),
+            "the conversation restored after closing the fullscreen agent monitor",
+            30_000,
+        );
+        expect(restored.text.match(/"Top observer" completed in/gu)).toHaveLength(1);
+        expect(restored.text.match(/"Nested observer" completed in/gu)).toHaveLength(1);
 
         submit(gym, "Show wrapped tool output.");
         const wrappedTool = await gym.terminal.waitUntil(

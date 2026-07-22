@@ -121,6 +121,8 @@ import { applyWorkflowRunUpdate } from "./applyWorkflowRunUpdate.js";
 import type { TerminalTheme } from "./TerminalTheme.js";
 import type { StartupStatusCardModel } from "./StartupStatusCardModel.js";
 import { SecretMenuController } from "./SecretMenuController.js";
+import { TemporaryFullscreenController } from "./TemporaryFullscreenController.js";
+import { renderFullscreenComponent } from "./renderFullscreenComponent.js";
 
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
@@ -355,6 +357,7 @@ export class CodingAssistantApp implements Component, Focusable {
         options?: ReadClipboardImageOptions,
     ) => Promise<ClipboardImage | undefined>;
     readonly #tui: TUI;
+    readonly #temporaryFullscreen: TemporaryFullscreenController;
     readonly #theme: TerminalTheme;
     readonly #startupStatus: StartupStatusCardModel;
     readonly #secretMenu: SecretMenuController;
@@ -378,6 +381,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #exiting = false;
     #exitResolve: (() => void) | undefined;
     #focused = false;
+    #started = false;
     #terminalFocused = true;
     #freeformUserInput: FreeformUserInput | undefined;
     #pendingPrompts: PendingPrompt[] = [];
@@ -396,6 +400,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #compacting = false;
     #pastedImagesById = new Map<number, PastedImage>();
     #selectionPanel: Component | undefined;
+    #selectionPanelFullscreen = false;
     #backgroundTerminalViewer: BackgroundTerminalViewer | undefined;
     #backgroundTerminalViewerController: AbortController | undefined;
     #foregroundShellCommand: ForegroundShellCommand | undefined;
@@ -461,6 +466,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #workflows: readonly WorkflowRun[];
     #workflowsEnabled: boolean;
     #replayingInitialSessionEvents = false;
+    #lastNormalRender: { height: number; lines: readonly string[]; width: number } | undefined;
 
     constructor(options: CodingAssistantAppOptions) {
         this.#activeAgentLabel =
@@ -495,6 +501,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#workflowsEnabled = options.workflowsEnabled ?? true;
         this.#slashCommands = createSlashCommands({ workflowsEnabled: this.#workflowsEnabled });
         this.#tui = options.tui;
+        this.#temporaryFullscreen = new TemporaryFullscreenController(this.#tui);
         this.#theme = { ...(options.theme ?? DEFAULT_TERMINAL_THEME) };
         this.#secretMenu = new SecretMenuController({
             appendEntry: (entry) => this.#appendEntry(entry),
@@ -506,7 +513,7 @@ export class CodingAssistantApp implements Component, Focusable {
             listSecrets: options.listSecrets,
             registerSecret: options.registerSecret,
             requestRender: () => this.#requestRender(),
-            showPanel: (component) => this.#setSelectionPanel(component),
+            showPanel: (component) => this.#setSelectionPanel(component, true),
             theme: this.#theme,
             unregisterSecret: options.unregisterSecret,
         });
@@ -613,11 +620,13 @@ export class CodingAssistantApp implements Component, Focusable {
 
     start(options: { tuiAlreadyStarted?: boolean } = {}): void {
         this.#tui.addChild(this);
+        this.#started = true;
         this.focused = true;
         this.#tui.setFocus(this);
         if (options.tuiAlreadyStarted !== true) {
             this.#tui.start();
         }
+        this.#syncTemporaryFullscreen();
         this.#requestRender();
     }
 
@@ -647,6 +656,8 @@ export class CodingAssistantApp implements Component, Focusable {
         await this.#waitForShutdownRender();
 
         this.#stopped = true;
+        this.#temporaryFullscreen.dispose();
+        this.#started = false;
         this.#tui.stop();
 
         try {
@@ -1465,20 +1476,56 @@ export class CodingAssistantApp implements Component, Focusable {
 
     render(width: number): string[] {
         const safeWidth = Math.max(1, width);
-        if (this.#backgroundTerminalViewer !== undefined) {
-            return this.#backgroundTerminalViewer.render(safeWidth);
+        const fullscreenComponent =
+            this.#backgroundTerminalViewer ??
+            (this.#selectionPanelFullscreen ? this.#selectionPanel : undefined);
+        if (fullscreenComponent !== undefined) {
+            if (!this.#started) return this.#fullscreenLines(fullscreenComponent, safeWidth);
+
+            const height = this.#tui.terminal.rows;
+            const retained = this.#lastNormalRender;
+            if (
+                retained !== undefined &&
+                retained.width === safeWidth &&
+                retained.height === height
+            ) {
+                process.nextTick(() => this.#paintTemporaryFullscreen());
+                return [...retained.lines];
+            }
+
+            const resizedNormal = this.#renderNormalFrame(safeWidth, false);
+            this.#lastNormalRender = { height, lines: resizedNormal, width: safeWidth };
+            process.nextTick(() => this.#paintTemporaryFullscreen());
+            return resizedNormal;
         }
+        const normal = this.#renderNormalFrame(safeWidth);
+        this.#lastNormalRender = {
+            height: this.#tui.terminal.rows,
+            lines: normal,
+            width: safeWidth,
+        };
+        return normal;
+    }
+
+    #renderNormalFrame(safeWidth: number, includeFullscreenPanel = true): string[] {
         const header = this.#renderHeader(safeWidth);
         const transcript = this.#renderTranscript(safeWidth);
         if (this.#exiting) return [...header, ...transcript];
-        return [...header, ...transcript, ...this.#renderLiveTail(safeWidth)];
+        return [
+            ...header,
+            ...transcript,
+            ...this.#renderLiveTail(
+                safeWidth,
+                includeFullscreenPanel ? this.#selectionPanel : undefined,
+            ),
+        ];
     }
 
     headerRenderCacheSizeForTesting(): number {
         return this.#headerLinesByWidth.size;
     }
 
-    #renderLiveTail(width: number): string[] {
+    #renderLiveTail(width: number, selectionPanel: Component | undefined): string[] {
         const safeWidth = Math.max(1, width);
         const slashCommandSuggestions = this.#slashCommandSuggestions();
         const fileMentionSnapshot =
@@ -1496,18 +1543,18 @@ export class CodingAssistantApp implements Component, Focusable {
         );
         const input = this.#renderInput(safeWidth);
         const activeWork =
-            this.#selectionPanel === undefined
+            selectionPanel === undefined
                 ? this.#renderActiveWorkList(safeWidth)
                 : this.#renderActiveToolRows(safeWidth);
         const pendingSteering =
-            this.#selectionPanel === undefined
+            selectionPanel === undefined
                 ? renderPendingSteeringMessages(
                       this.#pendingSteeringMessages.map((message) => message.displayText),
                       safeWidth,
                   )
                 : [];
         const queuedPrompts =
-            this.#selectionPanel === undefined ? this.#renderQueuedPrompts(safeWidth) : [];
+            selectionPanel === undefined ? this.#renderQueuedPrompts(safeWidth) : [];
 
         return [
             "",
@@ -1517,9 +1564,7 @@ export class CodingAssistantApp implements Component, Focusable {
             ...(pendingSteering.length > 0 ? [""] : []),
             ...queuedPrompts,
             ...(queuedPrompts.length > 0 ? [""] : []),
-            ...(this.#selectionPanel === undefined
-                ? input
-                : this.#selectionPanel.render(safeWidth)),
+            ...(selectionPanel === undefined ? input : selectionPanel.render(safeWidth)),
             ...footer,
             "",
         ];
@@ -2225,7 +2270,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
     #openSubagentMonitor(): void {
         const monitor = createSubagentMonitor({
-            getHeight: () => Math.max(1, this.#tui.terminal.rows - 4),
+            getHeight: () => Math.max(1, this.#tui.terminal.rows),
             getSubagents: () => this.#subagents,
             modelName: (modelId) =>
                 this.#agent.modelChoices?.find((choice) => choice.model.id === modelId)?.model
@@ -2289,7 +2334,6 @@ export class CodingAssistantApp implements Component, Focusable {
     }
 
     #openBackgroundTerminalViewer(process: BashSessionActivity): void {
-        this.#closeSelectionPanel();
         this.#closeBackgroundTerminalViewer();
         const controller = new AbortController();
         const viewer = createBackgroundTerminalViewer({
@@ -2306,6 +2350,8 @@ export class CodingAssistantApp implements Component, Focusable {
         });
         this.#backgroundTerminalViewer = viewer;
         this.#backgroundTerminalViewerController = controller;
+        this.#syncTemporaryFullscreen();
+        this.#closeSelectionPanel();
         void this.#pollBackgroundTerminalViewer(viewer, process.sessionId, controller.signal);
         this.#requestRender();
     }
@@ -2314,6 +2360,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#backgroundTerminalViewerController?.abort();
         this.#backgroundTerminalViewerController = undefined;
         this.#backgroundTerminalViewer = undefined;
+        this.#syncTemporaryFullscreen();
     }
 
     async #pollBackgroundTerminalViewer(
@@ -4420,7 +4467,7 @@ export class CodingAssistantApp implements Component, Focusable {
             description: "Enter a response that is not listed.",
         });
 
-        this.#showSelectionPanel(
+        this.#showInlineSelectionPanel(
             createSelectionPanel({
                 cancelDisabled: true,
                 theme: this.#theme,
@@ -4562,7 +4609,12 @@ export class CodingAssistantApp implements Component, Focusable {
 
     #showSelectionPanel(component: Component): void {
         this.#secretMenu.hide();
-        this.#setSelectionPanel(component);
+        this.#setSelectionPanel(component, true);
+    }
+
+    #showInlineSelectionPanel(component: Component): void {
+        this.#secretMenu.hide();
+        this.#setSelectionPanel(component, false);
     }
 
     #closeSelectionPanel(): void {
@@ -4570,11 +4622,42 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#setSelectionPanel(undefined);
     }
 
-    #setSelectionPanel(component: Component | undefined): void {
+    #setSelectionPanel(component: Component | undefined, fullscreen = false): void {
         if (this.#selectionPanel !== component) {
             (this.#selectionPanel as Partial<SubagentMonitor> | undefined)?.dispose?.();
         }
         this.#selectionPanel = component;
+        this.#selectionPanelFullscreen = component !== undefined && fullscreen;
+        this.#syncTemporaryFullscreen();
+    }
+
+    #syncTemporaryFullscreen(): void {
+        if (!this.#started) return;
+        if (this.#selectionPanelFullscreen || this.#backgroundTerminalViewer !== undefined) {
+            this.#temporaryFullscreen.open(this.#lastNormalRender === undefined);
+            this.#requestRender();
+        } else {
+            this.#temporaryFullscreen.close();
+        }
+    }
+
+    #paintTemporaryFullscreen(): void {
+        const component =
+            this.#backgroundTerminalViewer ??
+            (this.#selectionPanelFullscreen ? this.#selectionPanel : undefined);
+        if (!this.#started || component === undefined) return;
+        const width = Math.max(1, this.#tui.terminal.columns);
+        const height = Math.max(1, this.#tui.terminal.rows);
+        this.#temporaryFullscreen.render(this.#fullscreenLines(component, width), width, height);
+    }
+
+    #fullscreenLines(component: Component, width: number): string[] {
+        return renderFullscreenComponent({
+            component,
+            height: this.#tui.terminal.rows,
+            theme: this.#theme,
+            width,
+        });
     }
 
     #renderInput(width: number): string[] {
