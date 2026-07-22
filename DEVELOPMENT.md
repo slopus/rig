@@ -105,6 +105,14 @@ it. Name scenarios for the behavior they prove, interact at the terminal
 boundary, wait for observable state instead of sleeping, and dispose every gym
 instance.
 
+## Agent evaluations
+
+Read [EVALUATIONS.md](EVALUATIONS.md) before comparing Rig with another agent
+harness. It defines the frozen hard-task suite, paired run contract, spend
+gates, Docker and credential isolation, preflight requirements, and reporting
+rules. A benchmark run is not authorized merely because its configuration is
+documented; paid trials remain blocked until that guide's preflight is complete.
+
 ## Provider reference sources
 
 Local reference implementations live in `~/Developer/coding-assistant-sources`,
