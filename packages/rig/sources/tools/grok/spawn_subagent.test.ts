@@ -73,6 +73,39 @@ describe("grokSpawnSubagentTool", () => {
         );
     });
 
+    it("reports a failed foreground subagent as a failed tool call", async () => {
+        const harness = createJustBashToolHarness();
+        harness.context.subagents = {
+            canSpawn: true,
+            depth: 0,
+            followUp: vi.fn(),
+            interrupt: vi.fn(),
+            list: () => [],
+            maxDepth: 3,
+            resume: vi.fn(),
+            spawn: async () => ({
+                output: "The subagent ran out of tokens before returning a response.",
+                path: "/root/empty_response",
+                sessionId: "agent-1",
+                status: "error",
+                taskName: "empty_response",
+            }),
+            wait: async () => ({ agents: [], timedOut: false }),
+        };
+
+        await expect(
+            grokSpawnSubagentTool.execute(
+                {
+                    background: false,
+                    description: "Return nothing",
+                    prompt: "Finish without returning text.",
+                },
+                harness.context,
+                {},
+            ),
+        ).rejects.toThrow("ran out of tokens before returning a response");
+    });
+
     it("follows up a retained subagent at the requested effort", () => {
         const harness = createJustBashToolHarness();
         const followUp = vi.fn(() => ({

@@ -319,6 +319,9 @@ export interface SessionRunCompletion {
     status: "aborted" | "completed" | "error";
 }
 
+const SUBAGENT_TOKEN_EXHAUSTED_ERROR =
+    "The subagent ran out of tokens before returning a response.";
+
 export class InMemorySession {
     #activeSince: number | undefined;
     readonly events: SessionEventLog;
@@ -3353,14 +3356,20 @@ export class InMemorySession {
         if (this.isSubagent()) this.#agentManager?.recordChanged(this);
     }
 
-    #appendRunFinished(runId: string, result: AgentRunResult): void {
+    #appendRunFinished(runId: string, result: AgentRunResult): SessionRunCompletion["status"] {
         const stopReason: StopReason = result.stopReason;
-        this.#status =
-            stopReason === "aborted"
-                ? this.#suspendOnAbort
-                    ? "suspended"
-                    : "aborted"
-                : "completed";
+        const responseText = findLastAgentResponseText(
+            this.#messages.filter((entry) => entry.runId === runId).map((entry) => entry.message),
+        );
+        const tokenExhausted =
+            this.isSubagent() && stopReason !== "aborted" && responseText === undefined;
+        this.#status = tokenExhausted
+            ? "error"
+            : stopReason === "aborted"
+              ? this.#suspendOnAbort
+                  ? "suspended"
+                  : "aborted"
+              : "completed";
         this.#finishElapsedInterval();
         this.#suspendOnAbort = false;
         this.#activePartial = undefined;
@@ -3368,6 +3377,18 @@ export class InMemorySession {
             this.#activeRun = undefined;
         }
         this.#discardPendingSteeringMessages(runId);
+        if (tokenExhausted) {
+            this.#pauseActiveGoal();
+            this.#append("run_error", {
+                errorMessage: SUBAGENT_TOKEN_EXHAUSTED_ERROR,
+                modelLocked: this.#modelLocked(),
+                runId,
+            });
+            this.#latestMetadataBoundaryRunId = runId;
+            this.#restartMetadataSettlement();
+            this.#agentManager?.recordChanged(this);
+            return "error";
+        }
         this.#append("run_finished", {
             agentRunId: result.runId,
             modelLocked: this.#modelLocked(),
@@ -3377,6 +3398,7 @@ export class InMemorySession {
         this.#latestMetadataBoundaryRunId = runId;
         this.#restartMetadataSettlement();
         if (this.isSubagent()) this.#agentManager?.recordChanged(this);
+        return stopReason === "aborted" ? "aborted" : "completed";
     }
 
     async #observeProviderQuota(
@@ -3975,8 +3997,8 @@ export class InMemorySession {
                     quotaObservationId,
                     "after",
                 );
-                this.#appendRunFinished(queued.runId, result);
-                if (result.stopReason !== "aborted" && result.stopReason !== "error") {
+                const completionStatus = this.#appendRunFinished(queued.runId, result);
+                if (completionStatus === "completed" && result.stopReason !== "error") {
                     this.#continueGoalIfIdle();
                 }
                 break;

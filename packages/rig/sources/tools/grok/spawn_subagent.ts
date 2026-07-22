@@ -53,6 +53,9 @@ export const grokSpawnSubagentTool = defineTool({
             },
             execution.signal,
         );
+        if (!background && result.status !== "completed") {
+            throw new Error(result.output);
+        }
         return {
             subagent_id: result.sessionId,
             task_name: result.taskName,
