@@ -64,6 +64,17 @@ jobs:
               env:
                   TARGET: ${{ matrix.target }}
 
+            - name: Enable Bubblewrap namespaces for the sandbox smoke test
+              if: runner.os == 'Linux'
+              shell: bash
+              run: |
+                  if sysctl -N kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+                      sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+                  fi
+                  if sysctl -N kernel.unprivileged_userns_clone >/dev/null 2>&1; then
+                      sudo sysctl -w kernel.unprivileged_userns_clone=1
+                  fi
+
             - name: Download verified OpenAI V8 build
               if: runner.os != 'Windows'
               shell: bash
