@@ -213,6 +213,62 @@ describe("createOpenAIResponsesStream", () => {
         });
     });
 
+    it("normalizes a client tool search call for deferred Bedrock tools", async () => {
+        const stream = createOpenAIResponsesStream({
+            createResponseStream: () =>
+                responseEvents(
+                    {
+                        type: "response.output_item.added",
+                        output_index: 0,
+                        item: {
+                            type: "tool_search_call",
+                            id: "tool-search-item",
+                            call_id: "tool-search-call",
+                            execution: "client",
+                            status: "completed",
+                            arguments: { query: "spawn subagent", limit: 8 },
+                        },
+                    },
+                    {
+                        type: "response.output_item.done",
+                        output_index: 0,
+                        item: {
+                            type: "tool_search_call",
+                            id: "tool-search-item",
+                            call_id: "tool-search-call",
+                            execution: "client",
+                            status: "completed",
+                            arguments: { query: "spawn subagent", limit: 8 },
+                        },
+                    },
+                    {
+                        type: "response.completed",
+                        response: {
+                            id: "response-search",
+                            model: "api-model",
+                            status: "completed",
+                        },
+                    },
+                ),
+            failureMessage: "Provider failed.",
+            modelId: "openai/gpt-5.6-sol",
+            providerId: "bedrock",
+        });
+
+        await expect(stream.result()).resolves.toMatchObject({
+            content: [
+                {
+                    type: "toolCall",
+                    id: "tool-search-call",
+                    kind: "tool_search",
+                    name: "tool_search",
+                    arguments: { query: "spawn subagent", limit: 8 },
+                },
+            ],
+            stopReason: "toolUse",
+        });
+    });
+
     it("preserves the namespace on streamed function tool calls", async () => {
         const stream = createOpenAIResponsesStream({
             createResponseStream: () =>

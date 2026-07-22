@@ -8,13 +8,31 @@ import type {
 import type { Context } from "./types.js";
 
 export function toOpenAIResponseInput(context: Context): ResponseInput {
-    const input: ResponseInput = [];
+    const input: ResponseInput = (context.preamble ?? []).map((message) => ({
+        type: "message",
+        role: message.role,
+        content:
+            typeof message.content === "string"
+                ? [{ type: "input_text", text: message.content }]
+                : message.content.map((text) => ({ type: "input_text", text })),
+    }));
     let fallbackMessageId = 0;
     const customCallIds = new Set(
         context.messages.flatMap((message) =>
             message.role === "assistant"
                 ? message.content.flatMap((content) =>
                       content.type === "toolCall" && content.kind === "custom"
+                          ? [content.id.split("|")[0] ?? content.id]
+                          : [],
+                  )
+                : [],
+        ),
+    );
+    const toolSearchCallIds = new Set(
+        context.messages.flatMap((message) =>
+            message.role === "assistant"
+                ? message.content.flatMap((content) =>
+                      content.type === "toolCall" && content.kind === "tool_search"
                           ? [content.id.split("|")[0] ?? content.id]
                           : [],
                   )
@@ -41,6 +59,7 @@ export function toOpenAIResponseInput(context: Context): ResponseInput {
                 continue;
             }
             input.push({
+                type: "message",
                 role: "user",
                 content:
                     typeof message.content === "string"
@@ -65,6 +84,23 @@ export function toOpenAIResponseInput(context: Context): ResponseInput {
                 .map((content) => content.text)
                 .join("\n");
             const images = message.content.filter((content) => content.type === "image");
+            if (toolSearchCallIds.has(callId ?? message.toolCallId)) {
+                let tools: unknown[] = [];
+                try {
+                    const parsed = JSON.parse(text) as { tools?: unknown[] };
+                    tools = parsed.tools ?? [];
+                } catch {
+                    // A failed tool search returns no deferred definitions.
+                }
+                input.push({
+                    type: "tool_search_output",
+                    call_id: callId ?? message.toolCallId,
+                    status: message.isError ? "incomplete" : "completed",
+                    execution: "client",
+                    tools,
+                } as ResponseInputItem);
+                continue;
+            }
             input.push({
                 type: customCallIds.has(callId ?? message.toolCallId)
                     ? "custom_tool_call_output"
@@ -103,6 +139,16 @@ export function toOpenAIResponseInput(context: Context): ResponseInput {
 
             if (content.type === "toolCall") {
                 const [callId, itemId] = content.id.split("|");
+                if (content.kind === "tool_search") {
+                    input.push({
+                        type: "tool_search_call",
+                        call_id: callId ?? content.id,
+                        execution: "client",
+                        status: "completed",
+                        arguments: content.arguments,
+                    } as ResponseInputItem);
+                    continue;
+                }
                 input.push(
                     content.kind === "custom"
                         ? {

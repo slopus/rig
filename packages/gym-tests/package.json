@@ -14,7 +14,7 @@
         "test:gym:docker": "pnpm run prepare:image && RIG_GYM_SKIP_BUILD=1 node runGymLane.ts docker"
     },
     "dependencies": {
-        "@openai/codex": "0.144.3"
+        "@openai/codex": "0.145.0"
     },
     "devDependencies": {
         "@earendil-works/pi-tui": "^0.80.3",

@@ -81,15 +81,30 @@ describe("modelProfiles", () => {
         }
     });
 
-    it("does not inherit Codex Code Mode metadata for Bedrock OpenAI models", () => {
+    it("records the official Codex Bedrock prompt and direct Responses metadata", () => {
         const bedrockOpenai = modelProfiles.filter(
             (profile) => profile.providerType === "bedrock" && profile.vendor === "openai",
         );
 
         expect(bedrockOpenai).toHaveLength(3);
         for (const profile of bedrockOpenai) {
-            expect(profile.parameters.referenceClient).toBeUndefined();
-            expect(profile.prompt.original).toBeUndefined();
+            expect(profile.parameters.referenceClient?.request).toMatchObject({
+                applyPatchToolType: "freeform",
+                defaultReasoningSummary: "none",
+                defaultVerbosity: "low",
+                multiAgentVersion: "v1",
+                parallelToolCalls: true,
+                supportsSearchTool: true,
+                toolMode: null,
+                useResponsesLite: false,
+            });
+            expect(profile.prompt.original?.text).toContain(
+                "You are Codex, a coding agent based on GPT-5.",
+            );
+            expect(profile.prompt.original?.provenance).toMatchObject({
+                client: "Codex CLI",
+                version: "0.145.0",
+            });
         }
     });
 

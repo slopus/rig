@@ -42,6 +42,7 @@ import { createAvailableGrokXSearchTool } from "./createAvailableGrokXSearchTool
 import { selectCollaborationToolsForModel } from "./selectCollaborationToolsForModel.js";
 import { resolveModelProfileForProvider } from "../profiles/impl/resolveModelProfileForProvider.js";
 import { CodeModeAgentToolAdapter } from "../code-mode/CodeModeAgentToolAdapter.js";
+import { CodexBedrockToolSearchAdapter } from "../code-mode/CodexBedrockToolSearchAdapter.js";
 
 export interface CreateCodingAssistantAgentOptions {
     appendSystemPrompt?: string;
@@ -220,6 +221,8 @@ export function createCodingAssistantAgent(
             ? toolsWithoutGoals
             : [...toolsWithoutGoals, ...(usesKimiTools ? kimiGoalTools : goalTools)];
     const referenceRequest = modelProfile?.parameters.referenceClient?.request;
+    const usesOfficialCodexBedrockPrompt =
+        modelProfile?.providerType === "bedrock" && modelProfile.vendor === "openai";
     const usesCodeMode = referenceRequest?.toolMode === "code_mode_only";
     const usesNamespacedCollaboration = referenceRequest?.multiAgentVersion === "v2";
     const collaborationNames = new Set(availableCollaborationTools.map((tool) => tool.name));
@@ -254,7 +257,9 @@ export function createCodingAssistantAgent(
         id: agentId,
         ...(options.instructions !== undefined
             ? { instructions: options.instructions }
-            : modelProfile?.providerType === "claude" && modelProfile.prompt.original !== undefined
+            : (modelProfile?.providerType === "claude" &&
+                    modelProfile.prompt.original !== undefined) ||
+                usesOfficialCodexBedrockPrompt
               ? {}
               : { instructions: createDefaultInstructions(runtimeCwd) }),
         ...(options.systemPrompt !== undefined ? { systemPrompt: options.systemPrompt } : {}),
@@ -267,7 +272,9 @@ export function createCodingAssistantAgent(
         tools,
         ...(usesCodeMode
             ? { toolAdapter: new CodeModeAgentToolAdapter({ sessionId: agentId }) }
-            : {}),
+            : usesOfficialCodexBedrockPrompt && availableCollaborationTools.length > 0
+              ? { toolAdapter: new CodexBedrockToolSearchAdapter() }
+              : {}),
         printToConsole: false,
     };
     if (options.effort !== undefined) {

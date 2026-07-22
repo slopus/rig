@@ -7,7 +7,7 @@ import {
 import type { AgentContext } from "./context/AgentContext.js";
 import { runAgentLoop, type AgentLoopEvent, type AgentLoopResult } from "./loop.js";
 import { toProviderMessages, toProviderTool } from "./loop.js";
-import { createSystemPrompt } from "./createSystemPrompt.js";
+import { createProviderPrompt } from "./createProviderPrompt.js";
 import { prepareProviderMessageImages } from "./prepareProviderMessageImages.js";
 import { createDebugProvider, type DebugLog } from "../debug/index.js";
 import { printAgentMessageToConsole, type AgentConsole } from "./printAgentMessageToConsole.js";
@@ -615,7 +615,7 @@ export class Agent {
             createProviderContext:
                 options.createProviderContext ??
                 (async (messages) => {
-                    const systemPrompt = await createSystemPrompt({
+                    const providerPrompt = await createProviderPrompt({
                         ...(this.#appendSystemPrompt !== undefined
                             ? { appendSystemPrompt: this.#appendSystemPrompt }
                             : {}),
@@ -646,7 +646,7 @@ export class Agent {
                         this.#toolAdapter?.adapt(this.#tools).exposedTools ?? this.#tools;
                     const providerTools = exposedTools.map(toProviderTool);
                     return {
-                        ...(systemPrompt === undefined ? {} : { systemPrompt }),
+                        ...providerPrompt,
                         messages: preparedMessages,
                         ...(providerTools.length === 0 ? {} : { tools: providerTools }),
                     };

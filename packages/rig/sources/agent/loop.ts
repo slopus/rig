@@ -18,7 +18,7 @@ import { isRetryableInferenceError } from "./isRetryableInferenceError.js";
 import { prepareProviderMessageImages } from "./prepareProviderMessageImages.js";
 import { presentToolCall, type PresentedToolCall } from "./presentToolCall.js";
 import { replaceLastTurnToolResultImages } from "./replaceLastTurnToolResultImages.js";
-import { createSystemPrompt } from "./createSystemPrompt.js";
+import { createProviderPrompt, type ProviderPrompt } from "./createProviderPrompt.js";
 import { ToolLockManager } from "./ToolLockManager.js";
 import { toToolExecutionEndResult } from "./toToolExecutionEndResult.js";
 import { errorToMessage } from "../errorToMessage.js";
@@ -209,7 +209,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         now,
         providerId: options.provider.id,
     });
-    const systemPrompt = await createSystemPrompt({
+    const providerPrompt = await createProviderPrompt({
         ...(options.appendSystemPrompt !== undefined
             ? { appendSystemPrompt: options.appendSystemPrompt }
             : {}),
@@ -242,7 +242,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
             options,
             providerMessages,
             providerTools,
-            systemPrompt,
+            providerPrompt,
         });
 
     let iteration = 0;
@@ -280,7 +280,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                     );
                     const stream = options.provider.stream(
                         model,
-                        toProviderContext(systemPrompt, preparedProviderMessages, providerTools),
+                        toProviderContext(providerPrompt, preparedProviderMessages, providerTools),
                         toStreamOptions(options, startDate),
                     );
 
@@ -918,7 +918,7 @@ async function compactLoopContext(options: {
     options: RunAgentLoopOptions;
     providerMessages: ProviderMessage[];
     providerTools: readonly ProviderTool[];
-    systemPrompt: string | undefined;
+    providerPrompt: ProviderPrompt;
 }): Promise<boolean> {
     const result = await options.options.compactContext?.(options.contextTranscript, {
         ...options.compaction,
@@ -932,7 +932,11 @@ async function compactLoopContext(options: {
                 options.providerMessages.slice(0, providerMessageCount),
                 options.options.provider.imageProfile(options.model),
             );
-            return toProviderContext(options.systemPrompt, preparedMessages, options.providerTools);
+            return toProviderContext(
+                options.providerPrompt,
+                preparedMessages,
+                options.providerTools,
+            );
         },
     });
     if (result?.compacted !== true) return false;
@@ -1029,12 +1033,12 @@ function toStreamOptions(options: RunAgentLoopOptions, startDate: string): Strea
 }
 
 function toProviderContext(
-    systemPrompt: string | undefined,
+    providerPrompt: ProviderPrompt,
     messages: readonly ProviderMessage[],
     tools: readonly ProviderTool[],
 ): ProviderContext {
     return {
-        ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+        ...providerPrompt,
         messages: [...messages],
         ...(tools.length > 0 ? { tools: [...tools] } : {}),
     };

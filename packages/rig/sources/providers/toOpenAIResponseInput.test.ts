@@ -74,7 +74,7 @@ describe("toOpenAIResponseInput", () => {
         };
 
         expect(toOpenAIResponseInput(context)).toEqual([
-            { role: "user", content: "Run it." },
+            { type: "message", role: "user", content: "Run it." },
             {
                 type: "custom_tool_call",
                 call_id: "call_exec",
@@ -135,6 +135,62 @@ describe("toOpenAIResponseInput", () => {
                 type: "function_call_output",
                 call_id: "call_spawn",
                 output: "started",
+            },
+        ]);
+    });
+
+    it("continues official client tool searches with loaded namespace definitions", () => {
+        const namespace = {
+            kind: "namespace" as const,
+            name: "multi_agent_v1",
+            description: "Tools for spawning and managing sub-agents.",
+            tools: [],
+        };
+        const context: Context = {
+            messages: [
+                {
+                    role: "assistant",
+                    api: "openai-responses",
+                    provider: "bedrock",
+                    model: "openai/gpt-5.6-sol",
+                    content: [
+                        {
+                            type: "toolCall",
+                            kind: "tool_search",
+                            id: "search-subagents-1",
+                            name: "tool_search",
+                            arguments: { query: "spawn and manage sub-agents", limit: 8 },
+                        },
+                    ],
+                    stopReason: "toolUse",
+                    timestamp: 1,
+                    usage: zeroUsage(),
+                },
+                {
+                    role: "toolResult",
+                    toolCallId: "search-subagents-1",
+                    toolName: "tool_search",
+                    content: [{ type: "text", text: JSON.stringify({ tools: [namespace] }) }],
+                    isError: false,
+                    timestamp: 2,
+                },
+            ],
+        };
+
+        expect(toOpenAIResponseInput(context)).toEqual([
+            {
+                type: "tool_search_call",
+                call_id: "search-subagents-1",
+                execution: "client",
+                status: "completed",
+                arguments: { query: "spawn and manage sub-agents", limit: 8 },
+            },
+            {
+                type: "tool_search_output",
+                call_id: "search-subagents-1",
+                execution: "client",
+                status: "completed",
+                tools: [namespace],
             },
         ]);
     });

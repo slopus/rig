@@ -4,9 +4,10 @@ import { claudeAnthropicSonnet5Profile } from "../claude-sonnet-5.js";
 import { codexOpenaiGpt56LunaProfile } from "../codex-gpt-5-6-luna.js";
 import { codexOpenaiGpt56SolProfile } from "../codex-gpt-5-6-sol.js";
 import { codexOpenaiGpt56TerraProfile } from "../codex-gpt-5-6-terra.js";
+import { codexBedrockPrompt } from "../codex/bedrockPrompt.js";
 import type { Model } from "../../providers/types.js";
 import { createModelProfileVariant } from "./createModelProfileVariant.js";
-import { noCapturedPrompt } from "./noCapturedPrompt.js";
+import { codexBedrockReferenceClient } from "./codexBedrockReferenceClient.js";
 
 // Bedrock transport variants reuse vendor model limits and ordinary tool shapes without
 // inheriting transport-specific client behavior. In particular, Bedrock OpenAI models use
@@ -62,16 +63,16 @@ export const bedrockOpenaiGpt56LunaProfile = createModelProfileVariant(
         profileType: "bedrock",
         wireMode: "bedrock-mantle-or-runtime",
         model: modelBedrockOpenaiGpt56Luna,
-        prompt: noCapturedPrompt,
-        referenceClient: null,
+        prompt: codexBedrockPrompt,
+        referenceClient: codexBedrockReferenceClient(modelBedrockOpenaiGpt56Luna),
     },
 );
 export const bedrockOpenaiGpt56SolProfile = createModelProfileVariant(codexOpenaiGpt56SolProfile, {
     profileType: "bedrock",
     wireMode: "bedrock-mantle-or-runtime",
     model: modelBedrockOpenaiGpt56Sol,
-    prompt: noCapturedPrompt,
-    referenceClient: null,
+    prompt: codexBedrockPrompt,
+    referenceClient: codexBedrockReferenceClient(modelBedrockOpenaiGpt56Sol),
 });
 export const bedrockOpenaiGpt56TerraProfile = createModelProfileVariant(
     codexOpenaiGpt56TerraProfile,
@@ -79,7 +80,7 @@ export const bedrockOpenaiGpt56TerraProfile = createModelProfileVariant(
         profileType: "bedrock",
         wireMode: "bedrock-mantle-or-runtime",
         model: modelBedrockOpenaiGpt56Terra,
-        prompt: noCapturedPrompt,
-        referenceClient: null,
+        prompt: codexBedrockPrompt,
+        referenceClient: codexBedrockReferenceClient(modelBedrockOpenaiGpt56Terra),
     },
 );

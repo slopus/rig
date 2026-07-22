@@ -56,6 +56,7 @@ export function createConfiguredProvider(options: {
                             : { sessionId: options.sessionId }),
                     })
                   : createConfiguredBedrockProvider({
+                        ...(options.sessionId === undefined ? {} : { agentId: options.sessionId }),
                         config: options.config,
                         env: options.env,
                         id: options.id,

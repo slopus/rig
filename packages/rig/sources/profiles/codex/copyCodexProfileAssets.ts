@@ -24,6 +24,22 @@ export async function copyCodexProfileAssets(destinationDirectory: string): Prom
             await copyFile(join(sourceDirectory, fileName), join(destinationDirectory, fileName));
         }
     }
+    for (const suffix of [".golden.md", ".md"] as const) {
+        const fileName = `codex-bedrock-gpt-5-5${suffix}`;
+        await copyFile(join(sourceDirectory, fileName), join(destinationDirectory, fileName));
+    }
+    await copyFile(
+        join(sourceDirectory, "codex-bedrock-deferred-tools.json"),
+        join(destinationDirectory, "codex-bedrock-deferred-tools.json"),
+    );
+    await copyFile(
+        join(sourceDirectory, "codex-bedrock-tools.json"),
+        join(destinationDirectory, "codex-bedrock-tools.json"),
+    );
+    await copyFile(
+        join(sourceDirectory, "codex-skills-instructions.template.md"),
+        join(destinationDirectory, "codex-skills-instructions.template.md"),
+    );
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

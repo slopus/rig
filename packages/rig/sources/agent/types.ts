@@ -42,7 +42,7 @@ export interface ToolCallBlock {
     name: string;
     namespace?: string;
     arguments: unknown;
-    kind?: "custom" | "function";
+    kind?: "custom" | "function" | "tool_search";
     /** Durable model-invisible data defined by the tool for rich transcript rendering. */
     presentation?: ToolCallPresentation;
 }

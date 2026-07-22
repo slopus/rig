@@ -4,6 +4,7 @@ import { readConfiguredBedrockBearerToken } from "./readConfiguredBedrockBearerT
 import type { Provider } from "./types.js";
 
 export function createConfiguredBedrockProvider(options: {
+    agentId?: string;
     config: ConfigBedrockProvider;
     env: NodeJS.ProcessEnv;
     id: string;
@@ -11,6 +12,7 @@ export function createConfiguredBedrockProvider(options: {
     const bearerToken = readConfiguredBedrockBearerToken(options.config, options.env);
     if (bearerToken === undefined) return undefined;
     return createBedrockProvider({
+        ...(options.agentId === undefined ? {} : { agentId: options.agentId }),
         bearerToken,
         env: options.env,
         id: options.id,

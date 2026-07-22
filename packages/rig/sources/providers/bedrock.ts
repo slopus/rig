@@ -1,4 +1,5 @@
 import { BEDROCK_MODEL_ROUTES } from "./bedrock-model-routes.js";
+import { randomUUID } from "node:crypto";
 import type { BedrockModelOverrides } from "./bedrock-model-overrides.js";
 import { createBedrockMantleStream } from "./createBedrockMantleStream.js";
 import {
@@ -21,6 +22,7 @@ import { defineProvider, type Provider } from "./types.js";
 export const BEDROCK_PROVIDER_ID = "bedrock";
 
 export interface BedrockProviderOptions {
+    agentId?: string;
     bearerToken?: string;
     env?: NodeJS.ProcessEnv;
     id?: string;
@@ -43,6 +45,7 @@ export function createBedrockProvider(options: BedrockProviderOptions = {}): Pro
     }
 
     const defaultRegion = options.region?.trim() || resolveBedrockRegion(env);
+    const installationId = randomUUID();
     const mantleClients = new Map<string, BedrockOpenAIClient>();
     const routes = BEDROCK_MODEL_ROUTES.filter((route) => {
         const endpoint = resolveBedrockModelEndpoint(route.model.id, options.modelOverrides);
@@ -112,9 +115,11 @@ export function createBedrockProvider(options: BedrockProviderOptions = {}): Pro
                 mantleClients.set(mantleClientKey, mantleClient);
             }
             return createBedrockMantleStream({
+                ...(options.agentId === undefined ? {} : { agentId: options.agentId }),
                 bearerToken,
                 client: mantleClient,
                 context,
+                installationId,
                 ...(endpoint === undefined ? {} : { endpoint }),
                 modelRoute: route,
                 region,

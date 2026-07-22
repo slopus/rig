@@ -31,5 +31,17 @@ export function toOpenAIResponsesAssistantContent(
             arguments: { input: item.input },
         };
     }
+    if (item.type === "tool_search_call") {
+        return {
+            type: "toolCall",
+            id: item.call_id ?? item.id,
+            kind: "tool_search",
+            name: "tool_search",
+            arguments:
+                typeof item.arguments === "object" && item.arguments !== null
+                    ? (item.arguments as Record<string, unknown>)
+                    : {},
+        };
+    }
     return undefined;
 }

@@ -155,7 +155,7 @@ describe("Codex source profile artifacts", () => {
         try {
             await copyCodexProfileAssets(destination);
             const copied = (await readdir(destination)).sort();
-            expect(copied).toHaveLength(CODEX_PROFILE_ARTIFACTS.length * 7);
+            expect(copied).toHaveLength(CODEX_PROFILE_ARTIFACTS.length * 7 + 5);
             for (const fileName of copied) {
                 expect(await readFile(join(destination, fileName), "utf8")).toBe(
                     await readFile(new URL(`./${fileName}`, import.meta.url), "utf8"),

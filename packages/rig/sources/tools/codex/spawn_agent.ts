@@ -51,10 +51,15 @@ export const codexSpawnAgentTool = defineTool({
             message,
             model,
             provider,
+            service_tier,
             task_name,
             encrypted_message,
             last_n_turns,
-        } = args as typeof args & { encrypted_message?: string; last_n_turns?: number };
+        } = args as typeof args & {
+            encrypted_message?: string;
+            last_n_turns?: number;
+            service_tier?: "fast";
+        };
         const parentMessages = execution.messages?.slice(0, -1);
         const result = await requireSubagentContext(context).spawn({
             background: true,
@@ -71,6 +76,7 @@ export const codexSpawnAgentTool = defineTool({
                 : { parentToolCallId: execution.toolCallId }),
             prompt: message,
             ...(provider === undefined ? {} : { providerId: provider }),
+            ...(service_tier === undefined ? {} : { serviceTier: service_tier }),
             taskName: task_name,
         });
         return { agent_id: result.sessionId, path: result.path, task_name: result.taskName };

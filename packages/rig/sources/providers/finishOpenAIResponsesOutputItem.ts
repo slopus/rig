@@ -102,5 +102,29 @@ export function finishOpenAIResponsesOutputItem(
         };
     }
 
+    if (item.type === "tool_search_call" && content?.type === "toolCall") {
+        const finished: ToolCall = {
+            ...content,
+            id: item.call_id ?? item.id,
+            kind: "tool_search",
+            name: "tool_search",
+            arguments:
+                typeof item.arguments === "object" && item.arguments !== null
+                    ? (item.arguments as Record<string, unknown>)
+                    : {},
+        };
+        partial.content = replaceAssistantContent(
+            partial.content,
+            activeItem.contentIndex,
+            finished,
+        );
+        return {
+            type: "toolcall_end",
+            contentIndex: activeItem.contentIndex,
+            toolCall: finished,
+            partial,
+        };
+    }
+
     return undefined;
 }

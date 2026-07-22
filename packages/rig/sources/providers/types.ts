@@ -56,7 +56,7 @@ export interface ToolCall {
     name: string;
     namespace?: string;
     arguments: Record<string, unknown>;
-    kind?: "custom" | "function";
+    kind?: "custom" | "function" | "tool_search";
 }
 
 export type UserContent = TextContent | ImageContent;
@@ -108,6 +108,7 @@ export interface FunctionTool<TParameters extends TSchema = TSchema> {
     name: string;
     description: string;
     parameters: TParameters;
+    deferLoading?: boolean;
 }
 
 export interface CustomTool {
@@ -128,10 +129,19 @@ export interface NamespaceTool {
     tools: readonly (FunctionTool | CustomTool)[];
 }
 
+export interface ToolSearchTool {
+    kind: "tool_search";
+    name: "tool_search";
+    description: string;
+    execution: "client";
+    parameters: TSchema;
+}
+
 export type Tool<TParameters extends TSchema = TSchema> =
     | FunctionTool<TParameters>
     | CustomTool
-    | NamespaceTool;
+    | NamespaceTool
+    | ToolSearchTool;
 
 export interface XSearchServerTool {
     type: "x_search";
@@ -145,8 +155,14 @@ export interface XSearchServerTool {
 
 export type ServerTool = XSearchServerTool;
 
+export interface PreambleMessage {
+    role: "developer" | "user";
+    content: string | readonly string[];
+}
+
 export interface Context {
     systemPrompt?: string;
+    preamble?: readonly PreambleMessage[];
     messages: readonly Message[];
     tools?: readonly Tool[];
     serverTools?: readonly ServerTool[];

@@ -424,6 +424,7 @@ export class AgentSessionManager {
                 ...(request.effort === undefined ? {} : { effort: request.effort }),
                 ...(request.modelId === undefined ? {} : { modelId: request.modelId }),
                 ...(childProviderId === undefined ? {} : { providerId: childProviderId }),
+                ...(request.serviceTier === undefined ? {} : { serviceTier: request.serviceTier }),
             };
             child =
                 request.contextMode === "parent"

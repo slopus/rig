@@ -247,6 +247,62 @@ describe("Amazon Bedrock provider", () => {
         expect(request.max_output_tokens).toBeUndefined();
     });
 
+    it("matches the official Codex Bedrock Responses request controls", () => {
+        const modelRoute = getBedrockModelRoute(modelOpenaiGpt56Sol.id);
+        expect(modelRoute).toBeDefined();
+
+        const request = createBedrockOpenAIRequest({
+            agentId: "agent-123",
+            context: {
+                messages: [],
+                tools: [
+                    {
+                        kind: "custom",
+                        name: "apply_patch",
+                        description: "Apply a patch.",
+                        format: {
+                            type: "grammar",
+                            syntax: "lark",
+                            definition: "start: /[\\s\\S]+/",
+                        },
+                    },
+                ],
+            },
+            installationId: "installation-123",
+            modelRoute: modelRoute!,
+            streamOptions: { sessionId: "turn-123", thinking: "low" },
+            turnStartedAt: 123_456,
+        });
+
+        expect(request).toMatchObject({
+            client_metadata: {
+                session_id: "agent-123",
+                thread_id: "agent-123",
+                turn_id: "turn-123",
+                "x-codex-installation-id": "installation-123",
+                "x-codex-window-id": "agent-123:0",
+            },
+            include: ["reasoning.encrypted_content"],
+            parallel_tool_calls: true,
+            prompt_cache_key: "agent-123",
+            reasoning: { effort: "low" },
+            text: { verbosity: "low" },
+            tool_choice: "auto",
+            tools: [
+                expect.objectContaining({
+                    type: "custom",
+                    name: "apply_patch",
+                    format: {
+                        type: "grammar",
+                        syntax: "lark",
+                        definition: "start: /[\\s\\S]+/",
+                    },
+                }),
+            ],
+        });
+        expect(request.reasoning).not.toHaveProperty("summary");
+    });
+
     it("uses the documented GPT-5.6 Bedrock model IDs and limits", () => {
         for (const [model, apiModelId] of [
             [modelOpenaiGpt56Sol, "openai.gpt-5.6-sol"],
@@ -274,7 +330,7 @@ describe("Amazon Bedrock provider", () => {
         });
         expect(request).toMatchObject({
             model: "openai.gpt-5.6-sol",
-            reasoning: { effort: "max", summary: "auto" },
+            reasoning: { effort: "max" },
         });
     });
 
@@ -357,7 +413,7 @@ describe("Amazon Bedrock provider", () => {
         expect(create).toHaveBeenCalledWith(
             expect.objectContaining({
                 model: "openai.gpt-5.6-sol",
-                reasoning: { effort: "xhigh", summary: "auto" },
+                reasoning: { effort: "xhigh" },
                 store: false,
                 stream: true,
             }),

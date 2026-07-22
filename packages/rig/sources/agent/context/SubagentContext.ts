@@ -1,4 +1,5 @@
 import type { Message } from "../types.js";
+import type { ServiceTier } from "../../providers/types.js";
 
 export type SubagentRunStatus = "aborted" | "completed" | "error" | "running" | "suspended";
 export type SubagentContextMode = "parent" | "task";
@@ -33,6 +34,7 @@ export interface SpawnSubagentRequest {
     encryptedPrompt?: string;
     modelId?: string;
     providerId?: string;
+    serviceTier?: ServiceTier;
     parentToolCallId?: string;
     prompt: string;
     taskName?: string;
