@@ -14,7 +14,8 @@ import { sendShellSessionInput } from "./sendShellSessionInput.js";
 export const codexWriteStdinTool = defineTool({
     name: "write_stdin",
     label: "write_stdin",
-    description: "Writes characters to an existing shell session and returns recent output.",
+    description:
+        "Writes to an existing shell session and returns recent output. Use it for REPLs started by exec_command; end each cell with a newline.",
     arguments: Type.Object({
         session_id: Type.Number({ description: "Identifier of the running shell session." }),
         chars: Type.Optional(
