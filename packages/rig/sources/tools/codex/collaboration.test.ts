@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { Value } from "@sinclair/typebox/value";
 
 import type { ManagedSubagent } from "../../agent/index.js";
 import { claudeSendMessageTool } from "../claude/SendMessage.js";
@@ -106,7 +107,10 @@ describe("Codex collaboration tools", () => {
         );
         expect(resume).toHaveBeenCalledWith("agent-1");
         await expect(
-            codexWaitAgentTool.execute({ timeout_ms: 1 }, harness.context, {}),
+            codexWaitAgentTool.execute({ timeout_ms: 300_000 }, harness.context, {}),
         ).resolves.toEqual({ agents: [agent], timed_out: false });
+        expect(Value.Check(codexWaitAgentTool.arguments, { timeout_ms: 300_000 })).toBe(true);
+        expect(Value.Check(codexWaitAgentTool.arguments, { timeout_ms: 3_600_001 })).toBe(false);
+        expect(codexWaitAgentTool.steerable).toBe(true);
     });
 });

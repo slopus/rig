@@ -18,6 +18,7 @@ import {
     kimiGoalTools,
     kimiReadTool,
     kimiSendMessageTool,
+    kimiTaskOutputTool,
     kimiTodoListTool,
 } from "./index.js";
 
@@ -59,6 +60,7 @@ describe("Kimi tool contracts", () => {
         expect(kimiFetchUrlTool.shouldReviewInAutoMode).toBe(
             claudeWebFetchTool.shouldReviewInAutoMode,
         );
+        expect(kimiTaskOutputTool.steerable).toBe(true);
         expect(kimiGoalTools[0]?.execute).toBe(createGoalTool.execute);
     });
 

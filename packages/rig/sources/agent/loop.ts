@@ -97,6 +97,8 @@ export interface RunAgentLoopOptions {
     /** Checkpoints model-only context before a recovery inference begins. */
     onContextChanged?: (messages: readonly Message[]) => void | Promise<void>;
     takeSteering?: () => readonly UserMessage[];
+    /** Returns the signal aborted by the next scheduled steering message. */
+    getSteeringSignal?: () => AbortSignal;
     context: AgentContext;
 }
 
@@ -656,6 +658,10 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                                 toolCall,
                             };
                         }
+                        const tool = resolveTool(toolCall, toolsByName);
+                        const executionSignal = tool?.steerable
+                            ? combineAbortSignals(options.signal, options.getSteeringSignal?.())
+                            : options.signal;
                         const result = await executeToolCall(toolCall, toolsByName, toolContext, {
                             batchId: agentMessage.id,
                             messages: transcript,
@@ -717,6 +723,9 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                                     toolContext,
                                     toolLocks,
                                     toolsByName,
+                                    ...(options.getSteeringSignal === undefined
+                                        ? {}
+                                        : { getSteeringSignal: options.getSteeringSignal }),
                                     ...(options.onEvent === undefined
                                         ? {}
                                         : { onEvent: options.onEvent }),
@@ -724,7 +733,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                                         ? {}
                                         : { signal: options.signal }),
                                 }),
-                            ...(options.signal === undefined ? {} : { signal: options.signal }),
+                            ...(executionSignal === undefined ? {} : { signal: executionSignal }),
                         });
                         const completedBeforeAbort = options.signal?.aborted !== true;
                         const durableResult =
@@ -1319,6 +1328,7 @@ async function invokeNestedTool(
         now: () => number;
         onEvent?: (event: AgentLoopEvent) => void | Promise<void>;
         provider: Provider;
+        getSteeringSignal?: () => AbortSignal;
         signal?: AbortSignal;
         startDate: string;
         toolContext: AgentContext;
@@ -1326,7 +1336,7 @@ async function invokeNestedTool(
         toolsByName: ReadonlyMap<string, AnyDefinedTool>;
     },
 ): Promise<unknown> {
-    const signal = combineAbortSignals(options.signal, invocation.signal);
+    const invocationSignal = combineAbortSignals(options.signal, invocation.signal);
     const toolCall: ProviderToolCall = {
         type: "toolCall",
         id: invocation.toolCallId,
@@ -1334,6 +1344,9 @@ async function invokeNestedTool(
         ...(invocation.namespace === undefined ? {} : { namespace: invocation.namespace }),
         arguments: invocation.arguments as Record<string, unknown>,
     };
+    const signal = resolveTool(toolCall, options.toolsByName)?.steerable
+        ? combineAbortSignals(invocationSignal, options.getSteeringSignal?.())
+        : invocationSignal;
     await ignoreOptionalFailure(() =>
         options.onEvent?.({ type: "tool_execution_start", toolCall }),
     );
@@ -1594,10 +1607,18 @@ async function executeToolCall(
             runWithFullAccess && context.permissions !== undefined
                 ? await context.permissions.runWithMode("full_access", run)
                 : await run();
+        options.signal?.throwIfAborted();
         await options.onRawResult?.(result);
         return createToolResultBlock(tool, toolCall.arguments, result, toolCall.id);
     } catch (error) {
         await options.onError?.(error);
+        if (options.signal?.aborted) {
+            return createErrorToolResultBlock(
+                toolCall,
+                tool.interruptionMessage ?? "Interrupted by user.",
+                { kind: "interrupted" },
+            );
+        }
         const message = errorToMessage(error);
         return createErrorToolResultBlock(toolCall, `Tool '${tool.name}' failed: ${message}`, {
             kind: "execution_failed",

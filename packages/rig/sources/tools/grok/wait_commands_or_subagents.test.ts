@@ -1,5 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 
+import { Value } from "@sinclair/typebox/value";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ManagedSubagent, SubagentContext } from "../../agent/index.js";
@@ -7,6 +8,24 @@ import { createJustBashToolHarness } from "../testing/createJustBashToolHarness.
 import { grokWaitCommandsOrSubagentsTool } from "./wait_commands_or_subagents.js";
 
 describe("wait_commands_or_subagents", () => {
+    it("uses the shared long polling contract and is steerable", () => {
+        expect(grokWaitCommandsOrSubagentsTool.steerable).toBe(true);
+        expect(
+            Value.Check(grokWaitCommandsOrSubagentsTool.arguments, {
+                mode: "wait_any",
+                task_ids: ["agent-1"],
+                timeout_ms: 3_600_000,
+            }),
+        ).toBe(true);
+        expect(
+            Value.Check(grokWaitCommandsOrSubagentsTool.arguments, {
+                mode: "wait_any",
+                task_ids: ["agent-1"],
+                timeout_ms: 3_600_001,
+            }),
+        ).toBe(false);
+    });
+
     it("waits for a specified background command in wait_any mode", async () => {
         const harness = createJustBashToolHarness();
         let completed = false;

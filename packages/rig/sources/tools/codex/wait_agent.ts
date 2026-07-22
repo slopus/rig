@@ -1,5 +1,10 @@
 import { Type } from "@sinclair/typebox";
 
+import {
+    DEFAULT_SUBAGENT_WAIT_TIMEOUT_MS,
+    MAX_SUBAGENT_WAIT_TIMEOUT_MS,
+    MIN_SUBAGENT_WAIT_TIMEOUT_MS,
+} from "../../agent/context/subagentWaitTimeouts.js";
 import { defineTool } from "../../agent/types.js";
 import { managedSubagentSchema } from "./subagentSchemas.js";
 import { requireSubagentContext } from "./requireSubagentContext.js";
@@ -8,13 +13,13 @@ export const codexWaitAgentTool = defineTool({
     name: "wait_agent",
     label: "wait_agent",
     description:
-        "Wait for a subagent status change or completion. Returns early when an agent updates or the wait is cancelled.",
+        "Wait for a subagent status change or completion. Returns early when an agent updates, new user input arrives, or the wait is cancelled.",
     arguments: Type.Object({
         timeout_ms: Type.Optional(
             Type.Number({
-                description: "Maximum wait in milliseconds, from 0 to 60000.",
-                maximum: 60_000,
-                minimum: 0,
+                description: `Maximum wait in milliseconds. Defaults to ${DEFAULT_SUBAGENT_WAIT_TIMEOUT_MS}, min ${MIN_SUBAGENT_WAIT_TIMEOUT_MS}, max ${MAX_SUBAGENT_WAIT_TIMEOUT_MS}.`,
+                maximum: MAX_SUBAGENT_WAIT_TIMEOUT_MS,
+                minimum: MIN_SUBAGENT_WAIT_TIMEOUT_MS,
             }),
         ),
     }),
@@ -22,7 +27,9 @@ export const codexWaitAgentTool = defineTool({
         agents: Type.Array(managedSubagentSchema),
         timed_out: Type.Boolean(),
     }),
+    interruptionMessage: "Waiting for subagents was interrupted by new input.",
     shouldReviewInAutoMode: () => false,
+    steerable: true,
     execute: async ({ timeout_ms }, context, execution) => {
         const result = await requireSubagentContext(context).wait(timeout_ms, execution.signal);
         return {

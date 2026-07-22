@@ -65,7 +65,7 @@ export function createCodexProfileSummary(options: {
         "## Tool changes",
         "",
         `- The official \`${capture.model.toolMode}\` surface selects ${officialTools}.`,
-        "- Rig now uses the same Code Mode split: raw-text `exec`, function `wait`, direct `request_user_input`, and (for v2) a top-level `collaboration` namespace. Every included reserved member uses the official captured description and parameter schema exactly.",
+        "- Rig now uses the same Code Mode split: raw-text `exec`, function `wait`, direct `request_user_input`, and (for v2) a top-level `collaboration` namespace. Reserved definitions remain close to the official captures, with Rig-specific contracts for `wait` and `request_user_input`; `wait_agent` advertises Rig's five-minute default and steering interruption behavior.",
         "- Removed because Rig does not implement the same client behavior: MCP resource list/read helpers and plugin installation; v2 also omits `send_message` because Rig's existing follow-up operation has different turn-start semantics.",
         `- Added by Rig: secret injection, workflow controls, \`resume_agent\`, richer collaboration variants, and richer execution-result fields. ${collaborationExtensionNote} \`request_user_input\` removes the official Plan-mode-only instruction because Rig deliberately has no separate Plan mode.`,
         encryptedMessageNote,

@@ -1,5 +1,5 @@
 diff --git a/codex-gpt-5-6-sol.tools.golden.json b/codex-gpt-5-6-sol.tools.json
-index 67c638f..33e5499 100644
+index 67c638f..9ef7989 100644
 --- a/codex-gpt-5-6-sol.tools.golden.json
 +++ b/codex-gpt-5-6-sol.tools.json
 @@ -2,7 +2,7 @@
@@ -170,7 +170,7 @@ index 67c638f..33e5499 100644
    },
    {
      "type": "namespace",
-@@ -118,131 +116,350 @@
+@@ -118,131 +116,352 @@
          "type": "function",
          "name": "followup_task",
          "description": "Send a follow-up task to an existing non-root target agent and trigger a turn if it is idle. If the target is already running, deliver the task promptly at message boundaries while sampling, or after the pending tool call completes.",
@@ -306,7 +306,9 @@ index 67c638f..33e5499 100644
 +          "type": "object",
 +          "properties": {
 +            "timeout_ms": {
-+              "description": "Timeout in milliseconds. Defaults to 30000, min 10000, max 3600000.",
++              "description": "Timeout in milliseconds. Defaults to 300000, min 10000, max 3600000.",
++              "maximum": 3600000,
++              "minimum": 10000,
 +              "type": "number"
 +            }
 +          }
@@ -514,16 +516,16 @@ index 67c638f..33e5499 100644
          "name": "wait_agent",
 -        "description": "Wait for a mailbox update from any live agent, including queued messages and final-status notifications. The wait also ends early when new user input is steered into the active turn. Does not return the content; returns either a summary of which agents have updates (if any), an interruption summary for steered input, or a timeout summary if no activity arrives before the deadline.",
 -        "strict": false,
-+        "description": "Wait for a subagent status change or completion. Returns early when an agent updates or the wait is cancelled.",
++        "description": "Wait for a subagent status change or completion. Returns early when an agent updates, new user input arrives, or the wait is cancelled.",
          "parameters": {
            "type": "object",
            "properties": {
              "timeout_ms": {
 -              "type": "number",
 -              "description": "Timeout in milliseconds. Defaults to 30000, min 10000, max 3600000."
-+              "description": "Maximum wait in milliseconds, from 0 to 60000.",
-+              "maximum": 60000,
-+              "minimum": 0,
++              "description": "Maximum wait in milliseconds. Defaults to 300000, min 10000, max 3600000.",
++              "maximum": 3600000,
++              "minimum": 10000,
 +              "type": "number"
              }
 -          },

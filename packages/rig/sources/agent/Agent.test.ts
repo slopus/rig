@@ -1618,6 +1618,107 @@ describe("Agent", () => {
         });
     });
 
+    it("aborts a steerable tool and continues the same run with scheduled steering", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const contexts: Context[] = [];
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream(_model, context) {
+                contexts.push(context);
+                return streamFor({
+                    role: "assistant",
+                    content:
+                        contexts.length === 1
+                            ? [
+                                  {
+                                      type: "toolCall",
+                                      id: "call-steerable-wait",
+                                      name: "steerable-wait",
+                                      arguments: {},
+                                  },
+                              ]
+                            : [{ type: "text", text: "continued after steering" }],
+                    api: "test",
+                    provider: "codex",
+                    model: model.id,
+                    usage: zeroUsage(),
+                    stopReason: contexts.length === 1 ? "toolUse" : "stop",
+                    timestamp: contexts.length,
+                });
+            },
+        });
+        const started = deferred<void>();
+        const release = deferred<void>();
+        let aborted = false;
+        const waitTool = Object.assign(
+            defineTool({
+                name: "steerable-wait",
+                label: "Steerable wait",
+                description: "Waits until steering arrives.",
+                interruptionMessage: "The wait was interrupted by new user input.",
+                arguments: Type.Object({}),
+                returnType: Type.Object({}),
+                shouldReviewInAutoMode: () => false,
+                async execute(_args, _context, execution) {
+                    started.resolve();
+                    execution.signal?.addEventListener(
+                        "abort",
+                        () => {
+                            aborted = true;
+                            release.resolve();
+                        },
+                        { once: true },
+                    );
+                    await release.promise;
+                    execution.signal?.throwIfAborted();
+                    return {};
+                },
+                toLLM: () => [],
+                toUI: () => "Wait completed.",
+                locks: [],
+            }),
+            { steerable: true },
+        );
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: createJustBashToolHarness().context,
+            tools: [waitTool],
+            printToConsole: false,
+        });
+
+        const run = agent.send("Start the steerable wait.");
+        await started.promise;
+        await agent.steer("Change direction now.");
+        try {
+            await vi.waitFor(() => expect(aborted).toBe(true), { timeout: 250 });
+        } finally {
+            release.resolve();
+        }
+        const result = await run;
+
+        expect(result.stopReason).toBe("stop");
+        expect(contexts).toHaveLength(2);
+        expect(contexts[1]?.messages.slice(-2)).toMatchObject([
+            {
+                role: "toolResult",
+                toolName: "steerable-wait",
+                isError: true,
+                content: [{ type: "text", text: "The wait was interrupted by new user input." }],
+            },
+            {
+                role: "user",
+                content: [{ type: "text", text: "Change direction now." }],
+            },
+        ]);
+    });
+
     it("emits structured tool failure details independently of display wording", async () => {
         const model = defineModel({
             id: "openai/gpt-test",

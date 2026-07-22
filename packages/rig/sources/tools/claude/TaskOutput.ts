@@ -64,7 +64,9 @@ export const claudeTaskOutputTool = defineTool({
         ),
     }),
     returnType: taskOutputReturnSchema,
+    interruptionMessage: "Waiting for background task output was interrupted by new input.",
     shouldReviewInAutoMode: () => false,
+    steerable: true,
     execute: async (
         { block = true, task_id, timeout = 30_000 },
         context,

@@ -23,7 +23,7 @@ The official prompt is [codex-gpt-5-6-terra.golden.md](./codex/codex-gpt-5-6-ter
 ## Tool changes
 
 - The official `code_mode_only` surface selects `exec`, `wait`, `request_user_input`, `collaboration`.
-- Rig now uses the same Code Mode split: raw-text `exec`, function `wait`, direct `request_user_input`, and (for v2) a top-level `collaboration` namespace. Every included reserved member uses the official captured description and parameter schema exactly.
+- Rig now uses the same Code Mode split: raw-text `exec`, function `wait`, direct `request_user_input`, and (for v2) a top-level `collaboration` namespace. Reserved definitions remain close to the official captures, with Rig-specific contracts for `wait` and `request_user_input`; `wait_agent` advertises Rig's five-minute default and steering interruption behavior.
 - Removed because Rig does not implement the same client behavior: MCP resource list/read helpers and plugin installation; v2 also omits `send_message` because Rig's existing follow-up operation has different turn-start semantics.
 - Added by Rig: secret injection, workflow controls, `resume_agent`, richer collaboration variants, and richer execution-result fields. For v2, Rig exposes these additions in a separate top-level `rig` namespace while leaving the reserved `collaboration` definitions unchanged. The `rig` agent tools use plaintext Rig session messages and support cross-model, cross-provider, and cross-region targets; their richer spawn/follow-up schemas include model, provider, and effort controls. `request_user_input` removes the official Plan-mode-only instruction because Rig deliberately has no separate Plan mode.
 - The official v2 `spawn_agent` and `followup_task` message fields remain encrypted: Rig does not inspect them and forwards them to the child as Codex `agent_message` encrypted content.
@@ -64,7 +64,7 @@ index 62d69d4..5d7e0af 100644
 
 ````diff
 diff --git a/codex-gpt-5-6-terra.tools.golden.json b/codex-gpt-5-6-terra.tools.json
-index 67c638f..33e5499 100644
+index 67c638f..9ef7989 100644
 --- a/codex-gpt-5-6-terra.tools.golden.json
 +++ b/codex-gpt-5-6-terra.tools.json
 @@ -2,7 +2,7 @@
@@ -235,7 +235,7 @@ index 67c638f..33e5499 100644
    },
    {
      "type": "namespace",
-@@ -118,131 +116,350 @@
+@@ -118,131 +116,352 @@
          "type": "function",
          "name": "followup_task",
          "description": "Send a follow-up task to an existing non-root target agent and trigger a turn if it is idle. If the target is already running, deliver the task promptly at message boundaries while sampling, or after the pending tool call completes.",
@@ -371,7 +371,9 @@ index 67c638f..33e5499 100644
 +          "type": "object",
 +          "properties": {
 +            "timeout_ms": {
-+              "description": "Timeout in milliseconds. Defaults to 30000, min 10000, max 3600000.",
++              "description": "Timeout in milliseconds. Defaults to 300000, min 10000, max 3600000.",
++              "maximum": 3600000,
++              "minimum": 10000,
 +              "type": "number"
 +            }
 +          }
@@ -579,16 +581,16 @@ index 67c638f..33e5499 100644
          "name": "wait_agent",
 -        "description": "Wait for a mailbox update from any live agent, including queued messages and final-status notifications. The wait also ends early when new user input is steered into the active turn. Does not return the content; returns either a summary of which agents have updates (if any), an interruption summary for steered input, or a timeout summary if no activity arrives before the deadline.",
 -        "strict": false,
-+        "description": "Wait for a subagent status change or completion. Returns early when an agent updates or the wait is cancelled.",
++        "description": "Wait for a subagent status change or completion. Returns early when an agent updates, new user input arrives, or the wait is cancelled.",
          "parameters": {
            "type": "object",
            "properties": {
              "timeout_ms": {
 -              "type": "number",
 -              "description": "Timeout in milliseconds. Defaults to 30000, min 10000, max 3600000."
-+              "description": "Maximum wait in milliseconds, from 0 to 60000.",
-+              "maximum": 60000,
-+              "minimum": 0,
++              "description": "Maximum wait in milliseconds. Defaults to 300000, min 10000, max 3600000.",
++              "maximum": 3600000,
++              "minimum": 10000,
 +              "type": "number"
              }
 -          },

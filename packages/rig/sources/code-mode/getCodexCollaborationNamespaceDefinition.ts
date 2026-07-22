@@ -1,5 +1,11 @@
 import { Type, type TSchema } from "@sinclair/typebox";
 
+import {
+    DEFAULT_SUBAGENT_WAIT_TIMEOUT_MS,
+    MAX_SUBAGENT_WAIT_TIMEOUT_MS,
+    MIN_SUBAGENT_WAIT_TIMEOUT_MS,
+} from "../agent/context/subagentWaitTimeouts.js";
+
 export interface CodexCollaborationNamespaceDefinition {
     description: string;
     name: string;
@@ -112,8 +118,9 @@ Note that passing \`fork_turns="none"\` will not pass any surrounding context to
             {
                 timeout_ms: Type.Optional(
                     Type.Number({
-                        description:
-                            "Timeout in milliseconds. Defaults to 30000, min 10000, max 3600000.",
+                        description: `Timeout in milliseconds. Defaults to ${DEFAULT_SUBAGENT_WAIT_TIMEOUT_MS}, min ${MIN_SUBAGENT_WAIT_TIMEOUT_MS}, max ${MAX_SUBAGENT_WAIT_TIMEOUT_MS}.`,
+                        maximum: MAX_SUBAGENT_WAIT_TIMEOUT_MS,
+                        minimum: MIN_SUBAGENT_WAIT_TIMEOUT_MS,
                     }),
                 ),
             },

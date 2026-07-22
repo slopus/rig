@@ -5,6 +5,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createUnifiedPatch } from "../impl/createUnifiedPatch.js";
+import {
+    DEFAULT_SUBAGENT_WAIT_TIMEOUT_MS,
+    MAX_SUBAGENT_WAIT_TIMEOUT_MS,
+    MIN_SUBAGENT_WAIT_TIMEOUT_MS,
+} from "../../agent/context/subagentWaitTimeouts.js";
 import { codexOpenaiGpt56LunaProfile } from "../codex-gpt-5-6-luna.js";
 import { codexOpenaiGpt56SolProfile } from "../codex-gpt-5-6-sol.js";
 import { codexOpenaiGpt56TerraProfile } from "../codex-gpt-5-6-terra.js";
@@ -38,7 +43,7 @@ const profiles: Readonly<Record<CodexProfileStem, ModelProfile>> = {
 };
 
 describe("Codex source profile artifacts", () => {
-    it("uses the official schema for every reserved collaboration member", async () => {
+    it("keeps reserved collaboration schemas official except for Rig's wait timing contract", async () => {
         for (const target of CODEX_PROFILE_ARTIFACTS.filter(
             (candidate) => candidate.multiAgentVersion === "v2",
         )) {
@@ -58,9 +63,11 @@ describe("Codex source profile artifacts", () => {
             expect(goldenTools.some((tool) => tool.name === "rig")).toBe(false);
             expect(computedMembers).toBeDefined();
             for (const member of computedMembers ?? []) {
-                expect(member).toEqual(
-                    goldenMembers?.find((golden) => golden.name === member.name),
-                );
+                const golden = goldenMembers?.find((candidate) => candidate.name === member.name);
+                if (member.name === "wait_agent") expectWaitAgentTiming(member);
+                expect(
+                    member.name === "wait_agent" ? normalizeWaitAgentTiming(member) : member,
+                ).toEqual(golden);
             }
             expect(rigMembers?.map((member) => member.name)).toEqual([
                 "workflow",
@@ -170,6 +177,44 @@ describe("Codex source profile artifacts", () => {
         }
     });
 });
+
+function expectWaitAgentTiming(member: unknown): void {
+    const timeout = (
+        member as {
+            parameters: {
+                properties: {
+                    timeout_ms: {
+                        description: string;
+                        maximum?: number;
+                        minimum?: number;
+                        type: string;
+                    };
+                };
+            };
+        }
+    ).parameters.properties.timeout_ms;
+    expect(timeout).toEqual({
+        description: `Timeout in milliseconds. Defaults to ${DEFAULT_SUBAGENT_WAIT_TIMEOUT_MS}, min ${MIN_SUBAGENT_WAIT_TIMEOUT_MS}, max ${MAX_SUBAGENT_WAIT_TIMEOUT_MS}.`,
+        maximum: MAX_SUBAGENT_WAIT_TIMEOUT_MS,
+        minimum: MIN_SUBAGENT_WAIT_TIMEOUT_MS,
+        type: "number",
+    });
+}
+
+function normalizeWaitAgentTiming<T>(member: T): T {
+    const normalized = structuredClone(member) as {
+        parameters: {
+            properties: {
+                timeout_ms: { description: string; maximum?: number; minimum?: number };
+            };
+        };
+    };
+    normalized.parameters.properties.timeout_ms.description =
+        "Timeout in milliseconds. Defaults to 30000, min 10000, max 3600000.";
+    delete normalized.parameters.properties.timeout_ms.maximum;
+    delete normalized.parameters.properties.timeout_ms.minimum;
+    return normalized as T;
+}
 
 async function artifact(stem: string, suffix: string): Promise<string> {
     return readFile(new URL(`./${stem}${suffix}`, import.meta.url), "utf8");

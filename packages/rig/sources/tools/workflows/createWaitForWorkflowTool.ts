@@ -28,6 +28,7 @@ export function createWaitForWorkflowTool(name: "WaitForWorkflow" | "wait_for_wo
         returnType: waitForWorkflowReturnSchema,
         interruptionMessage:
             "The workflow wait was cancelled by the user. The workflow is still running in the background.",
+        steerable: true,
         shouldReviewInAutoMode: () => false,
         execute: async ({ run_id }, context, execution) => {
             if (context.workflows === undefined) {

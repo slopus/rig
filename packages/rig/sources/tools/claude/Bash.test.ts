@@ -6,6 +6,10 @@ import { claudeTaskOutputTool } from "./TaskOutput.js";
 import { claudeTaskStopTool } from "./TaskStop.js";
 
 describe("Claude Code Bash tool", () => {
+    it("allows steering to interrupt passive task-output waits", () => {
+        expect(claudeTaskOutputTool.steerable).toBe(true);
+    });
+
     it("executes commands through the agent context bash", async () => {
         const harness = createJustBashToolHarness();
         const progress: string[] = [];

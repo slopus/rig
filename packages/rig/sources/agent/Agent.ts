@@ -125,6 +125,7 @@ export class Agent {
     #contextMessages: Message[] | undefined;
     #queue: QueuedAgentMessage[] = [];
     #steeringQueue: UserMessage[] = [];
+    #steeringController = new AbortController();
     #status: AgentStatus = "idle";
     #lastRunId: string | undefined;
     #activeRunId: string | undefined;
@@ -228,6 +229,9 @@ export class Agent {
     #takeSteering(): readonly UserMessage[] {
         const steering = this.#steeringQueue;
         this.#steeringQueue = [];
+        if (this.#steeringController.signal.aborted) {
+            this.#steeringController = new AbortController();
+        }
         for (const message of steering) this.#printMessage(message);
         return steering;
     }
@@ -256,6 +260,7 @@ export class Agent {
         this.#contextMessages = undefined;
         this.#queue = [];
         this.#steeringQueue = [];
+        if (this.#activeRunId === undefined) this.#steeringController = new AbortController();
         this.#lastRunId = undefined;
         this.#resetVersion += 1;
         await this.#toolAdapter?.reset?.();
@@ -330,6 +335,7 @@ export class Agent {
             throw new Error(`Agent '${this.id}' is not running`);
         }
         this.#steeringQueue.push(message);
+        this.#steeringController.abort();
     }
 
     async compact(signal?: AbortSignal): Promise<AgentCompactionResult> {
@@ -350,6 +356,7 @@ export class Agent {
             return result;
         } finally {
             this.#steeringQueue = [];
+            this.#steeringController = new AbortController();
             if (this.#activeRunId === runId) this.#activeRunId = undefined;
             if (this.#status === "running") this.#status = signal?.aborted ? "aborted" : "idle";
         }
@@ -365,6 +372,7 @@ export class Agent {
         this.#lastRunId = runId;
         this.#activeRunId = runId;
         this.#status = "running";
+        this.#steeringController = new AbortController();
         this.#drainQueueToTranscript();
         const provider =
             options.debug === undefined
@@ -426,6 +434,7 @@ export class Agent {
                     }
                 },
                 takeSteering: () => this.#takeSteering(),
+                getSteeringSignal: () => this.#steeringController.signal,
                 compactContext: async (messages, compaction) => {
                     try {
                         const result = await this.#compactMessages({
@@ -484,6 +493,7 @@ export class Agent {
                 this.#activeRunId = undefined;
             }
             this.#steeringQueue = [];
+            this.#steeringController = new AbortController();
             if (this.#resetVersion === resetVersion) {
                 this.#messages = [...result.messages];
                 if (this.#contextMessages !== undefined || contextCompactedDuringRun) {
@@ -503,6 +513,7 @@ export class Agent {
                 this.#activeRunId = undefined;
             }
             this.#steeringQueue = [];
+            this.#steeringController = new AbortController();
             if (this.#resetVersion === resetVersion) {
                 this.#status = options.signal?.aborted ? "aborted" : "idle";
             } else if (this.#status === "running") {

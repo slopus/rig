@@ -23,7 +23,7 @@ The official prompt is [codex-gpt-5-6-luna.golden.md](./codex/codex-gpt-5-6-luna
 ## Tool changes
 
 - The official `code_mode_only` surface selects `exec`, `wait`, `request_user_input`.
-- Rig now uses the same Code Mode split: raw-text `exec`, function `wait`, direct `request_user_input`, and (for v2) a top-level `collaboration` namespace. Every included reserved member uses the official captured description and parameter schema exactly.
+- Rig now uses the same Code Mode split: raw-text `exec`, function `wait`, direct `request_user_input`, and (for v2) a top-level `collaboration` namespace. Reserved definitions remain close to the official captures, with Rig-specific contracts for `wait` and `request_user_input`; `wait_agent` advertises Rig's five-minute default and steering interruption behavior.
 - Removed because Rig does not implement the same client behavior: MCP resource list/read helpers and plugin installation; v2 also omits `send_message` because Rig's existing follow-up operation has different turn-start semantics.
 - Added by Rig: secret injection, workflow controls, `resume_agent`, richer collaboration variants, and richer execution-result fields. For v1, Rig adds its collaboration and workflow operations as direct functions because that captured client surface has no v2 `collaboration` namespace. `request_user_input` removes the official Plan-mode-only instruction because Rig deliberately has no separate Plan mode.
 - The captured v1 surface has no encrypted collaboration fields; Rig's direct agent tools use plaintext Rig session messages.
@@ -64,7 +64,7 @@ index 62d69d4..5a06c40 100644
 
 ````diff
 diff --git a/codex-gpt-5-6-luna.tools.golden.json b/codex-gpt-5-6-luna.tools.json
-index 677b4e7..dfe1441 100644
+index 677b4e7..040ff24 100644
 --- a/codex-gpt-5-6-luna.tools.golden.json
 +++ b/codex-gpt-5-6-luna.tools.json
 @@ -2,7 +2,7 @@
@@ -403,14 +403,14 @@ index 677b4e7..dfe1441 100644
 +  {
 +    "type": "function",
 +    "name": "wait_agent",
-+    "description": "Wait for a subagent status change or completion. Returns early when an agent updates or the wait is cancelled.",
++    "description": "Wait for a subagent status change or completion. Returns early when an agent updates, new user input arrives, or the wait is cancelled.",
 +    "parameters": {
 +      "type": "object",
 +      "properties": {
 +        "timeout_ms": {
-+          "description": "Maximum wait in milliseconds, from 0 to 60000.",
-+          "maximum": 60000,
-+          "minimum": 0,
++          "description": "Maximum wait in milliseconds. Defaults to 300000, min 10000, max 3600000.",
++          "maximum": 3600000,
++          "minimum": 10000,
 +          "type": "number"
 +        }
 +      }

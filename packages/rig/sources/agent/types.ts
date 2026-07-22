@@ -176,6 +176,8 @@ export interface DefinedTool<
     returnType: TReturnSchema;
     /** Durable tools form a barrier after immediate calls in the same model batch. */
     execution: "immediate" | "durable";
+    /** Abort this tool, without aborting the turn, when new steering is scheduled. */
+    steerable: boolean;
     execute: (
         args: Static<TArgsSchema>,
         context: AgentContext,
@@ -222,6 +224,8 @@ export interface AnyDefinedTool {
     arguments: TSchema;
     returnType: TSchema;
     execution: "immediate" | "durable";
+    /** Abort this tool, without aborting the turn, when new steering is scheduled. */
+    steerable: boolean;
     execute: (
         args: never,
         context: AgentContext,
@@ -292,6 +296,7 @@ export function defineTool<
     describeAutoPermissionAction?: AutoPermissionActionDescriber<Static<TArgsSchema>>;
     requiresAutoOrFullAccess?: boolean;
     execution?: "immediate" | "durable";
+    steerable?: boolean;
     shouldReviewInAutoMode: AutoPermissionPredicate<Static<TArgsSchema>>;
     shouldRunInFullAccessInAutoMode?: AutoPermissionPredicate<Static<TArgsSchema>>;
     locks: readonly Lock<Static<TArgsSchema>>[];
@@ -299,6 +304,7 @@ export function defineTool<
     return {
         ...tool,
         execution: tool.execution ?? "immediate",
+        steerable: tool.steerable ?? false,
         requiresAutoOrFullAccess: tool.requiresAutoOrFullAccess ?? false,
         shouldRunInFullAccessInAutoMode: tool.shouldRunInFullAccessInAutoMode ?? (() => false),
     };

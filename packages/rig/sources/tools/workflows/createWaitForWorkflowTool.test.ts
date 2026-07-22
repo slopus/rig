@@ -35,5 +35,6 @@ describe("createWaitForWorkflowTool", () => {
         );
 
         expect(onStatus).toHaveBeenCalledWith("Waiting for the workflow to complete");
+        expect(createWaitForWorkflowTool("wait_for_workflow").steerable).toBe(true);
     });
 });

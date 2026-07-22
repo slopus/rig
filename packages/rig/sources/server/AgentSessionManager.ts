@@ -9,6 +9,7 @@ import {
     type SubagentRunStatus,
     type WaitForSubagentResult,
 } from "../agent/index.js";
+import { DEFAULT_SUBAGENT_WAIT_TIMEOUT_MS } from "../agent/context/subagentWaitTimeouts.js";
 import type { CreateSessionRequest, SessionAgentMetadata } from "../protocol/index.js";
 import type { Message } from "../agent/types.js";
 import type { PermissionMode } from "../permissions/index.js";
@@ -508,7 +509,7 @@ export class AgentSessionManager {
 
     async wait(
         parentSessionId: string,
-        timeoutMs = 30_000,
+        timeoutMs = DEFAULT_SUBAGENT_WAIT_TIMEOUT_MS,
         signal?: AbortSignal,
     ): Promise<WaitForSubagentResult> {
         const initial = this.list(parentSessionId);
