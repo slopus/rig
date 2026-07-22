@@ -713,6 +713,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                                     model,
                                     now,
                                     provider: options.provider,
+                                    startDate,
                                     toolContext,
                                     toolLocks,
                                     toolsByName,
@@ -1319,6 +1320,7 @@ async function invokeNestedTool(
         onEvent?: (event: AgentLoopEvent) => void | Promise<void>;
         provider: Provider;
         signal?: AbortSignal;
+        startDate: string;
         toolContext: AgentContext;
         toolLocks: ToolLockManager;
         toolsByName: ReadonlyMap<string, AnyDefinedTool>;
@@ -1371,6 +1373,7 @@ async function invokeNestedTool(
                         }),
                     ),
                 provider: options.provider,
+                startDate: options.startDate,
                 ...(signal === undefined ? {} : { signal }),
             },
         );

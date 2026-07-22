@@ -3,9 +3,9 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "pnpm --filter @slopus/rig build",
+        "build": "pnpm --filter @slopus/rig-codemode-codex build && pnpm --filter @slopus/rig build",
         "build:gym": "pnpm --filter @slopus/rig-gym run build:image",
-        "check": "pnpm run check:root && pnpm --recursive --filter './packages/**' run check",
+        "check": "pnpm --filter @slopus/rig-codemode-codex build && pnpm run check:root && pnpm --recursive --filter './packages/**' run check",
         "check:root": "tsc --noEmit -p tsconfig.json",
         "dev": "pnpm --filter @slopus/rig-dev dev",
         "format": "oxfmt --write .",
