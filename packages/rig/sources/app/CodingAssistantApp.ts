@@ -80,6 +80,7 @@ import type { FileMentionContext } from "./findFileMentionContext.js";
 import { formatFileMention } from "./formatFileMention.js";
 import { formatProviderError } from "./formatProviderError.js";
 import { formatSessionUsageSummary } from "./formatSessionUsageSummary.js";
+import { formatSubagentToolCall } from "./formatSubagentToolCall.js";
 import { formatToolResultForDisplay } from "./formatToolResultForDisplay.js";
 import { humanizeReasoningLevel } from "./humanizeReasoningLevel.js";
 import { humanizePermissionMode } from "./humanizePermissionMode.js";
@@ -3321,7 +3322,7 @@ export class CodingAssistantApp implements Component, Focusable {
                     id: block.id,
                     role: "tool",
                     title: this.#toolDisplayName(block.name),
-                    text: this.#formatToolCall(block.name, block.arguments),
+                    text: this.#formatToolCall(block.name, block.arguments, block.id),
                     ...(exploration === undefined ? {} : { exploration }),
                     ...(mcpToolCall === undefined ? {} : { mcpToolCall }),
                 });
@@ -3468,7 +3469,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (existing !== undefined) {
             existing.id = toolCall.id;
             existing.title = this.#toolDisplayName(toolCall.name);
-            existing.text = this.#formatToolCall(toolCall.name, toolCall.arguments);
+            existing.text = this.#formatToolCall(toolCall.name, toolCall.arguments, toolCall.id);
             if (mcpToolCall === undefined) {
                 delete existing.mcpToolCall;
             } else {
@@ -3483,7 +3484,7 @@ export class CodingAssistantApp implements Component, Focusable {
             id: toolCall.id,
             role: "tool",
             title: this.#toolDisplayName(toolCall.name),
-            text: this.#formatToolCall(toolCall.name, toolCall.arguments),
+            text: this.#formatToolCall(toolCall.name, toolCall.arguments, toolCall.id),
             ...(mcpToolCall === undefined ? {} : { mcpToolCall }),
         });
     }
@@ -4728,7 +4729,7 @@ export class CodingAssistantApp implements Component, Focusable {
         if (entry !== undefined) this.#entries.push(entry);
     }
 
-    #formatToolCall(toolName: string, args: unknown): string {
+    #formatToolCall(toolName: string, args: unknown, toolCallId?: string): string {
         const record = this.#isRecord(args) ? args : {};
         const stringField = (key: string): string | undefined => {
             const value = record[key];
@@ -4736,6 +4737,20 @@ export class CodingAssistantApp implements Component, Focusable {
         };
 
         const normalized = toolName.toLowerCase();
+        const resolvedModelId =
+            toolCallId === undefined
+                ? undefined
+                : this.#subagents.find((subagent) => subagent.parentToolCallId === toolCallId)
+                      ?.modelId;
+        const subagentCall = formatSubagentToolCall({
+            args: record,
+            currentModel: this.#agent.model,
+            currentProviderId: this.#agent.provider.id,
+            modelChoices: this.#modelChoices(),
+            ...(resolvedModelId === undefined ? {} : { resolvedModelId }),
+            toolName,
+        });
+        if (subagentCall !== undefined) return subagentCall;
         if (normalized === "write_stdin") {
             const chars = record.chars;
             return typeof chars === "string" && chars.length > 0
@@ -4798,17 +4813,6 @@ export class CodingAssistantApp implements Component, Focusable {
             return taskId === undefined ? "Update task" : `Update task ${taskId}`;
         }
         if (normalized === "tasklist") return "Current tasks";
-        if (normalized === "agent") {
-            return stringField("description") ?? "Delegated work";
-        }
-        if (normalized === "spawn_agent") {
-            const taskName = stringField("task_name");
-            return taskName === undefined
-                ? "Start delegated work"
-                : taskName
-                      .replaceAll("_", " ")
-                      .replace(/^./u, (character) => character.toUpperCase());
-        }
         if (normalized === "followup_task" || normalized === "sendmessage") {
             return stringField("summary") ?? "Send follow-up work";
         }
