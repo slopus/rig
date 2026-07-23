@@ -167,7 +167,7 @@ export interface DefinedTool<
     /** Exact provider-facing definition when JSON-schema function calling cannot represent it. */
     executorTool?: ExecutorTool;
     /** Converts provider-facing custom-tool arguments into this tool's typed arguments. */
-    parseExecutorToolArguments?: (argumentsValue: unknown) => unknown;
+    parseExecutorToolArguments?: (argumentsValue: unknown) => Record<string, unknown>;
     /** Provider-facing namespace containing this tool. */
     namespace?: ToolNamespace;
     arguments: TArgsSchema;
@@ -220,7 +220,7 @@ export interface AnyDefinedTool {
     /** Optional complete search text used instead of metadata-derived tool search text. */
     searchText?: string;
     executorTool?: ExecutorTool;
-    parseExecutorToolArguments?: (argumentsValue: unknown) => unknown;
+    parseExecutorToolArguments?: (argumentsValue: unknown) => Record<string, unknown>;
     namespace?: ToolNamespace;
     arguments: TSchema;
     returnType: TSchema;
@@ -267,7 +267,7 @@ export function defineTool<
     /** Optional complete search text used instead of metadata-derived tool search text. */
     searchText?: string;
     executorTool?: ExecutorTool;
-    parseExecutorToolArguments?: (argumentsValue: unknown) => unknown;
+    parseExecutorToolArguments?: (argumentsValue: unknown) => Record<string, unknown>;
     namespace?: ToolNamespace;
     arguments: TArgsSchema;
     returnType: TReturnSchema;

@@ -381,21 +381,18 @@ describe("Codex CLI mode WebSocket goldens", () => {
             promptCacheKey: "<SESSION_ID>",
             skills: codexSkillsWithGithub,
             tools: codexCliTools(model),
-        }) as unknown as Record<string, unknown>;
-        const warmup = createCodexCliWarmupRequest(
-            request as never,
-            codexCliTools(model),
-        ) as Record<string, unknown>;
-        const inference = createCodexCliWebSocketInferenceRequest(
-            request as never,
-        ) as unknown as Record<string, unknown>;
+        });
+        const warmup = createCodexCliWarmupRequest(request, codexCliTools(model));
+        const inference = createCodexCliWebSocketInferenceRequest(request);
+        const warmupRecord = Object.fromEntries(Object.entries(warmup));
+        const inferenceRecord = Object.fromEntries(Object.entries(inference));
 
-        expect(protocolProjection(inference)).toEqual(protocolProjection(golden.request));
-        expect(protocolProjection(warmup)).toEqual(protocolProjection(golden.warmup));
-        expect(normalizeRequest(inference)).toEqual(normalizeRequest(golden.request));
-        expect(normalizeRequest(warmup)).toEqual(normalizeRequest(golden.warmup));
-        expect(toolDefinitions(inference, warmup)).toEqual(literalTools);
-        expect(webSocketPromptEnvelope(warmup, inference)).toEqual(
+        expect(protocolProjection(inferenceRecord)).toEqual(protocolProjection(golden.request));
+        expect(protocolProjection(warmupRecord)).toEqual(protocolProjection(golden.warmup));
+        expect(normalizeRequest(inferenceRecord)).toEqual(normalizeRequest(golden.request));
+        expect(normalizeRequest(warmupRecord)).toEqual(normalizeRequest(golden.warmup));
+        expect(toolDefinitions(inferenceRecord, warmupRecord)).toEqual(literalTools);
+        expect(webSocketPromptEnvelope(warmupRecord, inferenceRecord)).toEqual(
             webSocketPromptEnvelope(golden.warmup, golden.request),
         );
     });

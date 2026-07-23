@@ -13,6 +13,7 @@ export interface UserInputQuestion {
 }
 
 export interface UserInputRequest {
+    autoResolutionMs?: number;
     questions: readonly UserInputQuestion[];
     requestId: string;
 }

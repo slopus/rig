@@ -32,6 +32,8 @@ const questionSchema = Type.Object(
 );
 
 const answerSchema = Type.Object({ answers: Type.Array(Type.String()) });
+const MIN_AUTO_RESOLUTION_MS = 60_000;
+const MAX_AUTO_RESOLUTION_MS = 240_000;
 
 function resolveCodexUserInput(response: UserInputResponse) {
     return {
@@ -102,8 +104,30 @@ export const codexRequestUserInputTool = defineTool({
             { additionalProperties: false },
         ),
     },
+    parseExecutorToolArguments: (argumentsValue) => {
+        if (typeof argumentsValue !== "object" || argumentsValue === null) return {};
+        const normalized = { ...argumentsValue };
+        if (
+            "autoResolutionMs" in normalized &&
+            typeof normalized.autoResolutionMs === "number"
+        ) {
+            normalized.autoResolutionMs = Math.max(
+                MIN_AUTO_RESOLUTION_MS,
+                Math.min(MAX_AUTO_RESOLUTION_MS, normalized.autoResolutionMs),
+            );
+        }
+        return normalized;
+    },
     arguments: Type.Object(
         {
+            autoResolutionMs: Type.Optional(
+                Type.Number({
+                    description:
+                        "Optional auto-resolution window in milliseconds. Include only for non-blocking questions.",
+                    minimum: MIN_AUTO_RESOLUTION_MS,
+                    maximum: MAX_AUTO_RESOLUTION_MS,
+                }),
+            ),
             questions: Type.Array(questionSchema, { minItems: 1, maxItems: 3 }),
         },
         { additionalProperties: false },
@@ -111,7 +135,7 @@ export const codexRequestUserInputTool = defineTool({
     returnType: Type.Object({ answers: Type.Record(Type.String(), answerSchema) }),
     execution: "durable",
     shouldReviewInAutoMode: () => false,
-    async execute({ questions }, context, execution) {
+    async execute({ autoResolutionMs, questions }, context, execution) {
         if (context.userInput === undefined) {
             throw new Error("Interactive user input is unavailable in this session.");
         }
@@ -126,6 +150,7 @@ export const codexRequestUserInputTool = defineTool({
         }
         const response = await context.userInput.request(
             {
+                ...(autoResolutionMs === undefined ? {} : { autoResolutionMs }),
                 requestId: execution.toolCallId,
                 questions: questions.map((question) => ({
                     ...question,
@@ -136,7 +161,10 @@ export const codexRequestUserInputTool = defineTool({
                 durable: {
                     batchId: execution.toolBatchId,
                     kind: "question",
-                    toolArguments: { questions },
+                    toolArguments: {
+                        ...(autoResolutionMs === undefined ? {} : { autoResolutionMs }),
+                        questions,
+                    },
                     toolCallId: execution.toolCallId,
                     toolCallIndex: execution.toolCallIndex,
                     toolName: "request_user_input",

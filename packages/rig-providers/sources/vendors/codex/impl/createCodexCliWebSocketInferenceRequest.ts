@@ -1,13 +1,13 @@
-import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
-
+import type { CodexResponseRequest } from "@/vendors/codex/impl/CodexResponseRequest.js";
 import { isCodexV2Model } from "@/vendors/codex/impl/isCodexV2Model.js";
+import { responseInputItems } from "@/vendors/codex/impl/responseInputItems.js";
 
 export function createCodexCliWebSocketInferenceRequest(
-    request: ResponseCreateParamsStreaming,
-): ResponseCreateParamsStreaming {
+    request: CodexResponseRequest,
+): CodexResponseRequest {
     if (!isCodexV2Model(String(request.model))) return request;
     const inference = structuredClone(request);
-    const input = inference.input as unknown[];
+    const input = responseInputItems(inference.input);
     const instructionIndex = input.findIndex(
         (item) =>
             typeof item === "object" &&
@@ -15,5 +15,6 @@ export function createCodexCliWebSocketInferenceRequest(
             (item as { role?: unknown }).role === "developer",
     );
     if (instructionIndex >= 0) input.splice(instructionIndex, 1);
+    inference.input = input;
     return inference;
 }

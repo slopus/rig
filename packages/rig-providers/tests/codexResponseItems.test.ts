@@ -92,6 +92,7 @@ describe("Codex response items", () => {
                         type: "function",
                         name: "spawn_agent",
                         description: "Spawn an agent.",
+                        parameters: null,
                         strict: false,
                     },
                 ],
@@ -107,6 +108,39 @@ describe("Codex response items", () => {
                 },
             ]),
         ).toMatchObject([{ description: "Tools in the custom namespace." }]);
+    });
+
+    it("keeps native and cross-provider spawn in distinct namespaces", () => {
+        const tools: readonly SessionTool[] = [
+            {
+                name: "spawn_agent",
+                namespace: "collaboration",
+                namespaceDescription: "Tools for spawning and managing sub-agents.",
+                type: "local",
+                description: "Spawn a native Codex subagent.",
+            },
+            {
+                name: "spawn_agent",
+                namespace: "collaboration_ext",
+                namespaceDescription:
+                    "Tools for spawning sub-agents across providers and model families.",
+                type: "local",
+                description: "Spawn a subagent with an explicit provider and model.",
+            },
+        ];
+
+        expect(toCodexToolDefinitions(tools)).toMatchObject([
+            {
+                type: "namespace",
+                name: "collaboration",
+                tools: [{ name: "spawn_agent" }],
+            },
+            {
+                type: "namespace",
+                name: "collaboration_ext",
+                tools: [{ name: "spawn_agent" }],
+            },
+        ]);
     });
 
     it("requires response item IDs to match before reusing previous_response_id", () => {

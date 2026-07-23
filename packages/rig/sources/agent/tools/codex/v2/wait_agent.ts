@@ -6,7 +6,6 @@ import {
     MIN_SUBAGENT_WAIT_TIMEOUT_MS,
 } from "../../../context/subagentWaitTimeouts.js";
 import { defineTool } from "../../../types.js";
-import { managedSubagentSchema } from "../impl/subagentSchemas.js";
 import { requireSubagentContext } from "../impl/requireSubagentContext.js";
 
 export const codexWaitAgentTool = defineTool({
@@ -28,7 +27,7 @@ export const codexWaitAgentTool = defineTool({
         ),
     }),
     returnType: Type.Object({
-        agents: Type.Array(managedSubagentSchema),
+        message: Type.String(),
         timed_out: Type.Boolean(),
     }),
     interruptionMessage: "Waiting for subagents was interrupted by new input.",
@@ -37,7 +36,11 @@ export const codexWaitAgentTool = defineTool({
     execute: async ({ timeout_ms }, context, execution) => {
         const result = await requireSubagentContext(context).wait(timeout_ms, execution.signal);
         return {
-            agents: Array.from(result.agents, (agent) => ({ ...agent })),
+            message: result.timedOut
+                ? "Wait timed out."
+                : result.agents.length === 0
+                  ? "Wait interrupted by new input."
+                  : "Wait completed.",
             timed_out: result.timedOut,
         };
     },
@@ -45,6 +48,6 @@ export const codexWaitAgentTool = defineTool({
     toUI: (result) =>
         result.timed_out
             ? "No subagent updates arrived before the wait ended."
-            : `${result.agents.length} subagent update${result.agents.length === 1 ? "" : "s"}.`,
+            : result.message,
     locks: [],
 });

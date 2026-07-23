@@ -17,11 +17,10 @@ const planItemSchema = Type.Object(
 const executorPlanItemSchema = Type.Object(
     {
         step: Type.String({ description: "Task step text." }),
-        status: Type.Unsafe({
-            type: "string",
-            description: "Step status.",
-            enum: ["pending", "in_progress", "completed"],
-        }),
+        status: Type.Union(
+            [Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed")],
+            { description: "Step status." },
+        ),
     },
     { additionalProperties: false },
 );

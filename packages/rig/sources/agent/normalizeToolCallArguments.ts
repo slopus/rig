@@ -9,6 +9,6 @@ export function normalizeToolCallArguments(
     if (tool?.parseExecutorToolArguments === undefined) return toolCall;
     return {
         ...toolCall,
-        arguments: tool.parseExecutorToolArguments(toolCall.arguments) as Record<string, unknown>,
+        arguments: tool.parseExecutorToolArguments(toolCall.arguments),
     };
 }

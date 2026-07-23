@@ -22,22 +22,42 @@ export const codexV1SpawnAgentTool = defineTool({
                 }),
             ),
             items: Type.Optional(collaborationItemsSchema),
-            agent_type: Type.Optional(Type.String()),
+            agent_type: Type.Optional(
+                Type.String({
+                    description:
+                        "Agent type override for the new agent. Omit to use the default agent.",
+                }),
+            ),
             fork_context: Type.Optional(
                 Type.Boolean({
                     description:
                         "True forks the current thread history into the new agent; false or omitted starts with only the initial prompt.",
                 }),
             ),
-            model: Type.Optional(Type.String()),
-            reasoning_effort: Type.Optional(Type.String()),
-            service_tier: Type.Optional(Type.String()),
+            model: Type.Optional(
+                Type.String({
+                    description:
+                        "Model override for the new agent. Omit unless an explicit override is needed.",
+                }),
+            ),
+            reasoning_effort: Type.Optional(
+                Type.String({
+                    description:
+                        "Reasoning effort override for the new agent. Omit to inherit the parent effort.",
+                }),
+            ),
+            service_tier: Type.Optional(
+                Type.Literal("priority", {
+                    description:
+                        "Service tier override for the new agent. Omit unless explicitly requested.",
+                }),
+            ),
         },
         { additionalProperties: false },
     ),
     returnType: Type.Object({
         agent_id: Type.String(),
-        nickname: Type.Optional(Type.String()),
+        nickname: Type.Union([Type.String(), Type.Null()]),
     }),
     shouldReviewInAutoMode: () => false,
     execute: async (args, context, execution) => {
@@ -52,7 +72,10 @@ export const codexV1SpawnAgentTool = defineTool({
             ...(args.fork_context === true && parentMessages !== undefined
                 ? { contextMessages: parentMessages }
                 : {}),
-            description: "Delegated task",
+            description:
+                args.agent_type === undefined || args.agent_type.trim().length === 0
+                    ? "Delegated task"
+                    : args.agent_type.trim(),
             ...(args.reasoning_effort === undefined ? {} : { effort: args.reasoning_effort }),
             ...(args.model === undefined ? {} : { modelId: args.model }),
             ...(execution.toolCallId === undefined

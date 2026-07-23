@@ -48,6 +48,31 @@ describeLive("GrokProvider live", () => {
         }
     }, 120_000);
 
+    it("streams Composer 2.5 without sending a reasoning effort", async () => {
+        const credential = await resolveGrokCredential();
+        if (credential === null) {
+            expect.fail("RIG_LIVE_TEST=1 is set but no grok credentials were found");
+        }
+
+        const provider = new GrokProvider({ credential });
+        const session = await provider.session(`composer-live-${Date.now()}`, {
+            context: { instructions: "You are a concise assistant.", messages: [] },
+            tools: [],
+        });
+        const events = await collectSessionEvents(
+            session.run({
+                context: {
+                    messages: [{ role: "user", content: "Reply with exactly: composer live ok" }],
+                },
+                effort: "off",
+                model: "grok-composer-2.5-fast",
+            }),
+        );
+
+        expect(events.at(-1)).toEqual({ type: "done", state: "normal" });
+        expect(textFromSessionEvents(events).toLowerCase()).toContain("composer live ok");
+    }, 120_000);
+
     it("continues after an encrypted-reasoning tool call", async () => {
         const credential = await resolveGrokCredential();
         if (credential === null) {

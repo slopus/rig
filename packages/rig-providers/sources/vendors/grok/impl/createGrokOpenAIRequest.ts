@@ -3,8 +3,8 @@ import type { ResponseCreateParamsStreaming } from "openai/resources/responses/r
 import type { SessionContext } from "@/core/SessionContext.js";
 import type { SessionReasoningEffort } from "@/core/SessionRunRequest.js";
 import type { SessionTool } from "@/core/SessionTool.js";
+import { resolveGrokReasoningEffort } from "@/vendors/grok/impl/resolveGrokReasoningEffort.js";
 import { toGrokResponseInput } from "@/vendors/grok/impl/toGrokResponseInput.js";
-import { toOpenAIReasoningEffort } from "@/vendors/grok/impl/toOpenAIReasoningEffort.js";
 import { toGrokToolDefinitions } from "@/vendors/grok/impl/toGrokToolDefinitions.js";
 
 export function createGrokOpenAIRequest(options: {
@@ -14,8 +14,7 @@ export function createGrokOpenAIRequest(options: {
     tools?: readonly SessionTool[];
     compaction?: boolean;
 }): ResponseCreateParamsStreaming {
-    const reasoningEffort =
-        options.effort === undefined ? undefined : toOpenAIReasoningEffort(options.effort);
+    const reasoningEffort = resolveGrokReasoningEffort(options.apiModelId, options.effort);
 
     return {
         model: options.apiModelId,

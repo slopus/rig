@@ -1,8 +1,10 @@
 import { Type } from "@sinclair/typebox";
 
 import { defineTool } from "../../../types.js";
-import { managedSubagentSchema } from "../impl/subagentSchemas.js";
+import { codexAgentStatusSchema } from "../impl/codexAgentStatusSchema.js";
+import { findManagedSubagent } from "../impl/findManagedSubagent.js";
 import { requireSubagentContext } from "../impl/requireSubagentContext.js";
+import { toCodexAgentStatus } from "../impl/toCodexAgentStatus.js";
 
 export const codexV1ResumeAgentTool = defineTool({
     name: "resume_agent",
@@ -11,21 +13,23 @@ export const codexV1ResumeAgentTool = defineTool({
         name: "multi_agent_v1",
         description: "Tools for spawning and managing sub-agents.",
     },
-    description: "Resume a previously closed agent so it can receive more work.",
+    description:
+        "Resume a previously closed agent by id so it can receive send_input and wait_agent calls.",
     arguments: Type.Object(
         {
             id: Type.String({ description: "Agent id to resume." }),
         },
         { additionalProperties: false },
     ),
-    returnType: managedSubagentSchema,
+    returnType: Type.Object({
+        status: codexAgentStatusSchema,
+    }),
     shouldReviewInAutoMode: () => false,
-    execute: ({ id }, context) =>
-        requireSubagentContext(context).followUp(
-            id,
-            "Continue the delegated task from where you stopped.",
-        ),
+    execute: ({ id }, context) => {
+        const subagents = requireSubagentContext(context);
+        return { status: toCodexAgentStatus(findManagedSubagent(subagents, id)) };
+    },
     toLLM: (result) => [{ type: "text", text: JSON.stringify(result) }],
-    toUI: (result) => `Resumed ${result.description}.`,
+    toUI: () => "Made the subagent available for more work.",
     locks: [],
 });

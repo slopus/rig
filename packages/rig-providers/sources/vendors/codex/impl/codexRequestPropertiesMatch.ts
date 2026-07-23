@@ -17,10 +17,10 @@ const REUSED_PROPERTIES = [
 
 /** Matches the exhaustive non-input reuse check in the Codex websocket client. */
 export function codexRequestPropertiesMatch(
-    previous: Record<string, unknown>,
-    current: Record<string, unknown>,
+    previous: object,
+    current: object,
 ): boolean {
     return REUSED_PROPERTIES.every((property) =>
-        codexValuesEqual(previous[property], current[property]),
+        codexValuesEqual(Reflect.get(previous, property), Reflect.get(current, property)),
     );
 }

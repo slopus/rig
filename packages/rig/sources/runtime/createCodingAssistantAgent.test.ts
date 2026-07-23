@@ -320,6 +320,11 @@ describe("createCodingAssistantAgent", () => {
             "list_agents",
             "interrupt_agent",
         ]);
+        expect(
+            runtime.agent.tools
+                .filter((tool) => tool.namespace?.name === "collaboration_ext")
+                .map((tool) => tool.name),
+        ).toEqual(["spawn_agent", "followup_task"]);
     });
 
     it("exposes the Agent tool only while another nested level is available", () => {

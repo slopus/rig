@@ -1,9 +1,9 @@
 import type {
-    ResponseCreateParamsStreaming,
     ResponseInputItem,
 } from "openai/resources/responses/responses.js";
 
 import type { SessionTool } from "@/core/SessionTool.js";
+import type { CodexResponseRequest } from "@/vendors/codex/impl/CodexResponseRequest.js";
 import { createCodexCliSseRequest } from "@/vendors/codex/impl/createCodexCliSseRequest.js";
 import { estimateCodexContextTokens } from "@/vendors/codex/impl/estimateCodexContextTokens.js";
 import { truncateCodexText } from "@/vendors/codex/impl/truncateCodexText.js";
@@ -12,50 +12,49 @@ const TRUNCATED_TOOL_OUTPUT = "Output exceeded the available model context and w
 
 /** Fits a compaction request to the hard model window without mutating durable context. */
 export function fitCodexCompactionRequest(
-    request: ResponseCreateParamsStreaming,
+    request: CodexResponseRequest,
     tools: readonly SessionTool[],
     contextWindow: number,
-): ResponseCreateParamsStreaming {
-    const fitted = structuredClone(request);
-    let input = [...(fitted.input as ResponseInputItem[])];
+): CodexResponseRequest {
+    const fitted: CodexResponseRequest = structuredClone(request);
+    let input = Array.isArray(fitted.input) ? [...fitted.input] : [];
     fitted.input = input;
 
     for (let index = input.length - 1; index >= 0; index -= 1) {
         if (estimate(fitted, tools, contextWindow) < contextWindow) break;
-        const item = input[index] as Record<string, any>;
+        const item = input[index];
+        if (item === undefined) continue;
         if (item.type === "function_call_output" || item.type === "custom_tool_call_output") {
-            input[index] = { ...item, output: TRUNCATED_TOOL_OUTPUT } as ResponseInputItem;
+            input[index] = { ...item, output: TRUNCATED_TOOL_OUTPUT };
         } else if (item.type === "tool_search_output") {
-            input[index] = { ...item, tools: [] } as unknown as ResponseInputItem;
+            input[index] = { ...item, tools: [] };
         }
     }
 
     while (estimate(fitted, tools, contextWindow) >= contextWindow) {
         const lastUser = input.findLast(
             (item) =>
-                typeof item === "object" &&
-                item !== null &&
-                (item as { role?: unknown }).role === "user",
+                "role" in item && item.role === "user",
         );
         const removableIndex = input.findIndex((item) => {
-            if (item === lastUser || typeof item !== "object" || item === null) return false;
-            const candidate = item as { role?: unknown; type?: unknown };
+            if (item === lastUser) return false;
             return (
-                candidate.role !== "developer" &&
-                candidate.type !== "additional_tools" &&
-                candidate.type !== "compaction_trigger"
+                (!("role" in item) || item.role !== "developer") &&
+                item.type !== "compaction_trigger"
             );
         });
         if (removableIndex === -1) break;
-        const removed = input[removableIndex] as { call_id?: unknown };
-        const callId = typeof removed.call_id === "string" ? removed.call_id : undefined;
+        const removed = input[removableIndex];
+        const callId =
+            removed !== undefined && "call_id" in removed && typeof removed.call_id === "string"
+                ? removed.call_id
+                : undefined;
         input = input.filter(
             (item, index) =>
                 index !== removableIndex &&
                 (callId === undefined ||
-                    typeof item !== "object" ||
-                    item === null ||
-                    (item as { call_id?: unknown }).call_id !== callId),
+                    !("call_id" in item) ||
+                    item.call_id !== callId),
         );
         fitted.input = input;
     }
@@ -63,10 +62,8 @@ export function fitCodexCompactionRequest(
     while (estimate(fitted, tools, contextWindow) >= contextWindow) {
         const item = input.findLast(
             (candidate) =>
-                typeof candidate === "object" &&
-                candidate !== null &&
-                (candidate as { role?: unknown }).role === "user",
-        ) as Record<string, any> | undefined;
+                "role" in candidate && candidate.role === "user",
+        );
         if (item === undefined) break;
         const text = messageText(item);
         if (text === undefined || Buffer.byteLength(text) === 0) break;
@@ -82,36 +79,44 @@ export function fitCodexCompactionRequest(
 }
 
 function estimate(
-    request: ResponseCreateParamsStreaming,
+    request: CodexResponseRequest,
     tools: readonly SessionTool[],
     limit: number,
 ): number {
     return estimateCodexContextTokens(createCodexCliSseRequest(request, tools), limit);
 }
 
-function messageText(item: Record<string, any>): string | undefined {
+function messageText(item: ResponseInputItem): string | undefined {
+    if (!("content" in item)) return undefined;
     if (typeof item.content === "string") return item.content;
     if (!Array.isArray(item.content)) return undefined;
-    const content = item.content.find(
-        (part: unknown) =>
-            typeof part === "object" &&
-            part !== null &&
-            typeof (part as { text?: unknown }).text === "string",
-    ) as { text: string } | undefined;
+    const content = findTextContent(item.content);
     return content?.text;
 }
 
-function replaceMessageText(item: Record<string, any>, text: string): void {
+function replaceMessageText(item: ResponseInputItem, text: string): void {
+    if (!("content" in item)) return;
     if (typeof item.content === "string") {
         item.content = text;
         return;
     }
     if (!Array.isArray(item.content)) return;
-    const content = item.content.find(
-        (part: unknown) =>
-            typeof part === "object" &&
-            part !== null &&
-            typeof (part as { text?: unknown }).text === "string",
-    ) as { text: string } | undefined;
+    const content = findTextContent(item.content);
     if (content !== undefined) content.text = text;
+}
+
+function findTextContent(values: readonly unknown[]): { text: string } | undefined {
+    for (const value of values) {
+        if (hasText(value)) return value;
+    }
+    return undefined;
+}
+
+function hasText(value: unknown): value is { text: string } {
+    return (
+        typeof value === "object" &&
+        value !== null &&
+        "text" in value &&
+        typeof value.text === "string"
+    );
 }

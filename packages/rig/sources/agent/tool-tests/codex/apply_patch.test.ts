@@ -29,6 +29,7 @@ describe("codex apply_patch tool", () => {
                 input: "*** Begin Patch\n*** End Patch",
             }),
         ).toEqual({ patch: "*** Begin Patch\n*** End Patch" });
+        expect(codexApplyPatchTool.parseExecutorToolArguments?.("invalid")).toEqual({});
     });
 
     it("applies Codex-style add-file patches", async () => {

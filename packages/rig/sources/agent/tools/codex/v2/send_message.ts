@@ -33,7 +33,7 @@ export const codexSendMessageTool = defineTool({
             ? sendMessage(target, "", message)
             : sendMessage(target, message);
     },
-    toLLM: (result) => [{ type: "text", text: JSON.stringify(result) }],
+    toLLM: () => [{ type: "text", text: "" }],
     toUI: (result) => `Sent a message to ${result.description}.`,
     locks: [],
 });

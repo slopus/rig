@@ -1,24 +1,22 @@
 import { Type } from "@sinclair/typebox";
 
-import { defineTool } from "../../../types.js";
-import { humanizeTaskName } from "../impl/humanizeTaskName.js";
-import { parseCodexForkTurns } from "./impl/parseCodexForkTurns.js";
-import { requireSubagentContext } from "../impl/requireSubagentContext.js";
-import { selectLastUserTurns } from "./impl/selectLastUserTurns.js";
+import { defineTool } from "../../../../types.js";
+import { humanizeTaskName } from "../../impl/humanizeTaskName.js";
+import { requireSubagentContext } from "../../impl/requireSubagentContext.js";
+import { parseCodexForkTurns } from "../impl/parseCodexForkTurns.js";
+import { selectLastUserTurns } from "../impl/selectLastUserTurns.js";
 
-export const codexSpawnAgentTool = defineTool({
+export const codexExtendedSpawnAgentTool = defineTool({
     name: "spawn_agent",
     label: "spawn_agent",
     namespace: {
-        name: "collaboration",
-        description: "Tools for spawning and managing sub-agents.",
+        name: "collaboration_ext",
+        description: "Tools for spawning sub-agents across providers and model families.",
     },
-    description: `Allowed provider/model pairs (the current Codex provider is inherited):
-- current Codex provider + \`openai/gpt-5.6-sol\`
-- current Codex provider + \`openai/gpt-5.6-terra\`
-Prefer this native tool for GPT models because it preserves Codex's encrypted collaboration transport.
+    description: `Allowed provider/model pairs: any exact provider ID + model ID pair listed in the session's Available models section.
+Use this tool for non-GPT models or when crossing providers. Prefer \`collaboration.spawn_agent\` for GPT models because the native tool preserves Codex's encrypted collaboration transport.
 
-Spawn a background subagent for a concrete, bounded task. The new agent shares the workspace and reports back when it finishes.`,
+Spawn a background subagent with an explicit provider and model.`,
     arguments: Type.Object(
         {
             task_name: Type.String({
@@ -26,7 +24,12 @@ Spawn a background subagent for a concrete, bounded task. The new agent shares t
             }),
             message: Type.String({
                 description: "Initial plain-text task for the new agent.",
-                encrypted: true,
+            }),
+            provider: Type.String({
+                description: "Provider ID for the new agent.",
+            }),
+            model: Type.String({
+                description: "Model ID for the new agent.",
             }),
             fork_turns: Type.Optional(
                 Type.String({
@@ -34,16 +37,16 @@ Spawn a background subagent for a concrete, bounded task. The new agent shares t
                         "Optional number of turns to fork. Defaults to `all`. Use `none`, `all`, or a positive integer string such as `3` to fork only the most recent turns.",
                 }),
             ),
-            model: Type.Optional(
-                Type.String({
-                    description:
-                        "Child model ID. The provider is inferred from the current provider or a unique match when omitted.",
-                }),
-            ),
             reasoning_effort: Type.Optional(
                 Type.String({
                     description:
-                        "Reasoning effort override for the new agent. Omit to inherit the parent effort.",
+                        "Reasoning effort override for the new agent. Omit to use the model default.",
+                }),
+            ),
+            service_tier: Type.Optional(
+                Type.Literal("priority", {
+                    description:
+                        "Service tier override for the new agent. Omit unless explicitly requested.",
                 }),
             ),
         },
@@ -55,8 +58,25 @@ Spawn a background subagent for a concrete, bounded task. The new agent shares t
     }),
     shouldReviewInAutoMode: () => false,
     execute: async (args, context, execution) => {
-        const { fork_turns, message, model, reasoning_effort, task_name } = args;
+        const {
+            fork_turns,
+            message,
+            model,
+            provider,
+            reasoning_effort,
+            service_tier,
+            task_name,
+        } = args;
         const subagents = requireSubagentContext(context);
+        const availableModels = subagents.availableModels;
+        if (
+            availableModels !== undefined &&
+            !availableModels.some(
+                (candidate) => candidate.providerId === provider && candidate.id === model,
+            )
+        ) {
+            throw new Error(`Model '${model}' is not available for provider '${provider}'.`);
+        }
         const fork = parseCodexForkTurns(fork_turns);
         const parentMessages = execution.messages?.slice(0, -1);
         const result = await subagents.spawn(
@@ -67,13 +87,14 @@ Spawn a background subagent for a concrete, bounded task. The new agent shares t
                     ? { contextMessages: selectLastUserTurns(parentMessages, fork.lastNTurns) }
                     : {}),
                 description: humanizeTaskName(task_name),
-                ...(subagents.encryptedMessages === true ? { encryptedPrompt: message } : {}),
                 ...(reasoning_effort === undefined ? {} : { effort: reasoning_effort }),
-                ...(model === undefined ? {} : { modelId: model }),
+                modelId: model,
+                providerId: provider,
+                ...(service_tier === "priority" ? { serviceTier: "fast" as const } : {}),
                 ...(execution.toolCallId === undefined
                     ? {}
                     : { parentToolCallId: execution.toolCallId }),
-                prompt: subagents.encryptedMessages === true ? "" : message,
+                prompt: message,
                 taskName: task_name,
             },
             execution.signal,

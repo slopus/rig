@@ -1,8 +1,10 @@
 import { Type } from "@sinclair/typebox";
 
 import { defineTool } from "../../../types.js";
-import { managedSubagentSchema } from "../impl/subagentSchemas.js";
+import { codexAgentStatusSchema } from "../impl/codexAgentStatusSchema.js";
+import { findManagedSubagent } from "../impl/findManagedSubagent.js";
 import { requireSubagentContext } from "../impl/requireSubagentContext.js";
+import { toCodexAgentStatus } from "../impl/toCodexAgentStatus.js";
 
 export const codexInterruptAgentTool = defineTool({
     name: "interrupt_agent",
@@ -16,10 +18,17 @@ export const codexInterruptAgentTool = defineTool({
     arguments: Type.Object({
         target: Type.String({ description: "Agent id, task name, or full task path." }),
     }),
-    returnType: managedSubagentSchema,
+    returnType: Type.Object({
+        previous_status: codexAgentStatusSchema,
+    }),
     shouldReviewInAutoMode: () => false,
-    execute: ({ target }, context) => requireSubagentContext(context).interrupt(target),
+    execute: ({ target }, context) => {
+        const subagents = requireSubagentContext(context);
+        const previous = findManagedSubagent(subagents, target);
+        subagents.interrupt(target);
+        return { previous_status: toCodexAgentStatus(previous) };
+    },
     toLLM: (result) => [{ type: "text", text: JSON.stringify(result) }],
-    toUI: (result) => `Stopped the current turn for ${result.description}.`,
+    toUI: () => "Interrupted the subagent's current turn.",
     locks: [],
 });

@@ -1,42 +1,52 @@
-import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
+import type {
+    EasyInputMessage,
+    ResponseInputItem,
+    ResponseInputMessageContentList,
+} from "openai/resources/responses/responses.js";
+
+import type { CodexResponseRequest } from "@/vendors/codex/impl/CodexResponseRequest.js";
+import { responseInputItems } from "@/vendors/codex/impl/responseInputItems.js";
 
 export function createCodexBedrockRequest(
-    request: ResponseCreateParamsStreaming,
-): ResponseCreateParamsStreaming {
-    const output = structuredClone(request) as ResponseCreateParamsStreaming &
-        Record<string, unknown>;
-    const normalizedInput = (output.input as unknown[]).map((item) => {
-        if (
-            typeof item !== "object" ||
-            item === null ||
-            (item as { type?: unknown }).type !== "message"
-        )
-            return item;
-        const message = item as { content?: unknown };
-        if (typeof message.content !== "string") return item;
+    request: CodexResponseRequest,
+): CodexResponseRequest {
+    const output: CodexResponseRequest = structuredClone(request);
+    const normalizedInput = responseInputItems(output.input).map((item): ResponseInputItem => {
+        if (!isStringInputMessage(item)) return item;
         return {
-            ...message,
-            content: [{ type: "input_text", text: message.content }],
+            ...item,
+            content: [{ type: "input_text", text: item.content }],
         };
     });
-    output.input = normalizedInput.reduce<unknown[]>((items, item) => {
-        const previous = items.at(-1) as
-            | { content?: unknown[]; role?: unknown; type?: unknown }
-            | undefined;
-        const current = item as { content?: unknown[]; role?: unknown; type?: unknown };
+    output.input = normalizedInput.reduce<ResponseInputItem[]>((items, item) => {
+        const previous = items.at(-1);
         if (
-            previous?.type === "message" &&
-            previous.role === "developer" &&
-            current.type === "message" &&
-            current.role === "developer" &&
-            Array.isArray(previous.content) &&
-            Array.isArray(current.content)
+            isDeveloperContentMessage(previous) &&
+            isDeveloperContentMessage(item)
         ) {
-            previous.content.push(...current.content);
+            previous.content.push(...item.content);
         } else {
             items.push(item);
         }
         return items;
-    }, []) as never;
+    }, []);
     return output;
+}
+
+function isDeveloperContentMessage(
+    item: ResponseInputItem | undefined,
+): item is EasyInputMessage & { content: ResponseInputMessageContentList } {
+    return (
+        item !== undefined &&
+        "role" in item &&
+        "content" in item &&
+        item.role === "developer" &&
+        Array.isArray(item.content)
+    );
+}
+
+function isStringInputMessage(
+    item: ResponseInputItem,
+): item is EasyInputMessage & { content: string } {
+    return "role" in item && "content" in item && typeof item.content === "string";
 }

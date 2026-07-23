@@ -247,7 +247,7 @@ async function* streamExecutorInference(options: {
                 ...(event.state === "error"
                     ? {
                           errorMessage: event.message,
-                          providerError: { type: "unclassified" as const },
+                          providerError: event.providerError ?? { type: "unclassified" as const },
                       }
                     : {}),
             };

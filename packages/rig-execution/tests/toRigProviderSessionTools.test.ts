@@ -63,6 +63,42 @@ describe("toRigProviderSessionTools", () => {
         expect(JSON.stringify(tools)).not.toContain("Caller replacement");
     });
 
+    it("locks native collaboration while preserving cross-provider spawn separately", () => {
+        const extParameters = Type.Object({
+            message: Type.String(),
+            model: Type.String(),
+            provider: Type.String(),
+        });
+        const tools = toRigProviderSessionTools(
+            [
+                {
+                    name: "spawn_agent",
+                    description: "Modified native spawn.",
+                    parameters: Type.Object({}),
+                    namespace: "collaboration",
+                },
+                {
+                    name: "spawn_agent",
+                    description: "Cross-provider spawn.",
+                    parameters: extParameters,
+                    namespace: "collaboration_ext",
+                },
+            ],
+            { lockCodexCollaboration: true },
+        );
+
+        expect(tools.map((tool) => `${tool.namespace}.${tool.name}`)).toEqual([
+            "collaboration.spawn_agent",
+            "collaboration_ext.spawn_agent",
+        ]);
+        expect(tools[0]?.parameters?.properties?.message).toHaveProperty("encrypted", true);
+        expect(tools[1]?.parameters).toBe(extParameters);
+        expect(tools[1]?.parameters?.properties).toMatchObject({
+            model: { type: "string" },
+            provider: { type: "string" },
+        });
+    });
+
     it("keeps plaintext fallback fields for non-Codex namespaces", () => {
         const parameters = Type.Object({
             message: Type.String({ description: "Plain-text task." }),

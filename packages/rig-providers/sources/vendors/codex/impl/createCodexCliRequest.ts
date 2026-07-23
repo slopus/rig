@@ -1,14 +1,16 @@
-import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
+import type { ResponseInputItem } from "openai/resources/responses/responses.js";
 
 import type { SessionContext } from "@/core/SessionContext.js";
 import type { SessionReasoningEffort, SessionServiceTier } from "@/core/SessionRunRequest.js";
 import type { SessionSkill } from "@/core/SessionSkill.js";
 import type { SessionTool } from "@/core/SessionTool.js";
 import { createOpenAIResponseRequest } from "@/responses/createOpenAIResponseRequest.js";
+import type { CodexResponseRequest } from "@/vendors/codex/impl/CodexResponseRequest.js";
 import { isCodexV2Model } from "@/vendors/codex/impl/isCodexV2Model.js";
 import { setCodexRequestKind } from "@/vendors/codex/impl/setCodexRequestKind.js";
 import { toCodexToolDefinitions } from "@/vendors/codex/impl/toCodexToolDefinitions.js";
 import { withCodexSkills } from "@/vendors/codex/impl/withCodexSkills.js";
+import { responseInputItems } from "@/vendors/codex/impl/responseInputItems.js";
 
 export function createCodexCliRequest(options: {
     context: SessionContext;
@@ -19,18 +21,18 @@ export function createCodexCliRequest(options: {
     skills: readonly SessionSkill[];
     serviceTier?: SessionServiceTier;
     tools: readonly SessionTool[];
-}): ResponseCreateParamsStreaming {
-    const request = createOpenAIResponseRequest({
+}): CodexResponseRequest {
+    const request: CodexResponseRequest = createOpenAIResponseRequest({
         ...options,
         context: withCodexSkills(options.context, options.skills, options.model),
-    }) as ResponseCreateParamsStreaming & Record<string, unknown>;
+    });
     request.tool_choice = "auto";
-    request.client_metadata = { ...options.clientMetadata } as never;
+    request.client_metadata = { ...options.clientMetadata };
     if (options.serviceTier !== undefined) request.service_tier = options.serviceTier;
     if (isCodexV2Model(options.model)) {
         request.parallel_tool_calls = false;
         if (request.reasoning !== undefined)
-            request.reasoning = { ...request.reasoning, context: "all_turns" } as never;
+            request.reasoning = { ...request.reasoning, context: "all_turns" };
         delete request.instructions;
         request.input = [
             {
@@ -38,8 +40,8 @@ export function createCodexCliRequest(options: {
                 role: "developer",
                 content: [{ type: "input_text", text: options.context.instructions }],
             },
-            ...(request.input as unknown[]),
-        ] as never;
+            ...responseInputItems(request.input),
+        ];
         delete request.tools;
     } else {
         request.parallel_tool_calls = true;
@@ -49,21 +51,21 @@ export function createCodexCliRequest(options: {
 }
 
 export function createCodexCliWarmupRequest(
-    request: ResponseCreateParamsStreaming,
+    request: CodexResponseRequest,
     tools: readonly SessionTool[],
-): Record<string, unknown> {
-    const warmup = structuredClone(request) as unknown as Record<string, unknown>;
+): CodexResponseRequest {
+    const warmup: CodexResponseRequest = structuredClone(request);
     setCodexRequestKind(warmup, "prewarm");
     warmup.generate = false;
     const model = String(warmup.model);
     if (isCodexV2Model(model)) {
-        const instructions = (warmup.input as unknown[]).filter(
+        const instructions = responseInputItems(warmup.input).filter(
             (item) =>
                 typeof item === "object" &&
                 item !== null &&
                 (item as { role?: unknown }).role === "developer",
         );
-        warmup.input = [
+        const warmupInput: ResponseInputItem[] = [
             {
                 type: "additional_tools",
                 role: "developer",
@@ -71,6 +73,7 @@ export function createCodexCliWarmupRequest(
             },
             ...instructions.slice(0, 1),
         ];
+        warmup.input = warmupInput;
     } else {
         warmup.input = [];
     }

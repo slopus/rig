@@ -20,14 +20,19 @@ describe("Codex request_user_input tool", () => {
             },
         ];
 
-        const result = await codexRequestUserInputTool.execute({ questions }, harness.context, {
-            toolBatchId: "batch-1",
-            toolCallId: "call-1",
-            toolCallIndex: 0,
-        });
+        const result = await codexRequestUserInputTool.execute(
+            { autoResolutionMs: 60_000, questions },
+            harness.context,
+            {
+                toolBatchId: "batch-1",
+                toolCallId: "call-1",
+                toolCallIndex: 0,
+            },
+        );
 
         expect(request).toHaveBeenCalledWith(
             {
+                autoResolutionMs: 60_000,
                 questions: [{ ...questions[0], multiSelect: false }],
                 requestId: "call-1",
             },
@@ -35,7 +40,7 @@ describe("Codex request_user_input tool", () => {
                 durable: {
                     batchId: "batch-1",
                     kind: "question",
-                    toolArguments: { questions },
+                    toolArguments: { autoResolutionMs: 60_000, questions },
                     toolCallId: "call-1",
                     toolCallIndex: 0,
                     toolName: "request_user_input",
@@ -49,11 +54,25 @@ describe("Codex request_user_input tool", () => {
                 text: '{"answers":{"database":{"answers":["PostgreSQL"]}}}',
             },
         ]);
-        expect(codexRequestUserInputTool.toTrustedUserEvidence?.(result, { questions })).toEqual([
+        expect(
+            codexRequestUserInputTool.toTrustedUserEvidence?.(result, {
+                autoResolutionMs: 60_000,
+                questions,
+            }),
+        ).toEqual([
             {
                 type: "text",
                 text: '{"answers":[["PostgreSQL"]]}',
             },
         ]);
+    });
+
+    it("clamps Codex's provider-facing auto-resolution window before validation", () => {
+        expect(
+            codexRequestUserInputTool.parseExecutorToolArguments?.({
+                autoResolutionMs: 1,
+                questions: [],
+            }),
+        ).toEqual({ autoResolutionMs: 60_000, questions: [] });
     });
 });

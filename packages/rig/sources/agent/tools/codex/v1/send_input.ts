@@ -1,7 +1,6 @@
 import { Type } from "@sinclair/typebox";
 
 import { defineTool } from "../../../types.js";
-import { managedSubagentSchema } from "../impl/subagentSchemas.js";
 import { requireSubagentContext } from "../impl/requireSubagentContext.js";
 import { collaborationItemsSchema } from "./collaborationItemsSchema.js";
 import { collaborationItemsToText } from "./collaborationItemsToText.js";
@@ -31,9 +30,13 @@ export const codexV1SendInputTool = defineTool({
         },
         { additionalProperties: false },
     ),
-    returnType: managedSubagentSchema,
+    returnType: Type.Object({
+        submission_id: Type.String({
+            description: "Identifier for the queued input submission.",
+        }),
+    }),
     shouldReviewInAutoMode: () => false,
-    execute: (args, context) => {
+    execute: (args, context, execution) => {
         const message = [args.message, collaborationItemsToText(args.items)]
             .filter((value): value is string => value !== undefined && value.length > 0)
             .join("\n");
@@ -41,14 +44,15 @@ export const codexV1SendInputTool = defineTool({
         const subagents = requireSubagentContext(context);
         if (args.interrupt === true) {
             subagents.interrupt(args.target);
-            return subagents.followUp(args.target, message);
+            subagents.followUp(args.target, message);
+        } else {
+            const sendMessage = subagents.sendMessage;
+            if (sendMessage === undefined) subagents.followUp(args.target, message);
+            else sendMessage(args.target, message);
         }
-        const sendMessage = subagents.sendMessage;
-        return sendMessage === undefined
-            ? subagents.followUp(args.target, message)
-            : sendMessage(args.target, message);
+        return { submission_id: execution.toolCallId ?? args.target };
     },
     toLLM: (result) => [{ type: "text", text: JSON.stringify(result) }],
-    toUI: (result) => `Sent input to ${result.description}.`,
+    toUI: () => "Sent input to the subagent.",
     locks: [],
 });

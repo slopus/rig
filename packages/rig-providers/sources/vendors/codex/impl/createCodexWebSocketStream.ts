@@ -3,10 +3,11 @@ import type { ResponseStreamEvent } from "openai/resources/responses/responses.j
 import type { ResponsesWS } from "openai/resources/responses/ws";
 
 import { stampCodexWebSocketRequest } from "@/vendors/codex/impl/stampCodexWebSocketRequest.js";
+import type { CodexResponseRequest } from "@/vendors/codex/impl/CodexResponseRequest.js";
 
 export async function* createCodexWebSocketStream(options: {
     client: OpenAI;
-    request: Record<string, unknown>;
+    request: CodexResponseRequest;
     socket: ResponsesWS;
     signal?: AbortSignal;
     turnState?: string;

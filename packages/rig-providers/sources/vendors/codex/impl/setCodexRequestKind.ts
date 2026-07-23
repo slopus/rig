@@ -1,7 +1,8 @@
 import type { CodexCompactionMetadata } from "@/vendors/codex/impl/CodexCompactionMetadata.js";
+import type { CodexResponseRequest } from "@/vendors/codex/impl/CodexResponseRequest.js";
 
 export function setCodexRequestKind(
-    request: Record<string, unknown>,
+    request: CodexResponseRequest,
     requestKind: "compaction" | "prewarm" | "turn",
     compaction?: CodexCompactionMetadata,
 ): void {
@@ -12,11 +13,13 @@ export function setCodexRequestKind(
     ) {
         return;
     }
-    const clientMetadata = request.client_metadata as Record<string, unknown>;
+    const clientMetadata = request.client_metadata;
     const encoded = clientMetadata["x-codex-turn-metadata"];
     if (typeof encoded !== "string") return;
     try {
-        const turnMetadata = JSON.parse(encoded) as Record<string, unknown>;
+        const parsed: unknown = JSON.parse(encoded);
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return;
+        const turnMetadata: Record<string, unknown> = { ...parsed };
         turnMetadata.request_kind = requestKind;
         if (requestKind === "compaction" && compaction !== undefined) {
             turnMetadata.compaction = compaction;

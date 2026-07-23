@@ -1,17 +1,18 @@
 import type { SessionTool } from "@/core/SessionTool.js";
 import type { CodexToolDefinitionVendor } from "@/vendors/codex/CodexToolVendor.js";
 import { toJsonSchema } from "@/vendors/codex/impl/toJsonSchema.js";
+import type {
+    NamespaceTool,
+    Tool,
+} from "openai/resources/responses/responses.js";
 
-export function toCodexToolDefinitions(tools: readonly SessionTool[]): readonly unknown[] {
+export function toCodexToolDefinitions(tools: readonly SessionTool[]): Tool[] {
     const nativeNamespaceDescriptions = new Map([
         ["image_gen", "Tools in the image_gen namespace."],
         ["collaboration", "Tools for spawning and managing sub-agents."],
     ]);
-    const output: unknown[] = [];
-    const namespaces = new Map<
-        string,
-        { type: "namespace"; name: string; description: string; tools: unknown[] }
-    >();
+    const output: Tool[] = [];
+    const namespaces = new Map<string, NamespaceTool>();
 
     for (const tool of tools) {
         const definition = toCodexTool(tool);
@@ -33,6 +34,11 @@ export function toCodexToolDefinitions(tools: readonly SessionTool[]): readonly 
             namespaces.set(tool.namespace, namespace);
             output.push(namespace);
         }
+        if (definition.type !== "function" && definition.type !== "custom") {
+            throw new Error(
+                `Namespaced Codex tool '${tool.namespace}.${tool.name}' must be a function or custom tool.`,
+            );
+        }
         namespace.tools.push(definition);
     }
     return output;
@@ -42,13 +48,14 @@ function humanizeNamespace(namespace: string): string {
     return namespace.replaceAll("_", " ");
 }
 
-function toCodexTool(tool: SessionTool): unknown {
+function toCodexTool(tool: SessionTool): Tool {
     if (tool.name === "web_search" && tool.type === "cloud") {
-        return {
+        const definition = {
             type: "web_search",
             external_web_access: false,
             search_content_types: ["text", "image"],
-        };
+        } as const;
+        return definition;
     }
     const vendor = tool.vendor as Partial<CodexToolDefinitionVendor> | undefined;
     if (
@@ -59,7 +66,7 @@ function toCodexTool(tool: SessionTool): unknown {
         return {
             type: "tool_search",
             execution: "client",
-            description: tool.description,
+            ...(tool.description === undefined ? {} : { description: tool.description }),
             ...(tool.parameters === undefined ? {} : { parameters: toJsonSchema(tool.parameters) }),
         };
     }
@@ -67,20 +74,20 @@ function toCodexTool(tool: SessionTool): unknown {
         return {
             type: "custom",
             name: tool.name,
-            description: tool.description,
+            ...(tool.description === undefined ? {} : { description: tool.description }),
             format: { type: "grammar", syntax: "lark", definition: tool.grammar.grammar },
         };
     }
     return {
         type: "function",
         name: tool.name,
-        description: tool.description,
+        ...(tool.description === undefined ? {} : { description: tool.description }),
         strict: false,
         ...(vendor?.provider === "codex" &&
         vendor.type === "function" &&
         vendor.deferLoading === true
             ? { defer_loading: true }
             : {}),
-        ...(tool.parameters === undefined ? {} : { parameters: toJsonSchema(tool.parameters) }),
+        parameters: tool.parameters === undefined ? null : toJsonSchema(tool.parameters),
     };
 }

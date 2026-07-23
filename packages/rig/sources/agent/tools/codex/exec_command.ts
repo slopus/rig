@@ -28,42 +28,25 @@ export const codexExecCommandTool = defineTool({
                             "User-facing approval question for `require_escalated`; omit otherwise.",
                     }),
                 ),
-                login: Type.Optional(
-                    Type.Boolean({
-                        description:
-                            "True runs the shell with -l/-i semantics; false disables them. Defaults to true.",
-                    }),
-                ),
                 max_output_tokens: Type.Optional(
                     Type.Number({
                         description:
                             "Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy.",
                     }),
                 ),
-                prefix_rule: Type.Optional(
-                    Type.Array(Type.String(), {
-                        description:
-                            'Reusable approval prefix for `cmd`, only with `sandbox_permissions: "require_escalated"`; for example ["git", "pull"].',
-                    }),
-                ),
                 sandbox_permissions: Type.Optional(
-                    Type.Unsafe({
-                        type: "string",
+                    Type.Union(
+                        [Type.Literal("use_default"), Type.Literal("require_escalated")],
+                        {
                         description:
                             "Per-command sandbox override. Defaults to `use_default`; use `require_escalated` for unsandboxed execution.",
-                        enum: ["use_default", "require_escalated"],
-                    }),
+                        },
+                    ),
                 ),
                 shell: Type.Optional(
                     Type.String({
                         description:
                             "Shell binary to launch. Defaults to the user's default shell.",
-                    }),
-                ),
-                tty: Type.Optional(
-                    Type.Boolean({
-                        description:
-                            "True allocates a PTY for the command; false or omitted uses plain pipes.",
                     }),
                 ),
                 workdir: Type.Optional(

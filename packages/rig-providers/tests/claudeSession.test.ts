@@ -7,6 +7,147 @@ import { CLAUDE_SDK_PRIVACY_ENVIRONMENT } from "@/vendors/claude/claudeSdkPrivac
 import { collectSessionEvents, textFromSessionEvents } from "./helpers/collectSessionEvents.js";
 
 describe("ClaudeSession", () => {
+    it("preserves weekly quota classification, reset time, and the native error", async () => {
+        const credential = await ClaudeAuthTokenCredential.tryLoad({ authToken: "test-token" });
+        if (credential === null) throw new Error("Expected test credential.");
+        const session = new ClaudeSession("quota-session", {
+            context: { instructions: "", messages: [] },
+            credential,
+            cwd: "/tmp/rig-claude-quota-test",
+            model: "sonnet[1m]",
+            query: (() => {
+                async function* messages() {
+                    yield {
+                        type: "rate_limit_event",
+                        rate_limit_info: {
+                            status: "rejected",
+                            resetsAt: 2_000,
+                            overageStatus: "rejected",
+                            overageDisabledReason: "org_level_disabled",
+                        },
+                        uuid: "quota-event-id",
+                        session_id: "quota-session",
+                    };
+                    yield {
+                        type: "assistant",
+                        error: "rate_limit",
+                        message: {
+                            id: "assistant-message-id",
+                            type: "message",
+                            role: "assistant",
+                            model: "claude-sonnet-5",
+                            content: [],
+                            stop_reason: "end_turn",
+                            stop_sequence: null,
+                            usage: {
+                                input_tokens: 0,
+                                output_tokens: 0,
+                                cache_creation_input_tokens: 0,
+                                cache_read_input_tokens: 0,
+                            },
+                        },
+                        parent_tool_use_id: null,
+                        uuid: "assistant-event-id",
+                        session_id: "quota-session",
+                    };
+                    yield {
+                        type: "result",
+                        subtype: "success",
+                        duration_ms: 1,
+                        duration_api_ms: 1,
+                        is_error: true,
+                        num_turns: 1,
+                        result: "You've hit your weekly limit · resets Jul 25 at 5am",
+                        stop_reason: null,
+                        total_cost_usd: 0,
+                        usage: {
+                            input_tokens: 0,
+                            output_tokens: 0,
+                            cache_creation_input_tokens: 0,
+                            cache_read_input_tokens: 0,
+                        },
+                        modelUsage: {},
+                        permission_denials: [],
+                        uuid: "result-id",
+                        session_id: "quota-session",
+                    };
+                }
+                const generator = messages();
+                return Object.assign(generator, { close: () => {} });
+            }) as unknown as ClaudeSdkQuery,
+            skills: [],
+            tools: [],
+        });
+
+        const events = [];
+        for await (const event of session.run({
+            context: { messages: [{ role: "user", content: "Hello." }] },
+        })) {
+            events.push(event);
+        }
+
+        expect(events.at(-1)).toEqual({
+            type: "done",
+            state: "error",
+            kind: "unknown",
+            message: "You've hit your weekly limit · resets Jul 25 at 5am",
+            providerError: { type: "rate_limit", resetAt: 2_000_000 },
+        });
+    });
+
+    it("humanizes an SDK error result whose error list is empty", async () => {
+        const credential = await ClaudeAuthTokenCredential.tryLoad({ authToken: "test-token" });
+        if (credential === null) throw new Error("Expected test credential.");
+        const session = new ClaudeSession("empty-error-session", {
+            context: { instructions: "", messages: [] },
+            credential,
+            cwd: "/tmp/rig-claude-empty-error-test",
+            model: "sonnet[1m]",
+            query: (() => {
+                async function* messages() {
+                    yield {
+                        type: "result",
+                        subtype: "error_during_execution",
+                        duration_ms: 1,
+                        duration_api_ms: 1,
+                        is_error: true,
+                        num_turns: 1,
+                        stop_reason: null,
+                        total_cost_usd: 0,
+                        usage: {
+                            input_tokens: 0,
+                            output_tokens: 0,
+                            cache_creation_input_tokens: 0,
+                            cache_read_input_tokens: 0,
+                        },
+                        modelUsage: {},
+                        permission_denials: [],
+                        errors: [],
+                        uuid: "result-id",
+                        session_id: "empty-error-session",
+                    };
+                }
+                const generator = messages();
+                return Object.assign(generator, { close: () => {} });
+            }) as unknown as ClaudeSdkQuery,
+            skills: [],
+            tools: [],
+        });
+
+        const events = [];
+        for await (const event of session.run({
+            context: { messages: [{ role: "user", content: "Hello." }] },
+        })) {
+            events.push(event);
+        }
+
+        expect(events.at(-1)).toMatchObject({
+            type: "done",
+            state: "error",
+            message: "Claude encountered an error while running the request.",
+        });
+    });
+
     it("converts native Claude API retries into Rig retry events", async () => {
         const credential = await ClaudeAuthTokenCredential.tryLoad({ authToken: "test-token" });
         if (credential === null) throw new Error("Expected test credential.");

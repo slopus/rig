@@ -28,11 +28,9 @@ export const codexViewImageTool = defineTool({
         parameters: Type.Object(
             {
                 detail: Type.Optional(
-                    Type.Unsafe({
-                        type: "string",
+                    Type.Union([Type.Literal("high"), Type.Literal("original")], {
                         description:
                             "Image detail level. Defaults to `high`; use `original` to preserve exact resolution.",
-                        enum: ["high", "original"],
                     }),
                 ),
                 path: Type.String({ description: "Local filesystem path to an image file." }),

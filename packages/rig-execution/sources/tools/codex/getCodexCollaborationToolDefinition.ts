@@ -13,8 +13,10 @@ export type CodexCollaborationToolName =
 const definitions: Readonly<Record<CodexCollaborationToolName, FunctionTool>> = {
     followup_task: {
         name: "followup_task",
-        description:
-            "Send a follow-up task to an existing non-root target agent and trigger a turn if it is idle. If the target is already running, deliver the task promptly at message boundaries while sampling, or after the pending tool call completes.",
+        description: `Allowed targets: compatible GPT agents using the current Codex provider.
+Prefer this native tool for compatible GPT agents because it preserves Codex's encrypted collaboration transport. Use \`collaboration_ext.followup_task\` for non-GPT or cross-provider agents.
+
+Send a follow-up task to an existing non-root target agent and trigger a turn if it is idle. If the target is already running, deliver the task promptly at message boundaries while sampling, or after the pending tool call completes.`,
         parameters: Type.Object(
             {
                 target: Type.String({
@@ -78,9 +80,10 @@ const definitions: Readonly<Record<CodexCollaborationToolName, FunctionTool>> = 
     spawn_agent: {
         name: "spawn_agent",
         description: `
-        Available model overrides (optional; inherited parent model is preferred):
-- \`gpt-5.6-sol\`: Latest frontier agentic coding model. Reasoning efforts: low (default), medium, high, xhigh, max, ultra. Service tiers: priority.
-- \`gpt-5.6-terra\`: Balanced agentic coding model for everyday work. Reasoning efforts: low, medium (default), high, xhigh, max, ultra. Service tiers: priority.
+        Allowed provider/model pairs (the current Codex provider is inherited):
+- current Codex provider + \`openai/gpt-5.6-sol\`: Latest frontier agentic coding model. Reasoning efforts: low (default), medium, high, xhigh, max, ultra. Service tiers: priority.
+- current Codex provider + \`openai/gpt-5.6-terra\`: Balanced agentic coding model for everyday work. Reasoning efforts: low, medium (default), high, xhigh, max, ultra. Service tiers: priority.
+Prefer this native tool for GPT models because it preserves Codex's encrypted collaboration transport.
         Spawns an agent to work on the specified task. If your current task is \`/root/task1\` and you spawn_agent with task_name "task_3" the agent will have canonical task name \`/root/task1/task_3\`.
 You are then able to refer to this agent as \`task_3\` or \`/root/task1/task_3\` interchangeably. However an agent \`/root/task2/task_3\` would only be able to communicate with this agent via its canonical name \`/root/task1/task_3\`.
 The spawned agent will have the same tools as you and the ability to spawn its own subagents.

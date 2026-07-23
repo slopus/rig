@@ -1,13 +1,13 @@
-import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
-
 import type { SessionTool } from "@/core/SessionTool.js";
+import type { CodexResponseRequest } from "@/vendors/codex/impl/CodexResponseRequest.js";
 import { isCodexV2Model } from "@/vendors/codex/impl/isCodexV2Model.js";
+import { responseInputItems } from "@/vendors/codex/impl/responseInputItems.js";
 import { toCodexToolDefinitions } from "@/vendors/codex/impl/toCodexToolDefinitions.js";
 
 export function createCodexCliSseRequest(
-    request: ResponseCreateParamsStreaming,
+    request: CodexResponseRequest,
     tools: readonly SessionTool[],
-): ResponseCreateParamsStreaming {
+): CodexResponseRequest {
     if (!isCodexV2Model(String(request.model))) return request;
     const sseRequest = structuredClone(request);
     sseRequest.input = [
@@ -16,7 +16,7 @@ export function createCodexCliSseRequest(
             role: "developer",
             tools: toCodexToolDefinitions(tools),
         },
-        ...(sseRequest.input as unknown[]),
-    ] as never;
+        ...responseInputItems(sseRequest.input),
+    ];
     return sseRequest;
 }

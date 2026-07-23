@@ -59,7 +59,9 @@ export const codexApplyPatchTool = defineTool({
         ) {
             return { patch: argumentsValue.input };
         }
-        return argumentsValue;
+        return typeof argumentsValue === "object" && argumentsValue !== null
+            ? { ...argumentsValue }
+            : {};
     },
     arguments: Type.Object({
         patch: Type.String({

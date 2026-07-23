@@ -4,6 +4,14 @@ export type SessionDoneState = "cancelled" | "normal" | "tool_call" | "length" |
 
 export type SessionErrorKind = "internal_error" | "context_overflow" | "billing_error" | "unknown";
 
+/** Provider failure details that remain meaningful above a native session transport. */
+export type SessionProviderError =
+    | { type: "out_of_tokens"; resetAt?: number }
+    | { type: "rate_limit"; resetAt?: number }
+    | { type: "server_overloaded" }
+    | { type: "internal_server_error"; requestId?: string }
+    | { type: "unclassified" };
+
 /** Streaming events emitted during a single session run. */
 export type SessionEvent =
     | { type: "block_start" }
@@ -30,7 +38,13 @@ export type SessionEvent =
     | { type: "done"; state: "normal" }
     | { type: "done"; state: "tool_call" }
     | { type: "done"; state: "length" }
-    | { type: "done"; state: "error"; kind: SessionErrorKind; message: string };
+    | {
+          type: "done";
+          state: "error";
+          kind: SessionErrorKind;
+          message: string;
+          providerError?: SessionProviderError;
+      };
 
 export type SessionStream = AsyncIterable<SessionEvent>;
 

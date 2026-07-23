@@ -19,6 +19,8 @@ import { codexInterruptAgentTool } from "./v2/interrupt_agent.js";
 import { codexListAgentsTool } from "./v2/list_agents.js";
 import { codexSendMessageTool } from "./v2/send_message.js";
 import { codexSpawnAgentTool } from "./v2/spawn_agent.js";
+import { codexExtendedFollowupTaskTool } from "./v2/collaboration_ext/followup_task.js";
+import { codexExtendedSpawnAgentTool } from "./v2/collaboration_ext/spawn_agent.js";
 import { codexWaitAgentTool } from "./v2/wait_agent.js";
 
 export const codexTools = [
@@ -39,6 +41,8 @@ const codexWorkflowTools = [
 
 export const codexV2CollaborationTools = [
     codexSpawnAgentTool,
+    codexExtendedSpawnAgentTool,
+    codexExtendedFollowupTaskTool,
     codexFollowupTaskTool,
     codexSendMessageTool,
     codexWaitAgentTool,

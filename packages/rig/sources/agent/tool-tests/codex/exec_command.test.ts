@@ -4,6 +4,21 @@ import { createJustBashToolHarness } from "../../../tools/testing/createJustBash
 import { codexExecCommandTool } from "../../tools/codex/exec_command.js";
 
 describe("codex exec_command tool", () => {
+    it("advertises only command options implemented by Rig", () => {
+        const executorTool = codexExecCommandTool.executorTool;
+        if (
+            executorTool === undefined ||
+            executorTool.kind === "custom" ||
+            executorTool.kind === "tool_search" ||
+            executorTool.parameters === undefined
+        ) {
+            throw new Error("exec_command must expose a function schema.");
+        }
+        expect(executorTool.parameters.properties).not.toHaveProperty("login");
+        expect(executorTool.parameters.properties).not.toHaveProperty("prefix_rule");
+        expect(executorTool.parameters.properties).not.toHaveProperty("tty");
+    });
+
     it("runs a command through the agent context bash", async () => {
         const harness = createJustBashToolHarness();
         const progress: string[] = [];

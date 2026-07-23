@@ -1,10 +1,11 @@
 import { isCodexV2Model } from "@/vendors/codex/impl/isCodexV2Model.js";
+import type { CodexResponseRequest } from "@/vendors/codex/impl/CodexResponseRequest.js";
 
 export function stampCodexWebSocketRequest(
-    request: Readonly<Record<string, unknown>>,
+    request: Readonly<CodexResponseRequest>,
     turnState?: string,
-): Record<string, unknown> {
-    const stamped = structuredClone(request) as Record<string, unknown>;
+): CodexResponseRequest {
+    const stamped: CodexResponseRequest = structuredClone(request);
     const clientMetadata =
         typeof stamped.client_metadata === "object" &&
         stamped.client_metadata !== null &&

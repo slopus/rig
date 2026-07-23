@@ -39,7 +39,7 @@ export function toOpenAIResponseInput(context: SessionContext): ResponseInput {
         if (message.role === "tool") {
             if (toolSearchCallIds.has(message.callId)) {
                 try {
-                    const parsed = JSON.parse(message.content) as unknown;
+                    const parsed: unknown = JSON.parse(message.content);
                     input.push({
                         type: "tool_search_output",
                         call_id: message.callId,

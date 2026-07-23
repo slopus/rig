@@ -18,6 +18,7 @@ import {
     modelXaiGrokComposer25Fast,
 } from "@/models.js";
 import type { Model } from "@/types.js";
+import { resolveProfileDefaultEffort } from "@/resolveProfileDefaultEffort.js";
 
 export function builtinModelProfiles(
     providerId: string,
@@ -83,11 +84,12 @@ function profile(
     candidate: Model,
     options: { prompt: string },
 ): ExecutorModelProfile {
+    const defaultEffort = resolveProfileDefaultEffort(candidate.defaultThinkingLevel);
     return {
         ...(candidate.contextWindow === undefined
             ? {}
             : { contextWindow: candidate.contextWindow }),
-        defaultEffort: candidate.defaultThinkingLevel === "low" ? "low" : "medium",
+        ...(defaultEffort === undefined ? {} : { defaultEffort }),
         id: candidate.id,
         model: candidate,
         name: candidate.name,

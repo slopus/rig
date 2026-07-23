@@ -41,6 +41,7 @@ export type {
     SessionDoneState,
     SessionErrorKind,
     SessionEvent,
+    SessionProviderError,
     SessionStream,
 } from "@/core/SessionEvent.js";
 export { isSessionDoneEvent, isSessionErrorDone } from "@/core/SessionEvent.js";

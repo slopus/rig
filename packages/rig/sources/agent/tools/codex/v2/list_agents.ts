@@ -1,8 +1,9 @@
 import { Type } from "@sinclair/typebox";
 
 import { defineTool } from "../../../types.js";
-import { managedSubagentSchema } from "../impl/subagentSchemas.js";
+import { codexAgentStatusSchema } from "../impl/codexAgentStatusSchema.js";
 import { requireSubagentContext } from "../impl/requireSubagentContext.js";
+import { toCodexAgentStatus } from "../impl/toCodexAgentStatus.js";
 
 export const codexListAgentsTool = defineTool({
     name: "list_agents",
@@ -17,11 +18,22 @@ export const codexListAgentsTool = defineTool({
             Type.String({ description: "Full task-path prefix used to filter the list." }),
         ),
     }),
-    returnType: Type.Object({ agents: Type.Array(managedSubagentSchema) }),
+    returnType: Type.Object({
+        agents: Type.Array(
+            Type.Object(
+                {
+                    agent_name: Type.String(),
+                    agent_status: codexAgentStatusSchema,
+                },
+                { additionalProperties: false },
+            ),
+        ),
+    }),
     shouldReviewInAutoMode: () => false,
     execute: ({ path_prefix }, context) => ({
         agents: Array.from(requireSubagentContext(context).list(path_prefix), (agent) => ({
-            ...agent,
+            agent_name: agent.path || agent.sessionId,
+            agent_status: toCodexAgentStatus(agent),
         })),
     }),
     toLLM: (result) => [{ type: "text", text: JSON.stringify(result) }],

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type OpenAI from "openai";
 import type {
-    ResponseCreateParamsStreaming,
+    ResponseOutputItem,
     ResponseStreamEvent,
 } from "openai/resources/responses/responses.js";
 import { ResponsesWS } from "openai/resources/responses/ws";
@@ -21,6 +21,7 @@ import { classifyCodexError } from "@/vendors/codex/impl/classifyCodexError.js";
 import { codexModelsShareConfiguration } from "@/vendors/codex/impl/codexModelsShareConfiguration.js";
 import { collectCodexCompaction } from "@/vendors/codex/impl/collectCodexCompaction.js";
 import { createCodexBedrockRequest } from "@/vendors/codex/impl/createCodexBedrockRequest.js";
+import type { CodexResponseRequest } from "@/vendors/codex/impl/CodexResponseRequest.js";
 import { createCodexClient } from "@/vendors/codex/impl/createCodexClient.js";
 import { createCodexClientMetadata } from "@/vendors/codex/impl/createCodexClientMetadata.js";
 import { createCodexCompactionRequest } from "@/vendors/codex/impl/createCodexCompactionRequest.js";
@@ -100,9 +101,9 @@ export class CodexSession extends BaseSession {
     private forceSse = false;
     private readonly installationId: string;
     private readonly modelConfigurations = new Map<string, SessionModelConfiguration>();
-    private previousRequest: Record<string, unknown> | undefined;
+    private previousRequest: CodexResponseRequest | undefined;
     private previousResponseId: string | undefined;
-    private previousResponseItems: readonly unknown[] = [];
+    private previousResponseItems: readonly ResponseOutputItem[] = [];
     private socket: ResponsesWS | undefined;
     private turnId = randomUUID();
     private turnKey: string | undefined;
@@ -326,7 +327,7 @@ export class CodexSession extends BaseSession {
         const contextWindow = getCodexModelProperties(model)?.contextWindow ?? 272_000;
         let fittedContextWindow = contextWindow;
         let payload = fitCodexCompactionRequest(basePayload, [], fittedContextWindow);
-        setCodexRequestKind(payload as unknown as Record<string, unknown>, "compaction", metadata);
+        setCodexRequestKind(payload, "compaction", metadata);
         let contextWindowRetries = 0;
         let retries = 0;
         const maxRetries = Math.min(this.streamMaxRetries, CODEX_COMPACTION_MAX_RETRIES);
@@ -381,11 +382,7 @@ export class CodexSession extends BaseSession {
                     contextWindowRetries += 1;
                     fittedContextWindow = Math.floor(fittedContextWindow * 0.9);
                     payload = fitCodexCompactionRequest(basePayload, [], fittedContextWindow);
-                    setCodexRequestKind(
-                        payload as unknown as Record<string, unknown>,
-                        "compaction",
-                        metadata,
-                    );
+                    setCodexRequestKind(payload, "compaction", metadata);
                     retries = 0;
                     continue;
                 }
@@ -599,7 +596,7 @@ export class CodexSession extends BaseSession {
         model: string,
         effort: SessionReasoningEffort,
         serviceTier?: SessionRunRequest["serviceTier"],
-    ): ResponseCreateParamsStreaming {
+    ): CodexResponseRequest {
         return createCodexCliRequest({
             clientMetadata: createCodexClientMetadata({
                 installationId: this.installationId,
@@ -665,14 +662,13 @@ export class CodexSession extends BaseSession {
     }
 
     private async sse(
-        request: ResponseCreateParamsStreaming,
+        request: CodexResponseRequest,
         tools: readonly SessionTool[],
         model: string,
         signal?: AbortSignal,
     ) {
         const sseRequest = createCodexCliSseRequest(request, tools);
-        const clientMetadata = (sseRequest as unknown as Record<string, unknown>)
-            .client_metadata as Record<string, unknown> | undefined;
+        const clientMetadata = sseRequest.client_metadata;
         const turnMetadata = clientMetadata?.["x-codex-turn-metadata"];
         const { data: stream, response } = await this.resolveClient()
             .responses.create(
@@ -710,7 +706,7 @@ export class CodexSession extends BaseSession {
     }
 
     private async *websocket(
-        request: ResponseCreateParamsStreaming,
+        request: CodexResponseRequest,
         tools: readonly SessionTool[],
         signal?: AbortSignal,
     ): AsyncGenerator<ResponseStreamEvent> {
@@ -737,7 +733,7 @@ export class CodexSession extends BaseSession {
             }
             this.websocketStarted = true;
         }
-        const fullRequest = request as unknown as Record<string, unknown>;
+        const fullRequest = request;
         const incrementalInput =
             this.previousRequest === undefined
                 ? undefined
@@ -750,11 +746,8 @@ export class CodexSession extends BaseSession {
             !this.websocketNeedsFullRequest &&
             (!this.websocketInferenceStarted || incrementalInput !== undefined);
         const inferenceRequest = canContinue
-            ? (createCodexCliWebSocketInferenceRequest(request) as unknown as Record<
-                  string,
-                  unknown
-              >)
-            : (createCodexCliSseRequest(request, tools) as unknown as Record<string, unknown>);
+            ? createCodexCliWebSocketInferenceRequest(request)
+            : createCodexCliSseRequest(request, tools);
         if (incrementalInput !== undefined) inferenceRequest.input = incrementalInput;
         if (canContinue && this.previousResponseId !== undefined) {
             inferenceRequest.previous_response_id = this.previousResponseId;

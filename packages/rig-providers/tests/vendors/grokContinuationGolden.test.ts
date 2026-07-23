@@ -77,6 +77,17 @@ describe("Grok continuation goldens", () => {
         },
     );
 
+    it("omits unsupported reasoning effort for Composer 2.5", () => {
+        const request = createGrokOpenAIRequest({
+            apiModelId: "grok-composer-2.5-fast",
+            context: { instructions: "System prompt.", messages: [] },
+            effort: "off",
+            tools: [],
+        });
+
+        expect(request.reasoning).toEqual({ summary: "concise" });
+    });
+
     it("maps reasoning, tool calls, encrypted continuation, usage, and completion", async () => {
         const events = await collect(
             mapGrokResponseStream(

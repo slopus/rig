@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import {
     query as defaultClaudeSdkQuery,
+    type SDKAssistantMessageError,
+    type SDKRateLimitInfo,
     type SDKResultMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 
@@ -23,6 +25,8 @@ import { resolveClaudeModelId } from "@/vendors/claude/impl/resolveClaudeModelId
 import type { ClaudeCredential } from "@/vendors/VendorCredential.js";
 import { ClaudePromptQueue } from "@/vendors/claude/impl/ClaudePromptQueue.js";
 import { ClaudeToolBridge } from "@/vendors/claude/impl/ClaudeToolBridge.js";
+import { claudeResultErrorMessage } from "@/vendors/claude/impl/claudeResultErrorMessage.js";
+import { classifyClaudeError } from "@/vendors/claude/impl/classifyClaudeError.js";
 import {
     createClaudeLivePromptMessage,
     createClaudeSessionReplay,
@@ -274,6 +278,9 @@ export class ClaudeSession extends BaseSession {
         let nativeCompactionCompleted = false;
         let nativeCompactionError: string | undefined;
         let result: SDKResultMessage | undefined;
+        let assistantError: SDKAssistantMessageError | undefined;
+        let rateLimitInfo: SDKRateLimitInfo | undefined;
+        let requestId: string | undefined;
         let usage = { ...EMPTY_SESSION_CACHE_USAGE };
         try {
             if (!continuingQuery) {
@@ -331,6 +338,15 @@ export class ClaudeSession extends BaseSession {
                 }
                 if (message.type === "system" && message.subtype === "api_retry") {
                     yield toClaudeRetryEvent(message);
+                    continue;
+                }
+                if (message.type === "rate_limit_event") {
+                    rateLimitInfo = message.rate_limit_info;
+                    continue;
+                }
+                if (message.type === "assistant" && message.error !== undefined) {
+                    assistantError = message.error;
+                    requestId = message.request_id;
                     continue;
                 }
                 if (
@@ -452,11 +468,30 @@ export class ClaudeSession extends BaseSession {
                 }
                 if (result.subtype !== "success" || result.is_error) {
                     const message =
-                        "errors" in result && Array.isArray(result.errors)
-                            ? result.errors.join("\n")
-                            : "Claude failed to generate a response.";
+                        result.subtype === "success"
+                            ? result.result.trim() || "Claude returned an unsuccessful result."
+                            : claudeResultErrorMessage(result);
+                    const providerError = classifyClaudeError({
+                        ...(assistantError === undefined ? {} : { assistantError }),
+                        message,
+                        ...(rateLimitInfo === undefined ? {} : { rateLimitInfo }),
+                        ...(requestId === undefined ? {} : { requestId }),
+                    });
+                    this.closeActiveQuery();
                     yield { type: "block_reset" };
-                    yield { type: "done", state: "error", kind: "unknown", message };
+                    yield {
+                        type: "done",
+                        state: "error",
+                        kind:
+                            providerError.type === "out_of_tokens"
+                                ? "billing_error"
+                                : providerError.type === "server_overloaded" ||
+                                    providerError.type === "internal_server_error"
+                                  ? "internal_error"
+                                  : "unknown",
+                        message,
+                        providerError,
+                    };
                     return;
                 }
             }
@@ -468,11 +503,26 @@ export class ClaudeSession extends BaseSession {
             this.closeActiveQuery();
             yield { type: "block_reset" };
             if (options.abort?.aborted) return;
+            const rawMessage = error instanceof Error ? error.message : String(error);
+            const message = rawMessage.trim() || "Claude inference failed with an unknown error.";
+            const providerError = classifyClaudeError({
+                ...(assistantError === undefined ? {} : { assistantError }),
+                message,
+                ...(rateLimitInfo === undefined ? {} : { rateLimitInfo }),
+                ...(requestId === undefined ? {} : { requestId }),
+            });
             yield {
                 type: "done",
                 state: "error",
-                kind: "unknown",
-                message: error instanceof Error ? error.message : String(error),
+                kind:
+                    providerError.type === "out_of_tokens"
+                        ? "billing_error"
+                        : providerError.type === "server_overloaded" ||
+                            providerError.type === "internal_server_error"
+                          ? "internal_error"
+                          : "unknown",
+                message,
+                providerError,
             };
         } finally {
             options.abort?.removeEventListener("abort", abort);

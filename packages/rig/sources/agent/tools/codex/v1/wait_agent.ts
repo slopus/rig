@@ -1,7 +1,9 @@
 import { Type } from "@sinclair/typebox";
 
 import { defineTool } from "../../../types.js";
+import { codexAgentStatusSchema } from "../impl/codexAgentStatusSchema.js";
 import { requireSubagentContext } from "../impl/requireSubagentContext.js";
+import { toCodexAgentStatus } from "../impl/toCodexAgentStatus.js";
 
 export const codexV1WaitAgentTool = defineTool({
     name: "wait_agent",
@@ -29,24 +31,36 @@ export const codexV1WaitAgentTool = defineTool({
         { additionalProperties: false },
     ),
     returnType: Type.Object({
-        status: Type.Record(Type.String(), Type.String()),
+        status: Type.Record(Type.String(), codexAgentStatusSchema),
         timed_out: Type.Boolean(),
     }),
     shouldReviewInAutoMode: () => false,
     execute: async ({ targets, timeout_ms }, context, execution) => {
         const subagents = requireSubagentContext(context);
         const targetSet = new Set(targets);
-        const result = await subagents.wait(timeout_ms, execution.signal);
-        const agents = result.agents.filter(
-            (agent) =>
-                targetSet.has(agent.sessionId) ||
-                targetSet.has(agent.path) ||
-                targetSet.has(agent.taskName),
-        );
-        return {
-            status: Object.fromEntries(agents.map((agent) => [agent.sessionId, agent.status])),
-            timed_out: result.timedOut,
-        };
+        const timeout = timeout_ms ?? 30_000;
+        const deadline = Date.now() + timeout;
+        while (true) {
+            const remaining = Math.max(0, deadline - Date.now());
+            const result = await subagents.wait(remaining, execution.signal);
+            const agents = result.agents.filter(
+                (agent) =>
+                    targetSet.has(agent.sessionId) ||
+                    targetSet.has(agent.path) ||
+                    targetSet.has(agent.taskName),
+            );
+            if (agents.length > 0) {
+                return {
+                    status: Object.fromEntries(
+                        agents.map((agent) => [agent.sessionId, toCodexAgentStatus(agent)]),
+                    ),
+                    timed_out: false,
+                };
+            }
+            if (result.timedOut || remaining === 0) {
+                return { status: {}, timed_out: true };
+            }
+        }
     },
     toLLM: (result) => [{ type: "text", text: JSON.stringify(result) }],
     toUI: (result) =>
