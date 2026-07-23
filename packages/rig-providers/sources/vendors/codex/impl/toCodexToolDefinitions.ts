@@ -1,9 +1,8 @@
 import type { SessionTool } from "@/core/SessionTool.js";
+import type { CodexToolDefinitionVendor } from "@/vendors/codex/CodexToolVendor.js";
 import { toJsonSchema } from "@/vendors/codex/impl/toJsonSchema.js";
 
-export function toCodexToolDefinitions(
-    tools: readonly SessionTool[],
-): readonly unknown[] {
+export function toCodexToolDefinitions(tools: readonly SessionTool[]): readonly unknown[] {
     const namespaceDescriptions = new Map([
         ["image_gen", "Tools in the image_gen namespace."],
         ["collaboration", "Tools for spawning and managing sub-agents."],
@@ -44,14 +43,17 @@ function toCodexTool(tool: SessionTool): unknown {
             search_content_types: ["text", "image"],
         };
     }
-    if (tool.name === "tool_search") {
+    const vendor = tool.vendor as Partial<CodexToolDefinitionVendor> | undefined;
+    if (
+        vendor?.provider === "codex" &&
+        vendor.type === "tool_search" &&
+        vendor.execution === "client"
+    ) {
         return {
             type: "tool_search",
             execution: "client",
             description: tool.description,
-            ...(tool.parameters === undefined
-                ? {}
-                : { parameters: toJsonSchema(tool.parameters) }),
+            ...(tool.parameters === undefined ? {} : { parameters: toJsonSchema(tool.parameters) }),
         };
     }
     if (tool.grammar !== undefined) {
@@ -67,8 +69,6 @@ function toCodexTool(tool: SessionTool): unknown {
         name: tool.name,
         description: tool.description,
         strict: false,
-        ...(tool.parameters === undefined
-            ? {}
-            : { parameters: toJsonSchema(tool.parameters) }),
+        ...(tool.parameters === undefined ? {} : { parameters: toJsonSchema(tool.parameters) }),
     };
 }

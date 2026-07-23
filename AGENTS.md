@@ -40,7 +40,12 @@ When adding or changing permission-sensitive behavior, test the real tool defini
 
 ## Retry policy
 
-Automatically retry only low-level inference transport failures, and only before response content begins. Do not automatically replay tools, commands, or session mutations; those failures usually indicate real breakage that retrying will not fix.
+Inference retry semantics are owned by each provider and must reproduce the native provider's
+retry, rollback, and transport-fallback behavior. The outer agent loop must never replay a
+provider request, tool, command, or session mutation on its own. A provider may retry after
+response content begins only when its protocol exposes an explicit rollback boundary that removes
+the tentative output before replay and its tests prove that no tool effect or visible output can
+be duplicated.
 
 ## Model catalogs
 

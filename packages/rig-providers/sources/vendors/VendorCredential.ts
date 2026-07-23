@@ -17,6 +17,8 @@ export type ClaudeCredential =
 
 export type CodexCredential = CodexApiKeyCredential | CodexSessionCredential;
 
+export type CodexProviderCredential = BedrockCredential | CodexCredential;
+
 export type GeminiCredential = GeminiApiKeyCredential;
 
 export type GrokCredential = GrokApiKeyCredential | GrokSessionCredential;

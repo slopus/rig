@@ -3,7 +3,8 @@
   "source": {
     "client": "codex-cli",
     "version": "codex-cli 0.145.0",
-    "transport": "sse"
+    "transport": "sse",
+    "capture": "forwarded-live-inference"
   },
   "invocation": {
     "model": "gpt-5.5",
@@ -49,7 +50,7 @@
         "content": [
           {
             "type": "input_text",
-            "text": "<recommended_plugins>\nHere is a list of plugins that are available but not installed.\n\n- Atlassian Rovo (atlassian-rovo@openai-curated-remote)\n- Box (box@openai-curated-remote)\n- Figma (figma@openai-curated-remote)\n- Gmail (gmail@openai-curated-remote)\n- Google Calendar (google-calendar@openai-curated-remote)\n- Google Drive (google-drive@openai-curated-remote)\n- Notion (notion@openai-curated-remote)\n- Outlook Calendar (outlook-calendar@openai-curated-remote)\n- Outlook Email (outlook-email@openai-curated-remote)\n- SharePoint (sharepoint@openai-curated-remote)\n- Slack (slack@openai-curated-remote)\n- Teams (teams@openai-curated-remote)\n</recommended_plugins>"
+            "text": "<recommended_plugins>\nHere is a list of plugins that are available but not installed.\n\n- Atlassian Rovo (atlassian-rovo@openai-curated-remote)\n- Box (box@openai-curated-remote)\n- Figma (figma@openai-curated-remote)\n- GitHub (github@openai-curated-remote)\n- Gmail (gmail@openai-curated-remote)\n- Google Calendar (google-calendar@openai-curated-remote)\n- Google Drive (google-drive@openai-curated-remote)\n- Notion (notion@openai-curated-remote)\n- Outlook Calendar (outlook-calendar@openai-curated-remote)\n- Outlook Email (outlook-email@openai-curated-remote)\n- SharePoint (sharepoint@openai-curated-remote)\n- Slack (slack@openai-curated-remote)\n- Teams (teams@openai-curated-remote)\n</recommended_plugins>"
           },
           {
             "type": "input_text",
@@ -489,12 +490,26 @@
       "verbosity": "low"
     },
     "client_metadata": {
+      "turn_id": "<DYNAMIC:turn_id>",
       "session_id": "<DYNAMIC:session_id>",
       "thread_id": "<DYNAMIC:thread_id>",
+      "x-codex-installation-id": "<DYNAMIC:x-codex-installation-id>",
       "x-codex-window-id": "<DYNAMIC:x-codex-window-id>",
-      "turn_id": "<DYNAMIC:turn_id>",
-      "x-codex-turn-metadata": "<DYNAMIC:x-codex-turn-metadata>",
-      "x-codex-installation-id": "<DYNAMIC:x-codex-installation-id>"
+      "x-codex-turn-metadata": "<DYNAMIC:x-codex-turn-metadata>"
     }
+  },
+  "response": {
+    "eventTypes": [
+      "response.created",
+      "response.in_progress",
+      "response.output_item.added",
+      "response.content_part.added",
+      "response.output_text.delta",
+      "response.output_text.done",
+      "response.content_part.done",
+      "response.output_item.done",
+      "response.completed"
+    ],
+    "terminal": "response.completed"
   }
 }

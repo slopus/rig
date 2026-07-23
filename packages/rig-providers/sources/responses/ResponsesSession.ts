@@ -1,5 +1,6 @@
 import { BaseSession } from "@/core/BaseSession.js";
 import type { SessionCacheUsage } from "@/core/SessionCacheUsage.js";
+import type { SessionCompaction, SessionCompactionOptions } from "@/core/SessionCompaction.js";
 import type { SessionContext } from "@/core/SessionContext.js";
 import type { SessionEvent, SessionStream } from "@/core/SessionEvent.js";
 import type { SessionRunRequest } from "@/core/SessionRunRequest.js";
@@ -25,25 +26,32 @@ export class ResponsesSession extends BaseSession {
         return this.streamRun(request);
     }
 
-    async compact(signal?: AbortSignal): Promise<SessionContext> {
+    async compact(options: SessionCompactionOptions = {}): Promise<SessionCompaction> {
+        const { signal } = options;
         const context = this.context;
         if (signal?.aborted) {
-            return context;
+            return { status: "cancelled", context };
         }
 
         const lastUser = [...context.messages].reverse().find((message) => message.role === "user");
         const summary = lastUser?.content ?? "";
+        const preservedMessages = [...this.initialMessages];
         this.context = {
             instructions: context.instructions,
             messages: [
-                ...this.initialMessages,
+                ...preservedMessages,
                 {
                     role: "user",
                     content: `<conversation_summary>\n${summary}\n</conversation_summary>`,
                 },
             ],
         };
-        return this.context;
+        return {
+            status: "completed",
+            summary,
+            preservedMessages,
+            context: this.context,
+        };
     }
 
     destroy(): void {}

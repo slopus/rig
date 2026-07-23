@@ -16,6 +16,8 @@ export interface SessionTool {
     readonly type: SessionToolType;
     readonly description?: string;
     readonly parameters?: TSchema;
+    /** Opaque provider metadata persisted with this tool definition. */
+    readonly vendor?: any;
     /** Ignored by providers that do not support grammar-based tools. */
     readonly grammar?: SessionToolLarkGrammar;
 }

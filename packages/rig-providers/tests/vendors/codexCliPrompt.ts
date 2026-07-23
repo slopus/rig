@@ -40,7 +40,7 @@ const prompts: Readonly<Record<string, CodexPromptEnvelope>> = {
     },
     "gpt-5.6-luna:websocket": {
         instructions: codex_agent_instructions,
-        systemMessages: [[...base]],
+        systemMessages: [[read_only_permissions, apps_instructions, plugins_instructions]],
     },
     "gpt-5.6-luna:sse": {
         instructions: codex_agent_instructions,

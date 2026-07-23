@@ -11,9 +11,11 @@ export function createCodexCliSseRequest(
     if (!isCodexV2Model(String(request.model))) return request;
     const sseRequest = structuredClone(request);
     sseRequest.input = [
-        ...(tools.length === 0
-            ? []
-            : [{ type: "additional_tools", tools: toCodexToolDefinitions(tools) }]),
+        {
+            type: "additional_tools",
+            role: "developer",
+            tools: toCodexToolDefinitions(tools),
+        },
         ...(sseRequest.input as unknown[]),
     ] as never;
     return sseRequest;

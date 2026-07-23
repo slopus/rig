@@ -6,6 +6,11 @@ import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { gunzipSync, zstdDecompressSync } from "node:zlib";
+import OpenAI from "openai";
+import { ResponsesWS } from "openai/resources/responses/ws";
+
+const CODEX_UPSTREAM = "https://chatgpt.com/backend-api/codex";
 
 const outputArgument = process.argv[2];
 const transport = process.argv[3] ?? "sse";
@@ -36,20 +41,25 @@ await copyFile(
 );
 
 const requests = [];
+const responses = [];
+const upstreamWebSockets = new Set();
 const server = createServer(async (request, response) => {
     if (request.method !== "POST") {
         response.writeHead(404).end();
         return;
     }
-    const body = JSON.parse(await readBody(request));
+    const requestBytes = await readBody(request);
+    const body = JSON.parse(decodeRequestBody(requestBytes, request.headers["content-encoding"]));
     requests.push(normalizeRequest(body, captureDirectory));
-    const index = requests.length;
-    response.writeHead(200, { "content-type": "text/event-stream" });
-    const item = assistantItem(index, body);
-    response.end(
-        `data: ${JSON.stringify({ type: "response.output_item.done", item })}\n\n` +
-            `data: ${JSON.stringify(completedResponse(index, item))}\n\ndata: [DONE]\n\n`,
-    );
+    const upstream = await fetch(`${CODEX_UPSTREAM}${upstreamPath(request.url)}`, {
+        method: "POST",
+        headers: upstreamHeaders(request.headers),
+        body: requestBytes,
+    });
+    response.writeHead(upstream.status, relayResponseHeaders(upstream.headers));
+    const bytes = Buffer.from(await upstream.arrayBuffer());
+    responses.push(summarizeSseResponse(bytes.toString("utf8")));
+    response.end(bytes);
 });
 server.on("upgrade", (request, socket) => {
     if (transport !== "websocket") {
@@ -58,34 +68,29 @@ server.on("upgrade", (request, socket) => {
     }
     acceptWebSocket(request, socket);
     const frames = createFrameReader(socket);
+    const upstream = createUpstreamWebSocket(request.headers);
+    upstreamWebSockets.add(upstream);
     void (async () => {
+        const upstreamEvents = (async () => {
+            for await (const item of upstream) {
+                if (item.type === "message") {
+                    recordWebSocketEvent(item.message);
+                    socket.write(encodeTextFrame(JSON.stringify(item.message)));
+                } else if (item.type === "close") {
+                    socket.end();
+                    return;
+                } else if (item.type === "error") {
+                    throw item.error;
+                }
+            }
+        })();
         for (;;) {
             const body = JSON.parse(await frames.next());
             requests.push(normalizeRequest(body, captureDirectory));
-            const index = requests.length;
-            if (body.generate === false) {
-                socket.write(
-                    encodeTextFrame(
-                        JSON.stringify({
-                            type: "response.completed",
-                            response: {
-                                id: `resp-capture-${index}`,
-                                output: [],
-                                usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
-                            },
-                        }),
-                    ),
-                );
-                continue;
-            }
-            const item = assistantItem(index, body);
-            socket.write(
-                encodeTextFrame(
-                    JSON.stringify({ type: "response.output_item.done", item }),
-                ),
-            );
-            socket.write(encodeTextFrame(JSON.stringify(completedResponse(index, item))));
+            responses.push({ eventTypes: [], outputItemTypes: [], terminal: null });
+            upstream.send(body);
         }
+        await upstreamEvents;
     })().catch(() => socket.destroy());
 });
 server.listen(0, "127.0.0.1");
@@ -103,7 +108,7 @@ const codex = spawn(
         "--config",
         'model_reasoning_effort="low"',
         "--config",
-        `model_providers.capture={name="Rig multi-turn capture",base_url="http://127.0.0.1:${port}/v1",wire_api="responses",requires_openai_auth=true,supports_websockets=${transport === "websocket"}}`,
+        `model_providers.capture={name="OpenAI",base_url="http://127.0.0.1:${port}/v1",wire_api="responses",requires_openai_auth=true,supports_websockets=${transport === "websocket"}}`,
     ],
     {
         env: {
@@ -166,8 +171,7 @@ try {
             message.params?.item?.type === "contextCompaction",
     );
     await waitForNotification(
-        (message) =>
-            message.method === "turn/completed" && message.params?.threadId === threadId,
+        (message) => message.method === "turn/completed" && message.params?.threadId === threadId,
     );
     await runTurn(threadId, "After compaction. Reply with exactly SWITCHED.", switchedModel);
 
@@ -180,13 +184,16 @@ try {
                     client: "codex-app-server",
                     version: await codexVersion(),
                     transport,
+                    capture: "forwarded-live-inference",
                 },
                 scenario: {
                     initialModel,
                     switchedModel,
                     actions: ["turn", "turn", "compact", "turn"],
+                    inference: "live",
                 },
                 requests,
+                responses,
             },
             null,
             2,
@@ -198,6 +205,9 @@ try {
     throw new Error(`${error instanceof Error ? error.message : String(error)}\n${stderr}`);
 } finally {
     codex.kill("SIGTERM");
+    for (const upstream of upstreamWebSockets)
+        upstream.close({ code: 1000, reason: "capture complete" });
+    upstreamWebSockets.clear();
     server.close();
     await rm(captureDirectory, { force: true, recursive: true });
 }
@@ -246,56 +256,152 @@ function flushNotificationWaiters() {
     }
 }
 
-function assistantItem(index, request) {
-    const compaction = JSON.stringify(request.input ?? []).includes(
-        "CONTEXT CHECKPOINT COMPACTION",
-    );
-    return {
-        id: `msg-capture-${index}`,
-        type: "message",
-        role: "assistant",
-        content: [
-            {
-                type: "output_text",
-                text: compaction ? "A compact summary." : `RESPONSE_${index}`,
-            },
-        ],
-    };
-}
-
-function completedResponse(index, item) {
-    return {
-        type: "response.completed",
-        response: {
-            id: `resp-capture-${index}`,
-            output: [item],
-            usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
-        },
-    };
-}
-
 function normalizeRequest(request, temporaryDirectory) {
     const normalized = structuredClone(request);
     if ("prompt_cache_key" in normalized) normalized.prompt_cache_key = "<SESSION_ID>";
+    if ("previous_response_id" in normalized)
+        normalized.previous_response_id = "<PREVIOUS_RESPONSE_ID>";
     delete normalized.client_metadata;
-    return JSON.parse(
+    const stable = JSON.parse(
         JSON.stringify(normalized)
             .replaceAll(temporaryDirectory, "<CAPTURE_DIRECTORY>")
             .replaceAll(homedir(), "<HOME>")
             .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/giu, "<UUID>"),
     );
+    replaceEncryptedReasoning(stable);
+    return stable;
+}
+
+function replaceEncryptedReasoning(value) {
+    if (Array.isArray(value)) {
+        for (const item of value) replaceEncryptedReasoning(item);
+        return;
+    }
+    if (typeof value !== "object" || value === null) return;
+    for (const [key, child] of Object.entries(value)) {
+        if (key === "encrypted_content") value[key] = "<ENCRYPTED_REASONING>";
+        else replaceEncryptedReasoning(child);
+    }
+}
+
+function upstreamPath(path) {
+    return (path ?? "/responses").replace(/^\/v1(?=\/|$)/u, "");
+}
+
+function upstreamHeaders(headers) {
+    const forwarded = {};
+    for (const [name, value] of Object.entries(headers)) {
+        if (
+            value === undefined ||
+            ["connection", "content-length", "host", "transfer-encoding", "upgrade"].includes(
+                name.toLowerCase(),
+            )
+        )
+            continue;
+        forwarded[name] = Array.isArray(value) ? value.join(", ") : value;
+    }
+    return forwarded;
+}
+
+function relayResponseHeaders(headers) {
+    const relayed = {};
+    for (const [name, value] of headers.entries()) {
+        if (
+            ["connection", "content-encoding", "content-length", "transfer-encoding"].includes(
+                name.toLowerCase(),
+            )
+        )
+            continue;
+        relayed[name] = value;
+    }
+    return relayed;
+}
+
+function summarizeSseResponse(text) {
+    const events = text
+        .split(/\r?\n/u)
+        .filter((line) => line.startsWith("data: "))
+        .map((line) => line.slice(6))
+        .filter((data) => data !== "[DONE]")
+        .flatMap((data) => {
+            try {
+                return [JSON.parse(data)];
+            } catch {
+                return [];
+            }
+        });
+    const terminal = events.findLast((event) =>
+        ["response.completed", "response.failed", "response.incomplete", "error"].includes(
+            event.type,
+        ),
+    );
+    return {
+        eventTypes: events.map((event) => event.type),
+        outputItemTypes: events
+            .filter((event) => event.type === "response.output_item.done")
+            .map((event) => event.item?.type)
+            .filter((type) => typeof type === "string"),
+        terminal: terminal?.type ?? null,
+    };
+}
+
+function createUpstreamWebSocket(headers) {
+    const authorization = headers.authorization;
+    if (typeof authorization !== "string" || !authorization.startsWith("Bearer "))
+        throw new Error("Codex WebSocket request omitted bearer authorization.");
+    const client = new OpenAI({
+        apiKey: authorization.slice("Bearer ".length),
+        baseURL: CODEX_UPSTREAM,
+    });
+    return new ResponsesWS(client, {
+        headers: {
+            ...(typeof headers["chatgpt-account-id"] === "string"
+                ? { "chatgpt-account-id": headers["chatgpt-account-id"] }
+                : {}),
+            ...(typeof headers.originator === "string" ? { originator: headers.originator } : {}),
+            ...(typeof headers["openai-beta"] === "string"
+                ? { "OpenAI-Beta": headers["openai-beta"] }
+                : {}),
+            ...(typeof headers["session-id"] === "string"
+                ? { "session-id": headers["session-id"] }
+                : {}),
+            ...(typeof headers["x-client-request-id"] === "string"
+                ? { "x-client-request-id": headers["x-client-request-id"] }
+                : {}),
+        },
+    });
+}
+
+function recordWebSocketEvent(event) {
+    const response = responses.at(-1);
+    if (response === undefined) return;
+    response.eventTypes.push(event.type);
+    if (event.type === "response.output_item.done" && typeof event.item?.type === "string")
+        response.outputItemTypes.push(event.item.type);
+    if (
+        ["response.completed", "response.failed", "response.incomplete", "error"].includes(
+            event.type,
+        )
+    )
+        response.terminal = event.type;
 }
 
 function readBody(request) {
     return new Promise((resolveBody, reject) => {
-        let body = "";
-        request.setEncoding("utf8");
+        const chunks = [];
         request.on("data", (chunk) => {
-            body += chunk;
+            chunks.push(chunk);
         });
-        request.once("end", () => resolveBody(body));
+        request.once("end", () => resolveBody(Buffer.concat(chunks)));
         request.once("error", reject);
     });
+}
+
+function decodeRequestBody(bytes, encoding) {
+    if (encoding === "zstd") return zstdDecompressSync(bytes).toString("utf8");
+    if (encoding === "gzip") return gunzipSync(bytes).toString("utf8");
+    if (encoding === undefined || encoding === "identity") return bytes.toString("utf8");
+    throw new Error(`Unsupported Codex request content encoding '${encoding}'.`);
 }
 
 function listeningPort(httpServer) {
@@ -386,8 +492,7 @@ function takeFrame(buffer) {
     const payloadOffset = offset + maskLength;
     const payload = Buffer.from(buffer.subarray(payloadOffset, payloadOffset + length));
     if (mask !== undefined)
-        for (let index = 0; index < payload.length; index += 1)
-            payload[index] ^= mask[index % 4];
+        for (let index = 0; index < payload.length; index += 1) payload[index] ^= mask[index % 4];
     return { consumed: payloadOffset + length, text: payload.toString("utf8") };
 }
 

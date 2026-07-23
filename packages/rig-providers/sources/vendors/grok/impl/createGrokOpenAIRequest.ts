@@ -2,13 +2,17 @@ import type { ResponseCreateParamsStreaming } from "openai/resources/responses/r
 
 import type { SessionContext } from "@/core/SessionContext.js";
 import type { SessionReasoningEffort } from "@/core/SessionRunRequest.js";
+import type { SessionTool } from "@/core/SessionTool.js";
 import { toGrokResponseInput } from "@/vendors/grok/impl/toGrokResponseInput.js";
 import { toOpenAIReasoningEffort } from "@/vendors/grok/impl/toOpenAIReasoningEffort.js";
+import { toGrokToolDefinitions } from "@/vendors/grok/impl/toGrokToolDefinitions.js";
 
 export function createGrokOpenAIRequest(options: {
     apiModelId: string;
     context: SessionContext;
     effort?: SessionReasoningEffort;
+    tools?: readonly SessionTool[];
+    compaction?: boolean;
 }): ResponseCreateParamsStreaming {
     const reasoningEffort =
         options.effort === undefined ? undefined : toOpenAIReasoningEffort(options.effort);
@@ -18,13 +22,21 @@ export function createGrokOpenAIRequest(options: {
         input: toGrokResponseInput(options.context),
         stream: true,
         store: false,
-        temperature: 0.7,
-        top_p: 0.95,
         include: ["reasoning.encrypted_content"],
         reasoning: {
             summary: "concise",
             ...(reasoningEffort === undefined ? {} : { effort: reasoningEffort }),
         },
-        instructions: options.context.instructions,
+        ...(options.compaction === true
+            ? {
+                  temperature: 1,
+                  ...(options.tools !== undefined && options.tools.length > 0
+                      ? { tool_choice: "auto" as const }
+                      : {}),
+              }
+            : {}),
+        ...(options.tools === undefined
+            ? {}
+            : { tools: toGrokToolDefinitions(options.tools) as never }),
     };
 }

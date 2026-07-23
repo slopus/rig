@@ -1,5 +1,7 @@
 import { BaseSession } from "@/core/BaseSession.js";
 import type { SessionContext } from "@/core/SessionContext.js";
+import type { SessionCompaction, SessionCompactionOptions } from "@/core/SessionCompaction.js";
+import type { SessionCacheUsage } from "@/core/SessionCacheUsage.js";
 import type { SessionEvent, SessionStream } from "@/core/SessionEvent.js";
 import { isSessionErrorDone } from "@/core/SessionEvent.js";
 import type { SessionRunRequest } from "@/core/SessionRunRequest.js";
@@ -22,6 +24,7 @@ export interface BedrockSessionOptions extends SessionOptions {
     endpoint?: string;
     model?: string;
     region: string;
+    userAgent: string;
 }
 
 export class BedrockSession extends BaseSession {
@@ -29,6 +32,7 @@ export class BedrockSession extends BaseSession {
     readonly endpoint: string | undefined;
     readonly model: string | undefined;
     readonly region: string;
+    readonly userAgent: string;
     private client: BedrockClient | undefined;
     private context: SessionContext;
     private readonly initialMessages: SessionContext["messages"];
@@ -41,6 +45,7 @@ export class BedrockSession extends BaseSession {
         this.endpoint = options.endpoint;
         this.model = options.model;
         this.region = options.region;
+        this.userAgent = options.userAgent;
     }
 
     run(request: SessionRunRequest): SessionStream {
@@ -48,9 +53,12 @@ export class BedrockSession extends BaseSession {
         return this.streamRun(request);
     }
 
-    async compact(signal?: AbortSignal): Promise<SessionContext> {
+    async compact(options: SessionCompactionOptions = {}): Promise<SessionCompaction> {
+        const { signal } = options;
         const context = this.context;
         let summary = "";
+        let encryptedReasoning: string | undefined;
+        let usage: SessionCacheUsage | undefined;
         for await (const event of this.run({
             context: {
                 ...context,
@@ -62,20 +70,31 @@ export class BedrockSession extends BaseSession {
             ...(signal === undefined ? {} : { abort: signal }),
         })) {
             if (event.type === "text_delta") summary += event.delta;
+            if (event.type === "encrypted_reasoning") encryptedReasoning = event.content;
+            if (event.type === "token_usage") usage = event.usage;
             if (isSessionErrorDone(event)) throw new Error(`[${event.kind}] ${event.message}`);
         }
-        if (signal?.aborted) return context;
+        if (signal?.aborted) return { status: "cancelled", context };
         if (!summary.trim()) throw new Error("Compaction returned an empty summary.");
+        const trimmed = summary.trim();
+        const preservedMessages: SessionContext["messages"] = [];
         this.context = {
             instructions: context.instructions,
             messages: [
                 {
                     role: "user",
-                    content: `<conversation_summary>\n${summary.trim()}\n</conversation_summary>`,
+                    content: `<conversation_summary>\n${trimmed}\n</conversation_summary>`,
                 },
             ],
         };
-        return this.context;
+        return {
+            status: "completed",
+            summary: trimmed,
+            ...(encryptedReasoning === undefined ? {} : { encryptedReasoning }),
+            preservedMessages,
+            ...(usage === undefined ? {} : { usage }),
+            context: this.context,
+        };
     }
 
     destroy(): void {
@@ -119,6 +138,7 @@ export class BedrockSession extends BaseSession {
         return (this.client ??= createBedrockClient({
             bearerToken: this.credential.credential.bearerToken,
             region: this.region,
+            userAgent: this.userAgent,
             ...(this.endpoint === undefined ? {} : { endpoint: this.endpoint }),
         }));
     }

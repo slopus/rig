@@ -6,11 +6,14 @@ import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import OpenAI from "openai";
+import { ResponsesWS } from "openai/resources/responses/ws";
 
 const SUPPORTED_MODELS = new Set(["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]);
 const REASONING_EFFORT = "low";
 const PROMPT = "Reply with OK.";
-const CAPTURE_TIMEOUT_MS = 30_000;
+const CAPTURE_TIMEOUT_MS = 120_000;
+const CODEX_UPSTREAM = "https://chatgpt.com/backend-api/codex";
 
 const outputArgument = process.argv[2];
 const modelArgument = process.argv[3];
@@ -35,6 +38,7 @@ server.listen(0, "127.0.0.1");
 const port = await listeningPort(server);
 
 let captured = false;
+let upstreamSocket;
 let resolveCapture;
 let rejectCapture;
 const capture = new Promise((resolvePromise, rejectPromise) => {
@@ -58,56 +62,79 @@ server.on("upgrade", (request, socket) => {
             "Connection: Upgrade\r\n" +
             `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
     );
-    readInferenceRequest(socket).then(async ({ frame, warmup }) => {
-        try {
-            const trace = {
-                formatVersion: 1,
-                source: {
-                    client: "codex-cli",
-                    version: await codexVersion(),
-                    transport: "websocket",
-                },
-                invocation: {
-                    model,
-                    reasoningEffort: REASONING_EFFORT,
-                    prompt: PROMPT,
-                },
-                handshake: {
-                    method: request.method,
-                    path: request.url,
-                    headers: sanitizeHeaders(request.headers),
-                },
-                warmup,
-                request: frame,
-            };
-            await writeFile(
-                outputPath,
-                `${JSON.stringify(normalizeTrace(trace, captureDirectory), null, 2)}\n`,
-                "utf8",
-            );
-            await writeFile(
-                toolsOutputPath(outputPath),
-                `${JSON.stringify(extractToolDefinitions(trace), null, 2)}\n`,
-                "utf8",
-            );
-            captured = true;
-            resolveCapture();
-            socket.write(
-                encodeTextFrame(
-                    JSON.stringify({
-                        type: "error",
-                        code: "capture_complete",
-                        message: "Codex WebSocket request captured.",
-                        param: null,
-                        sequence_number: 0,
-                    }),
-                ),
-            );
-            socket.end();
-        } catch (error) {
-            rejectCapture(error);
+    const frames = createFrameReader(socket);
+    upstreamSocket = createUpstreamWebSocket(request.headers);
+    let warmup = null;
+    let inference = null;
+    let responseSummary = null;
+    let eventTypes = [];
+    void (async () => {
+        const upstreamEvents = (async () => {
+            for await (const item of upstreamSocket) {
+                if (item.type === "message") {
+                    eventTypes.push(item.message.type);
+                    socket.write(encodeTextFrame(JSON.stringify(item.message)));
+                    if (
+                        inference !== null &&
+                        ["response.completed", "response.failed", "response.incomplete", "error"]
+                            .includes(item.message.type)
+                    ) {
+                        responseSummary = {
+                            eventTypes: [...eventTypes],
+                            terminal: item.message.type,
+                        };
+                        const trace = {
+                            formatVersion: 1,
+                            source: {
+                                client: "codex-cli",
+                                version: await codexVersion(),
+                                transport: "websocket",
+                                capture: "forwarded-live-inference",
+                            },
+                            invocation: {
+                                model,
+                                reasoningEffort: REASONING_EFFORT,
+                                prompt: PROMPT,
+                            },
+                            handshake: {
+                                method: request.method,
+                                path: request.url,
+                                headers: sanitizeHeaders(request.headers),
+                            },
+                            warmup,
+                            request: inference,
+                            response: responseSummary,
+                        };
+                        await writeFile(
+                            outputPath,
+                            `${JSON.stringify(normalizeTrace(trace, captureDirectory), null, 2)}\n`,
+                            "utf8",
+                        );
+                        await writeFile(
+                            toolsOutputPath(outputPath),
+                            `${JSON.stringify(extractToolDefinitions(trace), null, 2)}\n`,
+                            "utf8",
+                        );
+                        captured = true;
+                        resolveCapture();
+                    }
+                } else if (item.type === "error") {
+                    throw item.error;
+                }
+            }
+        })();
+        for (;;) {
+            const body = JSON.parse(await frames.next());
+            if (body.generate === false) {
+                warmup = body;
+            } else {
+                inference = body;
+                eventTypes = [];
+            }
+            upstreamSocket.send(body);
         }
-    }, rejectCapture);
+        await upstreamEvents;
+    })().catch(rejectCapture);
 });
 server.on("error", rejectCapture);
 
@@ -129,7 +156,7 @@ const codex = spawn(
         "--config",
         `model_reasoning_effort="${REASONING_EFFORT}"`,
         "--config",
-        `model_providers.capture={name="Rig WebSocket capture",base_url="http://127.0.0.1:${port}/v1",wire_api="responses",requires_openai_auth=true,supports_websockets=true}`,
+        `model_providers.capture={name="OpenAI",base_url="http://127.0.0.1:${port}/v1",wire_api="responses",requires_openai_auth=true,supports_websockets=true}`,
         PROMPT,
     ],
     {
@@ -169,7 +196,8 @@ try {
     );
 } finally {
     clearTimeout(timeout);
-    if (!captured && codex.exitCode === null) codex.kill("SIGTERM");
+    if (codex.exitCode === null) codex.kill("SIGTERM");
+    upstreamSocket?.close({ code: 1000, reason: "capture complete" });
     server.close();
     await rm(captureDirectory, { force: true, recursive: true });
 }
@@ -188,75 +216,78 @@ function listeningPort(httpServer) {
     });
 }
 
-function readFirstTextFrame(socket) {
-    return new Promise((resolvePromise, rejectPromise) => {
-        let buffered = Buffer.alloc(0);
-        socket.on("data", (chunk) => {
-            buffered = Buffer.concat([buffered, chunk]);
-            if (buffered.length < 2) return;
-            const masked = (buffered[1] & 0x80) !== 0;
-            let length = buffered[1] & 0x7f;
-            let offset = 2;
-            if (length === 126) {
-                if (buffered.length < 4) return;
-                length = buffered.readUInt16BE(2);
-                offset = 4;
-            } else if (length === 127) {
-                if (buffered.length < 10) return;
-                const largeLength = buffered.readBigUInt64BE(2);
-                if (largeLength > BigInt(Number.MAX_SAFE_INTEGER)) {
-                    rejectPromise(new Error("Codex WebSocket frame is too large to capture."));
-                    return;
-                }
-                length = Number(largeLength);
-                offset = 10;
-            }
-            const maskLength = masked ? 4 : 0;
-            if (buffered.length < offset + maskLength + length) return;
-            const mask = masked ? buffered.subarray(offset, offset + 4) : undefined;
-            const payloadOffset = offset + maskLength;
-            const payload = Buffer.from(buffered.subarray(payloadOffset, payloadOffset + length));
-            if (mask !== undefined) {
-                for (let index = 0; index < payload.length; index += 1) {
-                    payload[index] ^= mask[index % 4];
-                }
-            }
-            resolvePromise(payload.toString("utf8"));
-        });
-        socket.once("error", rejectPromise);
-        socket.once("end", () =>
-            rejectPromise(new Error("Codex closed before sending a WebSocket frame.")),
-        );
+function createFrameReader(socket) {
+    let buffer = Buffer.alloc(0);
+    const waiting = [];
+    const values = [];
+    socket.on("data", (chunk) => {
+        buffer = Buffer.concat([buffer, chunk]);
+        for (;;) {
+            const frame = takeFrame(buffer);
+            if (frame === undefined) break;
+            buffer = buffer.subarray(frame.consumed);
+            const waiter = waiting.shift();
+            if (waiter === undefined) values.push(frame.text);
+            else waiter(frame.text);
+        }
     });
+    return {
+        next: () =>
+            values.length > 0
+                ? Promise.resolve(values.shift())
+                : new Promise((resolveFrame) => waiting.push(resolveFrame)),
+    };
 }
 
-async function readInferenceRequest(socket) {
-    const first = JSON.parse(await readFirstTextFrame(socket));
-    if (first.generate !== false) return { frame: first, warmup: null };
+function takeFrame(buffer) {
+    if (buffer.length < 2) return undefined;
+    let length = buffer[1] & 0x7f;
+    let offset = 2;
+    if (length === 126) {
+        if (buffer.length < 4) return undefined;
+        length = buffer.readUInt16BE(2);
+        offset = 4;
+    } else if (length === 127) {
+        if (buffer.length < 10) return undefined;
+        length = Number(buffer.readBigUInt64BE(2));
+        offset = 10;
+    }
+    const masked = (buffer[1] & 0x80) !== 0;
+    if (!masked || buffer.length < offset + 4 + length) return undefined;
+    const mask = buffer.subarray(offset, offset + 4);
+    const payload = Buffer.from(buffer.subarray(offset + 4, offset + 4 + length));
+    for (let index = 0; index < payload.length; index += 1)
+        payload[index] ^= mask[index % 4];
+    return { consumed: offset + 4 + length, text: payload.toString("utf8") };
+}
 
-    socket.write(
-        encodeTextFrame(
-            JSON.stringify({ type: "response.created", response: { id: "resp-capture-warmup" } }),
-        ),
-    );
-    socket.write(
-        encodeTextFrame(
-            JSON.stringify({
-                type: "response.completed",
-                response: {
-                    id: "resp-capture-warmup",
-                    usage: {
-                        input_tokens: 0,
-                        input_tokens_details: null,
-                        output_tokens: 0,
-                        output_tokens_details: null,
-                        total_tokens: 0,
-                    },
-                },
-            }),
-        ),
-    );
-    return { frame: JSON.parse(await readFirstTextFrame(socket)), warmup: first };
+function createUpstreamWebSocket(headers) {
+    const authorization = headers.authorization;
+    if (typeof authorization !== "string" || !authorization.startsWith("Bearer "))
+        throw new Error("Codex WebSocket request omitted bearer authorization.");
+    const client = new OpenAI({
+        apiKey: authorization.slice("Bearer ".length),
+        baseURL: CODEX_UPSTREAM,
+    });
+    return new ResponsesWS(client, {
+        headers: {
+            ...(typeof headers["chatgpt-account-id"] === "string"
+                ? { "chatgpt-account-id": headers["chatgpt-account-id"] }
+                : {}),
+            ...(typeof headers.originator === "string"
+                ? { originator: headers.originator }
+                : {}),
+            ...(typeof headers["openai-beta"] === "string"
+                ? { "OpenAI-Beta": headers["openai-beta"] }
+                : {}),
+            ...(typeof headers["session-id"] === "string"
+                ? { "session-id": headers["session-id"] }
+                : {}),
+            ...(typeof headers["x-client-request-id"] === "string"
+                ? { "x-client-request-id": headers["x-client-request-id"] }
+                : {}),
+        },
+    });
 }
 
 function encodeTextFrame(value) {

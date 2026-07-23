@@ -25,7 +25,10 @@ export function withCodexSkills(
             message.role === "system" &&
             message.content.some((part) => part.startsWith("<apps_instructions>")),
     );
-    if (target === undefined) messages.unshift({ role: "system", content: [prompt] });
-    else if (target.role === "system") target.content.push(prompt);
+    if (target === undefined) {
+        const firstSystemMessage = messages.find((message) => message.role === "system");
+        if (firstSystemMessage?.role === "system") firstSystemMessage.content.push(prompt);
+        else messages.unshift({ role: "system", content: [prompt] });
+    } else if (target.role === "system") target.content.push(prompt);
     return { ...context, messages };
 }

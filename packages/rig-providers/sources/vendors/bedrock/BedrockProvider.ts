@@ -5,6 +5,7 @@ import type { BedrockCredential } from "@/vendors/VendorCredential.js";
 import { BedrockSession } from "@/vendors/bedrock/BedrockSession.js";
 import { assertBedrockCredential } from "@/vendors/bedrock/impl/assertBedrockCredential.js";
 import { BEDROCK_DEFAULT_REGION } from "@/vendors/bedrock/impl/bedrockConstants.js";
+import { resolveCodexUserAgent } from "@/vendors/codex/impl/codexUserAgent.js";
 
 export interface BedrockProviderOptions {
     credential: BedrockCredential;
@@ -36,11 +37,13 @@ export class BedrockProvider extends ResponsesProvider {
     }
 
     override async session(id: string, options: SessionOptions): Promise<BedrockSession> {
+        const userAgent = await resolveCodexUserAgent();
         return new BedrockSession(id, {
             ...options,
             credential: this.credential,
             ...(this.model === undefined ? {} : { model: this.model }),
             region: this.region,
+            userAgent,
             ...(this.endpoint === undefined ? {} : { endpoint: this.endpoint }),
         });
     }

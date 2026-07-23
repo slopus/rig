@@ -1,5 +1,6 @@
 import type { SessionEvent } from "@/core/SessionEvent.js";
 import { isSessionErrorDone } from "@/core/SessionEvent.js";
+import { committedSessionEvents } from "@/core/committedSessionEvents.js";
 
 export async function collectSessionEvents(
     stream: AsyncIterable<SessionEvent>,
@@ -17,7 +18,7 @@ export async function collectSessionEvents(
 }
 
 export function textFromSessionEvents(events: readonly SessionEvent[]): string {
-    return events
+    return committedSessionEvents(events)
         .filter(
             (event): event is Extract<SessionEvent, { type: "text_delta" }> =>
                 event.type === "text_delta",

@@ -1,0 +1,61 @@
+import { Type } from "@sinclair/typebox";
+
+import type { SessionTool } from "@/core/SessionTool.js";
+
+export const claude_read_tool: SessionTool = {
+    name: "Read",
+    type: "local",
+    description:
+        "Reads a file from the local filesystem.\n\n- `file_path` must be an absolute path.\n- Reads up to 2000 lines by default.\n- You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters\n- Results are returned using cat -n format, with line numbers starting at 1\n- Reads images (PNG, JPG, and other common formats) and presents them visually. PDF page rendering and Jupyter notebook cell parsing are not supported.\n- Reading a directory or missing file returns an error. Empty files are returned as `(empty file)`.\n- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed, and the harness tracks file state for you.",
+    parameters: Type.Object(
+        {
+            file_path: Type.String({ description: "The absolute path to the file to read" }),
+            offset: Type.Optional(
+                Type.Integer({
+                    description:
+                        "The line number to start reading from. Only provide if the file is too large to read at once",
+                    minimum: 0,
+                    maximum: 9007199254740991,
+                }),
+            ),
+            limit: Type.Optional(
+                Type.Integer({
+                    description:
+                        "The number of lines to read. Only provide if the file is too large to read at once.",
+                    exclusiveMinimum: 0,
+                    maximum: 9007199254740991,
+                }),
+            ),
+        },
+        { additionalProperties: false },
+    ),
+};
+
+export const claude_read_tool_sonnet: SessionTool = {
+    name: "Read",
+    type: "local",
+    description:
+        "Reads a file from the local filesystem. Paths outside the active workspace may require permission or be blocked by the selected permission mode.\nIf the user provides a path to a file, assume the path is valid. It is okay to read a file that does not exist; an error will be returned.\n\nUsage:\n- The file_path parameter must be an absolute path, not a relative path\n- By default, it reads up to 2000 lines starting from the beginning of the file\n- You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters\n- Results are returned using cat -n format, with line numbers starting at 1\n- This tool reads common image formats (for example PNG and JPG) and presents them visually.\n- Jupyter notebooks (.ipynb files) are not supported. Ask the user to export the notebook to a plain-text format before reading it.\n- This tool can only read files, not directories. To read a directory, use an ls command via the Bash tool.\n- You will regularly be asked to read screenshots. If the user provides a path to a screenshot, ALWAYS use this tool to view the file at the path. This tool will work with all temporary file paths.\n- Empty files are returned as `(empty file)`.",
+    parameters: Type.Object(
+        {
+            file_path: Type.String({ description: "The absolute path to the file to read" }),
+            offset: Type.Optional(
+                Type.Integer({
+                    description:
+                        "The line number to start reading from. Only provide if the file is too large to read at once",
+                    minimum: 0,
+                    maximum: 9007199254740991,
+                }),
+            ),
+            limit: Type.Optional(
+                Type.Integer({
+                    description:
+                        "The number of lines to read. Only provide if the file is too large to read at once.",
+                    exclusiveMinimum: 0,
+                    maximum: 9007199254740991,
+                }),
+            ),
+        },
+        { additionalProperties: false },
+    ),
+};

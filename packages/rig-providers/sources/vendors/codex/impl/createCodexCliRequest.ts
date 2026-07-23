@@ -6,11 +6,13 @@ import type { SessionSkill } from "@/core/SessionSkill.js";
 import type { SessionTool } from "@/core/SessionTool.js";
 import { createOpenAIResponseRequest } from "@/responses/createOpenAIResponseRequest.js";
 import { isCodexV2Model } from "@/vendors/codex/impl/isCodexV2Model.js";
+import { setCodexRequestKind } from "@/vendors/codex/impl/setCodexRequestKind.js";
 import { toCodexToolDefinitions } from "@/vendors/codex/impl/toCodexToolDefinitions.js";
 import { withCodexSkills } from "@/vendors/codex/impl/withCodexSkills.js";
 
 export function createCodexCliRequest(options: {
     context: SessionContext;
+    clientMetadata: Readonly<Record<string, string>>;
     effort?: SessionReasoningEffort;
     model: string;
     promptCacheKey: string;
@@ -20,15 +22,20 @@ export function createCodexCliRequest(options: {
     const request = createOpenAIResponseRequest({
         ...options,
         context: withCodexSkills(options.context, options.skills, options.model),
-    }) as ResponseCreateParamsStreaming &
-        Record<string, unknown>;
+    }) as ResponseCreateParamsStreaming & Record<string, unknown>;
     request.tool_choice = "auto";
+    request.client_metadata = { ...options.clientMetadata } as never;
     if (isCodexV2Model(options.model)) {
         request.parallel_tool_calls = false;
-        if (request.reasoning !== undefined) request.reasoning = { ...request.reasoning, context: "all_turns" } as never;
+        if (request.reasoning !== undefined)
+            request.reasoning = { ...request.reasoning, context: "all_turns" } as never;
         delete request.instructions;
         request.input = [
-            { type: "message", role: "developer", content: options.context.instructions },
+            {
+                type: "message",
+                role: "developer",
+                content: [{ type: "input_text", text: options.context.instructions }],
+            },
             ...(request.input as unknown[]),
         ] as never;
         delete request.tools;
@@ -44,6 +51,7 @@ export function createCodexCliWarmupRequest(
     tools: readonly SessionTool[],
 ): Record<string, unknown> {
     const warmup = structuredClone(request) as unknown as Record<string, unknown>;
+    setCodexRequestKind(warmup, "prewarm");
     warmup.generate = false;
     const model = String(warmup.model);
     if (isCodexV2Model(model)) {
@@ -54,9 +62,11 @@ export function createCodexCliWarmupRequest(
                 (item as { role?: unknown }).role === "developer",
         );
         warmup.input = [
-            ...(tools.length === 0
-                ? []
-                : [{ type: "additional_tools", tools: toCodexToolDefinitions(tools) }]),
+            {
+                type: "additional_tools",
+                role: "developer",
+                tools: toCodexToolDefinitions(tools),
+            },
             ...instructions.slice(0, 1),
         ];
     } else {

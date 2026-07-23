@@ -5,11 +5,13 @@ import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { gunzipSync, zstdDecompressSync } from "node:zlib";
 
 const SUPPORTED_MODELS = new Set(["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]);
 const REASONING_EFFORT = "low";
 const PROMPT = "Reply with OK.";
-const CAPTURE_TIMEOUT_MS = 30_000;
+const CAPTURE_TIMEOUT_MS = 120_000;
+const CODEX_UPSTREAM = "https://chatgpt.com/backend-api/codex";
 
 const outputArgument = process.argv[2];
 const model = process.argv[3];
@@ -39,11 +41,25 @@ const server = createServer(async (request, response) => {
             response.writeHead(404).end();
             return;
         }
-        const body = JSON.parse(await readBody(request));
+        const requestBytes = await readBody(request);
+        const body = JSON.parse(
+            decodeRequestBody(requestBytes, request.headers["content-encoding"]),
+        );
+        const upstream = await fetch(`${CODEX_UPSTREAM}${upstreamPath(request.url)}`, {
+            method: "POST",
+            headers: upstreamHeaders(request.headers),
+            body: requestBytes,
+        });
+        const responseBytes = Buffer.from(await upstream.arrayBuffer());
         const trace = normalizeTrace(
             {
                 formatVersion: 1,
-                source: { client: "codex-cli", version: await codexVersion(), transport: "sse" },
+                source: {
+                    client: "codex-cli",
+                    version: await codexVersion(),
+                    transport: "sse",
+                    capture: "forwarded-live-inference",
+                },
                 invocation: { model, reasoningEffort: REASONING_EFFORT, prompt: PROMPT },
                 http: {
                     method: request.method,
@@ -51,26 +67,15 @@ const server = createServer(async (request, response) => {
                     headers: sanitizeHeaders(request.headers),
                 },
                 request: body,
+                response: summarizeSseResponse(responseBytes.toString("utf8")),
             },
             captureDirectory,
         );
         await writeFile(outputPath, `${JSON.stringify(trace, null, 2)}\n`, "utf8");
         const tools = extractToolDefinitions(trace.request);
         await writeFile(toolsOutputPath(outputPath), `${JSON.stringify(tools, null, 2)}\n`, "utf8");
-        response.writeHead(200, {
-            "content-type": "text/event-stream",
-            "cache-control": "no-cache",
-        });
-        response.end(
-            `data: ${JSON.stringify({
-                type: "response.completed",
-                response: {
-                    id: "resp-capture",
-                    output: [],
-                    usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
-                },
-            })}\n\n`,
-        );
+        response.writeHead(upstream.status, relayResponseHeaders(upstream.headers));
+        response.end(responseBytes);
         resolveCapture();
     } catch (error) {
         rejectCapture(error);
@@ -99,7 +104,7 @@ const codex = spawn(
         "--config",
         `model_reasoning_effort="${REASONING_EFFORT}"`,
         "--config",
-        `model_providers.capture={name="Rig SSE capture",base_url="http://127.0.0.1:${port}/v1",wire_api="responses",requires_openai_auth=true,supports_websockets=false}`,
+        `model_providers.capture={name="OpenAI",base_url="http://127.0.0.1:${port}/v1",wire_api="responses",requires_openai_auth=true,supports_websockets=false}`,
         PROMPT,
     ],
     {
@@ -136,12 +141,18 @@ try {
 
 function readBody(request) {
     return new Promise((resolvePromise, rejectPromise) => {
-        let body = "";
-        request.setEncoding("utf8");
-        request.on("data", (chunk) => { body += chunk; });
-        request.once("end", () => resolvePromise(body));
+        const chunks = [];
+        request.on("data", (chunk) => { chunks.push(chunk); });
+        request.once("end", () => resolvePromise(Buffer.concat(chunks)));
         request.once("error", rejectPromise);
     });
+}
+
+function decodeRequestBody(bytes, encoding) {
+    if (encoding === "zstd") return zstdDecompressSync(bytes).toString("utf8");
+    if (encoding === "gzip") return gunzipSync(bytes).toString("utf8");
+    if (encoding === undefined || encoding === "identity") return bytes.toString("utf8");
+    throw new Error(`Unsupported Codex request content encoding '${encoding}'.`);
 }
 
 function listeningPort(httpServer) {
@@ -209,4 +220,57 @@ function toolsOutputPath(traceOutputPath) {
     return traceOutputPath.endsWith(".sse.json")
         ? traceOutputPath.replace(/\.sse\.json$/u, ".sse.tools.json")
         : `${traceOutputPath}.tools.json`;
+}
+
+function upstreamPath(path) {
+    return (path ?? "/responses").replace(/^\/v1(?=\/|$)/u, "");
+}
+
+function upstreamHeaders(headers) {
+    return Object.fromEntries(
+        Object.entries(headers)
+            .filter(
+                ([name, value]) =>
+                    value !== undefined &&
+                    !["connection", "content-length", "host", "transfer-encoding"].includes(
+                        name.toLowerCase(),
+                    ),
+            )
+            .map(([name, value]) => [name, Array.isArray(value) ? value.join(", ") : value]),
+    );
+}
+
+function relayResponseHeaders(headers) {
+    return Object.fromEntries(
+        [...headers.entries()].filter(
+            ([name]) =>
+                !["connection", "content-encoding", "content-length", "transfer-encoding"].includes(
+                    name.toLowerCase(),
+                ),
+        ),
+    );
+}
+
+function summarizeSseResponse(text) {
+    const eventTypes = text
+        .split(/\r?\n/u)
+        .filter((line) => line.startsWith("data: "))
+        .map((line) => line.slice(6))
+        .filter((data) => data !== "[DONE]")
+        .flatMap((data) => {
+            try {
+                return [JSON.parse(data).type];
+            } catch {
+                return [];
+            }
+        });
+    return {
+        eventTypes,
+        terminal:
+            eventTypes.findLast((type) =>
+                ["response.completed", "response.failed", "response.incomplete", "error"].includes(
+                    type,
+                ),
+            ) ?? null,
+    };
 }

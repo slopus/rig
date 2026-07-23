@@ -1,3 +1,5 @@
+import { getCodexModelProperties } from "@/vendors/codex/impl/getCodexModelProperties.js";
+
 export function isCodexV2Model(model: string): boolean {
-    return model.startsWith("gpt-5.6-");
+    return getCodexModelProperties(model)?.responsesLite ?? false;
 }

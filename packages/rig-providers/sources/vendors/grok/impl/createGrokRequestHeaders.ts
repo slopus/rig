@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { GROK_BUILD_CLIENT_VERSION } from "@/vendors/grok/impl/grokConstants.js";
 import { isGrokProxyBaseUrl } from "@/vendors/grok/impl/isGrokProxyBaseUrl.js";
+import { createGrokUserAgent } from "@/vendors/grok/impl/createGrokUserAgent.js";
 
 export function createGrokRequestHeaders(options: {
     baseUrl: string;
@@ -11,7 +12,8 @@ export function createGrokRequestHeaders(options: {
 }): Record<string, string> {
     const sessionId = options.sessionId ?? randomUUID();
     return {
-        "user-agent": "rig-providers/grok-build",
+        accept: "text/event-stream",
+        "user-agent": createGrokUserAgent(),
         "x-grok-agent-id": sessionId,
         "x-grok-client-identifier": "grok-shell",
         "x-grok-client-version": GROK_BUILD_CLIENT_VERSION,
@@ -25,7 +27,7 @@ export function createGrokRequestHeaders(options: {
         ...(isGrokProxyBaseUrl(options.baseUrl)
             ? {
                   "x-authenticateresponse": "authenticate-response",
-                  "x-grok-client-mode": "interactive",
+                  "x-grok-client-mode": "headless",
                   "x-xai-token-auth": "xai-grok-cli",
               }
             : {}),

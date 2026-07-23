@@ -3,7 +3,8 @@
   "source": {
     "client": "codex-cli",
     "version": "codex-cli 0.145.0",
-    "transport": "sse"
+    "transport": "sse",
+    "capture": "forwarded-live-inference"
   },
   "invocation": {
     "model": "gpt-5.6-terra",
@@ -374,12 +375,26 @@
       "verbosity": "low"
     },
     "client_metadata": {
-      "session_id": "<DYNAMIC:session_id>",
-      "thread_id": "<DYNAMIC:thread_id>",
       "x-codex-installation-id": "<DYNAMIC:x-codex-installation-id>",
+      "x-codex-turn-metadata": "<DYNAMIC:x-codex-turn-metadata>",
       "x-codex-window-id": "<DYNAMIC:x-codex-window-id>",
-      "turn_id": "<DYNAMIC:turn_id>",
-      "x-codex-turn-metadata": "<DYNAMIC:x-codex-turn-metadata>"
+      "thread_id": "<DYNAMIC:thread_id>",
+      "session_id": "<DYNAMIC:session_id>",
+      "turn_id": "<DYNAMIC:turn_id>"
     }
+  },
+  "response": {
+    "eventTypes": [
+      "response.created",
+      "response.in_progress",
+      "response.output_item.added",
+      "response.content_part.added",
+      "response.output_text.delta",
+      "response.output_text.done",
+      "response.content_part.done",
+      "response.output_item.done",
+      "response.completed"
+    ],
+    "terminal": "response.completed"
   }
 }

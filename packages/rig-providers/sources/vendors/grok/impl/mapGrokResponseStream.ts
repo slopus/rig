@@ -1,30 +1,45 @@
 import type { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 
 import { EMPTY_SESSION_CACHE_USAGE, type SessionCacheUsage } from "@/core/SessionCacheUsage.js";
+import type { SessionToolCall } from "@/core/SessionContext.js";
 import type { SessionEvent } from "@/core/SessionEvent.js";
+import { toSessionCacheUsage } from "@/responses/toSessionCacheUsage.js";
+import type { CodexToolVendor } from "@/vendors/codex/CodexToolVendor.js";
+import type { GrokToolVendor } from "@/vendors/grok/GrokToolVendor.js";
 
 interface ActiveOutputItem {
     callId?: string;
     execution?: string;
-    type: "message" | "reasoning" | "function_call" | "custom_tool_call";
+    name?: string;
+    type: "message" | "reasoning" | "function_call" | "custom_tool_call" | "tool_search_call";
     argumentsJson?: string;
+    receivedTextDelta?: boolean;
 }
 
 export interface GrokRunResult {
     assistantText: string;
     encryptedReasoning?: string | undefined;
+    responseItems: readonly string[];
     stopReason: "stop" | "length" | "tool_use";
+    toolCalls: readonly SessionToolCall[];
     usage: SessionCacheUsage;
 }
 
 export async function* mapGrokResponseStream(
     responseStream: AsyncIterable<ResponseStreamEvent>,
-    options: { signal?: AbortSignal; failureMessage: string },
+    options: {
+        signal?: AbortSignal;
+        failureMessage: string;
+        requireTerminalEvent?: boolean;
+        vendor?: "codex" | "grok";
+    },
 ): AsyncGenerator<SessionEvent, GrokRunResult> {
     const activeItems = new Map<number, ActiveOutputItem>();
     let assistantText = "";
     let encryptedReasoning: string | undefined;
     let sawToolUse = false;
+    const toolCalls: SessionToolCall[] = [];
+    const responseItems = new Map<number, string>();
     let usage: SessionCacheUsage = { ...EMPTY_SESSION_CACHE_USAGE };
 
     for await (const event of responseStream) {
@@ -32,7 +47,11 @@ export async function* mapGrokResponseStream(
             return {
                 assistantText,
                 encryptedReasoning,
+                responseItems: [...responseItems.entries()]
+                    .sort(([left], [right]) => left - right)
+                    .map(([, item]) => item),
                 stopReason: "stop",
+                toolCalls,
                 usage,
             };
         }
@@ -48,16 +67,69 @@ export async function* mapGrokResponseStream(
                     type: "function_call",
                     callId: event.item.call_id,
                     execution: "client",
+                    name: event.item.name,
                     argumentsJson: event.item.arguments,
                 });
+                yield {
+                    type: "tool_call_start",
+                    callId: event.item.call_id,
+                    name: event.item.name,
+                    vendor: responseToolVendor(options.vendor, "function_call"),
+                };
+                if (event.item.arguments.length > 0) {
+                    yield {
+                        type: "tool_call_delta",
+                        callId: event.item.call_id,
+                        delta: event.item.arguments,
+                    };
+                }
             } else if (event.item.type === "custom_tool_call") {
                 sawToolUse = true;
                 activeItems.set(event.output_index, {
                     type: "custom_tool_call",
                     callId: event.item.call_id,
                     execution: "client",
+                    name: event.item.name,
                     argumentsJson: event.item.input,
                 });
+                yield {
+                    type: "tool_call_start",
+                    callId: event.item.call_id,
+                    name: event.item.name,
+                    vendor: responseToolVendor(options.vendor, "custom_tool_call"),
+                };
+                if (event.item.input.length > 0) {
+                    yield {
+                        type: "tool_call_delta",
+                        callId: event.item.call_id,
+                        delta: event.item.input,
+                    };
+                }
+            } else if (
+                event.item.type === "tool_search_call" &&
+                event.item.execution === "client" &&
+                event.item.call_id !== null
+            ) {
+                sawToolUse = true;
+                const argumentsJson = JSON.stringify(event.item.arguments);
+                activeItems.set(event.output_index, {
+                    type: "tool_search_call",
+                    callId: event.item.call_id,
+                    execution: "client",
+                    name: "tool_search",
+                    argumentsJson,
+                });
+                yield {
+                    type: "tool_call_start",
+                    callId: event.item.call_id,
+                    name: "tool_search",
+                    vendor: responseToolVendor(options.vendor, "tool_search_call"),
+                };
+                yield {
+                    type: "tool_call_delta",
+                    callId: event.item.call_id,
+                    delta: argumentsJson,
+                };
             }
             continue;
         }
@@ -83,6 +155,7 @@ export async function* mapGrokResponseStream(
         ) {
             const activeItem = activeItems.get(event.output_index);
             if (activeItem?.type !== "message") continue;
+            activeItem.receivedTextDelta = true;
             assistantText += event.delta;
             yield { type: "text_delta", delta: event.delta };
             continue;
@@ -123,14 +196,114 @@ export async function* mapGrokResponseStream(
 
         if (event.type === "response.output_item.done") {
             const activeItem = activeItems.get(event.output_index);
-            if (activeItem?.type === "reasoning" && event.item.type === "reasoning") {
+            responseItems.set(event.output_index, JSON.stringify(event.item));
+            if (event.item.type === "reasoning") {
                 encryptedReasoning = JSON.stringify(event.item);
                 yield { type: "encrypted_reasoning", content: encryptedReasoning };
             }
-            if (activeItem?.type === "message" && event.item.type === "message") {
-                assistantText = event.item.content
-                    .map((part) => (part.type === "output_text" ? part.text : part.refusal))
-                    .join("");
+            if (event.item.type === "message") {
+                if (activeItem?.receivedTextDelta !== true) {
+                    assistantText += event.item.content
+                        .map((part) => (part.type === "output_text" ? part.text : part.refusal))
+                        .join("");
+                }
+            }
+            if (
+                event.item.type === "function_call" &&
+                (activeItem === undefined || activeItem.type === "function_call")
+            ) {
+                if (activeItem === undefined) {
+                    sawToolUse = true;
+                    yield {
+                        type: "tool_call_start",
+                        callId: event.item.call_id,
+                        name: event.item.name,
+                        vendor: responseToolVendor(options.vendor, "function_call"),
+                    };
+                    if (event.item.arguments.length > 0) {
+                        yield {
+                            type: "tool_call_delta",
+                            callId: event.item.call_id,
+                            delta: event.item.arguments,
+                        };
+                    }
+                }
+                toolCalls.push({
+                    callId: event.item.call_id,
+                    name: event.item.name,
+                    arguments: event.item.arguments,
+                    vendor: responseToolVendor(options.vendor, "function_call"),
+                });
+                yield {
+                    type: "tool_call_end",
+                    callId: event.item.call_id,
+                    arguments: event.item.arguments,
+                };
+            }
+            if (
+                event.item.type === "custom_tool_call" &&
+                (activeItem === undefined || activeItem.type === "custom_tool_call")
+            ) {
+                if (activeItem === undefined) {
+                    sawToolUse = true;
+                    yield {
+                        type: "tool_call_start",
+                        callId: event.item.call_id,
+                        name: event.item.name,
+                        vendor: responseToolVendor(options.vendor, "custom_tool_call"),
+                    };
+                    if (event.item.input.length > 0) {
+                        yield {
+                            type: "tool_call_delta",
+                            callId: event.item.call_id,
+                            delta: event.item.input,
+                        };
+                    }
+                }
+                toolCalls.push({
+                    callId: event.item.call_id,
+                    name: event.item.name,
+                    arguments: event.item.input,
+                    vendor: responseToolVendor(options.vendor, "custom_tool_call"),
+                });
+                yield {
+                    type: "tool_call_end",
+                    callId: event.item.call_id,
+                    arguments: event.item.input,
+                };
+            }
+            if (
+                event.item.type === "tool_search_call" &&
+                event.item.execution === "client" &&
+                event.item.call_id !== null
+            ) {
+                const callId = event.item.call_id;
+                const argumentsJson = JSON.stringify(event.item.arguments);
+                if (activeItem?.type !== "tool_search_call") {
+                    sawToolUse = true;
+                    yield {
+                        type: "tool_call_start",
+                        callId,
+                        name: "tool_search",
+                        vendor: responseToolVendor(options.vendor, "tool_search_call"),
+                    };
+                    yield {
+                        type: "tool_call_delta",
+                        callId,
+                        delta: argumentsJson,
+                    };
+                }
+                toolCalls.push({
+                    callId,
+                    name: "tool_search",
+                    arguments: argumentsJson,
+                    vendor: responseToolVendor(options.vendor, "tool_search_call"),
+                });
+                yield {
+                    type: "tool_call_end",
+                    callId,
+                    arguments: argumentsJson,
+                };
             }
             activeItems.delete(event.output_index);
             continue;
@@ -138,7 +311,7 @@ export async function* mapGrokResponseStream(
 
         if (event.type === "response.incomplete") {
             const reason = event.response.incomplete_details?.reason ?? "unknown";
-            usage = readResponseUsage(event.response.usage);
+            usage = toSessionCacheUsage(event.response.usage);
             if (usage.totalTokens > 0) {
                 yield { type: "token_usage", usage };
             }
@@ -147,7 +320,11 @@ export async function* mapGrokResponseStream(
                 return {
                     assistantText,
                     encryptedReasoning,
+                    responseItems: [...responseItems.entries()]
+                        .sort(([left], [right]) => left - right)
+                        .map(([, item]) => item),
                     stopReason: "length",
+                    toolCalls,
                     usage,
                 };
             }
@@ -155,7 +332,54 @@ export async function* mapGrokResponseStream(
         }
 
         if (event.type === "response.completed") {
-            usage = readResponseUsage(event.response.usage);
+            for (const [outputIndex, item] of (event.response.output ?? []).entries()) {
+                responseItems.set(outputIndex, JSON.stringify(item));
+            }
+            for (const [outputIndex, activeItem] of activeItems) {
+                if (
+                    (activeItem.type !== "function_call" &&
+                        activeItem.type !== "custom_tool_call" &&
+                        activeItem.type !== "tool_search_call") ||
+                    activeItem.callId === undefined ||
+                    activeItem.name === undefined
+                ) {
+                    continue;
+                }
+                const completedItem = (event.response.output ?? []).find(
+                    (item) =>
+                        (item.type === "function_call" ||
+                            item.type === "custom_tool_call" ||
+                            item.type === "tool_search_call") &&
+                        item.call_id === activeItem.callId,
+                );
+                const vendorType =
+                    activeItem.type === "custom_tool_call"
+                        ? "custom_tool_call"
+                        : activeItem.type === "tool_search_call"
+                          ? "tool_search_call"
+                          : "function_call";
+                const argumentsJson =
+                    completedItem?.type === "custom_tool_call"
+                        ? completedItem.input
+                        : completedItem?.type === "function_call"
+                          ? completedItem.arguments
+                          : completedItem?.type === "tool_search_call"
+                            ? JSON.stringify(completedItem.arguments)
+                            : (activeItem.argumentsJson ?? "");
+                toolCalls.push({
+                    callId: activeItem.callId,
+                    name: activeItem.name,
+                    arguments: argumentsJson,
+                    vendor: responseToolVendor(options.vendor, vendorType),
+                });
+                yield {
+                    type: "tool_call_end",
+                    callId: activeItem.callId,
+                    arguments: argumentsJson,
+                };
+                activeItems.delete(outputIndex);
+            }
+            usage = toSessionCacheUsage(event.response.usage);
             yield { type: "token_usage", usage };
             yield {
                 type: "done",
@@ -164,7 +388,11 @@ export async function* mapGrokResponseStream(
             return {
                 assistantText,
                 encryptedReasoning,
+                responseItems: [...responseItems.entries()]
+                    .sort(([left], [right]) => left - right)
+                    .map(([, item]) => item),
                 stopReason: sawToolUse ? "tool_use" : "stop",
+                toolCalls,
                 usage,
             };
         }
@@ -184,6 +412,7 @@ export async function* mapGrokResponseStream(
         }
     }
 
+    if (options.requireTerminalEvent) throw new Error("Response stream closed before completion.");
     yield { type: "token_usage", usage };
     yield {
         type: "done",
@@ -192,33 +421,21 @@ export async function* mapGrokResponseStream(
     return {
         assistantText,
         encryptedReasoning,
+        responseItems: [...responseItems.entries()]
+            .sort(([left], [right]) => left - right)
+            .map(([, item]) => item),
         stopReason: sawToolUse ? "tool_use" : "stop",
+        toolCalls,
         usage,
     };
 }
 
-function readResponseUsage(
-    usage:
-        | {
-              input_tokens?: number;
-              output_tokens?: number;
-              total_tokens?: number;
-              input_tokens_details?: {
-                  cached_tokens?: number;
-                  cache_write_tokens?: number;
-              };
-          }
-        | undefined,
-): SessionCacheUsage {
-    const cachedTokens = usage?.input_tokens_details?.cached_tokens ?? 0;
-    const cacheWriteTokens = usage?.input_tokens_details?.cache_write_tokens ?? 0;
-    const input = Math.max(0, (usage?.input_tokens ?? 0) - cachedTokens - cacheWriteTokens);
-    const output = usage?.output_tokens ?? 0;
-    return {
-        input,
-        output,
-        cacheRead: cachedTokens,
-        cacheWrite: cacheWriteTokens,
-        totalTokens: usage?.total_tokens ?? input + output + cachedTokens + cacheWriteTokens,
-    };
+function responseToolVendor(
+    vendor: "codex" | "grok" | undefined,
+    type: CodexToolVendor["type"],
+): CodexToolVendor | GrokToolVendor {
+    const provider = vendor ?? "grok";
+    return type === "tool_search_call"
+        ? { provider, type, execution: "client" }
+        : { provider, type };
 }
