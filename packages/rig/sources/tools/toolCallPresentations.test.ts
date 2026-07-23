@@ -2,19 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { AnyDefinedTool } from "../agent/types.js";
 import { claudeBashTool } from "./claude/Bash.js";
-import { claudeGlobTool } from "./claude/Glob.js";
-import { claudeGrepTool } from "./claude/Grep.js";
-import { claudeReadTool } from "./claude/Read.js";
-import { codexExecCommandTool } from "./codex/exec_command.js";
-import { grokGrepTool } from "./grok/grep.js";
-import { grokListDirTool } from "./grok/list_dir.js";
-import { grokReadFileTool } from "./grok/read_file.js";
+import { claudeGlobTool } from "../agent/tools/claude/Glob.js";
+import { claudeGrepTool } from "../agent/tools/claude/Grep.js";
+import { claudeReadTool } from "../agent/tools/claude/Read.js";
+import { codexExecCommandTool } from "../agent/tools/codex/exec_command.js";
+import { grokGrepTool } from "../agent/tools/grok/grep.js";
+import { grokListDirTool } from "../agent/tools/grok/list_dir.js";
+import { grokReadFileTool } from "../agent/tools/grok/read_file.js";
 import { grokRunTerminalCommandTool } from "./grok/run_terminal_command.js";
-import { piBashTool } from "./pi/bash.js";
-import { piFindTool } from "./pi/find.js";
-import { piGrepTool } from "./pi/grep.js";
-import { piLsTool } from "./pi/ls.js";
-import { piReadTool } from "./pi/read.js";
 import { createJustBashToolHarness } from "./testing/createJustBashToolHarness.js";
 
 describe("tool call presentations", () => {
@@ -32,7 +27,6 @@ describe("tool call presentations", () => {
 
         expect(present(codexExecCommandTool, { cmd: "rg needle src" })).toEqual(expected);
         expect(present(claudeBashTool, { command: "rg needle src" })).toEqual(expected);
-        expect(present(piBashTool, { command: "rg needle src" })).toEqual(expected);
         expect(
             present(grokRunTerminalCommandTool, {
                 background: false,
@@ -45,7 +39,6 @@ describe("tool call presentations", () => {
     it("defines native read, list, and search exploration without tool-name inference", () => {
         for (const [tool, args] of [
             [claudeReadTool, { file_path: "/workspace/src/example.ts" }],
-            [piReadTool, { path: "/workspace/src/example.ts" }],
             [grokReadFileTool, { target_file: "/workspace/src/example.ts" }],
         ] as const) {
             expect(present(tool, args)).toEqual({
@@ -56,23 +49,18 @@ describe("tool call presentations", () => {
 
         for (const [tool, args] of [
             [claudeGlobTool, { path: "src", pattern: "**/*.ts" }],
-            [piFindTool, { path: "src", pattern: "**/*.ts" }],
         ] as const) {
             expect(present(tool, args)).toEqual({
                 type: "exploration",
                 operations: [{ kind: "list", target: "**/*.ts in src" }],
             });
         }
-        expect(present(piLsTool, { path: "src" })).toEqual({
-            type: "exploration",
-            operations: [{ kind: "list", target: "src" }],
-        });
         expect(present(grokListDirTool, { target_directory: "src" })).toEqual({
             type: "exploration",
             operations: [{ kind: "list", target: "src" }],
         });
 
-        for (const tool of [claudeGrepTool, piGrepTool, grokGrepTool]) {
+        for (const tool of [claudeGrepTool, grokGrepTool]) {
             expect(present(tool, { path: "src", pattern: "needle" })).toEqual({
                 type: "exploration",
                 operations: [{ command: "needle", kind: "search", path: "src", query: "needle" }],

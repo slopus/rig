@@ -32,12 +32,13 @@ describe("subagent live log", () => {
                         content: [
                             {
                                 arguments: {
-                                    context: "task",
+                                    fork_turns: "none",
                                     message: "Stream a long inspection log.",
                                     task_name: "stream_log",
                                 },
                                 id: "spawn-stream-log",
                                 name: "spawn_agent",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],

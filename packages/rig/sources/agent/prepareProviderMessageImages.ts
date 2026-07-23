@@ -1,4 +1,4 @@
-import type { Message, ProviderImageProfile } from "../providers/types.js";
+import type { Message, ProviderImageProfile } from "@slopus/rig-execution";
 import { boundToolResultContent } from "./boundToolResultContent.js";
 import { prepareProviderImageContent } from "./prepareProviderImageContent.js";
 

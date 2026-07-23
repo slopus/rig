@@ -7,7 +7,7 @@ import {
     type Gym,
     type TerminalSnapshot,
 } from "@slopus/rig-gym";
-import type { Usage } from "../../rig/sources/providers/types.js";
+import type { Usage } from "@slopus/rig-execution";
 
 const running = new Set<Gym>();
 
@@ -38,12 +38,13 @@ describe("subagent observability across a nested lifecycle", () => {
                         content: [
                             {
                                 arguments: {
-                                    context: "task",
+                                    fork_turns: "none",
                                     message: "Spawn the nested observer, then wait for release.",
                                     task_name: "top_observer",
                                 },
                                 id: "spawn-top-observer",
                                 name: "spawn_agent",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],
@@ -57,12 +58,13 @@ describe("subagent observability across a nested lifecycle", () => {
                         content: [
                             {
                                 arguments: {
-                                    context: "task",
+                                    fork_turns: "none",
                                     message: "Wait for release, then return NESTED_OBSERVER_DONE.",
                                     task_name: "nested_observer",
                                 },
                                 id: "spawn-nested-observer",
                                 name: "spawn_agent",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],

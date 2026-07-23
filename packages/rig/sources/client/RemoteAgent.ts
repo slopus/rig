@@ -28,7 +28,7 @@ import {
     type Provider,
     type ServiceTier,
     type StopReason,
-} from "../providers/types.js";
+} from "@slopus/rig-execution";
 import type { PermissionMode } from "../permissions/index.js";
 import type { SecretAttachmentScope } from "../secrets/index.js";
 import type { GoalStatus, SessionGoal } from "../goals/index.js";

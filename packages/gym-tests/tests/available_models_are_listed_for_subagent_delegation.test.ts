@@ -76,7 +76,6 @@ describe("available model guidance", () => {
                 expect(systemPrompt).not.toContain("Grok Build");
                 expect(systemPrompt).not.toContain("Grok 4.5");
                 expect(systemPrompt).not.toContain("Composer 2.5");
-                expect(systemPrompt).not.toContain("Kimi K3");
                 return { content: [{ text: "FILTERED_MODEL_GUIDANCE_OK", type: "text" }] };
             },
         });
@@ -89,7 +88,6 @@ describe("available model guidance", () => {
         expect(modelMenu.text).not.toContain("Grok Build");
         expect(modelMenu.text).not.toContain("Grok 4.5");
         expect(modelMenu.text).not.toContain("Composer 2.5");
-        expect(modelMenu.text).not.toContain("Kimi K3");
         gym.terminal.press("escape");
         await gym.terminal.waitForText("Ask Rig to do anything", 30_000);
 
@@ -118,11 +116,11 @@ describe("available model guidance", () => {
             },
             inference(request) {
                 expect(request.context.systemPrompt).toContain(
-                    "# Runtime model\nModel ID: openai/gpt-5.5\nProvider ID: bedrock",
+                    "# Runtime model\nModel ID: openai/gpt-5.6-sol\nProvider ID: bedrock",
                 );
                 return { content: [{ text: "BEDROCK_ROUTE_OK", type: "text" }] };
             },
-            modelId: "openai/gpt-5.5",
+            modelId: "openai/gpt-5.6-sol",
             providerId: "bedrock",
         });
         running.add(gym);

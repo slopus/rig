@@ -13,7 +13,7 @@ import { isPermissionMode, type PermissionMode } from "../permissions/index.js";
 import type {
     BedrockModelOverride,
     BedrockModelOverrides,
-} from "../providers/bedrock-model-overrides.js";
+} from "../executor/bedrock-model-overrides.js";
 import type { DockerExecutionConfig, DockerMountConfig } from "../execution/index.js";
 
 export function parseConfigToml(source: string): PartialRigConfig {
@@ -233,7 +233,7 @@ function readProviders(
             continue;
         }
 
-        if (type === "grok" || type === "kimi") {
+        if (type === "grok") {
             assertKnownKeys(rawProvider, `providers.${id}`, [
                 "auth_file",
                 "base_url",
@@ -302,15 +302,10 @@ function readProviders(
     };
 }
 
-function readProviderType(
-    id: string,
-    table: TomlTable,
-): "bedrock" | "claude" | "codex" | "grok" | "kimi" {
+function readProviderType(id: string, table: TomlTable): "bedrock" | "claude" | "codex" | "grok" {
     const configuredType = readProviderString(id, table, "type");
     const builtInType =
-        id === "bedrock" || id === "claude" || id === "codex" || id === "grok" || id === "kimi"
-            ? id
-            : undefined;
+        id === "bedrock" || id === "claude" || id === "codex" || id === "grok" ? id : undefined;
     if (
         configuredType !== undefined &&
         builtInType !== undefined &&
@@ -319,15 +314,9 @@ function readProviderType(
         throw new Error(`Built-in provider "${id}" must use type "${builtInType}".`);
     }
     const type = configuredType ?? builtInType;
-    if (
-        type !== "bedrock" &&
-        type !== "claude" &&
-        type !== "codex" &&
-        type !== "grok" &&
-        type !== "kimi"
-    ) {
+    if (type !== "bedrock" && type !== "claude" && type !== "codex" && type !== "grok") {
         throw new Error(
-            `Provider "${id}" must set type to "codex", "claude", "grok", "kimi", or "bedrock".`,
+            `Provider "${id}" must set type to "codex", "claude", "grok", or "bedrock".`,
         );
     }
     return type;

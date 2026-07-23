@@ -41,8 +41,7 @@ export class CodexSessionCredential extends BaseCredential<
             {
                 authFile: authPath,
                 clientId:
-                    env.CODEX_APP_SERVER_LOGIN_CLIENT_ID?.trim() ||
-                    "app_EMoamEEZ73f0CkXaXp7hrann",
+                    env.CODEX_APP_SERVER_LOGIN_CLIENT_ID?.trim() || "app_EMoamEEZ73f0CkXaXp7hrann",
                 refreshTokenUrl:
                     env.CODEX_REFRESH_TOKEN_URL_OVERRIDE?.trim() ||
                     "https://auth.openai.com/oauth/token",
@@ -82,10 +81,7 @@ export class CodexSessionCredential extends BaseCredential<
         return this.credential.accountId === undefined || this.credential.accountId === accountId;
     }
 
-    private withAuth(auth: {
-        accessToken: string;
-        accountId?: string;
-    }): CodexSessionCredential {
+    private withAuth(auth: { accessToken: string; accountId?: string }): CodexSessionCredential {
         return new CodexSessionCredential(
             {
                 accessToken: auth.accessToken,

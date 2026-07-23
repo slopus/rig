@@ -9,15 +9,15 @@ import {
     type ModelCatalog,
     type SubagentSummary,
 } from "../protocol/index.js";
-import { createInferenceStream } from "../providers/createInferenceStream.js";
-import { toLocalDate } from "../providers/toLocalDate.js";
+import { createInferenceStream } from "@slopus/rig-execution";
+import { toLocalDate } from "../executor/toLocalDate.js";
 import {
     defineModel,
     defineProvider,
     type AssistantMessage,
     type Context,
     type StreamOptions,
-} from "../providers/types.js";
+} from "@slopus/rig-execution";
 import { AgentSessionManager } from "./AgentSessionManager.js";
 import { InMemorySession } from "./InMemorySession.js";
 import { TrackedTaskDrain } from "./TrackedTaskDrain.js";
@@ -469,7 +469,7 @@ function createRuntime(
         context,
         cwd: options.cwd,
         processManager,
-        provider,
+        executor: provider,
     };
 }
 

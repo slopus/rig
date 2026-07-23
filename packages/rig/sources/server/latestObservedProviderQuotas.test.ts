@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { SessionEvent } from "../protocol/index.js";
-import type { ProviderQuota } from "../providers/providerQuota.js";
+import type { ProviderQuota } from "@slopus/rig-providers";
 import { latestObservedProviderQuotas } from "./latestObservedProviderQuotas.js";
 
 describe("latestObservedProviderQuotas", () => {

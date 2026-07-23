@@ -3,14 +3,13 @@ import { DEFAULT_RIG_CONFIG } from "../config/defaultConfig.js";
 import type { ConfigProviders } from "../config/types.js";
 import { NativeProcessManager } from "../processes/index.js";
 import type { ModelCatalog } from "../protocol/index.js";
-import { createConfiguredProvider } from "../providers/createConfiguredProvider.js";
-import { createGymProviderFromEnvironment } from "../providers/createGymProviderFromEnvironment.js";
+import { createExecutor } from "../executor/createExecutor.js";
+import { createGymProviderFromEnvironment } from "../executor/createGymProviderFromEnvironment.js";
 import {
     modelOpenaiGpt56Luna,
     modelOpenaiGpt56Sol,
     modelOpenaiGpt56Terra,
-} from "../providers/models.js";
-import type { Provider } from "../providers/types.js";
+} from "@slopus/rig-execution";
 import { uniqueModelsById } from "./uniqueModelsById.js";
 
 export interface CreateModelCatalogOptions {
@@ -31,36 +30,36 @@ export function createModelCatalog(options: CreateModelCatalogOptions = {}): Mod
         cwd,
         processManager: new NativeProcessManager(),
     });
-    const providers: Provider[] = [];
     const providerCatalogs: ModelCatalog["providers"][number][] = [];
     const emptyModelProviderIds: string[] = [];
     const missingCredentialVariables = new Set<string>();
     const gymProvider = createGymProviderFromEnvironment(env);
     const gymEnabled = gymProvider !== undefined;
     if (gymProvider !== undefined) {
-        providers.unshift(gymProvider);
         providerCatalogs.unshift({
-            contextCompatibility: gymProvider.contextCompatibility,
-            ...(gymProvider.contextCompatibilityKind === undefined
-                ? {}
-                : { contextCompatibilityKind: gymProvider.contextCompatibilityKind }),
-            ...(gymProvider.contextCompatibilityKey === undefined
-                ? {}
-                : {
-                      contextCompatibilityKeys: Object.fromEntries(
-                          gymProvider.models.map((model) => [
-                              model.id,
-                              gymProvider.contextCompatibilityKey!(model),
-                          ]),
-                      ),
-                  }),
             models: gymProvider.models,
             providerId: gymProvider.id,
+            providerType: "gym",
             ...(gymProvider.serviceTiers === undefined
                 ? {}
                 : { serviceTiers: gymProvider.serviceTiers }),
         });
     }
+    const executorProviders = Object.fromEntries(
+        Object.entries(providerSettings).map(([id, config]) => [
+            id,
+            options.disabledProviderReasons?.has(id) ? { ...config, enabled: false } : config,
+        ]),
+    );
+    const executorResult = createExecutor({
+        agentContext: context,
+        allowEmptyModels: true,
+        env,
+        providers: executorProviders,
+    });
+    const definitionsById = new Map(
+        (executorResult.executor?.providers ?? []).map((provider) => [provider.id, provider]),
+    );
     for (const [configuredId, config] of Object.entries(providerSettings)) {
         const id = configuredId;
         if (providerCatalogs.some((provider) => provider.providerId === id)) {
@@ -74,55 +73,52 @@ export function createModelCatalog(options: CreateModelCatalogOptions = {}): Mod
               : configuredDisabledReason;
         if (disabledReason !== undefined) {
             if (disabledReason === "no_models") emptyModelProviderIds.push(id);
-            providerCatalogs.push({ disabledReason, models: [], providerId: id });
+            providerCatalogs.push({
+                disabledReason,
+                models: [],
+                providerId: id,
+                providerType: config.type,
+            });
             continue;
         }
 
-        const result = createConfiguredProvider({
-            agentContext: context,
-            allowEmptyModels: true,
-            config,
-            env,
-            id,
-        });
-        if (result.status === "missing_credential") {
-            missingCredentialVariables.add(result.variable);
+        const definition = definitionsById.get(id);
+        if (definition === undefined) {
+            const missingVariable = executorResult.missingCredentials.get(id);
+            if (missingVariable !== undefined) missingCredentialVariables.add(missingVariable);
             providerCatalogs.push({
                 disabledReason: "not_authenticated",
                 models: [],
                 providerId: id,
+                providerType: config.type,
             });
             continue;
         }
-        const provider = result.provider;
-        if (provider.models.length === 0) {
+        const models = definition.profiles.map((profile) => profile.model);
+        if (models.length === 0) {
             emptyModelProviderIds.push(id);
-            providerCatalogs.push({ disabledReason: "no_models", models: [], providerId: id });
+            providerCatalogs.push({
+                disabledReason: "no_models",
+                models: [],
+                providerId: id,
+                providerType: config.type,
+            });
             continue;
         }
-        providers.push(provider);
         providerCatalogs.push({
-            contextCompatibility: provider.contextCompatibility,
-            ...(provider.contextCompatibilityKind === undefined
+            models,
+            providerId: definition.id,
+            providerType: config.type,
+            ...(definition.serviceTiers === undefined
                 ? {}
-                : { contextCompatibilityKind: provider.contextCompatibilityKind }),
-            ...(provider.contextCompatibilityKey === undefined
-                ? {}
-                : {
-                      contextCompatibilityKeys: Object.fromEntries(
-                          provider.models.map((model) => [
-                              model.id,
-                              provider.contextCompatibilityKey!(model),
-                          ]),
-                      ),
-                  }),
-            models: provider.models,
-            providerId: provider.id,
-            ...(provider.serviceTiers === undefined ? {} : { serviceTiers: provider.serviceTiers }),
+                : { serviceTiers: definition.serviceTiers }),
         });
     }
 
-    const defaultProvider = providers[0];
+    const availableProviders = providerCatalogs.filter(
+        (provider) => provider.disabledReason === undefined && provider.models.length > 0,
+    );
+    const defaultProvider = availableProviders[0];
     if (defaultProvider === undefined) {
         if (!Object.values(providerSettings).some((provider) => provider.enabled)) {
             throw new Error(
@@ -166,8 +162,8 @@ export function createModelCatalog(options: CreateModelCatalogOptions = {}): Mod
 
     return {
         defaultModelId: defaultModel.id,
-        defaultProviderId: defaultProvider.id,
-        models: uniqueModelsById(providers.flatMap((provider) => provider.models)),
+        defaultProviderId: defaultProvider.providerId,
+        models: uniqueModelsById(availableProviders.flatMap((provider) => provider.models)),
         providers: providerCatalogs,
     };
 }

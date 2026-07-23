@@ -76,8 +76,12 @@ server.on("upgrade", (request, socket) => {
                     socket.write(encodeTextFrame(JSON.stringify(item.message)));
                     if (
                         inference !== null &&
-                        ["response.completed", "response.failed", "response.incomplete", "error"]
-                            .includes(item.message.type)
+                        [
+                            "response.completed",
+                            "response.failed",
+                            "response.incomplete",
+                            "error",
+                        ].includes(item.message.type)
                     ) {
                         responseSummary = {
                             eventTypes: [...eventTypes],
@@ -256,8 +260,7 @@ function takeFrame(buffer) {
     if (!masked || buffer.length < offset + 4 + length) return undefined;
     const mask = buffer.subarray(offset, offset + 4);
     const payload = Buffer.from(buffer.subarray(offset + 4, offset + 4 + length));
-    for (let index = 0; index < payload.length; index += 1)
-        payload[index] ^= mask[index % 4];
+    for (let index = 0; index < payload.length; index += 1) payload[index] ^= mask[index % 4];
     return { consumed: offset + 4 + length, text: payload.toString("utf8") };
 }
 
@@ -274,9 +277,7 @@ function createUpstreamWebSocket(headers) {
             ...(typeof headers["chatgpt-account-id"] === "string"
                 ? { "chatgpt-account-id": headers["chatgpt-account-id"] }
                 : {}),
-            ...(typeof headers.originator === "string"
-                ? { originator: headers.originator }
-                : {}),
+            ...(typeof headers.originator === "string" ? { originator: headers.originator } : {}),
             ...(typeof headers["openai-beta"] === "string"
                 ? { "OpenAI-Beta": headers["openai-beta"] }
                 : {}),
@@ -367,9 +368,7 @@ function normalizeRequest(request, temporaryDirectory) {
 }
 
 function extractToolDefinitions(trace) {
-    const additionalTools = trace.warmup?.input?.find(
-        (item) => item?.type === "additional_tools",
-    );
+    const additionalTools = trace.warmup?.input?.find((item) => item?.type === "additional_tools");
     if (Array.isArray(additionalTools?.tools)) return additionalTools.tools;
     if (Array.isArray(trace.request?.tools)) return trace.request.tools;
     throw new Error("Codex request did not contain tool definitions.");

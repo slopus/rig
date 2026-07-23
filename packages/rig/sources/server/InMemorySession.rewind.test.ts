@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createEventIdFactory, type ModelCatalog } from "../protocol/index.js";
-import { defineModel } from "../providers/types.js";
+import { defineModel } from "@slopus/rig-execution";
 import {
     InMemorySession,
     type InMemorySessionPersistence,

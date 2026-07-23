@@ -1,5 +1,5 @@
 import type { SessionEvent } from "../../protocol/index.js";
-import type { ProviderQuotaWindow } from "../../providers/providerQuota.js";
+import type { ProviderQuotaWindow } from "@slopus/rig-providers";
 import type { SessionQuotaContribution } from "./types.js";
 
 interface WindowEpoch {

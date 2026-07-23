@@ -2,9 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { AgentContext, BashRunOptions, BashSessionSnapshot } from "../agent/index.js";
 import { claudeBashTool } from "./claude/Bash.js";
-import { codexExecCommandTool } from "./codex/exec_command.js";
+import { codexExecCommandTool } from "../agent/tools/codex/exec_command.js";
 import { grokRunTerminalCommandTool } from "./grok/run_terminal_command.js";
-import { piBashTool } from "./pi/bash.js";
 
 describe("command secret selection", () => {
     it("forwards selected secret bundle IDs through every provider shell tool", async () => {
@@ -30,14 +29,12 @@ describe("command secret selection", () => {
             context,
             {},
         );
-        await piBashTool.execute({ command: "pi-command", secrets: ["database"] }, context, {});
 
-        expect(calls).toHaveLength(4);
+        expect(calls).toHaveLength(3);
         expect(calls.map((call) => call.secrets)).toEqual([
             ["service"],
             ["service", "database"],
             [],
-            ["database"],
         ]);
     });
 });

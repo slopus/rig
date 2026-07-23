@@ -11,13 +11,12 @@ import {
     type AssistantMessage,
     type InferenceStream,
     type Usage,
-} from "../providers/types.js";
+} from "@slopus/rig-execution";
 import { createJustBashToolHarness } from "../tools/testing/createJustBashToolHarness.js";
 import { claudeAskUserQuestionTool } from "../tools/claude/AskUserQuestion.js";
 import { claudeBashTool } from "../tools/claude/Bash.js";
-import { codexExecCommandTool } from "../tools/codex/exec_command.js";
+import { codexExecCommandTool } from "./tools/codex/exec_command.js";
 import { grokRunTerminalCommandTool } from "../tools/grok/run_terminal_command.js";
-import { piBashTool } from "../tools/pi/bash.js";
 
 describe("Auto permissions", () => {
     it("fails closed when any tool has no permission context", async () => {
@@ -379,14 +378,6 @@ describe("Auto permissions", () => {
         {
             args: { command: "printf claude", dangerouslyDisableSandbox: true },
             tool: claudeBashTool,
-        },
-        {
-            args: {
-                command: "printf pi",
-                justification: "The sandbox blocked necessary work.",
-                sandbox_permissions: "require_escalated",
-            },
-            tool: piBashTool,
         },
         {
             args: {

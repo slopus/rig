@@ -86,7 +86,7 @@ describe("provider quota boundaries", () => {
                 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
                 DISABLE_TELEMETRY: "1",
             },
-            modelId: "anthropic/sonnet-4-6",
+            modelId: "anthropic/sonnet-5",
             providerId: "claude",
             timeoutMs: 30_000,
         });

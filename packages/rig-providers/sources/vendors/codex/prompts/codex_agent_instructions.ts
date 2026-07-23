@@ -85,8 +85,8 @@ export const codex_agent_instructions =
     "updates, since they are collapsed after the final answer is shown to users.\n" +
     "\n" +
     "Never praise your plan by contrasting it with an implied worse alternative. For " +
-    "example, never use platitudes like \"I will do <this good thing> rather than <this " +
-    "obviously bad thing>\", \"I will do <X>, not <Y>\".\n" +
+    'example, never use platitudes like "I will do <this good thing> rather than <this ' +
+    'obviously bad thing>", "I will do <X>, not <Y>".\n' +
     "\n" +
     "## Final answer\n" +
     "\n" +
@@ -265,7 +265,7 @@ export const codex_agent_instructions =
     "matching root alias first from `### Skill roots`, then open and read its `SKILL.md` " +
     "completely before taking task actions. For a filesystem path, open the file. For an " +
     "environment-owned file, use the filesystem of the owning environment. For an " +
-    "orchestrator reference, call `skills.list` with `{\"authority\":{\"kind\":\"orchestrator\"}}`, " +
+    'orchestrator reference, call `skills.list` with `{"authority":{"kind":"orchestrator"}}`, ' +
     "select the matching package, and pass its `main_resource` to `skills.read`. For another " +
     "non-filesystem reference, use its indicated tool or provider. If a read is truncated or " +
     "paginated, continue until EOF.\n" +

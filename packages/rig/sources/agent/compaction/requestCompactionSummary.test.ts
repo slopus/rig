@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Type } from "@sinclair/typebox";
 
-import { createInferenceStream } from "../../providers/createInferenceStream.js";
+import { createInferenceStream } from "@slopus/rig-execution";
 import {
     defineModel,
     defineProvider,
@@ -9,7 +9,7 @@ import {
     type Context,
     type InferenceStream,
     type StreamOptions,
-} from "../../providers/types.js";
+} from "@slopus/rig-execution";
 import { requestCompactionSummary } from "./requestCompactionSummary.js";
 
 const model = defineModel({
@@ -60,34 +60,7 @@ describe("requestCompactionSummary", () => {
         expect(observedOptions).toMatchObject([{ intent: "compaction", startDate: "2024-01-02" }]);
     });
 
-    it("uses provider-native compaction before the manual stream fallback", async () => {
-        let streamed = false;
-        const provider = defineProvider({
-            id: "test",
-            models: [model],
-            compact(_model, context, options) {
-                expect(context).toEqual(compactionContext());
-                expect(options.prompt).toMatch(/^Create a detailed continuation brief/u);
-                return textStream("Native summary.");
-            },
-            stream() {
-                streamed = true;
-                return textStream("Manual summary.");
-            },
-        });
-
-        await expect(
-            requestCompactionSummary({
-                context: compactionContext(),
-                model,
-                now: () => 4,
-                provider,
-            }),
-        ).resolves.toBe("Native summary.");
-        expect(streamed).toBe(false);
-    });
-
-    it("retries a transport failure before summary content begins", async () => {
+    it("does not replay a transport failure outside the provider", async () => {
         let requests = 0;
         const provider = defineProvider({
             id: "test",
@@ -107,8 +80,8 @@ describe("requestCompactionSummary", () => {
                 now: () => 1,
                 provider,
             }),
-        ).resolves.toBe("Recovered summary.");
-        expect(requests).toBe(2);
+        ).rejects.toThrow("fetch failed");
+        expect(requests).toBe(1);
     });
 
     it("does not retry a transport failure after summary content begins", async () => {

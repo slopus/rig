@@ -1,5 +1,5 @@
 import type { SessionEvent } from "../protocol/index.js";
-import type { ProviderQuota } from "../providers/providerQuota.js";
+import type { ProviderQuota } from "@slopus/rig-providers";
 
 export function latestObservedProviderQuotas(
     events: readonly SessionEvent[],

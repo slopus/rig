@@ -2,11 +2,7 @@ export function readCodexErrorHeader(error: unknown, name: string): string | und
     return readHeader(error, name.toLowerCase(), new Set());
 }
 
-function readHeader(
-    error: unknown,
-    name: string,
-    seen: Set<object>,
-): string | undefined {
+function readHeader(error: unknown, name: string, seen: Set<object>): string | undefined {
     if (typeof error !== "object" || error === null || seen.has(error)) return undefined;
     seen.add(error);
     if ("headers" in error) {

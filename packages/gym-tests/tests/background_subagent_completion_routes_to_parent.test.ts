@@ -44,13 +44,14 @@ describe("background subagent completion routes to its parent", () => {
                         content: [
                             {
                                 arguments: {
-                                    context: "task",
+                                    fork_turns: "none",
                                     message:
                                         "Inspect the delegated workflow and return the deterministic child result.",
                                     task_name: "inspect_workspace",
                                 },
                                 id: "spawn-inspection-agent",
                                 name: "spawn_agent",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],

@@ -79,7 +79,7 @@ import type { DockerExecutionConfig } from "../execution/index.js";
 import { configureSessionRequest } from "./configureSessionRequest.js";
 import { SessionConfigurationError } from "./SessionConfigurationError.js";
 import type { TaskDrain } from "./TrackedTaskDrain.js";
-import type { ProviderQuota } from "../providers/providerQuota.js";
+import type { ProviderQuota } from "@slopus/rig-providers";
 import type { SecretRegistration } from "../secrets/index.js";
 import type {
     CreateRemoteTerminalRequest,

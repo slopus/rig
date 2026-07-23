@@ -76,7 +76,7 @@ describe("Claude background commands without an explicit timeout", () => {
                     ],
                 };
             },
-            modelId: "anthropic/sonnet-4-6",
+            modelId: "anthropic/sonnet-5",
             providerId: "claude",
             providerOverrides: ["claude"],
             timeoutMs: 30_000,

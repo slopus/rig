@@ -1,7 +1,7 @@
 import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
 
 import type { SessionContext } from "@/core/SessionContext.js";
-import type { SessionReasoningEffort } from "@/core/SessionRunRequest.js";
+import type { SessionReasoningEffort, SessionServiceTier } from "@/core/SessionRunRequest.js";
 import type { SessionSkill } from "@/core/SessionSkill.js";
 import type { SessionTool } from "@/core/SessionTool.js";
 import { createOpenAIResponseRequest } from "@/responses/createOpenAIResponseRequest.js";
@@ -17,6 +17,7 @@ export function createCodexCliRequest(options: {
     model: string;
     promptCacheKey: string;
     skills: readonly SessionSkill[];
+    serviceTier?: SessionServiceTier;
     tools: readonly SessionTool[];
 }): ResponseCreateParamsStreaming {
     const request = createOpenAIResponseRequest({
@@ -25,6 +26,7 @@ export function createCodexCliRequest(options: {
     }) as ResponseCreateParamsStreaming & Record<string, unknown>;
     request.tool_choice = "auto";
     request.client_metadata = { ...options.clientMetadata } as never;
+    if (options.serviceTier !== undefined) request.service_tier = options.serviceTier;
     if (isCodexV2Model(options.model)) {
         request.parallel_tool_calls = false;
         if (request.reasoning !== undefined)

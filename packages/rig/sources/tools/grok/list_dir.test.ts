@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createJustBashToolHarness } from "../testing/createJustBashToolHarness.js";
-import { grokListDirTool } from "./list_dir.js";
+import { grokListDirTool } from "../../agent/tools/grok/list_dir.js";
 
 describe("Grok list_dir tool", () => {
     it("lists dangling symbolic links without failing the directory", async () => {

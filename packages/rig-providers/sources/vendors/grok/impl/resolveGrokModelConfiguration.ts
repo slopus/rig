@@ -23,8 +23,7 @@ export function resolveGrokModelConfiguration(options: {
     return {
         context: {
             instructions: [
-                configuration?.context.instructions,
-                options.context.instructions,
+                configuration?.context.instructions ?? options.context.instructions,
                 skillPrompt,
             ]
                 .filter(Boolean)

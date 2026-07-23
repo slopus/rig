@@ -29,7 +29,7 @@ describe("named Claude OAuth-token accounts", () => {
                 ].join("\n"),
             },
             inference: [{ content: [{ text: responseMarker, type: "text" }] }],
-            modelId: "anthropic/sonnet-4-6",
+            modelId: "anthropic/sonnet-5",
             providerId: "claude",
         });
         running.add(gym);
@@ -45,6 +45,6 @@ describe("named Claude OAuth-token accounts", () => {
             (request) => !request.options.sessionId?.endsWith(":title"),
         );
         expect(agentRequest?.providerId).toBe("work_claude");
-        expect(agentRequest?.modelId).toBe("anthropic/sonnet-4-6");
+        expect(agentRequest?.modelId).toBe("anthropic/sonnet-5");
     });
 });

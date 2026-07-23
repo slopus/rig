@@ -43,6 +43,7 @@ import {
 import { waitForGrokCompactionRetry } from "@/vendors/grok/impl/waitForGrokCompactionRetry.js";
 import { wrapGrokUserQuery } from "@/vendors/grok/impl/wrapGrokUserQuery.js";
 import { resolveGrokModelConfiguration } from "@/vendors/grok/impl/resolveGrokModelConfiguration.js";
+import { resolveGrokModelId } from "@/vendors/grok/impl/resolveGrokModelId.js";
 import { stripGrokContextImages } from "@/vendors/grok/impl/stripGrokContextImages.js";
 import { GrokSessionCredential } from "@/vendors/grok/GrokSessionCredential.js";
 
@@ -230,7 +231,8 @@ export class GrokSession extends BaseSession {
             messages,
         };
         const context = this.context;
-        const model = request.model ?? this.activeModel ?? this.model;
+        const requestedModel = request.model ?? this.activeModel ?? this.model;
+        const model = requestedModel === undefined ? undefined : resolveGrokModelId(requestedModel);
         if (model === undefined) throw new Error("A model is required for Grok inference.");
         this.activeModel = model;
         const configured = resolveGrokModelConfiguration({

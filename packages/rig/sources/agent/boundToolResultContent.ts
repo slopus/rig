@@ -1,5 +1,5 @@
 import type { ContentBlock } from "./types.js";
-import type { ToolResultContent } from "../providers/types.js";
+import type { ToolResultContent } from "@slopus/rig-execution";
 
 export const TOOL_RESULT_MAXIMUM_TEXT_BYTES = 50 * 1024;
 export const TOOL_RESULT_MAXIMUM_BLOCKS = 128;

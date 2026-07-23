@@ -47,7 +47,7 @@ describe("Claude typed inference errors", () => {
                     stopReason: "error",
                 },
             ],
-            modelId: "anthropic/sonnet-4-6",
+            modelId: "anthropic/sonnet-5",
             providerId: "claude",
         });
         running.add(gym);

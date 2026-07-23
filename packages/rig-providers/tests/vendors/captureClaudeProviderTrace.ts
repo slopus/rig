@@ -8,8 +8,10 @@ import { join, resolve } from "node:path";
 
 import { ClaudeAuthTokenCredential } from "@/vendors/claude/ClaudeAuthTokenCredential.js";
 import { ClaudeSession } from "@/vendors/claude/ClaudeSession.js";
+import { resolveClaudeModelId } from "@/vendors/claude/impl/resolveClaudeModelId.js";
 import type { SessionMessage, SessionToolCall } from "@/core/SessionContext.js";
 import type { SessionEvent } from "@/core/SessionEvent.js";
+import { createClaudeTestInstructions } from "./createClaudeTestInstructions.js";
 
 const outputArgument = process.argv[2];
 if (outputArgument === undefined) {
@@ -62,19 +64,39 @@ if (address === null || typeof address === "string") throw new Error("Missing ca
 
 const credential = await ClaudeAuthTokenCredential.tryLoad({ env: process.env });
 if (credential === null) throw new Error("Missing ANTHROPIC_AUTH_TOKEN.");
+const providerEnv = {
+    ...process.env,
+    ANTHROPIC_BASE_URL: `http://127.0.0.1:${address.port}`,
+    CLAUDE_CODE_OVERRIDE_DATE: "2000-01-01",
+    TZ: "UTC",
+};
 const session = new ClaudeSession(sessionId, {
     context: {
-        instructions:
-            "This is a deterministic provider trace. Follow exact reply and tool instructions.",
+        instructions: createClaudeTestInstructions(initialModel, { cwd, env: providerEnv }),
         messages: [],
     },
     credential,
     cwd,
-    env: {
-        ...process.env,
-        ANTHROPIC_BASE_URL: `http://127.0.0.1:${address.port}`,
-        CLAUDE_CODE_OVERRIDE_DATE: "2000-01-01",
-        TZ: "UTC",
+    env: providerEnv,
+    modelConfigurations: {
+        [resolveClaudeModelId(initialModel)]: {
+            context: {
+                instructions: createClaudeTestInstructions(initialModel, {
+                    cwd,
+                    env: providerEnv,
+                }),
+                messages: [],
+            },
+        },
+        [resolveClaudeModelId(switchedModel)]: {
+            context: {
+                instructions: createClaudeTestInstructions(switchedModel, {
+                    cwd,
+                    env: providerEnv,
+                }),
+                messages: [],
+            },
+        },
     },
     model: initialModel,
     skills: [
@@ -365,27 +387,29 @@ function normalize(value: unknown): unknown {
     const home = homedir();
     const visit = (item: unknown, key?: string): unknown => {
         if (typeof item === "string") {
-            return item
-                .replaceAll(sessionId, "<SESSION_ID>")
-                .replaceAll(cwd, "<WORKSPACE>")
-                .replaceAll(home, "<HOME>")
-                .replace(
-                    /[^/\s"]*rig-claude-provider-(?:trace|golden)-[^/\s"]+/gu,
-                    "<WORKSPACE_SLUG>",
-                )
-                .replace(
-                    /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/giu,
-                    "<UUID>",
-                )
-                .replace(
-                    /(?:req|msg|toolu)_[A-Za-z0-9_-]+/gu,
-                    (identifier) =>
-                        `<${identifier.slice(0, identifier.indexOf("_")).toUpperCase()}_ID>`,
-                )
-                // Claude Code currently ignores CLAUDE_CODE_OVERRIDE_DATE for this reminder.
-                // Keep the golden stable while preserving every other prompt byte.
-                .replace(/(?<=Today's date is )\d{4}-\d{2}-\d{2}(?=\.)/gu, "<CURRENT_DATE>")
-                .replace(/(?<=current date is )\d{4}-\d{2}-\d{2}/gu, "<CURRENT_DATE>");
+            return (
+                item
+                    .replaceAll(sessionId, "<SESSION_ID>")
+                    .replaceAll(cwd, "<WORKSPACE>")
+                    .replaceAll(home, "<HOME>")
+                    .replace(
+                        /[^/\s"]*rig-claude-provider-(?:trace|golden)-[^/\s"]+/gu,
+                        "<WORKSPACE_SLUG>",
+                    )
+                    .replace(
+                        /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/giu,
+                        "<UUID>",
+                    )
+                    .replace(
+                        /(?:req|msg|toolu)_[A-Za-z0-9_-]+/gu,
+                        (identifier) =>
+                            `<${identifier.slice(0, identifier.indexOf("_")).toUpperCase()}_ID>`,
+                    )
+                    // Claude Code currently ignores CLAUDE_CODE_OVERRIDE_DATE for this reminder.
+                    // Keep the golden stable while preserving every other prompt byte.
+                    .replace(/(?<=Today's date is )\d{4}-\d{2}-\d{2}(?=\.)/gu, "<CURRENT_DATE>")
+                    .replace(/(?<=current date is )\d{4}-\d{2}-\d{2}/gu, "<CURRENT_DATE>")
+            );
         }
         if (Array.isArray(item)) return item.map((child) => visit(child));
         if (item !== null && typeof item === "object") {

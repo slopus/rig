@@ -49,12 +49,13 @@ describe("pending steering from an aborted parent run across session resume", ()
                         content: [
                             {
                                 arguments: {
-                                    context: "task",
+                                    fork_turns: "none",
                                     message: "Keep auditing until the parent session resumes.",
                                     task_name: "resume_boundary_audit",
                                 },
                                 id: "spawn-resume-boundary-audit",
                                 name: "spawn_agent",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],

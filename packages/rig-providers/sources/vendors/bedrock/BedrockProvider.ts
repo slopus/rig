@@ -5,6 +5,7 @@ import type { BedrockCredential } from "@/vendors/VendorCredential.js";
 import { BedrockSession } from "@/vendors/bedrock/BedrockSession.js";
 import { assertBedrockCredential } from "@/vendors/bedrock/impl/assertBedrockCredential.js";
 import { BEDROCK_DEFAULT_REGION } from "@/vendors/bedrock/impl/bedrockConstants.js";
+import { resolveBedrockModelId } from "@/vendors/bedrock/impl/resolveBedrockModelId.js";
 import { resolveCodexUserAgent } from "@/vendors/codex/impl/codexUserAgent.js";
 
 export interface BedrockProviderOptions {
@@ -28,7 +29,7 @@ export class BedrockProvider extends ResponsesProvider {
         assertBedrockCredential(options.credential);
         this.credential = options.credential;
         this.endpoint = options.endpoint;
-        this.model = options.model;
+        this.model = options.model === undefined ? undefined : resolveBedrockModelId(options.model);
         this.region =
             options.region?.trim() ||
             process.env.AWS_REGION?.trim() ||

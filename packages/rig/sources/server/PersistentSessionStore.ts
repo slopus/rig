@@ -19,7 +19,7 @@ import type {
     SessionTitleStatus,
 } from "../protocol/index.js";
 import type { Message } from "../agent/types.js";
-import type { Model } from "../providers/types.js";
+import type { Model } from "@slopus/rig-execution";
 import type { SessionGoal } from "../goals/index.js";
 import { parsePermissionMode } from "../permissions/index.js";
 import {

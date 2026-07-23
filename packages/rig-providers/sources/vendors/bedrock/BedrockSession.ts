@@ -14,6 +14,7 @@ import {
     createBedrockClient,
     type BedrockClient,
 } from "@/vendors/bedrock/impl/createBedrockClient.js";
+import { resolveBedrockModelId } from "@/vendors/bedrock/impl/resolveBedrockModelId.js";
 import { classifyCodexError } from "@/vendors/codex/impl/classifyCodexError.js";
 
 const COMPACTION_PROMPT =
@@ -110,7 +111,9 @@ export class BedrockSession extends BaseSession {
                     request.context.messages,
                 ),
             };
-            const model = request.model ?? this.model;
+            const requestedModel = request.model ?? this.model;
+            const model =
+                requestedModel === undefined ? undefined : resolveBedrockModelId(requestedModel);
             if (model === undefined)
                 throw new Error("A model is required for Amazon Bedrock inference.");
             const client = this.resolveClient();

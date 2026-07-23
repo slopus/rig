@@ -77,7 +77,6 @@ function subagentContext(completed: () => boolean): SubagentContext {
         interrupt: vi.fn(agent),
         list: vi.fn(() => [agent()]),
         maxDepth: 3,
-        resume: vi.fn(agent),
         spawn: vi.fn(),
         wait: vi.fn(),
     };

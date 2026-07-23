@@ -60,6 +60,7 @@ describe("Auto-reviewed home-relative file paths", () => {
                     content: [{ text: "HOME_PATH_EXECUTION_MATCHED_REVIEW", type: "text" }],
                 };
             },
+            modelId: "anthropic/sonnet-5",
             permissionMode: "auto",
             providerId: "claude",
             providerOverrides: ["claude"],

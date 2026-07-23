@@ -1,0 +1,387 @@
+import {
+    BaseProvider,
+    BaseSession,
+    type SessionCompaction,
+    type SessionCompactionOptions,
+    type SessionEvent,
+    type SessionOptions,
+    type SessionRunRequest,
+} from "@slopus/rig-providers";
+import { describe, expect, it } from "vitest";
+
+import { Executor } from "@/Executor.js";
+
+const TEST_ENVIRONMENT = {
+    osVersion: "25.0",
+    platform: "darwin" as const,
+    primaryWorkingDirectory: "/workspace",
+    shell: "/bin/zsh",
+};
+
+describe("Executor", () => {
+    it("assembles prompts and preserves caller-owned tools while continuing compatible models", async () => {
+        const native = new RecordingProvider();
+        const executor = new Executor(
+            [
+                {
+                    id: "codex",
+                    native,
+                    profiles: [
+                        profile("codex", "codex", "openai/sol", "Sol"),
+                        profile("codex", "codex", "openai/terra", "Terra"),
+                    ],
+                },
+            ],
+            { environment: TEST_ENVIRONMENT },
+        );
+
+        expect(
+            await collect(
+                executor.run({
+                    context: { messages: [] },
+                    effort: "high",
+                    tools: [tool("extra")],
+                    selection: { modelId: "openai/sol", providerId: "codex" },
+                    contextInstructions: "Dynamic instructions",
+                }),
+            ),
+        ).toContainEqual({ type: "done", state: "normal" });
+        await collect(
+            executor.run({
+                context: { messages: [] },
+                tools: [tool("extra")],
+                selection: { modelId: "openai/terra", providerId: "codex" },
+                contextInstructions: "Dynamic instructions",
+            }),
+        );
+
+        expect(native.sessions).toHaveLength(1);
+        expect(native.sessions[0]?.requests.map((request) => request.model)).toEqual([
+            "openai/sol",
+            "openai/terra",
+        ]);
+        expect(native.options[0]?.tools?.map((candidate) => candidate.name)).toEqual(["extra"]);
+        expect(native.options[0]?.context.instructions).toBe(
+            [
+                "You are Rig, built by Happy",
+                "Sol",
+                "",
+                "# Environment",
+                "- Primary working directory: /workspace",
+                "- Platform: darwin",
+                "- Shell: /bin/zsh",
+                "- OS version: 25.0",
+                "",
+                "## Available models",
+                "- Sol — model ID: `openai/sol`; provider ID: `codex`",
+                "- Terra — model ID: `openai/terra`; provider ID: `codex`",
+                "",
+                "Dynamic instructions",
+            ].join("\n"),
+        );
+        expect(
+            native.options[0]?.modelConfigurations?.["openai/terra"]?.tools?.map(
+                (candidate) => candidate.name,
+            ),
+        ).toEqual(["extra"]);
+        expect(native.options[0]?.modelConfigurations?.["openai/terra"]?.context.instructions).toBe(
+            [
+                "You are Rig, built by Happy",
+                "Terra",
+                "",
+                "# Environment",
+                "- Primary working directory: /workspace",
+                "- Platform: darwin",
+                "- Shell: /bin/zsh",
+                "- OS version: 25.0",
+                "",
+                "## Available models",
+                "- Sol — model ID: `openai/sol`; provider ID: `codex`",
+                "- Terra — model ID: `openai/terra`; provider ID: `codex`",
+                "",
+                "Dynamic instructions",
+            ].join("\n"),
+        );
+        await expect(executor.compact({ instructions: "Keep decisions." })).resolves.toMatchObject({
+            status: "completed",
+            summary: "summary",
+        });
+        expect(native.sessions[0]?.compactions).toEqual([{ instructions: "Keep decisions." }]);
+    });
+
+    it("starts a fresh native session when context instructions change", async () => {
+        const native = new RecordingProvider();
+        const executor = new Executor(
+            [
+                {
+                    id: "codex",
+                    native,
+                    profiles: [profile("codex", "codex", "openai/sol", "Sol")],
+                },
+            ],
+            { environment: TEST_ENVIRONMENT },
+        );
+
+        await collect(
+            executor.run({
+                context: { messages: [] },
+                contextInstructions: "First context",
+                selection: { modelId: "openai/sol", providerId: "codex" },
+            }),
+        );
+        await collect(
+            executor.run({
+                context: { messages: [] },
+                contextInstructions: "Second context",
+                selection: { modelId: "openai/sol", providerId: "codex" },
+            }),
+        );
+
+        expect(native.sessions).toHaveLength(2);
+        expect(native.options[0]?.context.instructions).toContain("First context");
+        expect(native.options[1]?.context.instructions).toContain("Second context");
+        expect(native.options[1]?.context.instructions).not.toContain("First context");
+    });
+
+    it("starts a fresh native session when the caller changes the tool catalog", async () => {
+        const native = new RecordingProvider();
+        const executor = new Executor(
+            [
+                {
+                    id: "codex",
+                    native,
+                    profiles: [profile("codex", "codex", "openai/sol", "Sol")],
+                },
+            ],
+            { environment: TEST_ENVIRONMENT },
+        );
+
+        await collect(
+            executor.run({
+                context: { messages: [] },
+                selection: { modelId: "openai/sol", providerId: "codex" },
+                tools: [tool("read")],
+            }),
+        );
+        await collect(
+            executor.run({
+                context: { messages: [] },
+                selection: { modelId: "openai/sol", providerId: "codex" },
+                tools: [tool("write")],
+            }),
+        );
+
+        expect(native.sessions).toHaveLength(2);
+        expect(native.options[0]?.tools?.map((candidate) => candidate.name)).toEqual(["read"]);
+        expect(native.options[1]?.tools?.map((candidate) => candidate.name)).toEqual(["write"]);
+    });
+
+    it("replaces only the execution-owned base prompt", async () => {
+        const native = new RecordingProvider();
+        const executor = new Executor(
+            [
+                {
+                    id: "codex",
+                    native,
+                    profiles: [profile("codex", "codex", "openai/sol", "Sol")],
+                },
+            ],
+            { environment: TEST_ENVIRONMENT },
+        );
+
+        await collect(
+            executor.run({
+                context: { messages: [] },
+                contextInstructions: "AGENTS instructions",
+                selection: { modelId: "openai/sol", providerId: "codex" },
+                systemPrompt: "Custom base for {{name}}",
+            }),
+        );
+
+        const instructions = native.options[0]?.context.instructions ?? "";
+        expect(instructions).toContain("Custom base for Rig");
+        expect(instructions).not.toContain("You are Rig, built by Happy");
+        expect(instructions).not.toContain("\nSol\n");
+        expect(instructions).toContain("# Environment");
+        expect(instructions).toContain("AGENTS instructions");
+    });
+
+    it("serializes concurrent first-run session creation", async () => {
+        const native = new RecordingProvider();
+        const executor = new Executor(
+            [
+                {
+                    id: "codex",
+                    native,
+                    profiles: [profile("codex", "codex", "openai/sol", "Sol")],
+                },
+            ],
+            { environment: TEST_ENVIRONMENT },
+        );
+        const request = {
+            context: { messages: [] },
+            selection: { modelId: "openai/sol", providerId: "codex" },
+        };
+
+        await Promise.all([collect(executor.run(request)), collect(executor.run(request))]);
+
+        expect(native.sessions).toHaveLength(1);
+    });
+
+    it("substitutes the configured identity inside execution-owned prompts", async () => {
+        const native = new RecordingProvider();
+        const executor = new Executor(
+            [
+                {
+                    id: "codex",
+                    native,
+                    profiles: [
+                        {
+                            ...profile("codex", "codex", "openai/sol", "Sol"),
+                            prompt: "{{identity}}\nAgent name: {{name}}\nSol",
+                        },
+                    ],
+                },
+            ],
+            {
+                environment: TEST_ENVIRONMENT,
+                identity: {
+                    name: "Acme",
+                    prompt: "Follow Acme's coding standards.",
+                },
+            },
+        );
+
+        await collect(
+            executor.run({
+                context: { messages: [] },
+                selection: { modelId: "openai/sol", providerId: "codex" },
+            }),
+        );
+
+        expect(native.options[0]?.context.instructions).toContain(
+            "Follow Acme's coding standards.\nAgent name: Acme\nSol",
+        );
+        expect(native.options[0]?.context.instructions).not.toContain("You are Acme");
+        expect(native.options[0]?.context.instructions).not.toContain("You are Rig");
+    });
+
+    it("requires reset before an incompatible selection and does not infer", async () => {
+        const native = new RecordingProvider();
+        const executor = new Executor(
+            [
+                {
+                    id: "codex",
+                    native,
+                    profiles: [profile("codex", "codex", "openai/sol", "Sol")],
+                },
+                {
+                    id: "claude",
+                    native,
+                    profiles: [profile("claude", "claude", "anthropic/sonnet", "Sonnet")],
+                },
+            ],
+            { environment: TEST_ENVIRONMENT },
+        );
+        await collect(
+            executor.run({
+                context: { messages: [] },
+                selection: { modelId: "openai/sol", providerId: "codex" },
+            }),
+        );
+
+        const events = await collect(
+            executor.run({
+                context: { messages: [] },
+                selection: { modelId: "anthropic/sonnet", providerId: "claude" },
+            }),
+        );
+        expect(events).toEqual([
+            expect.objectContaining({
+                type: "reset_required",
+                requested: { modelId: "anthropic/sonnet", providerId: "claude" },
+            }),
+        ]);
+        expect(native.sessions).toHaveLength(1);
+
+        await executor.reset({ modelId: "anthropic/sonnet", providerId: "claude" });
+        await collect(
+            executor.run({
+                context: { messages: [] },
+                selection: { modelId: "anthropic/sonnet", providerId: "claude" },
+            }),
+        );
+        expect(native.sessions).toHaveLength(2);
+    });
+});
+
+class RecordingProvider extends BaseProvider {
+    static override readonly name = "recording";
+    static override readonly inputTypes = ["text"] as const;
+    static override readonly outputTypes = ["text"] as const;
+    readonly options: SessionOptions[] = [];
+    readonly sessions: RecordingSession[] = [];
+
+    override async session(id: string, options: SessionOptions) {
+        this.options.push(options);
+        const session = new RecordingSession(id);
+        this.sessions.push(session);
+        return session;
+    }
+}
+
+class RecordingSession extends BaseSession {
+    readonly compactions: SessionCompactionOptions[] = [];
+    readonly requests: SessionRunRequest[] = [];
+
+    constructor(id: string) {
+        super(id);
+    }
+
+    override async compact(options: SessionCompactionOptions = {}): Promise<SessionCompaction> {
+        this.compactions.push(options);
+        return {
+            status: "completed",
+            summary: "summary",
+            preservedMessages: [],
+            context: { instructions: "", messages: [] },
+        };
+    }
+
+    override destroy(): void {}
+
+    override async *run(request: SessionRunRequest): AsyncGenerator<SessionEvent> {
+        this.requests.push(request);
+        yield { type: "done", state: "normal" };
+    }
+}
+
+function profile(providerId: string, providerType: "claude" | "codex", id: string, name: string) {
+    return {
+        id,
+        model: {
+            defaultThinkingLevel: "off",
+            id,
+            name,
+            thinkingLevels: ["off"],
+        },
+        name,
+        providerId,
+        providerType,
+        prompt: `{{identity}}\n${name}`,
+    };
+}
+
+function tool(name: string) {
+    return {
+        description: name,
+        name,
+        type: "local" as const,
+    };
+}
+
+async function collect(events: AsyncIterable<SessionEvent | { type: "reset_required" }>) {
+    const collected: unknown[] = [];
+    for await (const event of events) collected.push(event);
+    return collected;
+}

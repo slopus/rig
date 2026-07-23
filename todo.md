@@ -75,7 +75,7 @@ This file tracks known defects, verified coverage gaps, and concrete follow-up w
 - [x] Make suspended subagents resumable after daemon restart.
     - Startup repair finalizes and clears a stale active run while preserving `status = suspended`.
     - The parent receives a durable passive notification that delegated work stopped at restart and will not resume automatically.
-    - Gym restarts the real daemon, verifies no child inference runs on startup, and recovers only after the parent calls `resume_agent`.
+    - Gym restarts the real daemon, verifies no child inference runs on startup, and recovers only after the parent calls `followup_task`.
 
 - [x] Bound MCP rendering work before serializing and wrapping large payloads.
     - MCP tool text and protocol metadata now stop at a 512 KiB budget, image payloads and block counts are capped, and structured content uses bounded traversal.

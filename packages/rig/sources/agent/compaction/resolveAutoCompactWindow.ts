@@ -1,4 +1,4 @@
-import type { Model } from "../../providers/types.js";
+import type { Model } from "@slopus/rig-execution";
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 

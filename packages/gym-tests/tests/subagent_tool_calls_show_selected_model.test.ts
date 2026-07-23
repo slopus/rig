@@ -25,23 +25,25 @@ describe("subagent tool call model display", () => {
                         content: [
                             {
                                 arguments: {
-                                    context: "task",
+                                    fork_turns: "none",
                                     message: "Wait, then return EXPLICIT_CHILD_DONE.",
                                     model: "openai/gym",
                                     task_name: "explicit_child",
                                 },
                                 id: "spawn-explicit-child",
                                 name: "spawn_agent",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                             {
                                 arguments: {
-                                    context: "task",
+                                    fork_turns: "none",
                                     message: "Wait, then return INHERITED_CHILD_DONE.",
                                     task_name: "inherited_child",
                                 },
                                 id: "spawn-inherited-child",
                                 name: "spawn_agent",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],

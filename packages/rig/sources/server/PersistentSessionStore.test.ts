@@ -7,8 +7,8 @@ import { describe, expect, it } from "vitest";
 
 import type { AgentMessage, UserMessage } from "../agent/types.js";
 import { createEventIdFactory, type ModelCatalog, type SessionEvent } from "../protocol/index.js";
-import type { GymInferenceRequest } from "../providers/gym-types.js";
-import { defineModel } from "../providers/types.js";
+import type { GymInferenceRequest } from "../executor/gym-types.js";
+import { defineModel } from "@slopus/rig-execution";
 import type {
     InMemorySession,
     PersistedQueuedRun,
@@ -100,7 +100,10 @@ describe("PersistentSessionStore", () => {
                 text: "Resolve ticket 42.",
             });
             const pending = await waitForExternalToolCall(session);
-            expect(requests[0]?.context.systemPrompt).toBe("Exact integration prompt.");
+            expect(requests[0]?.context.systemPrompt).toContain("Exact integration prompt.");
+            expect(requests[0]?.context.systemPrompt).toContain(
+                "# Runtime model\nModel ID: openai/gym\nProvider ID: gym",
+            );
             expect(
                 requests[0]?.context.tools?.find((tool) => tool.name === "lookup_ticket"),
             ).toMatchObject({
@@ -1576,7 +1579,7 @@ describe("PersistentSessionStore", () => {
         }
     });
 
-    it("checkpoints Claude's internal crash continuation before the retry completes", async () => {
+    it("persists a partial provider failure without replaying it", async () => {
         const { cleanup, databasePath } = await createDatabasePath();
         const model = defineModel({
             defaultThinkingLevel: "off",
@@ -1594,10 +1597,6 @@ describe("PersistentSessionStore", () => {
         const originalInferenceUrl = process.env.RIG_GYM_INFERENCE_URL;
         const originalOverrides = process.env.RIG_GYM_PROVIDER_OVERRIDES;
         const requests: GymInferenceRequest[] = [];
-        let releaseContinuation: (response: Response) => void = () => {};
-        const continuation = new Promise<Response>((resolve) => {
-            releaseContinuation = resolve;
-        });
         let store: PersistentSessionStore | undefined;
         try {
             process.env.RIG_GYM_INFERENCE_URL = "http://gym.test/inference";
@@ -1617,7 +1616,6 @@ describe("PersistentSessionStore", () => {
                         { headers: { "content-type": "application/json" }, status: 200 },
                     );
                 }
-                if (requests.length === 2) return continuation;
                 return new Response(
                     JSON.stringify({ content: [{ text: "Recovered session", type: "text" }] }),
                     { headers: { "content-type": "application/json" }, status: 200 },
@@ -1632,32 +1630,21 @@ describe("PersistentSessionStore", () => {
                 providerId: "claude",
             });
             const submitted = session.submit({ text: "Recover this response." });
-            await waitForInferenceRequests(requests, 2);
+            await expect(session.waitForRun(submitted.runId)).resolves.toEqual({
+                status: "completed",
+            });
 
-            expect(session.state().contextMessages?.slice(-2)).toMatchObject([
+            expect(requests).toHaveLength(1);
+            expect(session.state().contextMessages?.slice(-1)).toMatchObject([
                 {
                     role: "agent",
                     blocks: [{ type: "text", text: "DURABLE_PARTIAL" }],
-                },
-                {
-                    role: "user",
-                    internal: true,
-                    blocks: [{ type: "text", text: "Continue after the inference crash." }],
                 },
             ]);
             expect(JSON.stringify(session.snapshot().snapshot)).not.toContain(
                 "Continue after the inference crash.",
             );
 
-            releaseContinuation(
-                new Response(
-                    JSON.stringify({ content: [{ text: "DURABLE_RECOVERED", type: "text" }] }),
-                    { headers: { "content-type": "application/json" }, status: 200 },
-                ),
-            );
-            await expect(session.waitForRun(submitted.runId)).resolves.toEqual({
-                status: "completed",
-            });
             store.close();
             store = undefined;
 
@@ -1667,8 +1654,12 @@ describe("PersistentSessionStore", () => {
             });
             try {
                 const restored = restoredStore.get(session.id);
-                expect(restored?.state().contextMessages).toContainEqual(
-                    expect.objectContaining({ internal: true, role: "user" }),
+                expect(restored?.state().contextMessages?.at(-1)).toMatchObject({
+                    role: "agent",
+                    blocks: [{ type: "text", text: "DURABLE_PARTIAL" }],
+                });
+                expect(restored?.state().contextMessages).not.toContainEqual(
+                    expect.objectContaining({ internal: true }),
                 );
                 expect(JSON.stringify(restored?.snapshot().snapshot)).not.toContain(
                     "Continue after the inference crash.",
@@ -1677,12 +1668,6 @@ describe("PersistentSessionStore", () => {
                 restoredStore.close();
             }
         } finally {
-            releaseContinuation(
-                new Response(JSON.stringify({ content: [] }), {
-                    headers: { "content-type": "application/json" },
-                    status: 200,
-                }),
-            );
             store?.close();
             globalThis.fetch = originalFetch;
             if (originalInferenceUrl === undefined) delete process.env.RIG_GYM_INFERENCE_URL;
@@ -1954,7 +1939,7 @@ describe("PersistentSessionStore", () => {
             defaultThinkingLevel: "medium",
         });
         const removedModel = defineModel({
-            id: "zai/glm-5",
+            id: "removed/model",
             name: "Removed model",
             thinkingLevels: ["off", "high", "max"],
             defaultThinkingLevel: "max",
@@ -2239,6 +2224,7 @@ describe("PersistentSessionStore", () => {
                                       },
                                       id: "follow-up-persisted-worker",
                                       name: "followup_task",
+                                      namespace: "collaboration",
                                       type: "toolCall",
                                   },
                               ],
@@ -2684,7 +2670,7 @@ describe("PersistentSessionStore", () => {
 });
 
 async function waitForExternalToolCall(session: InMemorySession) {
-    for (let attempt = 0; attempt < 100; attempt += 1) {
+    for (let attempt = 0; attempt < 1_000; attempt += 1) {
         const call = session.externalToolCalls({ status: "pending" })[0];
         if (call !== undefined) return call;
         await new Promise((resolve) => setImmediate(resolve));
@@ -2699,18 +2685,6 @@ async function waitForPendingUserInputs(session: InMemorySession, count: number)
         await new Promise((resolve) => setImmediate(resolve));
     }
     throw new Error("Timed out waiting for the durable user question.");
-}
-
-async function waitForInferenceRequests(
-    requests: readonly GymInferenceRequest[],
-    count: number,
-): Promise<void> {
-    const deadline = Date.now() + 5_000;
-    while (Date.now() < deadline) {
-        if (requests.length >= count) return;
-        await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    throw new Error("Timed out waiting for inference requests.");
 }
 
 async function createDatabasePath(): Promise<{

@@ -40,6 +40,7 @@ export interface SessionAssistantMessage {
 export interface SessionToolCall {
     readonly callId: string;
     readonly name: string;
+    readonly namespace?: string;
     readonly arguments: string;
     /** Opaque provider metadata persisted with this tool call. */
     readonly vendor?: any;

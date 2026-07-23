@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createInferenceStream } from "../providers/createInferenceStream.js";
-import { defineModel, defineProvider, type AssistantMessage } from "../providers/types.js";
+import { createInferenceStream } from "@slopus/rig-execution";
+import { defineModel, defineProvider, type AssistantMessage } from "@slopus/rig-execution";
 import type { DebugLog } from "./DebugLog.js";
 import { createDebugProvider } from "./createDebugProvider.js";
 

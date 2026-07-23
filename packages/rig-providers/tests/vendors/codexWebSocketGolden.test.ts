@@ -328,10 +328,7 @@ import {
 import { createCodexCliWebSocketInferenceRequest } from "@/vendors/codex/impl/createCodexCliWebSocketInferenceRequest.js";
 import { codexCliTools } from "./codexCliTools.js";
 import { codexCliPrompt } from "./codexCliPrompt.js";
-import {
-    codexSkills,
-    codexSkillsWithGithub,
-} from "@/vendors/codex/skills/codexSkills.js";
+import { codexSkills, codexSkillsWithGithub } from "@/vendors/codex/skills/codexSkills.js";
 import { CodexProvider } from "@/vendors/codex/CodexProvider.js";
 
 const cases = [
@@ -1278,9 +1275,7 @@ describe("Codex CLI mode WebSocket goldens", () => {
         expect(switched.reasoning).toEqual({ effort: "medium" });
         expect(switched.instructions).toBe(legacy.instructions);
         expect(JSON.stringify(switched.input)).toContain("<model_switch>");
-        expect(switched.input).not.toContainEqual(
-            expect.objectContaining({ type: "compaction" }),
-        );
+        expect(switched.input).not.toContainEqual(expect.objectContaining({ type: "compaction" }));
         expect(toolDefinitions(switched, websocket.sent[0]!)).toEqual(
             await fixture("codex-gpt-5-5-low.tools.json"),
         );

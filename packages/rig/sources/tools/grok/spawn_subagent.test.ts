@@ -51,7 +51,6 @@ describe("grokSpawnSubagentTool", () => {
             interrupt: vi.fn(),
             list: () => [],
             maxDepth: 3,
-            resume: vi.fn(),
             spawn,
             wait: async () => ({ agents: [], timedOut: false }),
         };
@@ -82,7 +81,6 @@ describe("grokSpawnSubagentTool", () => {
             interrupt: vi.fn(),
             list: () => [],
             maxDepth: 3,
-            resume: vi.fn(),
             spawn: async () => ({
                 output: "The subagent ran out of tokens before returning a response.",
                 path: "/root/empty_response",
@@ -122,7 +120,6 @@ describe("grokSpawnSubagentTool", () => {
             interrupt: vi.fn(),
             list: () => [],
             maxDepth: 3,
-            resume: vi.fn(),
             spawn: vi.fn(),
             wait: async () => ({ agents: [], timedOut: false }),
         };

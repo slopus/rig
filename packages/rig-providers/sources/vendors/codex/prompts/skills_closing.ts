@@ -1,2 +1,1 @@
-export const skills_closing =
-    "</skills_instructions>";
+export const skills_closing = "</skills_instructions>";

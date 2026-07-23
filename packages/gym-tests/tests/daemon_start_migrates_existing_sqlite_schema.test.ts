@@ -134,7 +134,7 @@ database.exec(\`
         'legacy-session',
         '/workspace',
         'codex',
-        'openai/gpt-5.5',
+        'openai/gpt-5.6-sol',
         'idle',
         '[]',
         '[]',

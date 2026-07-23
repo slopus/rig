@@ -1,4 +1,4 @@
-import type { Model } from "../providers/types.js";
+import type { Model } from "@slopus/rig-execution";
 import type { ProtocolSession } from "../protocol/index.js";
 import { humanizePermissionMode } from "./humanizePermissionMode.js";
 import { humanizeProviderId } from "./humanizeProviderId.js";

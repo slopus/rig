@@ -9,12 +9,9 @@ import { createErrorToolResultBlock } from "./createErrorToolResultBlock.js";
 import { createToolResultBlock } from "./createToolResultBlock.js";
 import type { AgentContext } from "./context/AgentContext.js";
 import type { BashSessionActivity } from "./context/BashContext.js";
-import { delayBeforeInferenceRetry } from "./delayBeforeInferenceRetry.js";
-import { hasResponseContentBegun } from "./hasResponseContentBegun.js";
-import { INFERENCE_MAX_RETRIES } from "./inferenceRetryPolicy.js";
 import { isContextWindowExceededError } from "./isContextWindowExceededError.js";
 import { isInvalidImageRequestError } from "./isInvalidImageRequestError.js";
-import { isRetryableInferenceError } from "./isRetryableInferenceError.js";
+import { normalizeToolCallArguments } from "./normalizeToolCallArguments.js";
 import { prepareProviderMessageImages } from "./prepareProviderMessageImages.js";
 import { presentToolCall, type PresentedToolCall } from "./presentToolCall.js";
 import { replaceLastTurnToolResultImages } from "./replaceLastTurnToolResultImages.js";
@@ -28,7 +25,6 @@ import type {
     AnyDefinedTool,
     ContentBlock,
     Message,
-    NestedToolInvocation,
     ToolResultBlock,
     UserMessage,
 } from "./types.js";
@@ -49,11 +45,13 @@ import type {
     ToolResultMessage as ProviderToolResultMessage,
     Usage,
     UserContent as ProviderUserContent,
-} from "../providers/types.js";
-import { toLocalDate } from "../providers/toLocalDate.js";
+} from "@slopus/rig-execution";
+import { toLocalDate } from "../executor/toLocalDate.js";
 import { requestAutoPermissionApproval, reviewAutoPermission } from "../permissions/index.js";
 import type { DebugLog } from "../debug/index.js";
 import type { DurableSkillDefinition } from "../external-skills/types.js";
+import { resolveModelImageProfile } from "./resolveModelImageProfile.js";
+import { toExecutorTool } from "./tools/toExecutorTool.js";
 
 export interface RunAgentLoopOptions {
     appendSystemPrompt?: string;
@@ -64,10 +62,6 @@ export interface RunAgentLoopOptions {
     effort?: string;
     serviceTier?: ServiceTier;
     tools: readonly AnyDefinedTool[];
-    /** Logical tools used for system permission guidance when provider tools are adapters. */
-    promptTools?: readonly AnyDefinedTool[];
-    /** Tools available only to an exposed orchestration tool. */
-    nestedTools?: readonly AnyDefinedTool[];
     durableSkills?: readonly DurableSkillDefinition[];
     instructions?: string;
     messages: readonly Message[];
@@ -220,15 +214,12 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         messages: contextTranscript,
         context: options.context,
         ...(options.effort === undefined ? {} : { effort: options.effort }),
-        tools: options.promptTools ?? options.tools,
+        tools: options.tools,
         ...(options.durableSkills === undefined ? {} : { durableSkills: options.durableSkills }),
     });
-    const providerTools = options.tools.map(toProviderTool);
+    const providerTools = options.tools.map(toExecutorTool);
     const toolsByName = new Map(
-        [...(options.nestedTools ?? []), ...options.tools].map((tool) => [
-            toolDispatchKey(tool.name, tool.codeMode?.namespace),
-            tool,
-        ]),
+        options.tools.map((tool) => [toolDispatchKey(tool.name, tool.namespace?.name), tool]),
     );
     const toolContext = options.context;
     const toolLocks = new ToolLockManager();
@@ -266,132 +257,33 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
         let assistantMessage: ProviderAssistantMessage;
         let pendingStartEvent: AgentLoopEvent | undefined;
         let deferredErrorEvents: AgentLoopEvent[] = [];
-        let inferenceRetryCount = 0;
         try {
-            for (;;) {
-                pendingStartEvent = undefined;
-                deferredErrorEvents = [];
-                let emittedContent = false;
-                let latestPartial: ProviderAssistantMessage | undefined;
-                try {
-                    const preparedProviderMessages = await prepareProviderMessageImages(
-                        providerMessages,
-                        options.provider.imageProfile(model),
-                    );
-                    const stream = options.provider.stream(
-                        model,
-                        toProviderContext(providerPrompt, preparedProviderMessages, providerTools),
-                        toStreamOptions(options, startDate),
-                    );
+            const preparedProviderMessages = await prepareProviderMessageImages(
+                providerMessages,
+                resolveModelImageProfile(model),
+            );
+            const stream = options.provider.stream(
+                model,
+                toProviderContext(providerPrompt, preparedProviderMessages, providerTools),
+                toStreamOptions(options, startDate),
+            );
 
-                    for await (const event of stream) {
-                        if (event.type === "start") {
-                            pendingStartEvent = event;
-                            latestPartial = event.partial;
-                            continue;
-                        }
-                        if (event.type === "error") {
-                            latestPartial = event.error;
-                            deferredErrorEvents.push(event);
-                            continue;
-                        }
-                        if (pendingStartEvent !== undefined) {
-                            await options.onEvent?.(pendingStartEvent);
-                            pendingStartEvent = undefined;
-                        }
-                        if ("partial" in event) latestPartial = event.partial;
-                        if (hasResponseContentBegun(event)) emittedContent = true;
-                        await options.onEvent?.(event);
-                    }
-
-                    assistantMessage = await stream.result();
-                } catch (error) {
-                    if (
-                        inferenceRetryCount < INFERENCE_MAX_RETRIES &&
-                        isRetryableInferenceError(error)
-                    ) {
-                        inferenceRetryCount += 1;
-                        if (emittedContent && latestPartial !== undefined) {
-                            await appendInferenceCrashContinuation({
-                                assistantMessage: latestPartial,
-                                contextTranscript,
-                                idFactory,
-                                model,
-                                now,
-                                onContextChanged: options.onContextChanged,
-                                onMessage: options.onMessage,
-                                provider: options.provider,
-                                providerMessages,
-                                transcript,
-                                toolContext,
-                                tools: options.tools,
-                                usedToolCallIds,
-                            });
-                        }
-                        await options.onEvent?.({
-                            type: "inference_retry",
-                            attempt: inferenceRetryCount,
-                            maxAttempts: INFERENCE_MAX_RETRIES,
-                            reason: "connection_lost",
-                        });
-                        await delayBeforeInferenceRetry(inferenceRetryCount, options.signal);
-                        if (emittedContent) {
-                            iteration += 1;
-                            await options.onEvent?.({
-                                type: "inference_iteration_start",
-                                iteration,
-                            });
-                        }
-                        continue;
-                    }
-                    throw error;
-                }
-
-                if (
-                    assistantMessage.stopReason === "error" &&
-                    inferenceRetryCount < INFERENCE_MAX_RETRIES &&
-                    (assistantMessage.errorCode === "incomplete_response" ||
-                        isRetryableInferenceError(assistantMessage))
-                ) {
-                    inferenceRetryCount += 1;
-                    if (emittedContent) {
-                        await appendInferenceCrashContinuation({
-                            assistantMessage,
-                            contextTranscript,
-                            idFactory,
-                            model,
-                            now,
-                            onContextChanged: options.onContextChanged,
-                            onMessage: options.onMessage,
-                            provider: options.provider,
-                            providerMessages,
-                            transcript,
-                            toolContext,
-                            tools: options.tools,
-                            usedToolCallIds,
-                        });
-                    }
-                    await options.onEvent?.({
-                        type: "inference_retry",
-                        attempt: inferenceRetryCount,
-                        maxAttempts: INFERENCE_MAX_RETRIES,
-                        reason:
-                            assistantMessage.errorCode === "incomplete_response"
-                                ? "incomplete_response"
-                                : "connection_lost",
-                    });
-                    await delayBeforeInferenceRetry(inferenceRetryCount, options.signal);
-                    if (emittedContent) {
-                        iteration += 1;
-                        await options.onEvent?.({
-                            type: "inference_iteration_start",
-                            iteration,
-                        });
-                    }
+            for await (const event of stream) {
+                if (event.type === "start") {
+                    pendingStartEvent = event;
                     continue;
                 }
-                break;
+                if (event.type === "error") {
+                    deferredErrorEvents.push(event);
+                    continue;
+                }
+                if (pendingStartEvent !== undefined) {
+                    await options.onEvent?.(pendingStartEvent);
+                    pendingStartEvent = undefined;
+                }
+                await options.onEvent?.(event);
             }
+            assistantMessage = await stream.result();
         } catch (error) {
             if (options.signal?.aborted) {
                 await appendSteering(options, transcript, contextTranscript, providerMessages, now);
@@ -504,7 +396,12 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
             if (block.type === "toolCall") usedToolCallIds.add(block.id);
         }
 
-        const toolCalls = assistantMessage.content.filter(isProviderToolCall);
+        const toolCalls = assistantMessage.content
+            .filter(isProviderToolCall)
+            .map((toolCall) =>
+                normalizeToolCallArguments(toolCall, resolveTool(toolCall, toolsByName)),
+            );
+        const normalizedToolCalls = new Map(toolCalls.map((toolCall) => [toolCall.id, toolCall]));
         const presentedToolCalls = new Map(
             toolCalls.map((toolCall) => [
                 toolCall.id,
@@ -512,7 +409,14 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
             ]),
         );
         const agentMessage = assistantMessageToAgentMessage(
-            assistantMessage,
+            {
+                ...assistantMessage,
+                content: assistantMessage.content.map((content) =>
+                    content.type === "toolCall"
+                        ? (normalizedToolCalls.get(content.id) ?? content)
+                        : content,
+                ),
+            },
             idFactory,
             {
                 providerId: options.provider.id,
@@ -716,27 +620,6 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                                 ),
                             provider: options.provider,
                             preparedPermission,
-                            invokeTool: (invocation) =>
-                                invokeNestedTool(invocation, {
-                                    batchId: agentMessage.id,
-                                    messages: transcript,
-                                    model,
-                                    now,
-                                    provider: options.provider,
-                                    startDate,
-                                    toolContext,
-                                    toolLocks,
-                                    toolsByName,
-                                    ...(options.getSteeringSignal === undefined
-                                        ? {}
-                                        : { getSteeringSignal: options.getSteeringSignal }),
-                                    ...(options.onEvent === undefined
-                                        ? {}
-                                        : { onEvent: options.onEvent }),
-                                    ...(options.signal === undefined
-                                        ? {}
-                                        : { signal: options.signal }),
-                                }),
                             ...(executionSignal === undefined ? {} : { signal: executionSignal }),
                         });
                         const completedBeforeAbort = options.signal?.aborted !== true;
@@ -819,89 +702,6 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
     }
 }
 
-async function appendInferenceCrashContinuation(options: {
-    assistantMessage: ProviderAssistantMessage;
-    contextTranscript: Message[];
-    idFactory: () => string;
-    model: Model;
-    now: () => number;
-    onContextChanged: RunAgentLoopOptions["onContextChanged"];
-    onMessage: RunAgentLoopOptions["onMessage"];
-    provider: Provider;
-    providerMessages: ProviderMessage[];
-    transcript: Message[];
-    toolContext: AgentContext;
-    tools: readonly AnyDefinedTool[];
-    usedToolCallIds: Set<string>;
-}): Promise<void> {
-    const resumableAssistant = toResumableAssistantMessage(options.assistantMessage);
-    options.providerMessages.push(resumableAssistant);
-    const agentMessage = assistantMessageToAgentMessage(
-        resumableAssistant,
-        options.idFactory,
-        {
-            providerId: options.provider.id,
-            requestedModelId: options.model.id,
-        },
-        (toolCall) => presentToolCall(toolCall, options.tools, options.toolContext).presentation,
-    );
-    options.transcript.push(agentMessage);
-    options.contextTranscript.push(agentMessage);
-
-    const unexecutedToolCalls = resumableAssistant.content.filter(isProviderToolCall);
-    if (unexecutedToolCalls.length > 0) {
-        const resultBlocks = unexecutedToolCalls.map((toolCall) => {
-            options.usedToolCallIds.add(toolCall.id);
-            return createErrorToolResultBlock(
-                toolCall,
-                "Not run because the model connection was lost before the response completed.",
-                { kind: "interrupted" },
-            );
-        });
-        for (const resultBlock of resultBlocks) {
-            options.providerMessages.push(toProviderToolResultMessage(resultBlock, options.now));
-        }
-        options.contextTranscript.push({
-            role: "agent",
-            id: options.idFactory(),
-            internal: true,
-            blocks: resultBlocks,
-        });
-    }
-
-    const continuationUserMessage = options.provider.inferenceCrashContinuation?.userMessage;
-    if (continuationUserMessage !== undefined) {
-        const message: UserMessage = {
-            role: "user",
-            id: options.idFactory(),
-            internal: true,
-            blocks: [{ type: "text", text: continuationUserMessage }],
-        };
-        options.contextTranscript.push(message);
-        options.providerMessages.push(toProviderUserMessage(message, options.now));
-    }
-
-    await options.onContextChanged?.(options.contextTranscript);
-    await options.onMessage?.(agentMessage);
-}
-
-function toResumableAssistantMessage(message: ProviderAssistantMessage): ProviderAssistantMessage {
-    const {
-        errorCode: _errorCode,
-        errorMessage: _errorMessage,
-        providerError: _providerError,
-        ...rest
-    } = message;
-    const content = message.content.map((block) =>
-        block.type === "toolCall" ? { ...block, arguments: { ...block.arguments } } : { ...block },
-    );
-    return {
-        ...rest,
-        content,
-        stopReason: content.some(isProviderToolCall) ? "toolUse" : "stop",
-    };
-}
-
 async function ignoreOptionalFailure(callback: () => void | Promise<void>): Promise<void> {
     try {
         await callback();
@@ -930,7 +730,7 @@ async function compactLoopContext(options: {
             }).length;
             const preparedMessages = await prepareProviderMessageImages(
                 options.providerMessages.slice(0, providerMessageCount),
-                options.options.provider.imageProfile(options.model),
+                resolveModelImageProfile(options.model),
             );
             return toProviderContext(
                 options.providerPrompt,
@@ -1115,6 +915,9 @@ function toProviderMessagesFromAgentMessage(
                       usage: zeroUsage(),
                       stopReason,
                       timestamp: options.now(),
+                      ...(message.responseItems === undefined
+                          ? {}
+                          : { responseItems: message.responseItems }),
                   },
               ]
             : []),
@@ -1171,6 +974,7 @@ function toProviderAssistantContent(
             ...(block.namespace === undefined ? {} : { namespace: block.namespace }),
             arguments: block.arguments as Record<string, unknown>,
             ...(block.kind === undefined ? {} : { kind: block.kind }),
+            ...(block.vendor === undefined ? {} : { vendor: block.vendor }),
         };
     }
 
@@ -1188,15 +992,6 @@ function resolveToolLockKeys(
     );
 }
 
-export function toProviderTool(tool: AnyDefinedTool): ProviderTool {
-    if (tool.providerTool !== undefined) return tool.providerTool;
-    return {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.arguments,
-    };
-}
-
 function toProviderToolResultMessage(
     block: ToolResultBlock,
     now: () => number,
@@ -1208,6 +1003,7 @@ function toProviderToolResultMessage(
         content: block.rendered.map(toProviderToolResultContent),
         isError: block.isError ?? false,
         timestamp: now(),
+        ...(block.vendor === undefined ? {} : { vendor: block.vendor }),
     };
 }
 
@@ -1327,157 +1123,6 @@ async function prepareToolPermission(
     }
 }
 
-async function invokeNestedTool(
-    invocation: NestedToolInvocation,
-    options: {
-        batchId: string;
-        messages: readonly Message[];
-        model: Model;
-        now: () => number;
-        onEvent?: (event: AgentLoopEvent) => void | Promise<void>;
-        provider: Provider;
-        getSteeringSignal?: () => AbortSignal;
-        signal?: AbortSignal;
-        startDate: string;
-        toolContext: AgentContext;
-        toolLocks: ToolLockManager;
-        toolsByName: ReadonlyMap<string, AnyDefinedTool>;
-    },
-): Promise<unknown> {
-    const invocationSignal = combineAbortSignals(options.signal, invocation.signal);
-    const toolCall: ProviderToolCall = {
-        type: "toolCall",
-        id: invocation.toolCallId,
-        name: invocation.name,
-        ...(invocation.namespace === undefined ? {} : { namespace: invocation.namespace }),
-        arguments: invocation.arguments as Record<string, unknown>,
-    };
-    const signal = resolveTool(toolCall, options.toolsByName)?.steerable
-        ? combineAbortSignals(invocationSignal, options.getSteeringSignal?.())
-        : invocationSignal;
-    await ignoreOptionalFailure(() =>
-        options.onEvent?.({ type: "tool_execution_start", toolCall }),
-    );
-    let endEmitted = false;
-    const emitEnd = async (result: ToolResultBlock) => {
-        endEmitted = true;
-        await ignoreOptionalFailure(() =>
-            options.onEvent?.({
-                type: "tool_execution_end",
-                result: toToolExecutionEndResult(result),
-            }),
-        );
-        await ignoreOptionalFailure(() =>
-            options.onEvent?.({
-                type: "background_processes_changed",
-                processes: options.toolContext.bash.activeSessions?.() ?? [],
-                running: options.toolContext.bash.activeSessionCount?.() ?? 0,
-            }),
-        );
-    };
-    try {
-        signal?.throwIfAborted();
-        const prepared = await prepareToolPermission(
-            toolCall,
-            options.toolsByName,
-            options.toolContext,
-            {
-                messages: options.messages,
-                model: options.model,
-                now: options.now,
-                onPermissionReview: (review) =>
-                    ignoreOptionalFailure(() =>
-                        options.onEvent?.({
-                            type: "permission_review",
-                            toolCallId: toolCall.id,
-                            ...review,
-                        }),
-                    ),
-                provider: options.provider,
-                startDate: options.startDate,
-                ...(signal === undefined ? {} : { signal }),
-            },
-        );
-        signal?.throwIfAborted();
-        const permission = await resolvePermissionPrompt(toolCall, prepared, options.toolContext, {
-            batchId: options.batchId,
-            durable: false,
-            toolCallIndex: 0,
-            ...(signal === undefined ? {} : { signal }),
-        });
-        signal?.throwIfAborted();
-
-        return await options.toolLocks.run(
-            resolveToolLockKeys(toolCall, options.toolsByName),
-            async () => {
-                signal?.throwIfAborted();
-                let rawResult: unknown;
-                let hasRawResult = false;
-                const result = await executeToolCall(
-                    toolCall,
-                    options.toolsByName,
-                    options.toolContext,
-                    {
-                        batchId: options.batchId,
-                        messages: options.messages,
-                        model: options.model,
-                        now: options.now,
-                        preparedPermission: permission,
-                        provider: options.provider,
-                        toolCallIndex: 0,
-                        markPermissionExecuting: false,
-                        onPermissionReview: (review) =>
-                            ignoreOptionalFailure(() =>
-                                options.onEvent?.({
-                                    type: "permission_review",
-                                    toolCallId: toolCall.id,
-                                    ...review,
-                                }),
-                            ),
-                        onProgress: (display) => {
-                            void ignoreOptionalFailure(() =>
-                                options.onEvent?.({
-                                    type: "tool_execution_progress",
-                                    display,
-                                    toolCallId: toolCall.id,
-                                }),
-                            );
-                        },
-                        onStatus: (status) => {
-                            void ignoreOptionalFailure(() =>
-                                options.onEvent?.({
-                                    type: "tool_execution_status",
-                                    status,
-                                    toolCallId: toolCall.id,
-                                }),
-                            );
-                        },
-                        onRawResult: (value) => {
-                            rawResult = value;
-                            hasRawResult = true;
-                        },
-                        ...(signal === undefined ? {} : { signal }),
-                    },
-                );
-                await emitEnd(result);
-                if (!hasRawResult) throw new Error(result.display);
-                return rawResult;
-            },
-        );
-    } catch (error) {
-        if (!endEmitted) {
-            const message = errorToMessage(error);
-            await emitEnd(
-                createErrorToolResultBlock(toolCall, `Tool '${toolCall.name}' failed: ${message}`, {
-                    kind: signal?.aborted ? "interrupted" : "execution_failed",
-                    message,
-                }),
-            );
-        }
-        throw error;
-    }
-}
-
 async function executeToolCall(
     toolCall: ProviderToolCall,
     toolsByName: ReadonlyMap<string, AnyDefinedTool>,
@@ -1498,7 +1143,6 @@ async function executeToolCall(
         }) => void | Promise<void>;
         onError?: (error: unknown) => void | Promise<void>;
         onRawResult?: (result: unknown) => void | Promise<void>;
-        invokeTool?: (invocation: NestedToolInvocation) => Promise<unknown>;
         markPermissionExecuting?: boolean;
         preparedPermission: PreparedToolPermission;
         provider: Provider;
@@ -1570,7 +1214,6 @@ async function executeToolCall(
                 toolBatchId?: string;
                 toolCallId?: string;
                 toolCallIndex?: number;
-                invokeTool?: (invocation: NestedToolInvocation) => Promise<unknown>;
             },
         ) => Promise<unknown> | unknown;
         const executionOptions: {
@@ -1584,7 +1227,6 @@ async function executeToolCall(
         } = {
             messages: options.messages,
             toolCallId: toolCall.id,
-            ...(options.invokeTool === undefined ? {} : { invokeTool: options.invokeTool }),
         };
         if (tool.execution === "durable") {
             executionOptions.toolBatchId = options.batchId;
@@ -1617,7 +1259,13 @@ async function executeToolCall(
                 : await run();
         options.signal?.throwIfAborted();
         await options.onRawResult?.(result);
-        return createToolResultBlock(tool, toolCall.arguments, result, toolCall.id);
+        return createToolResultBlock(
+            tool,
+            toolCall.arguments,
+            result,
+            toolCall.id,
+            toolCall.vendor,
+        );
     } catch (error) {
         await options.onError?.(error);
         if (options.signal?.aborted) {

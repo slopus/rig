@@ -40,7 +40,7 @@ describe("Claude Read default line limit", () => {
                 readResult = messageText(lastMessage);
                 return { content: [{ text: "CLAUDE_READ_LIMIT_VERIFIED", type: "text" }] };
             },
-            modelId: "anthropic/sonnet-4-6",
+            modelId: "anthropic/sonnet-5",
             providerId: "claude",
             providerOverrides: ["claude"],
         });

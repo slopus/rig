@@ -15,7 +15,7 @@ export const gpt_5_5_skills_instructions =
     "  1) After deciding to use a skill, the main agent must read its `SKILL.md` completely " +
     "before taking task actions. For a `file` entry, open the listed path. For an " +
     "`environment resource`, use the filesystem of the owning environment. For an " +
-    "`orchestrator resource`, call `skills.list` with `{\"authority\":{\"kind\":\"orchestrator\"}}`, " +
+    '`orchestrator resource`, call `skills.list` with `{"authority":{"kind":"orchestrator"}}`, ' +
     "select the matching package, and pass its `main_resource` to `skills.read`. If a read " +
     "is truncated or paginated, continue until EOF.\n" +
     "  2) When `SKILL.md` references another resource, use the same access mechanism. " +

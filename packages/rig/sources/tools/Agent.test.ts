@@ -20,7 +20,6 @@ describe("Agent tool", () => {
             interrupt: vi.fn(),
             list: () => [],
             maxDepth: 3,
-            resume: vi.fn(),
             spawn,
             wait: async () => ({ agents: [], timedOut: false }),
         };
@@ -60,7 +59,6 @@ describe("Agent tool", () => {
             interrupt: vi.fn(),
             list: () => [],
             maxDepth: 3,
-            resume: vi.fn(),
             spawn: vi.fn(),
             wait: async () => ({ agents: [], timedOut: false }),
         };
@@ -94,7 +92,6 @@ describe("Agent tool", () => {
             interrupt: vi.fn(),
             list: () => [],
             maxDepth: 3,
-            resume: vi.fn(),
             spawn,
             wait: async () => ({ agents: [], timedOut: false }),
         };
@@ -133,7 +130,6 @@ describe("Agent tool", () => {
             interrupt: vi.fn(),
             list: () => [],
             maxDepth: 3,
-            resume: vi.fn(),
             spawn: async () => ({
                 output: "The delegated check failed.",
                 path: "/root/run_check",

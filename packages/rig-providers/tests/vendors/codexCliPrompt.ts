@@ -24,7 +24,10 @@ const prompts: Readonly<Record<string, CodexPromptEnvelope>> = {
     },
     "gpt-5.6-sol:websocket": {
         instructions: codex_agent_instructions,
-        systemMessages: [[read_only_permissions, apps_instructions, plugins_instructions], ...collaboration],
+        systemMessages: [
+            [read_only_permissions, apps_instructions, plugins_instructions],
+            ...collaboration,
+        ],
     },
     "gpt-5.6-sol:sse": {
         instructions: codex_agent_instructions,
@@ -32,7 +35,10 @@ const prompts: Readonly<Record<string, CodexPromptEnvelope>> = {
     },
     "gpt-5.6-terra:websocket": {
         instructions: codex_agent_instructions,
-        systemMessages: [[read_only_permissions, apps_instructions, plugins_instructions], ...collaboration],
+        systemMessages: [
+            [read_only_permissions, apps_instructions, plugins_instructions],
+            ...collaboration,
+        ],
     },
     "gpt-5.6-terra:sse": {
         instructions: codex_agent_instructions,
@@ -48,10 +54,7 @@ const prompts: Readonly<Record<string, CodexPromptEnvelope>> = {
     },
 };
 
-export function codexCliPrompt(
-    model: string,
-    transport: "sse" | "websocket",
-): CodexPromptEnvelope {
+export function codexCliPrompt(model: string, transport: "sse" | "websocket"): CodexPromptEnvelope {
     const prompt = prompts[`${model}:${transport}`];
     if (prompt === undefined) throw new Error(`No captured ${transport} prompt for '${model}'.`);
     return prompt;

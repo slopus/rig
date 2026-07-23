@@ -129,8 +129,7 @@ function createClaudeMcpServer(
         tools: tools.map((tool) => ({
             name: tool.name,
             description: tool.description ?? "",
-            inputSchema:
-                tool.parameters ?? Type.Object({}, { additionalProperties: false }),
+            inputSchema: tool.parameters ?? Type.Object({}, { additionalProperties: false }),
         })),
     }));
     instance.server.setRequestHandler(CallToolRequestSchema, async (request) =>

@@ -50,24 +50,26 @@ describe("delayed subagent completion does not add blank scrollback", () => {
                             })),
                             {
                                 arguments: {
-                                    context: "task",
+                                    fork_turns: "none",
                                     message:
                                         "Wait until released, then report FIRST_CHILD_COMPLETE.",
                                     task_name: "first_delayed_audit",
                                 },
                                 id: "spawn-first-delayed-audit",
                                 name: "spawn_agent",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                             {
                                 arguments: {
-                                    context: "task",
+                                    fork_turns: "none",
                                     message:
                                         "Wait until released, then report SECOND_CHILD_COMPLETE.",
                                     task_name: "second_delayed_audit",
                                 },
                                 id: "spawn-second-delayed-audit",
                                 name: "spawn_agent",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],

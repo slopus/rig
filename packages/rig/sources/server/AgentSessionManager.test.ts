@@ -988,7 +988,7 @@ describe("AgentSessionManager", () => {
         });
     });
 
-    it("suspends active descendants until each retained session is explicitly resumed", async () => {
+    it("suspends active descendants until each retained session receives follow-up work", async () => {
         const statuses = new Map<string, "aborted" | "completed" | "running" | "suspended">([
             ["child-1", "running"],
             ["grandchild-1", "running"],
@@ -1012,10 +1012,6 @@ describe("AgentSessionManager", () => {
                 statuses.set(id, "running");
                 return { eventId: `${id}-event`, runId: `${id}-run`, sessionId: id };
             });
-            const resumeSuspended = vi.fn(() => {
-                statuses.set(id, "running");
-                return { eventId: `${id}-resume-event`, runId: `${id}-resume-run`, sessionId: id };
-            });
             const session = {
                 abort,
                 agentMetadata: () => ({
@@ -1032,7 +1028,6 @@ describe("AgentSessionManager", () => {
                     if (statuses.get(id) === "suspended") statuses.set(id, "aborted");
                 }),
                 recordSubagentChanged: vi.fn(),
-                resumeSuspended,
                 snapshot: () => ({ snapshot: { messages: [] } }),
                 subagentSummary: () => ({
                     agentId: `${id}-agent`,
@@ -1051,7 +1046,7 @@ describe("AgentSessionManager", () => {
                 waitForRun: () => new Promise(() => undefined),
             } as unknown as InMemorySession;
             sessions.set(id, session);
-            return { abort, resumeSuspended, session, submit, suspendByParent };
+            return { abort, session, submit, suspendByParent };
         };
         const root = {
             agentMetadata: () => ({ depth: 0, rootSessionId: "root-1", type: "primary" }),
@@ -1087,12 +1082,15 @@ describe("AgentSessionManager", () => {
             expect.objectContaining({ sessionId: grandchild.session.id, status: "suspended" }),
         ]);
 
-        expect(manager.resume(root.id, "audit_code")).toEqual(
+        expect(manager.followUp(root.id, "audit_code", "Continue the audit.")).toEqual(
             expect.objectContaining({ sessionId: child.session.id, status: "running" }),
         );
 
-        expect(child.resumeSuspended).toHaveBeenCalledOnce();
-        expect(grandchild.resumeSuspended).not.toHaveBeenCalled();
+        expect(child.submit).toHaveBeenCalledWith({
+            provenance: "agent",
+            text: "Continue the audit.",
+        });
+        expect(grandchild.submit).not.toHaveBeenCalled();
         expect(completed.submit).not.toHaveBeenCalled();
         expect(manager.list(root.id)).toEqual([
             expect.objectContaining({ sessionId: child.session.id, status: "running" }),

@@ -49,8 +49,9 @@ function formatPrompt(prompt) {
     return [
         "// Captured from Grok CLI 0.2.111 for Grok 4.5.",
         "export const grok_4_5_system_prompt =",
-        ...chunks.map((chunk, index) =>
-            `    ${JSON.stringify(chunk)}${index === chunks.length - 1 ? ";" : " +"}`,
+        ...chunks.map(
+            (chunk, index) =>
+                `    ${JSON.stringify(chunk)}${index === chunks.length - 1 ? ";" : " +"}`,
         ),
         "",
     ].join("\n");

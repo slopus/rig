@@ -5,7 +5,6 @@ export function describeHappyProvider(providerId: string): HappyProviderDescript
         claude: { kind: "claude", name: "Anthropic Claude" },
         codex: { kind: "codex", name: "OpenAI Codex" },
         grok: { kind: "grok", name: "xAI Grok" },
-        kimi: { kind: "kimi", name: "Moonshot Kimi" },
     };
     return {
         id: providerId,

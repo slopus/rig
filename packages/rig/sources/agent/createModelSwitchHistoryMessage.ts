@@ -1,4 +1,4 @@
-import type { Model } from "../providers/types.js";
+import type { Model } from "@slopus/rig-execution";
 import { summarizeChatHistory } from "./summarizeChatHistory.js";
 import type { Message, SystemMessage } from "./types.js";
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createJustBashToolHarness } from "../testing/createJustBashToolHarness.js";
-import { claudeGlobTool } from "./Glob.js";
+import { claudeGlobTool } from "../../agent/tools/claude/Glob.js";
 
 describe("Claude Code Glob tool", () => {
     it("returns matching files", async () => {

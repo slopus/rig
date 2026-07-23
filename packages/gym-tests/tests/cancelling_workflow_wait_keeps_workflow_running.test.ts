@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createGym, type Gym } from "@slopus/rig-gym";
-import type { GymInferenceRequest } from "../../rig/sources/providers/gym-types.js";
+import type { GymInferenceRequest } from "../../rig/sources/executor/gym-types.js";
 
 const running = new Set<Gym>();
 

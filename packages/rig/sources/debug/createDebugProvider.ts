@@ -1,5 +1,5 @@
-import { createInferenceStream } from "../providers/createInferenceStream.js";
-import { defineProvider, type Provider, type StreamOptions } from "../providers/types.js";
+import { createInferenceStream } from "@slopus/rig-execution";
+import { defineProvider, type Provider, type StreamOptions } from "@slopus/rig-execution";
 import type { DebugLog } from "./DebugLog.js";
 
 export interface CreateDebugProviderOptions {
@@ -15,24 +15,12 @@ export function createDebugProvider(
     let inference = 0;
 
     return defineProvider({
-        contextCompatibility: provider.contextCompatibility,
-        ...(provider.contextCompatibilityKind === undefined
-            ? {}
-            : { contextCompatibilityKind: provider.contextCompatibilityKind }),
-        ...(provider.contextCompatibilityKey === undefined
-            ? {}
-            : { contextCompatibilityKey: (model) => provider.contextCompatibilityKey!(model) }),
         id: provider.id,
         ...(provider.extendProfilePromptContext === undefined
             ? {}
             : { extendProfilePromptContext: provider.extendProfilePromptContext }),
-        ...(provider.profileType === undefined ? {} : { profileType: provider.profileType }),
-        imageProfile: (model) => provider.imageProfile(model),
-        ...(provider.inferenceCrashContinuation === undefined
-            ? {}
-            : { inferenceCrashContinuation: provider.inferenceCrashContinuation }),
+        ...(provider.type === undefined ? {} : { type: provider.type }),
         models: provider.models,
-        toolProfile: (model) => provider.toolProfile(model),
         ...(provider.serviceTiers === undefined ? {} : { serviceTiers: provider.serviceTiers }),
         stream(model, context, streamOptions = {}) {
             const inferenceId = `${options.source}-${String(++inference).padStart(4, "0")}`;

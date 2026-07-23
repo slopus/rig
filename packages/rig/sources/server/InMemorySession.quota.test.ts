@@ -5,13 +5,13 @@ import type { CodingAssistantRuntime } from "../runtime/CodingAssistantRuntime.j
 import type { CreateCodingAssistantAgentOptions } from "../runtime/createCodingAssistantAgent.js";
 import { NativeProcessManager } from "../processes/index.js";
 import { createEventIdFactory, type ModelCatalog } from "../protocol/index.js";
-import type { ProviderQuota } from "../providers/providerQuota.js";
+import type { ProviderQuota } from "@slopus/rig-providers";
 import {
     defineModel,
     defineProvider,
     type AssistantMessage,
     type InferenceStream,
-} from "../providers/types.js";
+} from "@slopus/rig-execution";
 import { InMemorySession } from "./InMemorySession.js";
 
 describe("InMemorySession quota observations", () => {
@@ -113,7 +113,7 @@ function createRuntime(
         context,
         cwd: options.cwd,
         processManager,
-        provider,
+        executor: provider,
     };
 }
 

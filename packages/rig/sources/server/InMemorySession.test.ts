@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ModelCatalog } from "../protocol/index.js";
-import { defineModel } from "../providers/types.js";
+import { defineModel } from "@slopus/rig-execution";
 import { InMemorySessionStore } from "./InMemorySessionStore.js";
 
 describe("InMemorySession", () => {
@@ -290,7 +290,7 @@ describe("InMemorySession", () => {
         });
         const bedrockOnlyModel = defineModel({
             defaultThinkingLevel: "off",
-            id: "zai/bedrock-only",
+            id: "anthropic/bedrock-only",
             name: "Bedrock-only model",
             thinkingLevels: ["off"],
         });
@@ -349,21 +349,18 @@ describe("InMemorySession", () => {
 
     it("keeps fast inference across Codex model changes and rejects unsupported providers", () => {
         const firstCodexModel = defineModel({
-            contextCompatibilityGroup: "codex",
             defaultThinkingLevel: "off",
             id: "openai/first",
             name: "First Codex model",
             thinkingLevels: ["off"],
         });
         const secondCodexModel = defineModel({
-            contextCompatibilityGroup: "codex",
             defaultThinkingLevel: "off",
             id: "openai/second",
             name: "Second Codex model",
             thinkingLevels: ["off"],
         });
         const claudeModel = defineModel({
-            contextCompatibilityGroup: "claude",
             defaultThinkingLevel: "off",
             id: "anthropic/test",
             name: "Claude model",
@@ -375,14 +372,14 @@ describe("InMemorySession", () => {
             models: [firstCodexModel, secondCodexModel, claudeModel],
             providers: [
                 {
-                    contextCompatibility: "model_group",
                     providerId: "codex",
+                    providerType: "codex",
                     models: [firstCodexModel, secondCodexModel],
                     serviceTiers: ["fast"],
                 },
                 {
-                    contextCompatibility: "model_group",
                     providerId: "claude",
+                    providerType: "claude",
                     models: [claudeModel],
                 },
             ],
@@ -446,7 +443,7 @@ describe("InMemorySession", () => {
         const session = store.create({
             cwd: "/tmp/rig-session-test",
             effort: "max",
-            modelId: "zai/glm-5",
+            modelId: "removed/model",
             providerId: "bedrock",
         });
 

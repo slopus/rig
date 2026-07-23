@@ -1,5 +1,5 @@
 import { resolveAutoCompactWindow } from "./resolveAutoCompactWindow.js";
-import type { Model } from "../../providers/types.js";
+import type { Model } from "@slopus/rig-execution";
 
 const MAX_OUTPUT_RESERVE = 20_000;
 const SUMMARY_SAFETY_RESERVE = 13_000;

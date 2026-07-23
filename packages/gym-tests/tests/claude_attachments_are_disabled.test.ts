@@ -54,7 +54,7 @@ describe("Claude SDK attachments", () => {
                     };
                 },
             },
-            modelId: "anthropic/sonnet-4-6",
+            modelId: "anthropic/sonnet-5",
             providerId: "claude",
             timeoutMs: 30_000,
         });

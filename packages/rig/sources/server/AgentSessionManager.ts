@@ -198,19 +198,6 @@ export class AgentSessionManager {
         return active.length;
     }
 
-    resume(parentSessionId: string, target: string): ManagedSubagent {
-        const child = this.#resolveTarget(parentSessionId, target);
-        const submitted = child.resumeSuspended(
-            this.#repository.get(parentSessionId)?.activeRunDebug?.() === true
-                ? { debug: true }
-                : {},
-        );
-        const parent = this.#parentFor(child);
-        this.recordChanged(child);
-        this.#startBackgroundMonitor(parent, child, submitted.runId);
-        return this.#managedSubagent(child);
-    }
-
     async stopDescendants(parentSessionId: string): Promise<number> {
         const descendants = this.#descendantsOf(parentSessionId);
         const active = descendants.filter((child) => {
@@ -323,8 +310,8 @@ export class AgentSessionManager {
         if (
             request.encryptedPrompt !== undefined &&
             (parent.encryptedAgentTransportScope() === undefined ||
-                request.modelId !== undefined ||
-                request.providerId !== undefined)
+                request.providerId !== undefined ||
+                (request.modelId !== undefined && !request.modelId.startsWith("openai/gpt-5.6-")))
         ) {
             throw new Error(
                 "Native encrypted collaboration only works within the current compatible provider and region. Use `rig.spawn_agent` and provide the task normally when selecting or crossing a model, provider, or region.",

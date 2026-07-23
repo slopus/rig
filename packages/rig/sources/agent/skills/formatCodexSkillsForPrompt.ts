@@ -19,7 +19,7 @@ export function formatCodexSkillsForPrompt(
     ];
     if (lines.length === 0) return undefined;
     const template = readFileSync(
-        new URL("../../profiles/codex/codex-skills-instructions.template.md", import.meta.url),
+        new URL("./codex-skills-instructions.template.md", import.meta.url),
         "utf8",
     );
     return template.replace("{{SKILLS}}", lines.join("\n")).trimEnd();

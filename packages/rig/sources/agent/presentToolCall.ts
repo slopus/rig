@@ -3,7 +3,7 @@ import { Value } from "@sinclair/typebox/value";
 import type { AgentContext } from "./context/AgentContext.js";
 import type { ToolCallPresentation } from "./ToolCallPresentation.js";
 import type { AnyDefinedTool } from "./types.js";
-import type { ToolCall as ProviderToolCall } from "../providers/types.js";
+import type { ToolCall as ProviderToolCall } from "@slopus/rig-execution";
 
 export type PresentedToolCall = ProviderToolCall & {
     presentation?: ToolCallPresentation;

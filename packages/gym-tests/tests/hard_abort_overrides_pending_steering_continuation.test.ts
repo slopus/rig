@@ -41,12 +41,13 @@ describe("hard abort during pending steering continuation", () => {
                         content: [
                             {
                                 arguments: {
-                                    context: "task",
+                                    fork_turns: "none",
                                     message: "Run the blocking child command.",
                                     task_name: "blocking_child",
                                 },
                                 id: "spawn-blocking-child",
                                 name: "spawn_agent",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],

@@ -39,7 +39,7 @@ describe("native file tool rendering", () => {
                 },
                 { content: [{ text: "Native inspection complete.", type: "text" }] },
             ],
-            modelId: "anthropic/sonnet-4-6",
+            modelId: "anthropic/sonnet-5",
             providerId: "claude",
             providerOverrides: ["claude"],
             rows: 40,

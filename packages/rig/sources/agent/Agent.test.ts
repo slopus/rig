@@ -1,13 +1,12 @@
 import { Type } from "@sinclair/typebox";
 import { describe, expect, it, vi } from "vitest";
 
-import { codexViewImageTool } from "../tools/codex/view_image.js";
+import { codexViewImageTool } from "./tools/codex/view_image.js";
 import { createJustBashToolHarness } from "../tools/testing/createJustBashToolHarness.js";
 import { validPng32Base64 } from "../tools/testing/validImageFixtures.js";
 import { getImageProcessor } from "../images/getImageProcessor.js";
 import { selectToolsForModel } from "../runtime/selectToolsForModel.js";
 import { Agent } from "./Agent.js";
-import type { AgentToolAdapter } from "./AgentToolAdapter.js";
 import type { AgentLoopEvent } from "./loop.js";
 import { defineTool, type Message } from "./types.js";
 import {
@@ -18,11 +17,100 @@ import {
     type InferenceStream,
     type StreamOptions,
     type Usage,
-} from "../providers/types.js";
+} from "@slopus/rig-execution";
 import type { DebugLog } from "../debug/index.js";
 import { createPermissionContext } from "../permissions/index.js";
 
 describe("Agent", () => {
+    it("preserves a custom tool namespace and converts its input before execution", async () => {
+        const model = defineModel({
+            id: "openai/gpt-test",
+            name: "GPT Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        let requestCount = 0;
+        const provider = defineProvider({
+            id: "codex",
+            models: [model],
+            stream() {
+                requestCount += 1;
+                return streamFor({
+                    role: "assistant",
+                    content:
+                        requestCount === 1
+                            ? [
+                                  {
+                                      type: "toolCall",
+                                      id: "custom-call",
+                                      kind: "custom",
+                                      name: "custom_patch",
+                                      namespace: "collaboration",
+                                      arguments: { input: "raw patch" },
+                                  },
+                              ]
+                            : [{ type: "text", text: "done" }],
+                    api: "test",
+                    provider: "codex",
+                    model: model.id,
+                    usage: zeroUsage(),
+                    stopReason: requestCount === 1 ? "toolUse" : "stop",
+                    timestamp: requestCount,
+                });
+            },
+        });
+        const execute = vi.fn(() => ({ applied: true }));
+        const tool = defineTool({
+            name: "custom_patch",
+            label: "Custom patch",
+            description: "Applies a custom patch.",
+            namespace: {
+                name: "collaboration",
+                description: "Collaboration tools.",
+            },
+            executorTool: {
+                kind: "custom",
+                name: "custom_patch",
+                description: "Applies a custom patch.",
+            },
+            parseExecutorToolArguments: (argumentsValue) => ({
+                patch: (argumentsValue as { input: string }).input,
+            }),
+            arguments: Type.Object({ patch: Type.String() }),
+            returnType: Type.Object({ applied: Type.Boolean() }),
+            shouldReviewInAutoMode: () => false,
+            execute,
+            toLLM: () => [{ type: "text", text: "applied" }],
+            toUI: () => "Applied.",
+            locks: [],
+        });
+        const agent = new Agent({
+            provider,
+            modelId: model.id,
+            context: createJustBashToolHarness().context,
+            tools: [tool],
+            printToConsole: false,
+        });
+
+        await agent.send("Apply it.");
+
+        expect(execute).toHaveBeenCalledWith(
+            { patch: "raw patch" },
+            expect.anything(),
+            expect.anything(),
+        );
+        expect(agent.messages[1]).toMatchObject({
+            role: "agent",
+            blocks: [
+                {
+                    type: "tool_call",
+                    namespace: "collaboration",
+                    arguments: { patch: "raw patch" },
+                },
+            ],
+        });
+    });
+
     it("preserves tool results when optional debug and live observers fail", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
@@ -163,7 +251,7 @@ describe("Agent", () => {
         const contexts: Context[] = [];
         const provider = defineProvider({
             id: "custom-bedrock",
-            imageProfile: () => "claude",
+            type: "claude",
             models: [model],
             stream(_model, context) {
                 contexts.push(context);
@@ -259,10 +347,10 @@ describe("Agent", () => {
         await agent.run();
 
         expect(contexts[0]?.systemPrompt).toBe(
-            "# Runtime model\nModel ID: openai/gpt-test\nProvider ID: codex\n\nBase instructions.\n\nYou are in Full access mode. Filesystem, shell, and network access are unrestricted.\n\nInitial API instructions.",
+            "Base instructions.\n\nYou are in Full access mode. Filesystem, shell, and network access are unrestricted.\n\nInitial API instructions.",
         );
         expect(contexts[1]?.systemPrompt).toBe(
-            "# Runtime model\nModel ID: openai/gpt-test\nProvider ID: codex\n\nBase instructions.\n\nYou are in Full access mode. Filesystem, shell, and network access are unrestricted.\n\nUpdated API instructions.",
+            "Base instructions.\n\nYou are in Full access mode. Filesystem, shell, and network access are unrestricted.\n\nUpdated API instructions.",
         );
     });
 
@@ -337,7 +425,7 @@ describe("Agent", () => {
         expect(agent.queue).toEqual([]);
         expect(agent.messages.map((message) => message.id)).toEqual(["id-2", "id-4", "id-7"]);
         expect(contexts[0]?.systemPrompt).toBe(
-            "# Runtime model\nModel ID: openai/gpt-test\nProvider ID: codex\n\nBase instructions.\n\nKeep answers short.\n\nYou are in Full access mode. Filesystem, shell, and network access are unrestricted.",
+            "Base instructions.\n\nKeep answers short.\n\nYou are in Full access mode. Filesystem, shell, and network access are unrestricted.",
         );
         expect(logs.map((entry) => entry[0])).toEqual([
             "[system:id-2] Keep answers short.",
@@ -383,10 +471,10 @@ describe("Agent", () => {
         expect(defaultAgent.tools.map((tool) => tool.name)).toEqual([
             "exec_command",
             "write_stdin",
-            "apply_patch",
-            "view_image",
             "update_plan",
             "request_user_input",
+            "apply_patch",
+            "view_image",
         ]);
 
         const noopTool = defineTool({
@@ -825,7 +913,7 @@ describe("Agent", () => {
         });
     });
 
-    it("retries transient provider errors without ending the turn", async () => {
+    it("does not replay transient provider errors outside the provider", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
             name: "GPT Test",
@@ -866,26 +954,19 @@ describe("Agent", () => {
         agent.enqueueUserMessage("Continue without manual intervention.");
         const result = await agent.run();
 
-        expect(result.stopReason).toBe("stop");
-        expect(requestCount).toBe(2);
+        expect(result.stopReason).toBe("error");
+        expect(requestCount).toBe(1);
         expect(observedEvents).toMatchObject([
             { type: "inference_iteration_start" },
-            {
-                type: "inference_retry",
-                attempt: 1,
-                maxAttempts: 5,
-                reason: "connection_lost",
-            },
             { type: "start" },
-            { type: "done" },
+            { type: "error" },
         ]);
-        expect(agent.messages.at(-1)).toMatchObject({
-            role: "agent",
-            blocks: [{ type: "text", text: "recovered" }],
-        });
+        expect(agent.messages).not.toContainEqual(
+            expect.objectContaining({ blocks: [{ type: "text", text: "recovered" }] }),
+        );
     });
 
-    it("continues an incomplete response from the emitted assistant content", async () => {
+    it("does not replay an incomplete response after visible content", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
             name: "GPT Test",
@@ -960,109 +1041,13 @@ describe("Agent", () => {
 
         const result = await agent.send("Answer once.");
 
-        expect(result.stopReason).toBe("stop");
-        expect(requestCount).toBe(2);
-        expect(observedEventTypes).toContain("inference_retry");
-        expect(contexts[1]?.messages.at(-1)).toMatchObject({
-            role: "assistant",
-            content: [{ type: "text", text: "partial answer" }],
-        });
-        expect(result.messages.at(-2)).toMatchObject({
+        expect(result.stopReason).toBe("error");
+        expect(requestCount).toBe(1);
+        expect(observedEventTypes).not.toContain("inference_retry");
+        expect(result.messages.at(-1)).toMatchObject({
             role: "agent",
             blocks: [{ type: "text", text: "partial answer" }],
         });
-        expect(result.messages.at(-1)).toMatchObject({
-            role: "agent",
-            blocks: [{ type: "text", text: " continued answer" }],
-        });
-    });
-
-    it("adds Claude's internal user continuation only to model context", async () => {
-        const model = defineModel({
-            id: "anthropic/test",
-            name: "Claude Test",
-            thinkingLevels: ["off"],
-            defaultThinkingLevel: "off",
-        });
-        const contexts: Context[] = [];
-        const deliveredMessages: Message[] = [];
-        const provider = defineProvider({
-            id: "claude",
-            inferenceCrashContinuation: {
-                userMessage: "Continue after the inference crash.",
-            },
-            models: [model],
-            stream(_model, context) {
-                contexts.push(context);
-                const message: AssistantMessage = {
-                    role: "assistant",
-                    content: [
-                        {
-                            type: "text",
-                            text: contexts.length === 1 ? "Claude partial" : "Claude continued",
-                        },
-                    ],
-                    api: "test",
-                    provider: "claude",
-                    model: model.id,
-                    usage: zeroUsage(),
-                    stopReason: contexts.length === 1 ? "error" : "stop",
-                    ...(contexts.length === 1 ? { errorMessage: "WebSocket error" } : {}),
-                    timestamp: contexts.length,
-                };
-                if (contexts.length !== 1) return streamFor(message);
-                return {
-                    async *[Symbol.asyncIterator]() {
-                        yield { type: "start" as const, partial: message };
-                        yield {
-                            type: "text_delta" as const,
-                            contentIndex: 0,
-                            delta: "Claude partial",
-                            partial: message,
-                        };
-                        yield {
-                            type: "error" as const,
-                            reason: "error" as const,
-                            error: message,
-                        };
-                    },
-                    async result() {
-                        return message;
-                    },
-                };
-            },
-        });
-        const harness = createJustBashToolHarness();
-        const agent = new Agent({
-            provider,
-            modelId: model.id,
-            context: harness.context,
-            printToConsole: false,
-        });
-
-        const result = await agent.send("Recover Claude.", {
-            onMessage: (message) => {
-                deliveredMessages.push(message);
-            },
-        });
-
-        expect(result.stopReason).toBe("stop");
-        expect(contexts[1]?.messages.slice(-2)).toMatchObject([
-            { role: "assistant", content: [{ type: "text", text: "Claude partial" }] },
-            {
-                role: "user",
-                content: [{ type: "text", text: "Continue after the inference crash." }],
-            },
-        ]);
-        expect(deliveredMessages).not.toContainEqual(expect.objectContaining({ internal: true }));
-        expect(agent.snapshot().contextMessages?.at(-2)).toMatchObject({
-            role: "user",
-            internal: true,
-            blocks: [{ type: "text", text: "Continue after the inference crash." }],
-        });
-        expect(agent.snapshot().messages).not.toContainEqual(
-            expect.objectContaining({ internal: true }),
-        );
     });
 
     it("manually compacts with the active reasoning and service tier without changing history", async () => {
@@ -1219,78 +1204,7 @@ describe("Agent", () => {
         expect(agent.snapshot().lastRunId).toBeUndefined();
     });
 
-    it("waits for a delayed tool adapter session close before reset completes", async () => {
-        const model = defineModel({
-            id: "openai/gpt-test",
-            name: "GPT Test",
-            thinkingLevels: ["off"],
-            defaultThinkingLevel: "off",
-        });
-        const provider = defineProvider({
-            id: "codex",
-            models: [model],
-            stream: () => streamFor(stoppedMessage(model.id)),
-        });
-        const closeStarted = deferred<void>();
-        const releaseClose = deferred<void>();
-        const toolAdapter: AgentToolAdapter = {
-            adapt: (tools) => ({ exposedTools: tools, nestedTools: tools }),
-            reset: async () => {
-                closeStarted.resolve();
-                await releaseClose.promise;
-            },
-        };
-        const agent = new Agent({
-            provider,
-            modelId: model.id,
-            context: createJustBashToolHarness().context,
-            printToConsole: false,
-            toolAdapter,
-        });
-
-        const reset = agent.reset();
-        await closeStarted.promise;
-        let completed = false;
-        void reset.then(() => {
-            completed = true;
-        });
-        await Promise.resolve();
-
-        expect(completed).toBe(false);
-
-        releaseClose.resolve();
-        await reset;
-        expect(completed).toBe(true);
-    });
-
-    it("reports a tool adapter session close failure from reset", async () => {
-        const model = defineModel({
-            id: "openai/gpt-test",
-            name: "GPT Test",
-            thinkingLevels: ["off"],
-            defaultThinkingLevel: "off",
-        });
-        const provider = defineProvider({
-            id: "codex",
-            models: [model],
-            stream: () => streamFor(stoppedMessage(model.id)),
-        });
-        const toolAdapter: AgentToolAdapter = {
-            adapt: (tools) => ({ exposedTools: tools, nestedTools: tools }),
-            reset: () => Promise.reject(new Error("session close failed")),
-        };
-        const agent = new Agent({
-            provider,
-            modelId: model.id,
-            context: createJustBashToolHarness().context,
-            printToConsole: false,
-            toolAdapter,
-        });
-
-        await expect(agent.reset()).rejects.toThrow("session close failed");
-    });
-
-    it("closes the agent-scoped provider and tool adapter together", async () => {
+    it("closes the agent-scoped provider", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
             name: "GPT Test",
@@ -1298,7 +1212,6 @@ describe("Agent", () => {
             defaultThinkingLevel: "off",
         });
         const closeProvider = vi.fn();
-        const closeToolAdapter = vi.fn();
         const provider = defineProvider({
             close: closeProvider,
             id: "codex",
@@ -1310,16 +1223,11 @@ describe("Agent", () => {
             modelId: model.id,
             context: createJustBashToolHarness().context,
             printToConsole: false,
-            toolAdapter: {
-                adapt: (tools) => ({ exposedTools: tools, nestedTools: tools }),
-                close: closeToolAdapter,
-            },
         });
 
         await agent.close();
 
         expect(closeProvider).toHaveBeenCalledOnce();
-        expect(closeToolAdapter).toHaveBeenCalledOnce();
     });
 
     it("recovers when the provider rejects a locally valid image tool result", async () => {

@@ -9,6 +9,8 @@ export type SessionReasoningEffort =
     | "xhigh"
     | "max";
 
+export type SessionServiceTier = "priority";
+
 export interface SessionRunRequest {
     /** Complete rebuilt conversation context for this inference turn. */
     context: {
@@ -17,4 +19,5 @@ export interface SessionRunRequest {
     abort?: AbortSignal;
     model?: string;
     effort?: SessionReasoningEffort;
+    serviceTier?: SessionServiceTier;
 }

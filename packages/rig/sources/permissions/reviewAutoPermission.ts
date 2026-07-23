@@ -1,5 +1,5 @@
 import type { Message } from "../agent/types.js";
-import type { Model, Provider } from "../providers/types.js";
+import type { Model, Provider } from "@slopus/rig-execution";
 import { createAutoPermissionTranscript } from "./createAutoPermissionTranscript.js";
 import {
     parseAutoPermissionReview,

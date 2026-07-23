@@ -66,7 +66,7 @@ describe("file tool locks", () => {
                 ]);
                 return { content: [{ text: "PARALLEL_FILE_LOCKS_VERIFIED", type: "text" }] };
             },
-            modelId: "anthropic/sonnet-4-6",
+            modelId: "anthropic/sonnet-5",
             providerId: "claude",
             providerOverrides: ["claude"],
         });

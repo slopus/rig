@@ -1,8 +1,8 @@
 import type { PermissionMode } from "../permissions/index.js";
 import type { McpServerConfig } from "../mcp/types.js";
 import type { DockerExecutionConfig } from "../execution/index.js";
-import type { ServiceTier } from "../providers/types.js";
-import type { BedrockModelOverrides } from "../providers/bedrock-model-overrides.js";
+import type { ServiceTier } from "@slopus/rig-execution";
+import type { BedrockModelOverrides } from "../executor/bedrock-model-overrides.js";
 
 export interface ConfigDefaults {
     effort?: string;
@@ -81,18 +81,11 @@ export interface ConfigGrokProvider extends ConfigProviderBase {
     type: "grok";
 }
 
-export interface ConfigKimiProvider extends ConfigProviderBase {
-    authFile?: string;
-    baseUrl?: string;
-    type: "kimi";
-}
-
 export type ConfigProvider =
     | ConfigBedrockProvider
     | ConfigClaudeProvider
     | ConfigCodexProvider
-    | ConfigGrokProvider
-    | ConfigKimiProvider;
+    | ConfigGrokProvider;
 
 export type ConfigProviders = Readonly<Record<string, ConfigProvider>>;
 

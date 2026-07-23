@@ -5,9 +5,10 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { Message } from "../agent/types.js";
-import { createCodexProvider } from "../providers/codex.js";
-import { modelOpenaiGpt55 } from "../providers/models.js";
-import type { Context, Provider } from "../providers/types.js";
+import { Executor } from "@slopus/rig-execution";
+import { codexExecution } from "../executor/codexExecution.js";
+import { modelOpenaiGpt55 } from "@slopus/rig-execution";
+import type { Context, Provider } from "@slopus/rig-execution";
 import { reviewAutoPermission } from "./reviewAutoPermission.js";
 
 const LIVE = process.env.RIG_LIVE_TEST === "1";
@@ -222,7 +223,17 @@ const describeLive = LIVE && hasLocalCodexAuth() ? describe : describe.skip;
 describeLive("Auto permission reviewer live policy eval", () => {
     it("matches expected decisions and sends only policy, transcript, and the exact action", async () => {
         const captured: Context[] = [];
-        const provider = capturingProvider(createCodexProvider(), captured);
+        const provider = capturingProvider(
+            new Executor([
+                codexExecution({
+                    config: { enabled: true, type: "codex" },
+                    env: process.env,
+                    id: "codex",
+                    sessionId: `permission-review-${Date.now()}`,
+                }),
+            ]),
+            captured,
+        );
         const rows: Record<string, string>[] = [];
 
         for (const [index, testCase] of cases.entries()) {

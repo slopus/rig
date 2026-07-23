@@ -1,4 +1,4 @@
-import { requestAnthropicMessage } from "../../../providers/requestAnthropicMessage.js";
+import { requestAnthropicMessage } from "../../../executor/requestAnthropicMessage.js";
 import { makeWebSearchOutput } from "./makeWebSearchOutput.js";
 import type { WebSearchInput, WebSearchOutput } from "./types.js";
 

@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { assistantMessageToAgentMessage } from "./assistantMessageToAgentMessage.js";
 import { toProviderMessages } from "./loop.js";
-import { modelOpenaiGpt56Sol } from "../providers/models.js";
-import type { AssistantMessage } from "../providers/types.js";
+import { modelOpenaiGpt56Sol } from "@slopus/rig-execution";
+import type { AssistantMessage } from "@slopus/rig-execution";
 
 describe("assistantMessageToAgentMessage", () => {
     it("durably records requested and response model attribution", () => {

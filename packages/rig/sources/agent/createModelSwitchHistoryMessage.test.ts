@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { defineModel } from "../providers/types.js";
+import { defineModel } from "@slopus/rig-execution";
 import { createModelSwitchHistoryMessage } from "./createModelSwitchHistoryMessage.js";
 import type { Message } from "./types.js";
 

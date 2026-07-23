@@ -30,12 +30,13 @@ describe("aborting delegated work and reusing its session", () => {
                         content: [
                             {
                                 arguments: {
-                                    context: "task",
+                                    fork_turns: "none",
                                     message: "Start the child process and wait.",
                                     task_name: "reusable_child",
                                 },
                                 id: "spawn-reusable-child",
                                 name: "spawn_agent",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],
@@ -99,6 +100,7 @@ describe("aborting delegated work and reusing its session", () => {
                                 },
                                 id: "follow-up-reusable-child",
                                 name: "followup_task",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],

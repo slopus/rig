@@ -8,7 +8,7 @@ import {
 } from "../config/index.js";
 import { createProjectMcpSecurityNotice, loadMcpServerConfigEntries } from "../mcp/index.js";
 import type { CreateSessionRequest, ProtocolSession, SessionEvent } from "../protocol/index.js";
-import type { ServiceTier, StopReason } from "../providers/types.js";
+import type { ServiceTier, StopReason } from "@slopus/rig-execution";
 import type { PermissionMode } from "../permissions/index.js";
 import type { ExecCommandOptions } from "./parseExecCommand.js";
 import { readExecPrompt } from "./readExecPrompt.js";

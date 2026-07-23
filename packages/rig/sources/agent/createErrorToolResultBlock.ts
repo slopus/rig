@@ -2,7 +2,7 @@ import type { ToolResultBlock, ToolResultFailure } from "./types.js";
 import { boundToolResultContent } from "./boundToolResultContent.js";
 
 export function createErrorToolResultBlock(
-    toolCall: { id: string; name: string },
+    toolCall: { id: string; name: string; vendor?: unknown },
     message: string,
     failure?: ToolResultFailure,
 ): ToolResultBlock {
@@ -25,6 +25,7 @@ export function createErrorToolResultBlock(
         rendered,
         display: boundedMessage,
         isError: true,
+        ...(toolCall.vendor === undefined ? {} : { vendor: toolCall.vendor }),
         ...(failure === undefined
             ? {}
             : {

@@ -120,10 +120,15 @@ const codex = spawn(
 );
 let stderr = "";
 codex.stderr.setEncoding("utf8");
-codex.stderr.on("data", (chunk) => { stderr += chunk; });
+codex.stderr.on("data", (chunk) => {
+    stderr += chunk;
+});
 codex.on("error", rejectCapture);
 const timeout = setTimeout(
-    () => rejectCapture(new Error(`Codex did not send an SSE request within ${CAPTURE_TIMEOUT_MS}ms.`)),
+    () =>
+        rejectCapture(
+            new Error(`Codex did not send an SSE request within ${CAPTURE_TIMEOUT_MS}ms.`),
+        ),
     CAPTURE_TIMEOUT_MS,
 );
 
@@ -131,7 +136,9 @@ try {
     await capture;
     process.stdout.write(`Captured ${model} ${REASONING_EFFORT} SSE request to ${outputPath}\n`);
 } catch (error) {
-    throw new Error(`${error instanceof Error ? error.message : String(error)}${stderr ? `\n${stderr}` : ""}`);
+    throw new Error(
+        `${error instanceof Error ? error.message : String(error)}${stderr ? `\n${stderr}` : ""}`,
+    );
 } finally {
     clearTimeout(timeout);
     if (codex.exitCode === null) codex.kill("SIGTERM");
@@ -142,7 +149,9 @@ try {
 function readBody(request) {
     return new Promise((resolvePromise, rejectPromise) => {
         const chunks = [];
-        request.on("data", (chunk) => { chunks.push(chunk); });
+        request.on("data", (chunk) => {
+            chunks.push(chunk);
+        });
         request.once("end", () => resolvePromise(Buffer.concat(chunks)));
         request.once("error", rejectPromise);
     });
@@ -172,18 +181,30 @@ async function codexVersion() {
         const child = spawn("codex", ["--version"], { stdio: ["ignore", "pipe", "pipe"] });
         let stdout = "";
         child.stdout.setEncoding("utf8");
-        child.stdout.on("data", (chunk) => { stdout += chunk; });
+        child.stdout.on("data", (chunk) => {
+            stdout += chunk;
+        });
         child.once("error", rejectPromise);
-        child.once("close", (code) => code === 0
-            ? resolvePromise(stdout.trim())
-            : rejectPromise(new Error(`codex --version exited with ${code}.`)));
+        child.once("close", (code) =>
+            code === 0
+                ? resolvePromise(stdout.trim())
+                : rejectPromise(new Error(`codex --version exited with ${code}.`)),
+        );
     });
 }
 
 function sanitizeHeaders(headers) {
-    const stableHeaders = new Set(["accept", "content-type", "originator", "user-agent", "x-codex-beta-features"]);
+    const stableHeaders = new Set([
+        "accept",
+        "content-type",
+        "originator",
+        "user-agent",
+        "x-codex-beta-features",
+    ]);
     return Object.fromEntries(
-        Object.entries(headers).filter(([name, value]) => value !== undefined && stableHeaders.has(name.toLowerCase())),
+        Object.entries(headers).filter(
+            ([name, value]) => value !== undefined && stableHeaders.has(name.toLowerCase()),
+        ),
     );
 }
 
@@ -203,7 +224,10 @@ function normalizeTrace(trace, temporaryDirectory) {
             content.text = content.text
                 .replaceAll(temporaryDirectory, "<CAPTURE_DIRECTORY>")
                 .replaceAll(homedir(), "<HOME>")
-                .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/giu, "<UUID>");
+                .replace(
+                    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/giu,
+                    "<UUID>",
+                );
         }
     }
     return normalized;

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { Agent } from "../agent/Agent.js";
 import { NativeProcessManager } from "../processes/index.js";
-import { defineModel, defineProvider } from "../providers/types.js";
+import { defineModel, defineProvider } from "@slopus/rig-execution";
 import { createJustBashToolHarness } from "../tools/testing/createJustBashToolHarness.js";
 import { CodingAssistantApp } from "./CodingAssistantApp.js";
 import { stripAnsi } from "./testing/stripAnsi.js";

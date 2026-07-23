@@ -3,7 +3,7 @@ import type { CodexToolDefinitionVendor } from "@/vendors/codex/CodexToolVendor.
 import { toJsonSchema } from "@/vendors/codex/impl/toJsonSchema.js";
 
 export function toCodexToolDefinitions(tools: readonly SessionTool[]): readonly unknown[] {
-    const namespaceDescriptions = new Map([
+    const nativeNamespaceDescriptions = new Map([
         ["image_gen", "Tools in the image_gen namespace."],
         ["collaboration", "Tools for spawning and managing sub-agents."],
     ]);
@@ -24,7 +24,10 @@ export function toCodexToolDefinitions(tools: readonly SessionTool[]): readonly 
             namespace = {
                 type: "namespace",
                 name: tool.namespace,
-                description: namespaceDescriptions.get(tool.namespace) ?? "",
+                description:
+                    tool.namespaceDescription ??
+                    nativeNamespaceDescriptions.get(tool.namespace) ??
+                    `Tools in the ${humanizeNamespace(tool.namespace)} namespace.`,
                 tools: [],
             };
             namespaces.set(tool.namespace, namespace);
@@ -33,6 +36,10 @@ export function toCodexToolDefinitions(tools: readonly SessionTool[]): readonly 
         namespace.tools.push(definition);
     }
     return output;
+}
+
+function humanizeNamespace(namespace: string): string {
+    return namespace.replaceAll("_", " ");
 }
 
 function toCodexTool(tool: SessionTool): unknown {
@@ -69,6 +76,11 @@ function toCodexTool(tool: SessionTool): unknown {
         name: tool.name,
         description: tool.description,
         strict: false,
+        ...(vendor?.provider === "codex" &&
+        vendor.type === "function" &&
+        vendor.deferLoading === true
+            ? { defer_loading: true }
+            : {}),
         ...(tool.parameters === undefined ? {} : { parameters: toJsonSchema(tool.parameters) }),
     };
 }

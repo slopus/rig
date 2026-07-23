@@ -41,7 +41,7 @@ export const multi_agent_instructions =
     "There are 4 available concurrency slots, meaning that up to 4 agents can be active at " +
     "once, including you.\n" +
     "\n" +
-    "Full-history forks (`fork_turns` omitted or `\"all\"`) inherit the parent model and " +
+    'Full-history forks (`fork_turns` omitted or `"all"`) inherit the parent model and ' +
     "reasoning effort and do not accept overrides. Only set `model` or `reasoning_effort` " +
     "when explicitly requested by the user, applicable `AGENTS.md` instructions, or skill " +
-    "instructions; when doing so, set `fork_turns` to `\"none\"` or a positive integer string.";
+    'instructions; when doing so, set `fork_turns` to `"none"` or a positive integer string.';

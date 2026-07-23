@@ -1,10 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { chmod, open, readFile, rename, unlink } from "node:fs/promises";
 
-import {
-    readCodexQuotaAuth,
-    type CodexQuotaAuth,
-} from "@/vendors/codex/impl/auth.js";
+import { readCodexQuotaAuth, type CodexQuotaAuth } from "@/vendors/codex/impl/auth.js";
 
 export async function refreshCodexAuthFile(options: {
     authFile: string;

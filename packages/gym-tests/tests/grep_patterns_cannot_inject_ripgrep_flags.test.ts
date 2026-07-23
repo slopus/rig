@@ -69,7 +69,7 @@ describe("Grep patterns are always search text", () => {
                 arrowPatternResult = resultText;
                 return { content: [{ text: "DASH_PREFIXED_GREP_VERIFIED", type: "text" }] };
             },
-            modelId: "anthropic/sonnet-4-6",
+            modelId: "anthropic/sonnet-5",
             providerId: "claude",
             providerOverrides: ["claude"],
         });

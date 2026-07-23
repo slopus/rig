@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { defineModel } from "../../providers/types.js";
+import { defineModel } from "@slopus/rig-execution";
 import { resolveAutoCompactThreshold } from "./resolveAutoCompactThreshold.js";
 
 describe("resolveAutoCompactThreshold", () => {

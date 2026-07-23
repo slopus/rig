@@ -1,5 +1,5 @@
 import type { Message } from "../types.js";
-import type { ServiceTier } from "../../providers/types.js";
+import type { ServiceTier } from "@slopus/rig-execution";
 
 export type SubagentRunStatus = "aborted" | "completed" | "error" | "running" | "suspended";
 export type SubagentContextMode = "parent" | "task";
@@ -59,6 +59,7 @@ export interface SubagentContext {
     canSpawn: boolean;
     depth: number;
     disabledProviders?: readonly DisabledSubagentProvider[];
+    encryptedMessages?: boolean;
     followUp(
         target: string,
         message: string,
@@ -68,7 +69,6 @@ export interface SubagentContext {
     interrupt(target: string): ManagedSubagent;
     list(pathPrefix?: string): readonly ManagedSubagent[];
     maxDepth: number;
-    resume(target: string): ManagedSubagent;
     sendMessage?(target: string, message: string, encryptedMessage?: string): ManagedSubagent;
     spawn(request: SpawnSubagentRequest, signal?: AbortSignal): Promise<SpawnSubagentResult>;
     wait(timeoutMs?: number, signal?: AbortSignal): Promise<WaitForSubagentResult>;

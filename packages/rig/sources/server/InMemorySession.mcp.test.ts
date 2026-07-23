@@ -13,7 +13,7 @@ import {
     defineProvider,
     type AssistantMessage,
     type InferenceStream,
-} from "../providers/types.js";
+} from "@slopus/rig-execution";
 import { InMemorySession } from "./InMemorySession.js";
 
 describe("InMemorySession MCP permissions", () => {
@@ -153,7 +153,7 @@ function createRuntime(
         context,
         cwd: options.cwd,
         processManager,
-        provider,
+        executor: provider,
     };
 }
 

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { createJustBashToolHarness } from "../testing/createJustBashToolHarness.js";
-import { claudeReadTool } from "./Read.js";
-import { claudeWriteTool } from "./Write.js";
+import { claudeReadTool } from "../../agent/tools/claude/Read.js";
+import { claudeWriteTool } from "../../agent/tools/claude/Write.js";
 
 describe("Claude Code Write tool", () => {
     it("writes a file through the agent context fs", async () => {

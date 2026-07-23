@@ -1,4 +1,4 @@
-import type { Model } from "../providers/types.js";
+import type { Model } from "@slopus/rig-execution";
 import { humanizeProviderId } from "./humanizeProviderId.js";
 import { humanizeReasoningLevel } from "./humanizeReasoningLevel.js";
 

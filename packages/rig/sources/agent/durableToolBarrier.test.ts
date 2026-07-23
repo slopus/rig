@@ -12,7 +12,7 @@ import {
     type AssistantMessage,
     type AssistantMessageEvent,
     type InferenceStream,
-} from "../providers/types.js";
+} from "@slopus/rig-execution";
 
 describe("durable tool execution barriers", () => {
     it("finishes immediate calls before publishing durable calls from the same batch", async () => {

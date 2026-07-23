@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { createInferenceStream } from "../providers/createInferenceStream.js";
+import { createInferenceStream } from "@slopus/rig-execution";
 import {
     defineModel,
     defineProvider,
     type AssistantMessage,
     type StreamOptions,
-} from "../providers/types.js";
+} from "@slopus/rig-execution";
 import { generateSessionMetadata, parseSessionMetadata } from "./generateSessionMetadata.js";
 
 describe("parseSessionMetadata", () => {

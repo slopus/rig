@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ProtocolHttpClient } from "../client/ProtocolHttpClient.js";
 import { createEventIdFactory, type SessionEvent } from "../protocol/index.js";
-import { modelOpenaiGpt55, modelOpenaiGpt56Sol } from "../providers/models.js";
+import { modelOpenaiGpt55, modelOpenaiGpt56Sol } from "@slopus/rig-execution";
 import { InMemorySessionStore } from "./InMemorySessionStore.js";
 import type { PersistedSessionState } from "./InMemorySession.js";
 import { PersistentSessionStore } from "./PersistentSessionStore.js";
@@ -17,7 +17,7 @@ import type { FileSearchServiceContract } from "./FileSearchService.js";
 import type { DockerExecutionConfig } from "../execution/index.js";
 import type { GlobalEventQueue } from "./GlobalEventQueue.js";
 import { TrackedTaskDrain } from "./TrackedTaskDrain.js";
-import type { ProviderQuota } from "../providers/providerQuota.js";
+import type { ProviderQuota } from "@slopus/rig-providers";
 
 describe("createProtocolHttpServer", () => {
     it("broadcasts one fully configured message to every primary session", async () => {

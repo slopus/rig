@@ -11,7 +11,7 @@ import {
     type Context,
     type InferenceStream,
     type Usage,
-} from "../providers/types.js";
+} from "@slopus/rig-execution";
 import { goalTools } from "../tools/goals/index.js";
 import type { CodingAssistantRuntime } from "../runtime/CodingAssistantRuntime.js";
 import { InMemorySession } from "./InMemorySession.js";
@@ -149,7 +149,7 @@ function createTestRuntime(
         context,
         cwd: options.cwd,
         processManager,
-        provider,
+        executor: provider,
     };
 }
 

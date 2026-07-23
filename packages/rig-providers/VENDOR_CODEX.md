@@ -56,22 +56,22 @@ retry behavior, or compaction.
 
 ## Verified surface
 
-| Behavior | Evidence |
-| --- | --- |
-| Initial SSE and WebSocket envelopes for 5.5, Sol, Terra, and Luna | Forwarded live inference |
-| Required instructions, developer context, tools, and skills | Live goldens and request tests |
-| WebSocket warmup, suffix reuse, and `previous_response_id` | Live multi-turn goldens |
-| SSE full-context requests | Live multi-turn goldens |
-| Native compaction and Sol-to-Terra or 5.6-to-5.5 switching | Live multi-turn goldens |
-| Ordered reasoning, custom tools, tool search, and block rollback | Mocked provider tests |
-| Retry, idle timeout, turn state, and WebSocket-to-SSE fallback | Vanilla source and mocked tests |
-| Vanilla automatic compaction threshold and model-switch trigger | Vanilla source and live traces |
-| Absence of provider-owned automatic compaction in Rig | Provider tests |
-| Rig hard-window safety fitting | Unit tests |
-| Bedrock/Mantle initial request | Real request-only capture |
-| Successful Bedrock inference and local compaction | Not live-verified |
-| ChatGPT credential rotation after session creation | Deterministic auth-recovery test |
-| Image input and image-bearing tool output | Request serialization tests |
+| Behavior                                                          | Evidence                         |
+| ----------------------------------------------------------------- | -------------------------------- |
+| Initial SSE and WebSocket envelopes for 5.5, Sol, Terra, and Luna | Forwarded live inference         |
+| Required instructions, developer context, tools, and skills       | Live goldens and request tests   |
+| WebSocket warmup, suffix reuse, and `previous_response_id`        | Live multi-turn goldens          |
+| SSE full-context requests                                         | Live multi-turn goldens          |
+| Native compaction and Sol-to-Terra or 5.6-to-5.5 switching        | Live multi-turn goldens          |
+| Ordered reasoning, custom tools, tool search, and block rollback  | Mocked provider tests            |
+| Retry, idle timeout, turn state, and WebSocket-to-SSE fallback    | Vanilla source and mocked tests  |
+| Vanilla automatic compaction threshold and model-switch trigger   | Vanilla source and live traces   |
+| Absence of provider-owned automatic compaction in Rig             | Provider tests                   |
+| Rig hard-window safety fitting                                    | Unit tests                       |
+| Bedrock/Mantle initial request                                    | Real request-only capture        |
+| Successful Bedrock inference and local compaction                 | Not live-verified                |
+| ChatGPT credential rotation after session creation                | Deterministic auth-recovery test |
+| Image input and image-bearing tool output                         | Request serialization tests      |
 
 ## Models and configuration
 

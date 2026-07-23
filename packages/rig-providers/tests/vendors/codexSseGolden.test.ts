@@ -342,10 +342,7 @@ describe("Codex SSE goldens", () => {
                 }),
             );
 
-            expect(captured.map((request) => request.model)).toEqual([
-                "gpt-5.5",
-                "gpt-5.6-sol",
-            ]);
+            expect(captured.map((request) => request.model)).toEqual(["gpt-5.5", "gpt-5.6-sol"]);
             expect(turnMetadata(captured[1]!).compaction).toBeUndefined();
             expect(captured[1]!.input).not.toContainEqual({ type: "compaction_trigger" });
             expect(JSON.stringify(captured[1]!.input)).toContain("target instructions");

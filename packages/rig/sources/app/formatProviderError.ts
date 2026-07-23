@@ -1,4 +1,4 @@
-import type { ProviderError } from "../providers/types.js";
+import type { ProviderError } from "@slopus/rig-execution";
 import { formatResetDuration } from "./formatResetDuration.js";
 import { humanizeProviderId } from "./humanizeProviderId.js";
 

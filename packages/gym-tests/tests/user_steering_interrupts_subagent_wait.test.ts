@@ -26,12 +26,13 @@ describe("user steering during a subagent wait", () => {
                         content: [
                             {
                                 arguments: {
-                                    context: "task",
+                                    fork_turns: "none",
                                     message: "Stay active until the parent changes direction.",
                                     task_name: "long_running_child",
                                 },
                                 id: "spawn-long-running-child",
                                 name: "spawn_agent",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],
@@ -50,6 +51,7 @@ describe("user steering during a subagent wait", () => {
                                 arguments: { timeout_ms: 60_000 },
                                 id: "wait-for-long-running-child",
                                 name: "wait_agent",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],

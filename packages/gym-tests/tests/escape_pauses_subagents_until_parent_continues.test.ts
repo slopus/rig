@@ -30,12 +30,13 @@ describe("Escape pauses delegated work with the parent", () => {
                         content: [
                             {
                                 arguments: {
-                                    context: "task",
+                                    fork_turns: "none",
                                     message: "Audit until the parent continues.",
                                     task_name: "paused_audit",
                                 },
                                 id: "spawn-paused-audit",
                                 name: "spawn_agent",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],
@@ -52,9 +53,14 @@ describe("Escape pauses delegated work with the parent", () => {
                     return {
                         content: [
                             {
-                                arguments: { target: "paused_audit" },
+                                arguments: {
+                                    message:
+                                        "Continue the delegated task from where you stopped. Re-check any interrupted tool calls before proceeding.",
+                                    target: "paused_audit",
+                                },
                                 id: "resume-paused-audit",
-                                name: "resume_agent",
+                                name: "followup_task",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],
@@ -64,7 +70,7 @@ describe("Escape pauses delegated work with the parent", () => {
                     return { content: [{ text: "PARENT_SAW_RESUMED_CHILD", type: "text" }] };
                 }
                 if (lastMessage?.role === "toolResult") {
-                    if (lastMessage.toolName === "resume_agent") {
+                    if (lastMessage.toolName === "followup_task") {
                         return { content: [{ text: "PARENT_RESUMED_CHILD", type: "text" }] };
                     }
                     return {

@@ -1,4 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
+import { Executor, type Identity } from "@slopus/rig-execution";
 
 import {
     Agent,
@@ -14,22 +15,18 @@ import {
     type UserInputContext,
 } from "../agent/index.js";
 import type { Message } from "../agent/types.js";
-import { createCodexCollaborationNamespaceTool } from "../code-mode/createCodexCollaborationNamespaceTool.js";
-import { createRigNamespaceTool } from "../code-mode/createRigNamespaceTool.js";
-import { isCodexCollaborationNamespaceTool } from "../code-mode/isCodexCollaborationNamespaceTool.js";
 import { DEFAULT_RIG_CONFIG } from "../config/defaultConfig.js";
 import { findConfiguredProvider } from "../config/findConfiguredProvider.js";
 import type { ConfigProviders } from "../config/types.js";
 import type { DockerExecutionConfig } from "../execution/index.js";
 import { NativeProcessManager } from "../processes/index.js";
-import { createConfiguredProvider } from "../providers/createConfiguredProvider.js";
-import { createGymProviderFromEnvironment } from "../providers/createGymProviderFromEnvironment.js";
-import { getBedrockModelRoute } from "../providers/getBedrockModelRoute.js";
-import { modelMoonshotKimiK3, modelOpenaiGpt56Sol } from "../providers/models.js";
-import type { ServiceTier } from "../providers/types.js";
-import { routeProviderThroughGym } from "../providers/routeProviderThroughGym.js";
+import { createExecutor } from "../executor/createExecutor.js";
+import { createGymProviderFromEnvironment } from "../executor/createGymProviderFromEnvironment.js";
+import { getBedrockModelRoute } from "../executor/getBedrockModelRoute.js";
+import { modelOpenaiGpt56Sol } from "@slopus/rig-execution";
+import type { ServiceTier } from "@slopus/rig-execution";
+import { routeProviderThroughGym } from "../executor/routeProviderThroughGym.js";
 import { goalTools } from "../tools/goals/index.js";
-import { kimiGoalTools } from "../tools/kimi/index.js";
 import type { WorkflowContext } from "../workflows/index.js";
 import type { CodingAssistantRuntime } from "./CodingAssistantRuntime.js";
 import { createDefaultInstructions } from "./createDefaultInstructions.js";
@@ -38,11 +35,7 @@ import { selectToolsForModel } from "./selectToolsForModel.js";
 import type { DurableSkillDefinition } from "../external-skills/types.js";
 import { resolveGeminiApiKey } from "../tools/webSearch/resolveGeminiApiKey.js";
 import { readAgentHistoryTool } from "../tools/read_agent_history.js";
-import { createAvailableGrokXSearchTool } from "./createAvailableGrokXSearchTool.js";
 import { selectCollaborationToolsForModel } from "./selectCollaborationToolsForModel.js";
-import { resolveModelProfileForProvider } from "../profiles/impl/resolveModelProfileForProvider.js";
-import { CodeModeAgentToolAdapter } from "../code-mode/CodeModeAgentToolAdapter.js";
-import { CodexBedrockToolSearchAdapter } from "../code-mode/CodexBedrockToolSearchAdapter.js";
 
 export interface CreateCodingAssistantAgentOptions {
     appendSystemPrompt?: string;
@@ -53,9 +46,11 @@ export interface CreateCodingAssistantAgentOptions {
     apiKey?: string;
     chatHistory?: ChatHistoryContext;
     effort?: string;
+    executor?: Executor;
     env?: NodeJS.ProcessEnv;
     goals?: GoalContext;
     instructions?: string;
+    identity?: Identity;
     local?: boolean;
     messages?: readonly Message[];
     contextMessages?: readonly Message[];
@@ -118,13 +113,11 @@ export function createCodingAssistantAgent(
             ? "claude"
             : modelId.startsWith("xai/")
               ? "grok"
-              : modelId === modelMoonshotKimiK3.id
-                ? "kimi"
-                : modelId.startsWith("openai/")
-                  ? "codex"
-                  : getBedrockModelRoute(modelId) !== undefined
-                    ? "bedrock"
-                    : "codex");
+              : modelId.startsWith("openai/")
+                ? "codex"
+                : getBedrockModelRoute(modelId) !== undefined
+                  ? "bedrock"
+                  : "codex");
     const providerConfig =
         providerId === "gym"
             ? undefined
@@ -133,54 +126,50 @@ export function createCodingAssistantAgent(
         throw new Error(`Unknown or disabled inference provider '${providerId}'.`);
     }
     const env = options.env ?? process.env;
-    const nativeProvider = (() => {
-        if (providerId === "gym") {
-            const provider = createGymProviderFromEnvironment(env);
-            if (provider === undefined) {
-                throw new Error("RIG_GYM_INFERENCE_URL is required for the gym provider.");
+    const nativeProvider =
+        options.executor ??
+        (() => {
+            if (providerId === "gym") {
+                const provider = createGymProviderFromEnvironment(env);
+                if (provider === undefined) {
+                    throw new Error("RIG_GYM_INFERENCE_URL is required for the gym provider.");
+                }
+                return provider;
             }
-            return provider;
-        }
-        if (providerConfig === undefined)
-            throw new Error(`Unknown inference provider '${providerId}'.`);
-        const result = createConfiguredProvider({
-            agentContext: context,
-            ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
-            config: providerConfig,
-            env,
-            id: providerId,
-            sessionId: agentId,
-        });
-        if (result.status === "missing_credential") {
-            throw new Error(
-                `Inference provider '${providerId}' requires the ${result.variable} environment variable.`,
-            );
-        }
-        return result.provider;
-    })();
+            if (providerConfig === undefined)
+                throw new Error(`Unknown inference provider '${providerId}'.`);
+            const result = createExecutor({
+                agentContext: context,
+                ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
+                env,
+                ...(options.identity === undefined ? {} : { identity: options.identity }),
+                providers: options.providers ?? DEFAULT_RIG_CONFIG.providers,
+                sessionId: agentId,
+            });
+            const executor = result.executor;
+            if (executor === undefined) {
+                const variable = result.missingCredentials.get(providerId);
+                throw new Error(
+                    variable === undefined
+                        ? `Inference provider '${providerId}' is unavailable.`
+                        : `Inference provider '${providerId}' requires the ${variable} environment variable.`,
+                );
+            }
+            executor.selectProvider(providerId);
+            return executor;
+        })();
+    if (nativeProvider instanceof Executor) nativeProvider.selectProvider(providerId);
     const provider = routeProviderThroughGym(nativeProvider, env);
     const model = provider.models.find((candidate) => candidate.id === modelId);
     if (model === undefined) {
         throw new Error(`Unknown model '${modelId}' for provider '${provider.id}'`);
     }
-    const toolProfile = provider.toolProfile(model);
-    const modelProfile = resolveModelProfileForProvider(provider, model);
-    const usesKimiTools = toolProfile === "kimi";
     const geminiApiKey = resolveGeminiApiKey(env);
     const baseTools = selectToolsForModel({
         ...(geminiApiKey === undefined ? {} : { geminiApiKey }),
         model,
         provider,
     });
-    const grokXSearchTool =
-        options.providers === undefined
-            ? undefined
-            : createAvailableGrokXSearchTool({
-                  agentContext: context,
-                  agentId,
-                  env,
-                  providers: options.providers,
-              });
     const collaborationTools = selectCollaborationToolsForModel({ model, provider }).filter(
         (tool) =>
             workflowsEnabled ||
@@ -202,9 +191,11 @@ export function createCodingAssistantAgent(
                     [
                         "followup_task",
                         "wait_agent",
+                        "resume_agent",
+                        "send_input",
+                        "close_agent",
                         "list_agents",
                         "interrupt_agent",
-                        "resume_agent",
                         "send_message",
                         "SendMessage",
                         "followup_subagent",
@@ -212,41 +203,14 @@ export function createCodingAssistantAgent(
                 );
     const toolsWithoutGoals = [
         ...baseTools,
-        ...(grokXSearchTool === undefined ? [] : [grokXSearchTool]),
         ...(options.chatHistory === undefined ? [] : [readAgentHistoryTool]),
         ...availableCollaborationTools,
     ];
     const selectedTools =
-        options.goals === undefined
-            ? toolsWithoutGoals
-            : [...toolsWithoutGoals, ...(usesKimiTools ? kimiGoalTools : goalTools)];
-    const referenceRequest = modelProfile?.parameters.referenceClient?.request;
+        options.goals === undefined ? toolsWithoutGoals : [...toolsWithoutGoals, ...goalTools];
     const usesOfficialCodexBedrockPrompt =
-        modelProfile?.providerType === "bedrock" && modelProfile.vendor === "openai";
-    const usesCodeMode = referenceRequest?.toolMode === "code_mode_only";
-    const usesNamespacedCollaboration = referenceRequest?.multiAgentVersion === "v2";
-    const collaborationNames = new Set(availableCollaborationTools.map((tool) => tool.name));
-    const selectedNonCollaborationTools = selectedTools.filter(
-        (tool) => !availableCollaborationTools.includes(tool),
-    );
-    const tools = usesCodeMode
-        ? usesNamespacedCollaboration
-            ? [
-                  ...selectedNonCollaborationTools,
-                  ...availableCollaborationTools
-                      .filter((tool) => isCodexCollaborationNamespaceTool(tool.name))
-                      .toSorted((left, right) => left.name.localeCompare(right.name))
-                      .map(createCodexCollaborationNamespaceTool),
-                  ...availableCollaborationTools
-                      .filter((tool) => tool.name !== "send_message")
-                      .map(createRigNamespaceTool),
-              ]
-            : selectedTools.map((tool) =>
-                  collaborationNames.has(tool.name)
-                      ? { ...tool, codeMode: { ...tool.codeMode, exposure: "direct" as const } }
-                      : tool,
-              )
-        : selectedTools;
+        provider.type === "bedrock" && model.id.startsWith("openai/");
+    const tools = selectedTools;
     const agentOptions: AgentOptions = {
         ...(options.appendSystemPrompt !== undefined
             ? { appendSystemPrompt: options.appendSystemPrompt }
@@ -257,9 +221,7 @@ export function createCodingAssistantAgent(
         id: agentId,
         ...(options.instructions !== undefined
             ? { instructions: options.instructions }
-            : (modelProfile?.providerType === "claude" &&
-                    modelProfile.prompt.original !== undefined) ||
-                usesOfficialCodexBedrockPrompt
+            : provider.type === "claude" || usesOfficialCodexBedrockPrompt
               ? {}
               : { instructions: createDefaultInstructions(runtimeCwd) }),
         ...(options.systemPrompt !== undefined ? { systemPrompt: options.systemPrompt } : {}),
@@ -270,11 +232,6 @@ export function createCodingAssistantAgent(
             : {}),
         ...(options.startDate !== undefined ? { startDate: options.startDate } : {}),
         tools,
-        ...(usesCodeMode
-            ? { toolAdapter: new CodeModeAgentToolAdapter({ sessionId: agentId }) }
-            : usesOfficialCodexBedrockPrompt && availableCollaborationTools.length > 0
-              ? { toolAdapter: new CodexBedrockToolSearchAdapter() }
-              : {}),
         printToConsole: false,
     };
     if (options.effort !== undefined) {
@@ -289,6 +246,6 @@ export function createCodingAssistantAgent(
         context,
         cwd: runtimeCwd,
         processManager,
-        provider,
+        executor: provider,
     };
 }

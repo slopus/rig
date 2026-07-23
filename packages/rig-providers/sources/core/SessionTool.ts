@@ -13,6 +13,8 @@ export interface SessionToolLarkGrammar {
 export interface SessionTool {
     readonly name: string;
     readonly namespace?: string;
+    /** Description of the containing namespace, when this tool is namespaced. */
+    readonly namespaceDescription?: string;
     readonly type: SessionToolType;
     readonly description?: string;
     readonly parameters?: TSchema;

@@ -6,17 +6,15 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { AgentContext } from "../agent/context/AgentContext.js";
 import { claudeBashTool } from "../tools/claude/Bash.js";
-import { claudeReadTool } from "../tools/claude/Read.js";
-import { claudeWriteTool } from "../tools/claude/Write.js";
-import { codexApplyPatchTool } from "../tools/codex/apply_patch.js";
-import { codexExecCommandTool } from "../tools/codex/exec_command.js";
-import { codexViewImageTool } from "../tools/codex/view_image.js";
-import { codexWriteStdinTool } from "../tools/codex/write_stdin.js";
-import { grokReadFileTool } from "../tools/grok/read_file.js";
+import { claudeReadTool } from "../agent/tools/claude/Read.js";
+import { claudeWriteTool } from "../agent/tools/claude/Write.js";
+import { codexApplyPatchTool } from "../agent/tools/codex/apply_patch.js";
+import { codexExecCommandTool } from "../agent/tools/codex/exec_command.js";
+import { codexViewImageTool } from "../agent/tools/codex/view_image.js";
+import { codexWriteStdinTool } from "../agent/tools/codex/write_stdin.js";
+import { grokReadFileTool } from "../agent/tools/grok/read_file.js";
 import { grokRunTerminalCommandTool } from "../tools/grok/run_terminal_command.js";
-import { grokSearchReplaceTool } from "../tools/grok/search_replace.js";
-import { piBashTool } from "../tools/pi/bash.js";
-import { piReadTool } from "../tools/pi/read.js";
+import { grokSearchReplaceTool } from "../agent/tools/grok/search_replace.js";
 import { codexWorkflowTool } from "../tools/workflows/workflowTools.js";
 
 describe("tool-owned Auto permission policies", () => {
@@ -50,19 +48,6 @@ describe("tool-owned Auto permission policies", () => {
                 { command: "pnpm test", dangerouslyDisableSandbox: true },
                 context,
             ),
-        ).toBe(true);
-        expect(await piBashTool.shouldReviewInAutoMode({ command: "pnpm test" }, context)).toBe(
-            false,
-        );
-        const piEscalation = {
-            command: "pnpm test",
-            justification: "The sandbox blocked the package manager cache.",
-            sandbox_permissions: "require_escalated",
-        };
-        expect(Value.Check(piBashTool.arguments, piEscalation)).toBe(true);
-        expect(await piBashTool.shouldReviewInAutoMode(piEscalation as never, context)).toBe(true);
-        expect(
-            await piBashTool.shouldRunInFullAccessInAutoMode(piEscalation as never, context),
         ).toBe(true);
         expect(
             await grokRunTerminalCommandTool.shouldReviewInAutoMode(
@@ -151,9 +136,6 @@ describe("tool-owned Auto permission policies", () => {
         await expect(
             claudeWriteTool.shouldReviewInAutoMode({ content: "hook", file_path: hook }, context),
         ).resolves.toBe(true);
-        await expect(piReadTool.shouldReviewInAutoMode({ path: link }, context)).resolves.toBe(
-            true,
-        );
         await expect(
             grokReadFileTool.shouldReviewInAutoMode({ target_file: outside }, context),
         ).resolves.toBe(true);

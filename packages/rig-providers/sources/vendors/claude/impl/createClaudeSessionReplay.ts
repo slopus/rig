@@ -51,9 +51,7 @@ export function createClaudeSessionReplay(options: {
     };
 }
 
-export function createClaudeLivePromptMessage(
-    messages: readonly SessionMessage[],
-): SDKUserMessage {
+export function createClaudeLivePromptMessage(messages: readonly SessionMessage[]): SDKUserMessage {
     let firstTrailingToolIndex = messages.length;
     while (firstTrailingToolIndex > 0 && messages[firstTrailingToolIndex - 1]?.role === "tool") {
         firstTrailingToolIndex -= 1;

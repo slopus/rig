@@ -1,6 +1,21 @@
 export { BaseCredential } from "@/core/BaseCredential.js";
 export { BaseProvider } from "@/core/BaseProvider.js";
 export { BaseSession } from "@/core/BaseSession.js";
+export type {
+    ProviderQuota,
+    ProviderQuotaSource,
+    ProviderQuotaWindow,
+} from "@/core/ProviderQuota.js";
+export {
+    createProviderQuotaCache,
+    type ProviderQuotaCache,
+    type ProviderQuotaCacheOptions,
+} from "@/core/createProviderQuotaCache.js";
+export {
+    DEFAULT_PROVIDER_QUOTA_STALE_AFTER_MS,
+    isProviderQuotaStale,
+} from "@/core/isProviderQuotaStale.js";
+export { unavailableProviderQuota } from "@/core/unavailableProviderQuota.js";
 export { EMPTY_SESSION_CACHE_USAGE, type SessionCacheUsage } from "@/core/SessionCacheUsage.js";
 export type {
     CancelledSessionCompaction,
@@ -31,6 +46,14 @@ export type {
 export { isSessionDoneEvent, isSessionErrorDone } from "@/core/SessionEvent.js";
 export { committedSessionEvents } from "@/core/committedSessionEvents.js";
 export type { SessionReasoningEffort, SessionRunRequest } from "@/core/SessionRunRequest.js";
+export type { SessionServiceTier } from "@/core/SessionRunRequest.js";
+export {
+    areProviderModelsCompatible,
+    PROVIDER_MODEL_COMPATIBILITY_MATRIX,
+    type ProviderModelCompatibilityType,
+    type ProviderModelFamily,
+    type ProviderModelSelection,
+} from "@/core/ProviderModelCompatibility.js";
 export type { SessionOptions } from "@/core/SessionOptions.js";
 export type {
     SessionSkill,
@@ -48,6 +71,16 @@ export { PROVIDER_MODALITIES } from "@/core/ProviderModality.js";
 export { GrokProvider, type GrokProviderOptions } from "@/vendors/grok/GrokProvider.js";
 export { ClaudeProvider, type ClaudeProviderOptions } from "@/vendors/claude/ClaudeProvider.js";
 export {
+    createClaudeQuotaLoader,
+    type CreateClaudeQuotaLoaderOptions,
+} from "@/vendors/claude/createClaudeQuotaLoader.js";
+export {
+    fetchClaudeProviderQuota,
+    type ClaudeQuotaQuery,
+    type FetchClaudeProviderQuotaOptions,
+} from "@/vendors/claude/fetchClaudeProviderQuota.js";
+export { resolveClaudeCodeExecutablePath } from "@/vendors/claude/resolveClaudeCodeExecutablePath.js";
+export {
     ClaudeSession,
     type ClaudeSdkQuery,
     type ClaudeSessionOptions,
@@ -62,6 +95,10 @@ export type { GrokToolVendor } from "@/vendors/grok/GrokToolVendor.js";
 export { grok_4_5_system_prompt } from "@/vendors/grok/prompts/grok_4_5_system_prompt.js";
 export { grok_4_5_tools } from "@/vendors/grok/tools/index.js";
 export { CodexProvider, type CodexProviderOptions } from "@/vendors/codex/CodexProvider.js";
+export {
+    fetchCodexProviderQuota,
+    type FetchCodexProviderQuotaOptions,
+} from "@/vendors/codex/fetchCodexProviderQuota.js";
 export { CodexSession, type CodexSessionOptions } from "@/vendors/codex/CodexSession.js";
 export type {
     CodexToolDefinitionVendor,

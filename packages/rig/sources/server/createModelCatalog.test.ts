@@ -6,10 +6,9 @@ import {
     modelOpenaiGpt56Sol,
     modelOpenaiGpt56Terra,
     modelXaiGrok45,
-    modelZaiGlm5,
     modelXaiGrokBuild,
     modelXaiGrokComposer25Fast,
-} from "../providers/models.js";
+} from "@slopus/rig-execution";
 import { createModelCatalog } from "./createModelCatalog.js";
 
 describe("createModelCatalog", () => {
@@ -20,26 +19,20 @@ describe("createModelCatalog", () => {
             disabledReason: "not_authenticated",
             models: [],
             providerId: "bedrock",
+            providerType: "bedrock",
         });
         expect(
             catalog.providers.find((provider) => provider.providerId === "codex")?.serviceTiers,
         ).toEqual(["fast"]);
         expect(
-            catalog.providers.find((provider) => provider.providerId === "codex")
-                ?.contextCompatibility,
-        ).toBe("model_group");
+            catalog.providers.find((provider) => provider.providerId === "codex")?.providerType,
+        ).toBe("codex");
         expect(
-            catalog.providers.find((provider) => provider.providerId === "claude")
-                ?.contextCompatibility,
-        ).toBe("model_group");
+            catalog.providers.find((provider) => provider.providerId === "claude")?.providerType,
+        ).toBe("claude");
         expect(
-            catalog.providers.find((provider) => provider.providerId === "claude")
-                ?.contextCompatibilityKind,
-        ).toBe("claude_code");
-        expect(
-            catalog.providers.find((provider) => provider.providerId === "grok")
-                ?.contextCompatibility,
-        ).toBe("model_group");
+            catalog.providers.find((provider) => provider.providerId === "grok")?.providerType,
+        ).toBe("grok");
         expect(
             catalog.providers.find((provider) => provider.providerId === "claude")?.serviceTiers,
         ).toBeUndefined();
@@ -73,10 +66,7 @@ describe("createModelCatalog", () => {
                 modelOpenaiGpt56Luna.id,
             ]),
         );
-        expect(bedrock?.models).toContain(modelZaiGlm5);
-        expect(bedrock?.contextCompatibility).toBe("model_group");
-        expect(bedrock?.contextCompatibilityKind).toBe("bedrock");
-        expect(modelZaiGlm5.contextCompatibilityGroup).toBeUndefined();
+        expect(bedrock?.providerType).toBe("bedrock");
         expect(bedrock?.serviceTiers).toBeUndefined();
         expect(catalog.models.filter((model) => model.id === modelOpenaiGpt56Sol.id)).toEqual([
             expect.objectContaining({
@@ -96,6 +86,7 @@ describe("createModelCatalog", () => {
             disabledReason: "not_authenticated",
             models: [],
             providerId: "bedrock",
+            providerType: "bedrock",
         });
     });
 
@@ -118,8 +109,18 @@ describe("createModelCatalog", () => {
             "codex",
         ]);
         expect(catalog.providers.slice(1)).toEqual([
-            { disabledReason: "not_enabled", models: [], providerId: "claude" },
-            { disabledReason: "not_enabled", models: [], providerId: "codex" },
+            {
+                disabledReason: "not_enabled",
+                models: [],
+                providerId: "claude",
+                providerType: "claude",
+            },
+            {
+                disabledReason: "not_enabled",
+                models: [],
+                providerId: "codex",
+                providerType: "codex",
+            },
         ]);
         expect(catalog.defaultProviderId).toBe("bedrock");
         expect(catalog.defaultModelId).toBe(modelOpenaiGpt56Sol.id);
@@ -150,6 +151,7 @@ describe("createModelCatalog", () => {
             disabledReason: "not_enabled",
             models: [],
             providerId: "bedrock",
+            providerType: "bedrock",
         });
     });
 
@@ -215,10 +217,7 @@ describe("createModelCatalog", () => {
                 expect.objectContaining({ id: modelOpenaiGpt56Luna.id }),
             ]),
             providerId: "west_bedrock",
-            contextCompatibilityKeys: {
-                [modelOpenaiGpt56Luna.id]: "us-east-1",
-                [modelOpenaiGpt56Sol.id]: "us-west-2",
-            },
+            providerType: "bedrock",
         });
     });
 
@@ -244,6 +243,7 @@ describe("createModelCatalog", () => {
             disabledReason: "no_models",
             models: [],
             providerId: "west_bedrock",
+            providerType: "bedrock",
         });
     });
 

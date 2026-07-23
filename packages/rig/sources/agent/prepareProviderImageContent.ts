@@ -1,4 +1,4 @@
-import type { ProviderImageProfile, ToolResultContent, UserContent } from "../providers/types.js";
+import type { ProviderImageProfile, ToolResultContent, UserContent } from "@slopus/rig-execution";
 import {
     IMAGE_PROCESSING_ERROR_PLACEHOLDER,
     ImageProcessingError,

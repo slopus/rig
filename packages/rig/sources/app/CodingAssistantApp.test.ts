@@ -22,7 +22,7 @@ import {
     type Context,
     type InferenceStream,
     type Usage,
-} from "../providers/types.js";
+} from "@slopus/rig-execution";
 import { CodingAssistantApp } from "./CodingAssistantApp.js";
 import { createSerialTaskQueue } from "./createSerialTaskQueue.js";
 import { DEFAULT_TERMINAL_THEME } from "./defaultTerminalTheme.js";
@@ -2061,19 +2061,19 @@ describe("CodingAssistantApp", () => {
             thinkingLevels: ["off"],
             defaultThinkingLevel: "off",
         });
-        const kimi = defineModel({
-            id: "moonshot/kimi-test",
-            name: "Kimi Test",
+        const bedrockOnly = defineModel({
+            id: "anthropic/bedrock-only",
+            name: "Bedrock Only",
             thinkingLevels: ["off"],
             defaultThinkingLevel: "off",
         });
         const catalog: ModelCatalog = {
             defaultModelId: gpt.id,
             defaultProviderId: "codex",
-            models: [gpt, kimi],
+            models: [gpt, bedrockOnly],
             providers: [
                 { providerId: "codex", models: [gpt] },
-                { providerId: "bedrock", models: [gpt, kimi] },
+                { providerId: "bedrock", models: [gpt, bedrockOnly] },
             ],
         };
         const snapshot = {
@@ -2111,12 +2111,12 @@ describe("CodingAssistantApp", () => {
         };
         const bedrockSession: ProtocolSession = {
             ...session,
-            modelId: kimi.id,
-            models: [gpt, kimi],
+            modelId: bedrockOnly.id,
+            models: [gpt, bedrockOnly],
             providerId: "bedrock",
             snapshot: {
                 ...snapshot,
-                modelId: kimi.id,
+                modelId: bedrockOnly.id,
                 providerId: "bedrock",
             },
         };
@@ -2139,7 +2139,7 @@ describe("CodingAssistantApp", () => {
         submit(app, "/model");
 
         const modelMenu = stripAnsi(app.render(100).join("\n"));
-        expect(modelMenu).toContain("Kimi Test");
+        expect(modelMenu).toContain("Bedrock Only");
         expect(modelMenu).toContain("Amazon Bedrock model");
 
         app.handleInput("\x1b[B");
@@ -2150,12 +2150,12 @@ describe("CodingAssistantApp", () => {
         await vi.waitFor(() =>
             expect(changeModel).toHaveBeenCalledWith("session-1", {
                 effort: "off",
-                modelId: kimi.id,
+                modelId: bedrockOnly.id,
                 providerId: "bedrock",
             }),
         );
         await vi.waitFor(() => expect(agent.provider.id).toBe("bedrock"));
-        expect(agent.model.id).toBe(kimi.id);
+        expect(agent.model.id).toBe(bedrockOnly.id);
     });
 
     it("rolls back a rejected provider change without persisting cleared fast mode", async () => {

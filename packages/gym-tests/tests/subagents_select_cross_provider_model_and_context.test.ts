@@ -39,7 +39,7 @@ describe("subagent provider, model, and context selection", () => {
                                     context: "parent",
                                     effort: "high",
                                     message: "Verify inherited context and return PARENT_CHILD_OK.",
-                                    model: "anthropic/sonnet-4-6",
+                                    model: "anthropic/sonnet-5",
                                     task_name: "parent_context_child",
                                 },
                                 id: "spawn-parent-context-child",
@@ -51,7 +51,7 @@ describe("subagent provider, model, and context selection", () => {
                                     context: "task",
                                     effort: "high",
                                     message: "Verify isolated context and return TASK_CHILD_OK.",
-                                    model: "anthropic/sonnet-4-6",
+                                    model: "anthropic/sonnet-5",
                                     task_name: "task_only_child",
                                 },
                                 id: "spawn-task-only-child",
@@ -64,7 +64,7 @@ describe("subagent provider, model, and context selection", () => {
 
                 if (request.providerId === "claude") {
                     expect(request.providerId).toBe("claude");
-                    expect(request.modelId).toBe("anthropic/sonnet-4-6");
+                    expect(request.modelId).toBe("anthropic/sonnet-5");
                     const allText = request.context.messages.map(messageText).join("\n");
                     if (lastText.includes("Reuse your context at low effort")) {
                         expect(request.options.thinking).toBe("low");

@@ -4,7 +4,7 @@ import type {
     AssistantContent as ProviderAssistantContent,
     AssistantMessage as ProviderAssistantMessage,
     ToolCall as ProviderToolCall,
-} from "../providers/types.js";
+} from "@slopus/rig-execution";
 
 export function assistantMessageToAgentMessage(
     message: ProviderAssistantMessage,
@@ -22,6 +22,7 @@ export function assistantMessageToAgentMessage(
         providerId: attribution.providerId,
         requestedModelId: attribution.requestedModelId,
         ...(message.responseModel === undefined ? {} : { responseModel: message.responseModel }),
+        ...(message.responseItems === undefined ? {} : { responseItems: message.responseItems }),
     };
 }
 
@@ -59,6 +60,7 @@ function providerToolCallToAgentBlock(
         ...(toolCall.namespace === undefined ? {} : { namespace: toolCall.namespace }),
         arguments: toolCall.arguments,
         ...(toolCall.kind === undefined ? {} : { kind: toolCall.kind }),
+        ...(toolCall.vendor === undefined ? {} : { vendor: toolCall.vendor }),
         ...(presentation === undefined ? {} : { presentation }),
     };
 }

@@ -116,6 +116,7 @@ export function toOpenAIResponseInput(context: SessionContext): ResponseInput {
                     type: "custom_tool_call",
                     call_id: toolCall.callId,
                     name: toolCall.name,
+                    ...(toolCall.namespace === undefined ? {} : { namespace: toolCall.namespace }),
                     input: toolCall.arguments,
                 } as ResponseInputItem);
                 customToolCallIds.add(toolCall.callId);
@@ -124,6 +125,7 @@ export function toOpenAIResponseInput(context: SessionContext): ResponseInput {
                     type: "function_call",
                     call_id: toolCall.callId,
                     name: toolCall.name,
+                    ...(toolCall.namespace === undefined ? {} : { namespace: toolCall.namespace }),
                     arguments: toolCall.arguments,
                 } as ResponseInputItem);
             }

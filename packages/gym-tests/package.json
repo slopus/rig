@@ -19,6 +19,8 @@
     "devDependencies": {
         "@earendil-works/pi-tui": "^0.80.3",
         "@slopus/rig-gym": "workspace:*",
+        "@slopus/rig-providers": "workspace:*",
+        "@slopus/rig-execution": "workspace:*",
         "@types/node": "^24.0.10",
         "typescript": "^5.8.3",
         "vitest": "^3.2.4"

@@ -17,7 +17,6 @@ export function humanizeToolName(name: string): string {
     if (normalized === "wait_agent") return "Wait for subagents";
     if (normalized === "list_agents") return "Subagents";
     if (normalized === "interrupt_agent") return "Stop subagent";
-    if (normalized === "resume_agent") return "Resume subagent";
     if (normalized === "sendmessage") return "Subagent follow-up";
     if (normalized === "workflow") return "Workflow";
     if (normalized === "workflow_status") return "Workflow status";

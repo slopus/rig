@@ -2,9 +2,11 @@ import { Buffer } from "node:buffer";
 import { isDeepStrictEqual } from "node:util";
 
 import { createId } from "@paralleldrive/cuid2";
+import { Executor } from "@slopus/rig-execution";
+import { areProviderModelsCompatible } from "@slopus/rig-providers";
 
 import { errorToMessage } from "../errorToMessage.js";
-import { toLocalDate } from "../providers/toLocalDate.js";
+import { toLocalDate } from "../executor/toLocalDate.js";
 import { assistantMessageToAgentMessage } from "../agent/assistantMessageToAgentMessage.js";
 import { isInternalMessage } from "../agent/isInternalMessage.js";
 import { findFirstUserRequestText, findLastAgentResponseText } from "../agent/index.js";
@@ -60,9 +62,9 @@ import type {
     SteerMessageResponse,
     UpdateSessionRequest,
 } from "../protocol/index.js";
-import type { Model, Provider, ServiceTier, StopReason } from "../providers/types.js";
-import type { ProviderQuota } from "../providers/providerQuota.js";
-import { createEncryptedAgentTransportScope } from "../providers/createEncryptedAgentTransportScope.js";
+import type { Model, Provider, ServiceTier, StopReason } from "@slopus/rig-execution";
+import type { ProviderQuota } from "@slopus/rig-providers";
+import { createEncryptedAgentTransportScope } from "../executor/createEncryptedAgentTransportScope.js";
 import type {
     DurableUserInputCall,
     DurableUserInputOptions,
@@ -140,7 +142,6 @@ import { createToolResultBlock } from "../agent/createToolResultBlock.js";
 import { executePreapprovedToolCall } from "../agent/executePreapprovedToolCall.js";
 import { createModelSwitchHistoryMessage } from "../agent/createModelSwitchHistoryMessage.js";
 import { createDurableSkillTool, type DurableSkillDefinition } from "../external-skills/index.js";
-import { areModelsContextCompatible } from "../providers/areModelsContextCompatible.js";
 
 const MAX_RETAINED_EXTERNAL_TOOL_CALLS = 1_000;
 const MAX_RETAINED_DURABLE_USER_INPUTS = 1_000;
@@ -405,6 +406,7 @@ export class InMemorySession {
     #request: CreateSessionRequest;
     #restoredActiveRunId: string | undefined;
     #runtime: CodingAssistantRuntime | undefined;
+    #executor: Executor | undefined;
     #secrets: SessionSecretContext;
     #status: SessionStatus = "idle";
     #suspendedRunIds = new Set<string>();
@@ -947,18 +949,6 @@ export class InMemorySession {
         this.#saveSession();
     }
 
-    resumeSuspended(options: { debug?: boolean } = {}): SubmitMessageResponse {
-        if (!this.isSubagent() || this.#status !== "suspended") {
-            throw new Error("Only a suspended subagent can be resumed.");
-        }
-        this.#suspendOnAbort = false;
-        return this.submit({
-            ...(options.debug === true ? { debug: true } : {}),
-            displayText: "Resuming delegated work",
-            text: "Continue the delegated task from where you stopped. Re-check any interrupted tool calls before proceeding.",
-        });
-    }
-
     clearSuspension(): void {
         this.#suspendOnAbort = false;
         if (this.#status !== "suspended") return;
@@ -985,7 +975,7 @@ export class InMemorySession {
                         ...subagents.map(
                             (subagent) => `- ${subagent.path}: ${subagent.description}`,
                         ),
-                        "They will not resume automatically. Use resume_agent to continue retained work, followup_task to resume with revised instructions, or interrupt_agent to leave work stopped.",
+                        "They will not resume automatically. Use followup_task to continue retained work, or interrupt_agent to leave work stopped.",
                         "</subagent-suspension>",
                     ].join("\n"),
                 },
@@ -1007,12 +997,12 @@ export class InMemorySession {
     }
 
     providerQuota(options?: { fresh?: boolean }): Promise<ProviderQuota | undefined> {
-        return this.#ensureRuntime().provider.quota?.(options) ?? Promise.resolve(undefined);
+        return this.#ensureRuntime().executor.quota?.(options) ?? Promise.resolve(undefined);
     }
 
     encryptedAgentTransportScope(): string | undefined {
         const runtime = this.#ensureRuntime();
-        return createEncryptedAgentTransportScope(runtime.provider, runtime.agent.model);
+        return createEncryptedAgentTransportScope(runtime.executor, runtime.agent.model);
     }
 
     hasModel(modelId: string, providerId?: string): boolean {
@@ -1065,36 +1055,25 @@ export class InMemorySession {
             );
         }
 
-        if (
-            areModelsContextCompatible(
-                {
-                    model: previousModel,
-                    providerContextCompatibility: this.#modelCatalog.providers.find(
+        const compatible = areProviderModelsCompatible(
+            {
+                modelId: previousModel.id,
+                providerId: this.#providerId,
+                providerType:
+                    this.#modelCatalog.providers.find(
                         (provider) => provider.providerId === this.#providerId,
-                    )?.contextCompatibility,
-                    providerContextCompatibilityKind: this.#modelCatalog.providers.find(
-                        (provider) => provider.providerId === this.#providerId,
-                    )?.contextCompatibilityKind,
-                    providerContextCompatibilityKey: this.#modelCatalog.providers.find(
-                        (provider) => provider.providerId === this.#providerId,
-                    )?.contextCompatibilityKeys?.[previousModel.id],
-                    providerId: this.#providerId,
-                },
-                {
-                    model,
-                    providerContextCompatibility: this.#modelCatalog.providers.find(
+                    )?.providerType ?? "gym",
+            },
+            {
+                modelId: model.id,
+                providerId,
+                providerType:
+                    this.#modelCatalog.providers.find(
                         (provider) => provider.providerId === providerId,
-                    )?.contextCompatibility,
-                    providerContextCompatibilityKind: this.#modelCatalog.providers.find(
-                        (provider) => provider.providerId === providerId,
-                    )?.contextCompatibilityKind,
-                    providerContextCompatibilityKey: this.#modelCatalog.providers.find(
-                        (provider) => provider.providerId === providerId,
-                    )?.contextCompatibilityKeys?.[model.id],
-                    providerId,
-                },
-            )
-        ) {
+                    )?.providerType ?? "gym",
+            },
+        );
+        if (compatible) {
             this.#syncContextMessages();
         } else {
             const visibleMessages = this.#committedMessages();
@@ -1114,14 +1093,28 @@ export class InMemorySession {
                           }),
                       ];
         }
-        void this.#killRuntimeProcesses();
-        this.#releaseMcpToolLease();
-        void this.#runtime?.agent.close();
-        this.#runtime = undefined;
-        this.#mcpLoaded = false;
-        this.#mcpServers = [];
-        this.#mcpToolNames.clear();
-        this.#tools = [];
+        const runtime = this.#runtime;
+        const reusableExecutor =
+            runtime?.executor instanceof Executor ? runtime.executor : undefined;
+        if (compatible && reusableExecutor !== undefined) {
+            reusableExecutor.selectProvider(providerId);
+            runtime!.agent.setModel(model.id, request.effort);
+        } else {
+            void this.#killRuntimeProcesses();
+            this.#releaseMcpToolLease();
+            if (reusableExecutor === undefined) {
+                void runtime?.agent.close();
+                this.#executor = undefined;
+            } else {
+                this.#executor = reusableExecutor;
+                void reusableExecutor.reset({ modelId: model.id, providerId });
+            }
+            this.#runtime = undefined;
+            this.#mcpLoaded = false;
+            this.#mcpServers = [];
+            this.#mcpToolNames.clear();
+            this.#tools = [];
+        }
         this.#modelId = model.id;
         this.#providerId = providerId;
         this.#effort = request.effort ?? model.defaultThinkingLevel;
@@ -1131,6 +1124,7 @@ export class InMemorySession {
         ) {
             this.#serviceTier = undefined;
         }
+        this.#runtime?.agent.setServiceTier(this.#serviceTier);
         this.#models = this.#modelsForProvider(providerId);
         this.#interruption = undefined;
         this.#append("model_changed", {
@@ -1888,7 +1882,7 @@ export class InMemorySession {
                         `Task: ${taskName}`,
                         "Status: suspended",
                         "Result: The subagent stopped working when the local server restarted. It remains suspended and will not resume automatically.",
-                        `Use resume_agent with target ${JSON.stringify(taskName)} to continue it, or interrupt_agent to leave it stopped.`,
+                        `Use followup_task with target ${JSON.stringify(taskName)} to continue it, or interrupt_agent to leave it stopped.`,
                         "</subagent-notification>",
                     ].join("\n"),
                 },
@@ -3513,6 +3507,7 @@ export class InMemorySession {
                 ? { appendSystemPrompt: this.#appendSystemPrompt }
                 : {}),
             cwd: this.#request.cwd,
+            ...(this.#executor === undefined ? {} : { executor: this.#executor }),
             ...(agentManager === undefined
                 ? {}
                 : {
@@ -3590,12 +3585,12 @@ export class InMemorySession {
                         ? []
                         : [{ id: provider.providerId, reason: provider.disabledReason }],
                 ),
+                encryptedMessages: false,
                 followUp: (target, message, effort, encryptedMessage) =>
                     agentManager.followUp(this.id, target, message, effort, encryptedMessage),
                 interrupt: (target) => agentManager.interrupt(this.id, target),
                 list: (pathPrefix) => agentManager.list(this.id, pathPrefix),
                 maxDepth: agentManager.maxDepth,
-                resume: (target) => agentManager.resume(this.id, target),
                 sendMessage: (target, message, encryptedMessage) =>
                     agentManager.sendMessage(this.id, target, message, encryptedMessage),
                 spawn: (request, signal) => agentManager.spawn(this.id, request, signal),
@@ -3603,6 +3598,11 @@ export class InMemorySession {
             };
         }
         const runtime = this.#createRuntime(options);
+        if (runtime.context.subagents !== undefined) {
+            runtime.context.subagents.encryptedMessages =
+                createEncryptedAgentTransportScope(runtime.executor, runtime.agent.model) !==
+                undefined;
+        }
         this.#externalToolInstallation = { installed: new Set(), shadowed: new Map() };
         this.#installExternalTools(runtime);
         let previousBackgroundCount = runtime.context.bash.activeSessionCount?.() ?? 0;
@@ -3624,7 +3624,7 @@ export class InMemorySession {
         this.#runtime = runtime;
         this.#agentId = snapshot.id;
         this.#appendSystemPrompt = snapshot.appendSystemPrompt;
-        this.#providerId = runtime.provider.id;
+        this.#providerId = runtime.executor.id;
         this.#modelId = snapshot.modelId;
         this.#effort = snapshot.effort;
         this.#serviceTier = snapshot.serviceTier;
@@ -3916,7 +3916,7 @@ export class InMemorySession {
             const metadata = await generateSessionMetadata({
                 ...(this.#title === undefined ? {} : { currentTitle: this.#title }),
                 now: this.#now,
-                provider: this.#ensureRuntime().provider,
+                provider: this.#ensureRuntime().executor,
                 sessionId: this.id,
                 signal: controller.signal,
                 startDate: toLocalDate(
@@ -3989,7 +3989,7 @@ export class InMemorySession {
             runtime = this.#ensureRuntime();
             await this.#ensureMcpTools(runtime, controller.signal, queued.interactive !== false);
             await this.#observeProviderQuota(
-                runtime.provider,
+                runtime.executor,
                 queued.runId,
                 quotaObservationId,
                 "before",
@@ -4044,7 +4044,7 @@ export class InMemorySession {
                 }
 
                 await this.#observeProviderQuota(
-                    runtime.provider,
+                    runtime.executor,
                     queued.runId,
                     quotaObservationId,
                     "after",
@@ -4071,7 +4071,7 @@ export class InMemorySession {
             }
             if (runtime !== undefined) {
                 await this.#observeProviderQuota(
-                    runtime.provider,
+                    runtime.executor,
                     queued.runId,
                     quotaObservationId,
                     "after",

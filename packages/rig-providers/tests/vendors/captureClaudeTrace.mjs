@@ -134,7 +134,6 @@ try {
             "After compaction, list the preserved turn labels in one line.",
         ]),
     );
-
 } catch (error) {
     captureError = error;
 } finally {
@@ -282,25 +281,22 @@ function stableResponseHeaders(headers) {
 function selectHeaders(headers, names) {
     const selected = {};
     for (const name of names) {
-        const value =
-            headers instanceof Headers ? headers.get(name) : headers[name.toLowerCase()];
+        const value = headers instanceof Headers ? headers.get(name) : headers[name.toLowerCase()];
         if (value !== undefined && value !== null) selected[name] = value;
     }
     return selected;
 }
 
 function parseSse(text) {
-    return text
-        .split(/\r?\n\r?\n/u)
-        .flatMap((record) => {
-            const data = record
-                .split(/\r?\n/u)
-                .filter((line) => line.startsWith("data:"))
-                .map((line) => line.slice(5).trim())
-                .join("\n");
-            if (data.length === 0) return [];
-            return [JSON.parse(data)];
-        });
+    return text.split(/\r?\n\r?\n/u).flatMap((record) => {
+        const data = record
+            .split(/\r?\n/u)
+            .filter((line) => line.startsWith("data:"))
+            .map((line) => line.slice(5).trim())
+            .join("\n");
+        if (data.length === 0) return [];
+        return [JSON.parse(data)];
+    });
 }
 
 function normalize(value) {
@@ -317,7 +313,8 @@ function normalize(value) {
                 )
                 .replace(
                     /(?:req|msg|toolu)_[A-Za-z0-9_-]+/gu,
-                    (identifier) => `<${identifier.slice(0, identifier.indexOf("_")).toUpperCase()}_ID>`,
+                    (identifier) =>
+                        `<${identifier.slice(0, identifier.indexOf("_")).toUpperCase()}_ID>`,
                 );
         }
         if (Array.isArray(item)) return item.map((child) => visit(child));
@@ -328,10 +325,10 @@ function normalize(value) {
                     childKey === "timestamp"
                         ? "<TIMESTAMP>"
                         : ["signature", "thinking_signature"].includes(childKey)
-                        ? "<SIGNATURE>"
-                        : ["uuid", "request_id"].includes(childKey)
-                          ? `<${childKey.toUpperCase()}>`
-                          : visit(child, childKey),
+                          ? "<SIGNATURE>"
+                          : ["uuid", "request_id"].includes(childKey)
+                            ? `<${childKey.toUpperCase()}>`
+                            : visit(child, childKey),
                 ]),
             );
         }

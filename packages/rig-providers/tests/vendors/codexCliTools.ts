@@ -22,9 +22,43 @@ import { web_search } from "@/vendors/codex/tools/web_search.js";
 import { write_stdin } from "@/vendors/codex/tools/write_stdin.js";
 
 const definitions: Readonly<Record<string, readonly SessionTool[]>> = {
-    "gpt-5.5": [exec_command, write_stdin, list_mcp_resources, list_mcp_resource_templates, read_mcp_resource, update_plan, request_user_input, request_plugin_install, apply_patch, view_image, imagegen, tool_search, web_search],
-    "gpt-5.6-sol": [exec, wait, request_user_input, followup_task, interrupt_agent, list_agents, send_message, spawn_agent, wait_agent],
-    "gpt-5.6-terra": [exec, wait, request_user_input, followup_task, interrupt_agent, list_agents, send_message, spawn_agent, wait_agent],
+    "gpt-5.5": [
+        exec_command,
+        write_stdin,
+        list_mcp_resources,
+        list_mcp_resource_templates,
+        read_mcp_resource,
+        update_plan,
+        request_user_input,
+        request_plugin_install,
+        apply_patch,
+        view_image,
+        imagegen,
+        tool_search,
+        web_search,
+    ],
+    "gpt-5.6-sol": [
+        exec,
+        wait,
+        request_user_input,
+        followup_task,
+        interrupt_agent,
+        list_agents,
+        send_message,
+        spawn_agent,
+        wait_agent,
+    ],
+    "gpt-5.6-terra": [
+        exec,
+        wait,
+        request_user_input,
+        followup_task,
+        interrupt_agent,
+        list_agents,
+        send_message,
+        spawn_agent,
+        wait_agent,
+    ],
     "gpt-5.6-luna": [exec, wait, request_user_input],
 };
 

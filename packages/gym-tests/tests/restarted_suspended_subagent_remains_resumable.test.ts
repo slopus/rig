@@ -10,7 +10,7 @@ afterEach(async () => {
 });
 
 describe("restarted suspended subagent", () => {
-    it("stays stopped, informs the parent, and resumes only through resume_agent", async () => {
+    it("stays stopped, informs the parent, and resumes through followup_task", async () => {
         let childRunCount = 0;
         const gym = await createGym({
             cols: 92,
@@ -42,12 +42,13 @@ describe("restarted suspended subagent", () => {
                         content: [
                             {
                                 arguments: {
-                                    context: "task",
+                                    fork_turns: "none",
                                     message: "Audit until explicitly resumed after restart.",
                                     task_name: "restart_audit",
                                 },
                                 id: "spawn-restart-audit",
                                 name: "spawn_agent",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],
@@ -70,9 +71,14 @@ describe("restarted suspended subagent", () => {
                     return {
                         content: [
                             {
-                                arguments: { target: "restart_audit" },
+                                arguments: {
+                                    message:
+                                        "Continue the delegated task from where you stopped. Re-check any interrupted tool calls before proceeding.",
+                                    target: "restart_audit",
+                                },
                                 id: "resume-restart-audit",
-                                name: "resume_agent",
+                                name: "followup_task",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],
@@ -86,7 +92,7 @@ describe("restarted suspended subagent", () => {
                     return { content: [{ text: "PARENT_SAW_RECOVERED_CHILD", type: "text" }] };
                 }
                 if (lastMessage?.role === "toolResult") {
-                    if (lastMessage.toolName === "resume_agent") {
+                    if (lastMessage.toolName === "followup_task") {
                         expect(lastMessage.isError).toBe(false);
                         return {
                             content: [{ text: "PARENT_RESUMED_RESTARTED_CHILD", type: "text" }],
@@ -161,7 +167,7 @@ describe("restarted suspended subagent", () => {
             (snapshot) =>
                 snapshot.text.includes("PARENT_RESUMED_RESTARTED_CHILD") &&
                 snapshot.text.includes('"Restart audit" completed in'),
-            "resume_agent to recover the restarted suspended child",
+            "followup_task to recover the restarted suspended child",
             30_000,
         );
         expect(childRunCount).toBe(2);

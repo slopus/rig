@@ -11,6 +11,7 @@ interface ActiveOutputItem {
     callId?: string;
     execution?: string;
     name?: string;
+    namespace?: string;
     type: "message" | "reasoning" | "function_call" | "custom_tool_call" | "tool_search_call";
     argumentsJson?: string;
     receivedTextDelta?: boolean;
@@ -68,12 +69,18 @@ export async function* mapGrokResponseStream(
                     callId: event.item.call_id,
                     execution: "client",
                     name: event.item.name,
+                    ...(event.item.namespace === undefined
+                        ? {}
+                        : { namespace: event.item.namespace }),
                     argumentsJson: event.item.arguments,
                 });
                 yield {
                     type: "tool_call_start",
                     callId: event.item.call_id,
                     name: event.item.name,
+                    ...(event.item.namespace === undefined
+                        ? {}
+                        : { namespace: event.item.namespace }),
                     vendor: responseToolVendor(options.vendor, "function_call"),
                 };
                 if (event.item.arguments.length > 0) {
@@ -90,12 +97,18 @@ export async function* mapGrokResponseStream(
                     callId: event.item.call_id,
                     execution: "client",
                     name: event.item.name,
+                    ...(event.item.namespace === undefined
+                        ? {}
+                        : { namespace: event.item.namespace }),
                     argumentsJson: event.item.input,
                 });
                 yield {
                     type: "tool_call_start",
                     callId: event.item.call_id,
                     name: event.item.name,
+                    ...(event.item.namespace === undefined
+                        ? {}
+                        : { namespace: event.item.namespace }),
                     vendor: responseToolVendor(options.vendor, "custom_tool_call"),
                 };
                 if (event.item.input.length > 0) {
@@ -218,6 +231,9 @@ export async function* mapGrokResponseStream(
                         type: "tool_call_start",
                         callId: event.item.call_id,
                         name: event.item.name,
+                        ...(event.item.namespace === undefined
+                            ? {}
+                            : { namespace: event.item.namespace }),
                         vendor: responseToolVendor(options.vendor, "function_call"),
                     };
                     if (event.item.arguments.length > 0) {
@@ -231,6 +247,9 @@ export async function* mapGrokResponseStream(
                 toolCalls.push({
                     callId: event.item.call_id,
                     name: event.item.name,
+                    ...(event.item.namespace === undefined
+                        ? {}
+                        : { namespace: event.item.namespace }),
                     arguments: event.item.arguments,
                     vendor: responseToolVendor(options.vendor, "function_call"),
                 });
@@ -250,6 +269,9 @@ export async function* mapGrokResponseStream(
                         type: "tool_call_start",
                         callId: event.item.call_id,
                         name: event.item.name,
+                        ...(event.item.namespace === undefined
+                            ? {}
+                            : { namespace: event.item.namespace }),
                         vendor: responseToolVendor(options.vendor, "custom_tool_call"),
                     };
                     if (event.item.input.length > 0) {
@@ -263,6 +285,9 @@ export async function* mapGrokResponseStream(
                 toolCalls.push({
                     callId: event.item.call_id,
                     name: event.item.name,
+                    ...(event.item.namespace === undefined
+                        ? {}
+                        : { namespace: event.item.namespace }),
                     arguments: event.item.input,
                     vendor: responseToolVendor(options.vendor, "custom_tool_call"),
                 });
@@ -369,6 +394,9 @@ export async function* mapGrokResponseStream(
                 toolCalls.push({
                     callId: activeItem.callId,
                     name: activeItem.name,
+                    ...(activeItem.namespace === undefined
+                        ? {}
+                        : { namespace: activeItem.namespace }),
                     arguments: argumentsJson,
                     vendor: responseToolVendor(options.vendor, vendorType),
                 });

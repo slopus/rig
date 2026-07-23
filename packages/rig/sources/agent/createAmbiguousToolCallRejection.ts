@@ -1,6 +1,6 @@
 import { assistantMessageToAgentMessage } from "./assistantMessageToAgentMessage.js";
 import type { AgentMessage, ToolResultBlock } from "./types.js";
-import type { AssistantContent, AssistantMessage, ToolCall } from "../providers/types.js";
+import type { AssistantContent, AssistantMessage, ToolCall } from "@slopus/rig-execution";
 
 export interface AmbiguousToolCallRejection {
     assistantMessage: AgentMessage;

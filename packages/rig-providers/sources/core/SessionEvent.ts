@@ -17,6 +17,7 @@ export type SessionEvent =
           type: "tool_call_start";
           callId: string;
           name: string;
+          namespace?: string;
           /** Opaque provider metadata to persist with the tool call and its result. */
           vendor?: any;
       }

@@ -3,6 +3,7 @@ import { BaseProvider } from "@/core/BaseProvider.js";
 import type { SessionOptions } from "@/core/SessionOptions.js";
 import type { ClaudeCredential } from "@/vendors/VendorCredential.js";
 import { ClaudeSession, type ClaudeSdkQuery } from "@/vendors/claude/ClaudeSession.js";
+import { resolveClaudeModelId } from "@/vendors/claude/impl/resolveClaudeModelId.js";
 
 export interface ClaudeProviderOptions {
     credential: ClaudeCredential;
@@ -30,7 +31,7 @@ export class ClaudeProvider extends BaseProvider {
         this.credential = options.credential;
         this.cwd = options.cwd;
         this.env = options.env;
-        this.model = options.model;
+        this.model = options.model === undefined ? undefined : resolveClaudeModelId(options.model);
         this.pathToClaudeCodeExecutable = options.pathToClaudeCodeExecutable;
         this.query = options.query;
     }

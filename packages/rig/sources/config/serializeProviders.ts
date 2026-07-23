@@ -35,8 +35,7 @@ function isBuiltInProvider(id: string, provider: Pick<ConfigProvider, "type">): 
         (id === "codex" && provider.type === "codex") ||
         (id === "claude" && provider.type === "claude") ||
         (id === "bedrock" && provider.type === "bedrock") ||
-        (id === "grok" && provider.type === "grok") ||
-        (id === "kimi" && provider.type === "kimi")
+        (id === "grok" && provider.type === "grok")
     );
 }
 
@@ -55,7 +54,7 @@ function serializeProviderFields(provider: PartialConfigProvider): Record<string
             ...(provider.oauthToken === undefined ? {} : { oauth_token: provider.oauthToken }),
         };
     }
-    if (provider.type === "grok" || provider.type === "kimi") {
+    if (provider.type === "grok") {
         return {
             ...(provider.authFile === undefined ? {} : { auth_file: provider.authFile }),
             ...(provider.baseUrl === undefined ? {} : { base_url: provider.baseUrl }),

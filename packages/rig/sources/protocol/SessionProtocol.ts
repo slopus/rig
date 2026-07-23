@@ -5,15 +5,8 @@ import type {
     ContentBlock,
 } from "../agent/index.js";
 import type { Message, UserMessage } from "../agent/types.js";
-import type {
-    Model,
-    ProviderContextCompatibility,
-    ProviderContextCompatibilityKind,
-    ServiceTier,
-    StopReason,
-    Usage,
-} from "../providers/types.js";
-import type { ProviderQuota } from "../providers/providerQuota.js";
+import type { Model, ServiceTier, StopReason, Usage } from "@slopus/rig-execution";
+import type { ProviderModelCompatibilityType, ProviderQuota } from "@slopus/rig-providers";
 import type { PermissionMode } from "../permissions/index.js";
 import type { UserInputRequest, UserInputResponse } from "../user-input/index.js";
 import type { McpServerSummary } from "../mcp/index.js";
@@ -72,11 +65,9 @@ export interface SessionInterruption {
 }
 
 export interface ProviderModelCatalog {
-    contextCompatibility?: ProviderContextCompatibility;
-    contextCompatibilityKind?: ProviderContextCompatibilityKind;
-    contextCompatibilityKeys?: Readonly<Record<string, string>>;
     disabledReason?: "not_authenticated" | "not_enabled" | "no_models";
     providerId: string;
+    providerType?: ProviderModelCompatibilityType;
     models: readonly Model[];
     serviceTiers?: readonly ServiceTier[];
 }

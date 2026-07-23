@@ -33,9 +33,7 @@ export class ClaudeToolBridge {
     }
 
     resolve(message: SessionToolResultMessage): boolean {
-        const index = this.pending.findIndex(
-            (candidate) => candidate.callId === message.callId,
-        );
+        const index = this.pending.findIndex((candidate) => candidate.callId === message.callId);
         if (index < 0) return false;
         const [pending] = this.pending.splice(index, 1);
         if (pending === undefined) return false;

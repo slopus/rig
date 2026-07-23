@@ -5,7 +5,7 @@
 import type { Static, TSchema } from "@sinclair/typebox";
 
 import type { AgentContext } from "./context/AgentContext.js";
-import type { Tool as ProviderTool, Usage } from "../providers/types.js";
+import type { Tool as ExecutorTool, Usage } from "@slopus/rig-execution";
 import type { ToolResultPresentation } from "./ToolResultPresentation.js";
 import type { ToolCallPresentation } from "./ToolCallPresentation.js";
 import type { UserInputResponse } from "../user-input/types.js";
@@ -43,6 +43,8 @@ export interface ToolCallBlock {
     namespace?: string;
     arguments: unknown;
     kind?: "custom" | "function" | "tool_search";
+    /** Opaque provider metadata required to replay this call faithfully. */
+    vendor?: unknown;
     /** Durable model-invisible data defined by the tool for rich transcript rendering. */
     presentation?: ToolCallPresentation;
 }
@@ -69,6 +71,8 @@ export interface ToolResultBlock {
     presentation?: ToolResultPresentation;
     /** Exact user-authored or user-selected content that Auto review may trust. */
     trustedUserEvidence?: readonly ContentBlock[];
+    /** Opaque provider metadata copied from the originating tool call. */
+    vendor?: unknown;
 }
 
 /** Blocks allowed on agent messages. */
@@ -109,6 +113,8 @@ export interface AgentMessage {
     providerId?: string;
     requestedModelId?: string;
     responseModel?: string;
+    /** Ordered opaque provider output items required for native continuation. */
+    responseItems?: readonly string[];
     /** Durable model context that must never be presented as transcript content. */
     internal?: true;
 }
@@ -135,16 +141,6 @@ export interface ToolExecutionOptions {
     toolBatchId?: string;
     toolCallId?: string;
     toolCallIndex?: number;
-    /** Re-enters Rig's normal tool pipeline for an orchestration runtime such as Code Mode. */
-    invokeTool?: (invocation: NestedToolInvocation) => Promise<unknown>;
-}
-
-export interface NestedToolInvocation {
-    arguments: unknown;
-    name: string;
-    namespace?: string;
-    signal?: AbortSignal;
-    toolCallId: string;
 }
 
 export type AutoPermissionPredicate<TArgs> = (
@@ -154,11 +150,9 @@ export type AutoPermissionPredicate<TArgs> = (
 
 export type AutoPermissionActionDescriber<TArgs> = (args: TArgs, context: AgentContext) => string;
 
-export interface CodeModeToolDefinition {
-    exposure?: "direct" | "nested";
-    kind?: "freeform" | "function";
-    namespace?: string;
-    toArguments?: (input: unknown) => unknown;
+export interface ToolNamespace {
+    name: string;
+    description: string;
 }
 
 export interface DefinedTool<
@@ -168,10 +162,14 @@ export interface DefinedTool<
     name: string;
     label: string;
     description: string;
+    /** Optional complete search text used instead of metadata-derived tool search text. */
+    searchText?: string;
     /** Exact provider-facing definition when JSON-schema function calling cannot represent it. */
-    providerTool?: ProviderTool;
-    /** Provider-neutral metadata for exposing this tool inside a code orchestration runtime. */
-    codeMode?: CodeModeToolDefinition;
+    executorTool?: ExecutorTool;
+    /** Converts provider-facing custom-tool arguments into this tool's typed arguments. */
+    parseExecutorToolArguments?: (argumentsValue: unknown) => unknown;
+    /** Provider-facing namespace containing this tool. */
+    namespace?: ToolNamespace;
     arguments: TArgsSchema;
     returnType: TReturnSchema;
     /** Durable tools form a barrier after immediate calls in the same model batch. */
@@ -219,8 +217,11 @@ export interface AnyDefinedTool {
     name: string;
     label: string;
     description: string;
-    providerTool?: ProviderTool;
-    codeMode?: CodeModeToolDefinition;
+    /** Optional complete search text used instead of metadata-derived tool search text. */
+    searchText?: string;
+    executorTool?: ExecutorTool;
+    parseExecutorToolArguments?: (argumentsValue: unknown) => unknown;
+    namespace?: ToolNamespace;
     arguments: TSchema;
     returnType: TSchema;
     execution: "immediate" | "durable";
@@ -263,8 +264,11 @@ export function defineTool<
     name: string;
     label: string;
     description: string;
-    providerTool?: ProviderTool;
-    codeMode?: CodeModeToolDefinition;
+    /** Optional complete search text used instead of metadata-derived tool search text. */
+    searchText?: string;
+    executorTool?: ExecutorTool;
+    parseExecutorToolArguments?: (argumentsValue: unknown) => unknown;
+    namespace?: ToolNamespace;
     arguments: TArgsSchema;
     returnType: TReturnSchema;
     execute: (

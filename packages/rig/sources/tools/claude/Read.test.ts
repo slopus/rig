@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createJustBashToolHarness } from "../testing/createJustBashToolHarness.js";
-import { claudeReadTool } from "./Read.js";
+import { claudeReadTool } from "../../agent/tools/claude/Read.js";
 
 describe("Claude Code Read tool", () => {
     it("returns numbered text", async () => {

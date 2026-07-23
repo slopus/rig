@@ -1,4 +1,4 @@
-import { requestAnthropicMessage } from "../../../providers/requestAnthropicMessage.js";
+import { requestAnthropicMessage } from "../../../executor/requestAnthropicMessage.js";
 import { makeWebFetchModelPrompt } from "./makeWebFetchModelPrompt.js";
 
 export const MAX_WEB_FETCH_MARKDOWN_LENGTH = 100_000;

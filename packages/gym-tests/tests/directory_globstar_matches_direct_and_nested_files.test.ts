@@ -42,7 +42,7 @@ describe("directory globstar matching", () => {
                 globResult = messageText(lastMessage);
                 return { content: [{ text: "DIRECT_GLOBSTAR_VERIFIED", type: "text" }] };
             },
-            modelId: "anthropic/sonnet-4-6",
+            modelId: "anthropic/sonnet-5",
             providerId: "claude",
             providerOverrides: ["claude"],
         });

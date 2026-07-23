@@ -6,18 +6,19 @@ import {
 } from "./compaction/compactConversation.js";
 import type { AgentContext } from "./context/AgentContext.js";
 import { runAgentLoop, type AgentLoopEvent, type AgentLoopResult } from "./loop.js";
-import { toProviderMessages, toProviderTool } from "./loop.js";
+import { toProviderMessages } from "./loop.js";
+import { toExecutorTool } from "./tools/toExecutorTool.js";
 import { createProviderPrompt } from "./createProviderPrompt.js";
 import { prepareProviderMessageImages } from "./prepareProviderMessageImages.js";
 import { createDebugProvider, type DebugLog } from "../debug/index.js";
 import { printAgentMessageToConsole, type AgentConsole } from "./printAgentMessageToConsole.js";
 import type { AnyDefinedTool, ContentBlock, Message, SystemMessage, UserMessage } from "./types.js";
-import type { Context, Model, Provider, ServiceTier } from "../providers/types.js";
-import { toLocalDate } from "../providers/toLocalDate.js";
+import type { Context, Model, Provider, ServiceTier } from "@slopus/rig-execution";
+import { toLocalDate } from "../executor/toLocalDate.js";
 import type { PermissionMode } from "../permissions/index.js";
 import { isPermissionReduction } from "../permissions/index.js";
 import type { DurableSkillDefinition } from "../external-skills/types.js";
-import type { AgentToolAdapter } from "./AgentToolAdapter.js";
+import { resolveModelImageProfile } from "./resolveModelImageProfile.js";
 
 export type AgentStatus = "idle" | "running" | "aborted";
 
@@ -67,7 +68,6 @@ export interface AgentOptions {
     durableSkills?: readonly DurableSkillDefinition[];
     /** Selects default tools without coupling the generic agent to provider tool registries. */
     toolSelector?: AgentToolSelector;
-    toolAdapter?: AgentToolAdapter;
     idFactory?: () => string;
     now?: () => number;
     console?: AgentConsole;
@@ -113,7 +113,6 @@ export class Agent {
     #tools: readonly AnyDefinedTool[];
     #durableSkills: readonly DurableSkillDefinition[];
     #toolSelector: AgentToolSelector | undefined;
-    #toolAdapter: AgentToolAdapter | undefined;
     #usesExplicitTools: boolean;
     #idFactory: () => string;
     #now: () => number;
@@ -143,7 +142,6 @@ export class Agent {
         this.#instructions = options.instructions;
         this.#systemPrompt = options.systemPrompt;
         this.#toolSelector = options.toolSelector;
-        this.#toolAdapter = options.toolAdapter;
         this.#usesExplicitTools = options.tools !== undefined;
         this.#tools =
             options.tools ??
@@ -263,14 +261,13 @@ export class Agent {
         if (this.#activeRunId === undefined) this.#steeringController = new AbortController();
         this.#lastRunId = undefined;
         this.#resetVersion += 1;
-        await this.#toolAdapter?.reset?.();
         if (this.#activeRunId === undefined) {
             this.#status = "idle";
         }
     }
 
     async close(): Promise<void> {
-        await Promise.all([this.#toolAdapter?.close?.(), this.provider.close?.()]);
+        await this.provider.close?.();
     }
 
     addSteering(text: string): SystemMessage {
@@ -412,14 +409,10 @@ export class Agent {
             }
 
             let contextCompactedDuringRun = false;
-            const adaptedTools = this.#toolAdapter?.adapt(this.#tools);
             const loopOptions: Parameters<typeof runAgentLoop>[0] = {
                 provider,
                 modelId: this.#model.id,
-                tools: adaptedTools?.exposedTools ?? this.#tools,
-                ...(adaptedTools === undefined
-                    ? {}
-                    : { nestedTools: adaptedTools.nestedTools, promptTools: this.#tools }),
+                tools: this.#tools,
                 messages: this.#messages,
                 sessionId: runId,
                 startDate: this.#startDate,
@@ -640,11 +633,9 @@ export class Agent {
                     });
                     const preparedMessages = await prepareProviderMessageImages(
                         providerMessages,
-                        (options.provider ?? this.provider).imageProfile(this.#model),
+                        resolveModelImageProfile(this.#model),
                     );
-                    const exposedTools =
-                        this.#toolAdapter?.adapt(this.#tools).exposedTools ?? this.#tools;
-                    const providerTools = exposedTools.map(toProviderTool);
+                    const providerTools = this.#tools.map(toExecutorTool);
                     return {
                         ...providerPrompt,
                         messages: preparedMessages,

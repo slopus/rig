@@ -1,4 +1,4 @@
-import type { AssistantMessageEvent } from "../providers/types.js";
+import type { AssistantMessageEvent } from "@slopus/rig-execution";
 
 export function hasResponseContentBegun(event: AssistantMessageEvent): boolean {
     if (

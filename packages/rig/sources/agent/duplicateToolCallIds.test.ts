@@ -11,7 +11,7 @@ import {
     type AssistantMessageEvent,
     type Context,
     type InferenceStream,
-} from "../providers/types.js";
+} from "@slopus/rig-execution";
 
 describe("duplicate tool call identifiers", () => {
     it("rejects an identifier that was already used by an earlier turn", async () => {

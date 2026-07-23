@@ -86,7 +86,6 @@ enabled = true
                 claude: { enabled: false, executable: "/opt/claude", type: "claude" },
                 codex: { enabled: true, transport: "sse", type: "codex" },
                 grok: { enabled: true, type: "grok" },
-                kimi: { enabled: false, type: "kimi" },
             });
         } finally {
             await rm(root, { recursive: true, force: true });
@@ -212,11 +211,6 @@ type = "grok"
 auth_file = "/Users/me/.grok-work/auth.json"
 base_url = "https://grok.example/v1"
 
-[providers.work_kimi]
-type = "kimi"
-auth_file = "/Users/me/.kimi-work/credentials/kimi-code.json"
-base_url = "https://kimi.example/coding/v1"
-
 [providers.eu_bedrock]
 type = "bedrock"
 region = "eu-west-1"
@@ -258,18 +252,13 @@ bearer_token_env_var = "WORK_BEDROCK_TOKEN"
                     baseUrl: "https://grok.example/v1",
                     type: "grok",
                 },
-                work_kimi: {
-                    authFile: "/Users/me/.kimi-work/credentials/kimi-code.json",
-                    baseUrl: "https://kimi.example/coding/v1",
-                    type: "kimi",
-                },
             },
         });
     });
 
     it("requires a type for custom providers and rejects parameters from another type", () => {
         expect(() => parseConfigToml("[providers.work]\nenabled = true\n")).toThrow(
-            'Provider "work" must set type to "codex", "claude", "grok", "kimi", or "bedrock".',
+            'Provider "work" must set type to "codex", "claude", "grok", or "bedrock".',
         );
         expect(() =>
             parseConfigToml('[providers.work]\ntype = "codex"\nconfig_dir = "/tmp/work"\n'),
@@ -489,7 +478,6 @@ effort = "minimal"
                 claude: { enabled: true, type: "claude" },
                 codex: { enabled: true, type: "codex" },
                 grok: { enabled: true, type: "grok" },
-                kimi: { enabled: true, type: "kimi" },
             });
             expect(loaded.config.docker).toEqual({
                 container: "trusted-development-container",
@@ -697,12 +685,6 @@ effort = "minimal"
                     enabled: true,
                     type: "grok" as const,
                 },
-                work_kimi: {
-                    authFile: "/Users/me/.kimi-work/credentials/kimi-code.json",
-                    baseUrl: "https://kimi.example/coding/v1",
-                    enabled: true,
-                    type: "kimi" as const,
-                },
             };
 
             await writeRuntimeConfig(runtimePath, { providers });
@@ -713,7 +695,6 @@ effort = "minimal"
             expect(source).toContain("[providers.work_claude]");
             expect(source).toContain('oauth_token = "claude-work-token"');
             expect(source).toContain("[providers.work_grok]");
-            expect(source).toContain("[providers.work_kimi]");
             expect(source).not.toContain("parameters");
             expect(parseConfigToml(source)).toEqual({ providers });
         } finally {

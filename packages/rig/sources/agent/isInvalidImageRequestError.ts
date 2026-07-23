@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "../providers/types.js";
+import type { AssistantMessage } from "@slopus/rig-execution";
 
 export function isInvalidImageRequestError(value: unknown): boolean {
     if (

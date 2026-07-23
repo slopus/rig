@@ -56,7 +56,7 @@ describe("glob directory symlink handling", () => {
                 globResult = messageText(lastMessage);
                 return { content: [{ text: "SYMLINK_CYCLE_IGNORED", type: "text" }] };
             },
-            modelId: "anthropic/sonnet-4-6",
+            modelId: "anthropic/sonnet-5",
             providerId: "claude",
             providerOverrides: ["claude"],
         });

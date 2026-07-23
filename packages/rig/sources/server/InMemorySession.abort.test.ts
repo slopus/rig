@@ -15,7 +15,7 @@ import {
     type AssistantMessage,
     type Context,
     type InferenceStream,
-} from "../providers/types.js";
+} from "@slopus/rig-execution";
 import { InMemorySession } from "./InMemorySession.js";
 import type { AgentSessionManager } from "./AgentSessionManager.js";
 import { TrackedTaskDrain } from "./TrackedTaskDrain.js";
@@ -719,7 +719,7 @@ function createRuntime(
         context,
         cwd: options.cwd,
         processManager,
-        provider,
+        executor: provider,
     };
 }
 

@@ -1,4 +1,4 @@
-import type { Usage } from "../../providers/types.js";
+import type { Usage } from "@slopus/rig-execution";
 
 export interface AttributedSessionUsageGroup {
     kind: "attributed";

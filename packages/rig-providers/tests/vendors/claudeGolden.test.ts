@@ -9,6 +9,8 @@ import type { SessionMessage, SessionToolCall } from "@/core/SessionContext.js";
 import type { SessionEvent } from "@/core/SessionEvent.js";
 import { ClaudeAuthTokenCredential } from "@/vendors/claude/ClaudeAuthTokenCredential.js";
 import { ClaudeSession } from "@/vendors/claude/ClaudeSession.js";
+import { resolveClaudeModelId } from "@/vendors/claude/impl/resolveClaudeModelId.js";
+import { createClaudeTestInstructions } from "./createClaudeTestInstructions.js";
 
 describe("Claude provider golden", () => {
     it("anchors the provider scenario to the real Claude CLI capture", async () => {
@@ -74,21 +76,44 @@ describe("Claude provider golden", () => {
             authToken: "golden-token",
         });
         if (credential === null) throw new Error("Expected a Claude test credential.");
+        const providerEnv = {
+            ...process.env,
+            ANTHROPIC_API_KEY: "must-be-cleared",
+            CLAUDE_CODE_OAUTH_TOKEN: "must-also-be-cleared",
+            ANTHROPIC_BASE_URL: `http://127.0.0.1:${address.port}`,
+            CLAUDE_CODE_OVERRIDE_DATE: "2000-01-01",
+            TZ: "UTC",
+        };
         const session = new ClaudeSession("<SESSION_ID>", {
             context: {
-                instructions:
-                    "This is a deterministic provider trace. Follow exact reply and tool instructions.",
+                instructions: createClaudeTestInstructions(golden.scenario.initialModel, {
+                    cwd,
+                    env: providerEnv,
+                }),
                 messages: [],
             },
             credential,
             cwd,
-            env: {
-                ...process.env,
-                ANTHROPIC_API_KEY: "must-be-cleared",
-                CLAUDE_CODE_OAUTH_TOKEN: "must-also-be-cleared",
-                ANTHROPIC_BASE_URL: `http://127.0.0.1:${address.port}`,
-                CLAUDE_CODE_OVERRIDE_DATE: "2000-01-01",
-                TZ: "UTC",
+            env: providerEnv,
+            modelConfigurations: {
+                [resolveClaudeModelId(golden.scenario.initialModel)]: {
+                    context: {
+                        instructions: createClaudeTestInstructions(golden.scenario.initialModel, {
+                            cwd,
+                            env: providerEnv,
+                        }),
+                        messages: [],
+                    },
+                },
+                [resolveClaudeModelId(golden.scenario.switchedModel)]: {
+                    context: {
+                        instructions: createClaudeTestInstructions(golden.scenario.switchedModel, {
+                            cwd,
+                            env: providerEnv,
+                        }),
+                        messages: [],
+                    },
+                },
             },
             model: golden.scenario.initialModel,
             skills: [

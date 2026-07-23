@@ -5,7 +5,7 @@ import type { CodingAssistantRuntime } from "../runtime/CodingAssistantRuntime.j
 import type { CreateCodingAssistantAgentOptions } from "../runtime/createCodingAssistantAgent.js";
 import { NativeProcessManager } from "../processes/index.js";
 import { createEventIdFactory } from "../protocol/index.js";
-import { defineModel, defineProvider, type InferenceStream } from "../providers/types.js";
+import { defineModel, defineProvider, type InferenceStream } from "@slopus/rig-execution";
 import { InMemorySession } from "./InMemorySession.js";
 
 describe("InMemorySession reset", () => {
@@ -137,7 +137,7 @@ function createRuntime(
         context,
         cwd: options.cwd,
         processManager,
-        provider,
+        executor: provider,
     };
 }
 

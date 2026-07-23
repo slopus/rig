@@ -3,7 +3,7 @@ import { requestCompactionSummary } from "./requestCompactionSummary.js";
 import { resolveAutoCompactThreshold } from "./resolveAutoCompactThreshold.js";
 import { resolveAutoCompactWindow } from "./resolveAutoCompactWindow.js";
 import type { Message, UserMessage } from "../types.js";
-import type { Context, Model, Provider, ServiceTier } from "../../providers/types.js";
+import type { Context, Model, Provider, ServiceTier } from "@slopus/rig-execution";
 
 const RETAINED_CONTEXT_FRACTION = 0.1;
 

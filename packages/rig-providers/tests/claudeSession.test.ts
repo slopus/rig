@@ -15,7 +15,7 @@ describe("ClaudeSession", () => {
             credential,
             cwd: "/tmp/rig-claude-retry-test",
             model: "sonnet[1m]",
-            query: ((() => {
+            query: (() => {
                 async function* messages() {
                     yield {
                         type: "system",
@@ -32,7 +32,7 @@ describe("ClaudeSession", () => {
                 }
                 const generator = messages();
                 return Object.assign(generator, { close: () => {} });
-            }) as unknown) as ClaudeSdkQuery,
+            }) as unknown as ClaudeSdkQuery,
             skills: [],
             tools: [],
         });
@@ -65,9 +65,8 @@ describe("ClaudeSession", () => {
                         sessionId: parameters.options.resume ?? "tool-result-session",
                     });
                     if (typeof parameters.prompt !== "string") {
-                        capturedPrompt = (
-                            await parameters.prompt[Symbol.asyncIterator]().next()
-                        ).value;
+                        capturedPrompt = (await parameters.prompt[Symbol.asyncIterator]().next())
+                            .value;
                     }
                     yield* fakeQuery("TOOL_OK");
                 }
@@ -142,9 +141,7 @@ describe("ClaudeSession", () => {
                     context: { messages: [{ role: "user", content: "Hello." }] },
                 }),
             ),
-        ).rejects.toThrow(
-            "SDK construction failed.",
-        );
+        ).rejects.toThrow("SDK construction failed.");
         expect(addAbortListener).toHaveBeenCalledOnce();
         expect(removeAbortListener).toHaveBeenCalledOnce();
     });

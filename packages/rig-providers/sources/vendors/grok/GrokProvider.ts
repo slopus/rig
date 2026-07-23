@@ -4,6 +4,7 @@ import { ResponsesProvider } from "@/responses/ResponsesProvider.js";
 import { assertGrokCredential } from "@/vendors/grok/impl/assertGrokCredential.js";
 import { GROK_DEFAULT_ENDPOINT } from "@/vendors/grok/impl/grokConstants.js";
 import { GrokSession } from "@/vendors/grok/GrokSession.js";
+import { resolveGrokModelId } from "@/vendors/grok/impl/resolveGrokModelId.js";
 import type { GrokCredential } from "@/vendors/VendorCredential.js";
 
 export interface GrokProviderOptions {
@@ -27,7 +28,7 @@ export class GrokProvider extends ResponsesProvider {
         this.credential = options.credential;
         const endpoint = options.endpoint?.trim();
         this.endpoint = endpoint && endpoint.length > 0 ? endpoint : GROK_DEFAULT_ENDPOINT;
-        this.model = options.model;
+        this.model = options.model === undefined ? undefined : resolveGrokModelId(options.model);
     }
 
     override async session(id: string, options: SessionOptions): Promise<GrokSession> {

@@ -10,24 +10,22 @@ afterEach(async () => {
 });
 
 describe("follow-up tools across provider profiles", () => {
-    it("gives Codex, Claude, Grok, Kimi, and Pi a retained-subagent follow-up tool", async () => {
+    it("gives Codex, Claude, Grok, and Bedrock a retained-subagent follow-up tool", async () => {
         const verifiedProviders = new Set<string>();
+        const observedTools = new Map<string, readonly string[]>();
         let parentStarted = false;
         const gym = await createGym({
             environment: {
                 ANTHROPIC_API_KEY: "claude-test-key",
                 AWS_BEARER_TOKEN_BEDROCK: "bedrock-test-token",
                 AWS_REGION: "us-east-1",
-                KIMI_API_KEY: "kimi-test-key",
-                RIG_GYM_PROVIDER_OVERRIDES: "bedrock,claude,grok,kimi",
+                RIG_GYM_PROVIDER_OVERRIDES: "bedrock,claude,grok",
                 XAI_API_KEY: "grok-test-key",
             },
             inference(request) {
                 const tools = request.context.tools?.map((tool) => tool.name) ?? [];
                 if (request.providerId !== "gym") {
-                    const expectedTool =
-                        request.providerId === "grok" ? "followup_subagent" : "SendMessage";
-                    expect(tools).toContain(expectedTool);
+                    observedTools.set(request.providerId, tools);
                     verifiedProviders.add(request.providerId);
                     return {
                         content: [
@@ -49,10 +47,9 @@ describe("follow-up tools across provider profiles", () => {
                     parentStarted = true;
                     return {
                         content: [
-                            spawnCall("claude", "anthropic/sonnet-4-6", "high"),
+                            spawnCall("claude", "anthropic/sonnet-5", "high"),
                             spawnCall("grok", "xai/grok-4.5", "high"),
-                            spawnCall("kimi", "moonshot/kimi-k3", "max"),
-                            spawnCall("bedrock", "zai/glm-5", "max"),
+                            spawnCall("bedrock", "openai/gpt-5.6-sol", "high"),
                         ],
                     };
                 }
@@ -78,7 +75,10 @@ describe("follow-up tools across provider profiles", () => {
             "every provider profile to receive its follow-up tool",
             30_000,
         );
-        expect([...verifiedProviders].sort()).toEqual(["bedrock", "claude", "grok", "kimi"]);
+        expect([...verifiedProviders].sort()).toEqual(["bedrock", "claude", "grok"]);
+        expect(observedTools.get("claude")).toContain("SendMessage");
+        expect(observedTools.get("grok")).toContain("followup_subagent");
+        expect(observedTools.get("bedrock")).toContain("tool_search");
         expect(completed.text).not.toContain("Tool 'spawn_agent' failed");
     }, 120_000);
 });

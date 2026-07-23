@@ -1,7 +1,3 @@
-import { delayBeforeInferenceRetry } from "../delayBeforeInferenceRetry.js";
-import { hasResponseContentBegun } from "../hasResponseContentBegun.js";
-import { INFERENCE_MAX_RETRIES } from "../inferenceRetryPolicy.js";
-import { isRetryableInferenceError } from "../isRetryableInferenceError.js";
 import { selectCompactionSystemPromptForModel } from "./selectCompactionSystemPromptForModel.js";
 import type {
     AssistantMessage,
@@ -10,8 +6,9 @@ import type {
     Provider,
     ServiceTier,
     StreamOptions,
-} from "../../providers/types.js";
-import { toLocalDate } from "../../providers/toLocalDate.js";
+} from "@slopus/rig-execution";
+import { Executor } from "@slopus/rig-execution";
+import { toLocalDate } from "../../executor/toLocalDate.js";
 
 export async function requestCompactionSummary(options: {
     provider: Provider;
@@ -35,55 +32,34 @@ export async function requestCompactionSummary(options: {
     if (options.signal !== undefined) streamOptions.signal = options.signal;
 
     const prompt = selectCompactionSystemPromptForModel(options.model);
+    if (options.provider instanceof Executor && options.provider.hasActiveSession) {
+        const result = await options.provider.compact({
+            instructions: prompt,
+            ...(options.signal === undefined ? {} : { signal: options.signal }),
+        });
+        if (result.status === "cancelled") {
+            throw new Error("Conversation compaction was stopped.");
+        }
+        if (result.status === "failed") throw new Error(result.message);
+        const summary = result.summary?.trim() || result.compaction?.content.trim();
+        if (summary === undefined || summary.length === 0) {
+            throw new Error("The model returned an empty conversation summary.");
+        }
+        return summary;
+    }
     const timestamp = options.now();
     const context: Context = {
         ...options.context,
         messages: [...options.context.messages, { role: "user", content: prompt, timestamp }],
     };
 
-    let response: AssistantMessage;
-    let retryCount = 0;
-    for (;;) {
-        let responseContentBegun = false;
-        try {
-            const stream =
-                options.provider.compact?.(options.model, options.context, {
-                    ...streamOptions,
-                    prompt,
-                    timestamp,
-                }) ?? options.provider.stream(options.model, context, streamOptions);
-            for await (const event of stream) {
-                if (hasResponseContentBegun(event)) responseContentBegun = true;
-                if (options.signal?.aborted) {
-                    throw new Error("Conversation compaction was stopped.");
-                }
-            }
-            response = await stream.result();
-        } catch (error) {
-            if (
-                !responseContentBegun &&
-                retryCount < INFERENCE_MAX_RETRIES &&
-                isRetryableInferenceError(error)
-            ) {
-                retryCount += 1;
-                await delayBeforeInferenceRetry(retryCount, options.signal);
-                continue;
-            }
-            throw error;
+    const stream = options.provider.stream(options.model, context, streamOptions);
+    for await (const _event of stream) {
+        if (options.signal?.aborted) {
+            throw new Error("Conversation compaction was stopped.");
         }
-
-        if (
-            !responseContentBegun &&
-            response.stopReason === "error" &&
-            retryCount < INFERENCE_MAX_RETRIES &&
-            isRetryableInferenceError(response)
-        ) {
-            retryCount += 1;
-            await delayBeforeInferenceRetry(retryCount, options.signal);
-            continue;
-        }
-        break;
     }
+    const response: AssistantMessage = await stream.result();
 
     if (response.stopReason === "aborted") {
         throw new Error("Conversation compaction was stopped.");

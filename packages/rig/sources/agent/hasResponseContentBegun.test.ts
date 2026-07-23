@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { hasResponseContentBegun } from "./hasResponseContentBegun.js";
-import type { AssistantMessageEvent } from "../providers/types.js";
+import type { AssistantMessageEvent } from "@slopus/rig-execution";
 
 describe("hasResponseContentBegun", () => {
     it.each([

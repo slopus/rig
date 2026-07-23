@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { createJustBashToolHarness } from "../testing/createJustBashToolHarness.js";
-import { claudeEditTool } from "./Edit.js";
-import { claudeReadTool } from "./Read.js";
+import { claudeEditTool } from "../../agent/tools/claude/Edit.js";
+import { claudeReadTool } from "../../agent/tools/claude/Read.js";
 
 describe("Claude Code Edit tool", () => {
     it("remains strict about exact text", async () => {

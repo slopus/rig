@@ -3,12 +3,10 @@ import { describe, expect, it } from "vitest";
 import { NativeProcessManager } from "../processes/index.js";
 import {
     modelAnthropicFable5,
-    modelMoonshotKimiK3,
     modelOpenaiGpt56Sol,
-    modelZaiGlm5,
     modelXaiGrok45,
     modelXaiGrokBuild,
-} from "../providers/models.js";
+} from "@slopus/rig-execution";
 import { createCodingAssistantAgent } from "./createCodingAssistantAgent.js";
 
 describe("createCodingAssistantAgent", () => {
@@ -25,7 +23,7 @@ describe("createCodingAssistantAgent", () => {
 
         expect(runtime.cwd).toBe(cwd);
         expect(runtime.processManager).toBe(processManager);
-        expect(runtime.provider.id).toBe("codex");
+        expect(runtime.executor.id).toBe("codex");
         expect(runtime.agent.model.id).toBe(modelOpenaiGpt56Sol.id);
         expect(runtime.context.fs.cwd).toBe(cwd);
         expect(runtime.context.bash.cwd).toBe(cwd);
@@ -60,7 +58,7 @@ describe("createCodingAssistantAgent", () => {
             processManager,
         });
 
-        expect(runtime.provider.id).toBe("claude");
+        expect(runtime.executor.id).toBe("claude");
         expect(runtime.agent.model.id).toBe(modelAnthropicFable5.id);
         expect(runtime.agent.tools.map((tool) => tool.name)).toEqual([
             "TaskOutput",
@@ -88,7 +86,7 @@ describe("createCodingAssistantAgent", () => {
             modelId: modelXaiGrokBuild.id,
         });
 
-        expect(runtime.provider.id).toBe("grok");
+        expect(runtime.executor.id).toBe("grok");
         expect(runtime.agent.model).toEqual(modelXaiGrokBuild);
         expect(runtime.agent.tools.map((tool) => tool.name)).toEqual([
             "run_terminal_command",
@@ -108,69 +106,9 @@ describe("createCodingAssistantAgent", () => {
             modelId: modelXaiGrok45.id,
         });
 
-        expect(runtime.provider.id).toBe("grok");
+        expect(runtime.executor.id).toBe("grok");
         expect(runtime.agent.model).toEqual(modelXaiGrok45);
         expect(runtime.agent.tools.map((tool) => tool.name)).toContain("run_terminal_command");
-    });
-
-    it("adds X search when an enabled Grok provider can run Grok 4.5", () => {
-        const runtime = createCodingAssistantAgent({
-            cwd: "/tmp/rig-app-test",
-            env: { XAI_API_KEY: "xai-test-key" },
-            providers: {
-                codex: { enabled: true, type: "codex" },
-                grok: { enabled: true, type: "grok" },
-            },
-        });
-
-        expect(runtime.agent.tools.map((tool) => tool.name)).toContain("x_search");
-    });
-
-    it("omits X search when Grok is disabled or Grok 4.5 is filtered out", () => {
-        const disabled = createCodingAssistantAgent({
-            cwd: "/tmp/rig-app-test",
-            providers: {
-                codex: { enabled: true, type: "codex" },
-                grok: { enabled: false, type: "grok" },
-            },
-        });
-        const filtered = createCodingAssistantAgent({
-            cwd: "/tmp/rig-app-test",
-            env: { XAI_API_KEY: "xai-test-key" },
-            providers: {
-                codex: { enabled: true, type: "codex" },
-                grok: {
-                    enabled: true,
-                    includeModels: [modelXaiGrokBuild.id],
-                    type: "grok",
-                },
-            },
-        });
-
-        expect(disabled.agent.tools.map((tool) => tool.name)).not.toContain("x_search");
-        expect(filtered.agent.tools.map((tool) => tool.name)).not.toContain("x_search");
-    });
-
-    it("uses an eligible named Grok provider when the default filters out Grok 4.5", () => {
-        const runtime = createCodingAssistantAgent({
-            cwd: "/tmp/rig-app-test",
-            env: { XAI_API_KEY: "xai-test-key" },
-            providers: {
-                codex: { enabled: true, type: "codex" },
-                grok: {
-                    enabled: true,
-                    includeModels: [modelXaiGrokBuild.id],
-                    type: "grok",
-                },
-                research_grok: {
-                    enabled: true,
-                    includeModels: [modelXaiGrok45.id],
-                    type: "grok",
-                },
-            },
-        });
-
-        expect(runtime.agent.tools.map((tool) => tool.name)).toContain("x_search");
     });
 
     it("creates agents for named provider instances and applies their model filters", () => {
@@ -202,10 +140,10 @@ describe("createCodingAssistantAgent", () => {
             providers,
         });
 
-        expect(codex.provider.id).toBe("work_codex");
-        expect(codex.provider.models).toEqual([modelOpenaiGpt56Sol]);
-        expect(claude.provider.id).toBe("work_claude");
-        expect(claude.provider.models).toEqual([modelAnthropicFable5]);
+        expect(codex.executor.id).toBe("work_codex");
+        expect(codex.executor.models).toEqual([modelOpenaiGpt56Sol]);
+        expect(claude.executor.id).toBe("work_claude");
+        expect(claude.executor.models).toEqual([modelAnthropicFable5]);
     });
 
     it("rejects disabled provider instances", () => {
@@ -277,7 +215,7 @@ describe("createCodingAssistantAgent", () => {
             },
         });
 
-        expect(runtime.provider.models.map((model) => model.id)).toContain(modelOpenaiGpt56Sol.id);
+        expect(runtime.executor.models.map((model) => model.id)).toContain(modelOpenaiGpt56Sol.id);
     });
 
     it("allows a Bedrock endpoint override to bypass regional availability", () => {
@@ -301,7 +239,7 @@ describe("createCodingAssistantAgent", () => {
             },
         });
 
-        expect(runtime.provider.models.map((model) => model.id)).toContain(modelOpenaiGpt56Sol.id);
+        expect(runtime.executor.models.map((model) => model.id)).toContain(modelOpenaiGpt56Sol.id);
     });
 
     it("adds provider-neutral goal tools when the session supports goals", () => {
@@ -326,7 +264,7 @@ describe("createCodingAssistantAgent", () => {
         );
     });
 
-    it("keeps Rig extensions out of Codex's reserved collaboration namespace", () => {
+    it("assembles a flat Codex tool list", () => {
         const runtime = createCodingAssistantAgent({
             cwd: "/tmp/rig-app-test",
             modelId: modelOpenaiGpt56Sol.id,
@@ -341,9 +279,6 @@ describe("createCodingAssistantAgent", () => {
                 },
                 list: () => [],
                 maxDepth: 3,
-                resume: () => {
-                    throw new Error("not used");
-                },
                 spawn: async () => {
                     throw new Error("not used");
                 },
@@ -359,33 +294,31 @@ describe("createCodingAssistantAgent", () => {
             },
         });
 
+        expect(runtime.agent.tools.map((tool) => tool.name)).toEqual(
+            expect.arrayContaining([
+                "workflow",
+                "wait_for_workflow",
+                "workflow_status",
+                "stop_workflow",
+                "spawn_agent",
+                "followup_task",
+                "send_message",
+                "wait_agent",
+                "list_agents",
+                "interrupt_agent",
+            ]),
+        );
         expect(
             runtime.agent.tools
-                .filter((tool) => tool.codeMode?.namespace === "collaboration")
+                .filter((tool) => tool.namespace?.name === "collaboration")
                 .map((tool) => tool.name),
         ).toEqual([
+            "spawn_agent",
             "followup_task",
-            "interrupt_agent",
-            "list_agents",
             "send_message",
-            "spawn_agent",
-            "wait_agent",
-        ]);
-        expect(
-            runtime.agent.tools
-                .filter((tool) => tool.codeMode?.namespace === "rig")
-                .map((tool) => tool.name),
-        ).toEqual([
-            "workflow",
-            "wait_for_workflow",
-            "workflow_status",
-            "stop_workflow",
-            "spawn_agent",
-            "followup_task",
             "wait_agent",
             "list_agents",
             "interrupt_agent",
-            "resume_agent",
         ]);
     });
 
@@ -407,9 +340,6 @@ describe("createCodingAssistantAgent", () => {
             },
             list: () => [],
             maxDepth: 3,
-            resume: () => {
-                throw new Error("not used");
-            },
             spawn,
             wait: async () => ({ agents: [], timedOut: false }),
         };
@@ -431,46 +361,18 @@ describe("createCodingAssistantAgent", () => {
             subagents: { ...controls, canSpawn: false, depth: 3 },
         });
 
-        expect(
-            parent.agent.tools
-                .filter((tool) => tool.codeMode?.namespace === undefined)
-                .map((tool) => tool.name),
-        ).toEqual([
-            "exec_command",
-            "write_stdin",
-            "apply_patch",
-            "view_image",
-            "update_plan",
-            "request_user_input",
-        ]);
-        expect(
-            parent.agent.tools
-                .filter((tool) => tool.codeMode?.namespace === "collaboration")
-                .map((tool) => tool.name),
-        ).toEqual([
-            "followup_task",
-            "interrupt_agent",
-            "list_agents",
-            "send_message",
-            "spawn_agent",
-            "wait_agent",
-        ]);
-        expect(
-            parent.agent.tools
-                .filter((tool) => tool.codeMode?.namespace === "rig")
-                .map((tool) => tool.name),
-        ).toEqual([
-            "workflow",
-            "wait_for_workflow",
-            "workflow_status",
-            "stop_workflow",
-            "spawn_agent",
-            "followup_task",
-            "wait_agent",
-            "list_agents",
-            "interrupt_agent",
-            "resume_agent",
-        ]);
+        expect(parent.agent.tools.map((tool) => tool.name)).toEqual(
+            expect.arrayContaining([
+                "exec_command",
+                "write_stdin",
+                "update_plan",
+                "request_user_input",
+                "apply_patch",
+                "view_image",
+                "workflow",
+                "spawn_agent",
+            ]),
+        );
         expect(deepest.agent.tools.map((tool) => tool.name)).not.toContain("spawn_agent");
         expect(deepest.agent.tools.map((tool) => tool.name)).toEqual(
             expect.arrayContaining([
@@ -478,7 +380,6 @@ describe("createCodingAssistantAgent", () => {
                 "wait_agent",
                 "list_agents",
                 "interrupt_agent",
-                "resume_agent",
                 "send_message",
             ]),
         );
@@ -523,48 +424,6 @@ describe("createCodingAssistantAgent", () => {
         });
         expect(grokDeepest.agent.tools.map((tool) => tool.name)).toContain("followup_subagent");
         expect(grokDeepest.agent.tools.map((tool) => tool.name)).not.toContain("spawn_subagent");
-
-        const kimiParent = createCodingAssistantAgent({
-            cwd: "/tmp/rig-app-test",
-            env: { KIMI_API_KEY: "kimi-test-key" },
-            modelId: modelMoonshotKimiK3.id,
-            subagents: { ...controls, canSpawn: true },
-        });
-        expect(kimiParent.agent.tools.map((tool) => tool.name)).toContain("Agent");
-        expect(kimiParent.agent.tools.map((tool) => tool.name)).toContain("SendMessage");
-        const kimiDeepest = createCodingAssistantAgent({
-            cwd: "/tmp/rig-app-test",
-            env: { KIMI_API_KEY: "kimi-test-key" },
-            modelId: modelMoonshotKimiK3.id,
-            subagents: { ...controls, canSpawn: false, depth: 3 },
-        });
-        expect(kimiDeepest.agent.tools.map((tool) => tool.name)).toContain("SendMessage");
-        expect(kimiDeepest.agent.tools.map((tool) => tool.name)).not.toContain("Agent");
-
-        const piParent = createCodingAssistantAgent({
-            cwd: "/tmp/rig-app-test",
-            env: {
-                AWS_BEARER_TOKEN_BEDROCK: "bedrock-token",
-                AWS_REGION: "us-east-1",
-            },
-            modelId: modelZaiGlm5.id,
-            providerId: "bedrock",
-            subagents: { ...controls, canSpawn: true },
-        });
-        expect(piParent.agent.tools.map((tool) => tool.name)).toContain("Agent");
-        expect(piParent.agent.tools.map((tool) => tool.name)).toContain("SendMessage");
-        const piDeepest = createCodingAssistantAgent({
-            cwd: "/tmp/rig-app-test",
-            env: {
-                AWS_BEARER_TOKEN_BEDROCK: "bedrock-token",
-                AWS_REGION: "us-east-1",
-            },
-            modelId: modelZaiGlm5.id,
-            providerId: "bedrock",
-            subagents: { ...controls, canSpawn: false, depth: 3 },
-        });
-        expect(piDeepest.agent.tools.map((tool) => tool.name)).toContain("SendMessage");
-        expect(piDeepest.agent.tools.map((tool) => tool.name)).not.toContain("Agent");
     });
 
     it("omits workflow tools when workflow support is disabled", () => {
@@ -581,9 +440,6 @@ describe("createCodingAssistantAgent", () => {
                 },
                 list: () => [],
                 maxDepth: 3,
-                resume: () => {
-                    throw new Error("not used");
-                },
                 spawn: async () => {
                     throw new Error("not used");
                 },
@@ -622,12 +478,12 @@ describe("createCodingAssistantAgent", () => {
             providerId: "bedrock",
         });
 
-        expect(runtime.provider.id).toBe("bedrock");
+        expect(runtime.executor.id).toBe("bedrock");
         expect(runtime.agent.model.id).toBe(modelAnthropicFable5.id);
         expect(runtime.agent.tools.map((tool) => tool.name)).toContain("Bash");
     });
 
-    it("uses standard function tools without Code Mode for Bedrock OpenAI models", () => {
+    it("uses plaintext multi-agent v1 tools for Bedrock OpenAI models", () => {
         const managed = {
             description: "Test",
             path: "/root/test",
@@ -650,55 +506,30 @@ describe("createCodingAssistantAgent", () => {
                 interrupt: () => managed,
                 list: () => [managed],
                 maxDepth: 3,
-                resume: () => managed,
                 spawn: async () => ({ ...managed, output: "done" }),
                 wait: async () => ({ agents: [managed], timedOut: false }),
             },
         });
 
-        expect(runtime.provider.id).toBe("bedrock");
+        expect(runtime.executor.id).toBe("bedrock");
         expect(runtime.agent.model.id).toBe(modelOpenaiGpt56Sol.id);
-        expect(runtime.agent.tools.every((tool) => tool.codeMode?.namespace === undefined)).toBe(
-            true,
-        );
+        expect(
+            runtime.agent.tools
+                .filter((tool) => tool.namespace?.name === "multi_agent_v1")
+                .map((tool) => tool.name),
+        ).toEqual(["close_agent", "resume_agent", "send_input", "spawn_agent", "wait_agent"]);
         expect(runtime.agent.tools.map((tool) => tool.name)).toEqual([
             "exec_command",
             "write_stdin",
-            "apply_patch",
-            "view_image",
             "update_plan",
             "request_user_input",
-            "spawn_agent",
-            "followup_task",
-            "send_message",
-            "wait_agent",
-            "list_agents",
-            "interrupt_agent",
+            "apply_patch",
+            "view_image",
+            "close_agent",
             "resume_agent",
-        ]);
-    });
-
-    it("uses provider-neutral tools for Bedrock GLM models", () => {
-        const runtime = createCodingAssistantAgent({
-            cwd: "/tmp/rig-app-test",
-            env: {
-                AWS_BEARER_TOKEN_BEDROCK: "bedrock-token",
-                AWS_REGION: "us-east-1",
-            },
-            modelId: modelZaiGlm5.id,
-            providerId: "bedrock",
-        });
-
-        expect(runtime.provider.id).toBe("bedrock");
-        expect(runtime.agent.model.id).toBe(modelZaiGlm5.id);
-        expect(runtime.agent.tools.map((tool) => tool.name)).toEqual([
-            "read",
-            "bash",
-            "edit",
-            "write",
-            "grep",
-            "find",
-            "ls",
+            "send_input",
+            "spawn_agent",
+            "wait_agent",
         ]);
     });
 });

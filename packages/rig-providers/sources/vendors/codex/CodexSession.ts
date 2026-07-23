@@ -49,6 +49,7 @@ import { recoverCodexUnauthorizedCredential } from "@/vendors/codex/impl/recover
 import { readCodexTurnState } from "@/vendors/codex/impl/readCodexTurnState.js";
 import { readCodexTurnStateHeader } from "@/vendors/codex/impl/readCodexTurnStateHeader.js";
 import { resolveCodexReasoningEffort } from "@/vendors/codex/impl/resolveCodexReasoningEffort.js";
+import { resolveCodexModelId } from "@/vendors/codex/impl/resolveCodexModelId.js";
 import { resolveCodexStreamIdleTimeout } from "@/vendors/codex/impl/resolveCodexStreamIdleTimeout.js";
 import { resolveCodexStreamMaxRetries } from "@/vendors/codex/impl/resolveCodexStreamMaxRetries.js";
 import { setCodexRequestKind } from "@/vendors/codex/impl/setCodexRequestKind.js";
@@ -216,9 +217,10 @@ export class CodexSession extends BaseSession {
                 const stream = useSse
                     ? await this.sse(payload, configuration.tools ?? [], model, signal)
                     : this.websocket(payload, configuration.tools ?? [], signal);
-                const collected = await collectCodexCompaction(stream, {
-                    ...(signal === undefined ? {} : { signal }),
-                });
+                const collected = await collectCodexCompaction(
+                    stream,
+                    signal === undefined ? {} : { signal },
+                );
                 if (signal?.aborted) return { status: "cancelled", context };
                 const compaction = {
                     role: "compaction" as const,
@@ -398,7 +400,9 @@ export class CodexSession extends BaseSession {
     }
 
     private async *streamRun(request: SessionRunRequest): AsyncGenerator<SessionEvent> {
-        const model = request.model ?? this.activeModel;
+        const requestedModel = request.model ?? this.activeModel;
+        const model =
+            requestedModel === undefined ? undefined : resolveCodexModelId(requestedModel);
         if (model === undefined) throw new Error("A model is required for Codex inference.");
         const configuration = this.resolveConfiguration(model);
         const effort = resolveCodexReasoningEffort(model, request.effort);
@@ -434,7 +438,13 @@ export class CodexSession extends BaseSession {
         this.activeEffort = effort;
         this.activeModel = model;
 
-        const payload = this.createRequest(this.context, configuration, model, effort);
+        const payload = this.createRequest(
+            this.context,
+            configuration,
+            model,
+            effort,
+            request.serviceTier,
+        );
         let useSse = this.transport === "sse" || (this.transport === "auto" && this.forceSse);
         let transportRetries = 0;
         let reportedAttempt = 0;
@@ -588,6 +598,7 @@ export class CodexSession extends BaseSession {
         configuration: SessionModelConfiguration,
         model: string,
         effort: SessionReasoningEffort,
+        serviceTier?: SessionRunRequest["serviceTier"],
     ): ResponseCreateParamsStreaming {
         return createCodexCliRequest({
             clientMetadata: createCodexClientMetadata({
@@ -602,6 +613,7 @@ export class CodexSession extends BaseSession {
             model,
             promptCacheKey: this.id,
             skills: configuration.skills ?? [],
+            ...(serviceTier === undefined ? {} : { serviceTier }),
             tools: configuration.tools ?? [],
         });
     }

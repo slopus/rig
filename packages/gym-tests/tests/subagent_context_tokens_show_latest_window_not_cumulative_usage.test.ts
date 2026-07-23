@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createGym, type Gym } from "@slopus/rig-gym";
-import type { Usage } from "../../rig/sources/providers/types.js";
+import type { Usage } from "@slopus/rig-execution";
 
 const running = new Set<Gym>();
 
@@ -28,12 +28,13 @@ describe("subagent context token display", () => {
                         content: [
                             {
                                 arguments: {
-                                    context: "task",
+                                    fork_turns: "none",
                                     message: "Run one command, then finish.",
                                     task_name: "context_observer",
                                 },
                                 id: "spawn-context-observer",
                                 name: "spawn_agent",
+                                namespace: "collaboration",
                                 type: "toolCall",
                             },
                         ],

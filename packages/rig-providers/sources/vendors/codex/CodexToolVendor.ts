@@ -7,8 +7,14 @@ export type CodexToolVendor =
           readonly execution: "client";
       };
 
-export type CodexToolDefinitionVendor = {
-    readonly provider: "codex";
-    readonly type: "tool_search";
-    readonly execution: "client";
-};
+export type CodexToolDefinitionVendor =
+    | {
+          readonly provider: "codex";
+          readonly type: "function";
+          readonly deferLoading?: boolean;
+      }
+    | {
+          readonly provider: "codex";
+          readonly type: "tool_search";
+          readonly execution: "client";
+      };

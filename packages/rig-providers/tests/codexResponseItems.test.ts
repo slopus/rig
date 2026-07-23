@@ -11,6 +11,104 @@ import { withCodexStreamIdleTimeout } from "@/vendors/codex/impl/withCodexStream
 import { toGrokResponseInput } from "@/vendors/grok/impl/toGrokResponseInput.js";
 
 describe("Codex response items", () => {
+    it("preserves function namespaces through streaming and replay", async () => {
+        const functionCall = {
+            type: "function_call",
+            call_id: "spawn-call",
+            name: "spawn_agent",
+            namespace: "collaboration",
+            arguments: '{"task_name":"inspect","message":"Inspect it."}',
+        };
+        const mapped = mapOpenAIResponseStream(
+            (async function* () {
+                yield {
+                    type: "response.output_item.done",
+                    output_index: 0,
+                    item: functionCall,
+                } as never;
+                yield {
+                    type: "response.completed",
+                    response: {
+                        id: "response",
+                        output: [functionCall],
+                        usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+                    },
+                } as never;
+            })(),
+            { failureMessage: "failed" },
+        );
+        const events = [];
+        let result: Awaited<ReturnType<typeof mapped.next>>["value"];
+        for (;;) {
+            const next = await mapped.next();
+            if (next.done) {
+                result = next.value;
+                break;
+            }
+            events.push(next.value);
+        }
+
+        expect(events).toContainEqual({
+            type: "tool_call_start",
+            callId: "spawn-call",
+            name: "spawn_agent",
+            namespace: "collaboration",
+            vendor: { provider: "codex", type: "function_call" },
+        });
+        expect(result).toMatchObject({
+            toolCalls: [
+                {
+                    callId: "spawn-call",
+                    name: "spawn_agent",
+                    namespace: "collaboration",
+                },
+            ],
+        });
+        if (result === undefined || !("toolCalls" in result)) expect.fail("Missing mapped result.");
+        expect(
+            toOpenAIResponseInput({
+                instructions: "instructions",
+                messages: [{ role: "assistant", content: "", toolCalls: result.toolCalls }],
+            }),
+        ).toEqual([functionCall]);
+    });
+
+    it("uses caller namespace descriptions and never emits an empty fallback", () => {
+        const tool = {
+            name: "spawn_agent",
+            namespace: "rig",
+            namespaceDescription: "Provider-neutral collaboration tools.",
+            type: "local",
+            description: "Spawn an agent.",
+        } as const satisfies SessionTool;
+
+        expect(toCodexToolDefinitions([tool])).toEqual([
+            {
+                type: "namespace",
+                name: "rig",
+                description: "Provider-neutral collaboration tools.",
+                tools: [
+                    {
+                        type: "function",
+                        name: "spawn_agent",
+                        description: "Spawn an agent.",
+                        strict: false,
+                    },
+                ],
+            },
+        ]);
+        expect(
+            toCodexToolDefinitions([
+                {
+                    name: tool.name,
+                    namespace: "custom",
+                    type: tool.type,
+                    description: tool.description,
+                },
+            ]),
+        ).toMatchObject([{ description: "Tools in the custom namespace." }]);
+    });
+
     it("requires response item IDs to match before reusing previous_response_id", () => {
         const previousRequest = {
             model: "gpt-5.6-sol",

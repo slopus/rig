@@ -79,7 +79,7 @@ packages/gym-tests/
 ├── tsconfig.json
 └── tests/                     All end-to-end gym scenarios
 
-packages/rig/sources/providers/
+packages/rig/sources/executor/
 ├── createGymProvider.ts       Container-side provider transport
 └── gym-types.ts               Shared inference protocol
 ```
@@ -256,8 +256,8 @@ interface GymOptions {
     mode?: "docker" | "just-bash";
     modelId?: string;
     permissionMode?: "auto" | "from_config" | "full_access" | "read_only" | "workspace_write";
-    providerId?: "bedrock" | "claude" | "codex" | "grok" | "gym" | "kimi";
-    providerOverrides?: readonly ("claude" | "codex" | "grok" | "kimi")[];
+    providerId?: "bedrock" | "claude" | "codex" | "grok" | "gym";
+    providerOverrides?: readonly ("claude" | "codex" | "grok")[];
     rows?: number;
     startupText?: string;
     terminalColorScheme?: "dark" | "light";

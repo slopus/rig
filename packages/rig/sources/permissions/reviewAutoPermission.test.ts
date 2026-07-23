@@ -8,7 +8,7 @@ import {
     type Context,
     type InferenceStream,
     type Model,
-} from "../providers/types.js";
+} from "@slopus/rig-execution";
 import { reviewAutoPermission } from "./reviewAutoPermission.js";
 
 describe("reviewAutoPermission", () => {

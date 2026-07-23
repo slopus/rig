@@ -31,7 +31,7 @@ import type { FileDiff } from "../agent/ToolResultPresentation.js";
 import { errorToMessage } from "../errorToMessage.js";
 import type { NativeProcessManager } from "../processes/index.js";
 import { humanizeMcpName } from "../mcp/humanizeMcpName.js";
-import type { ServiceTier, Usage } from "../providers/types.js";
+import type { ServiceTier, Usage } from "@slopus/rig-execution";
 import type {
     FileSearchResult,
     EventId,
@@ -4901,7 +4901,6 @@ export class CodingAssistantApp implements Component, Focusable {
         if (normalized === "wait_agent") return "Wait for delegated work";
         if (normalized === "list_agents") return "Show delegated work";
         if (normalized === "interrupt_agent") return "Stop delegated work";
-        if (normalized === "resume_agent") return "Resume delegated work";
 
         return this.#toolDisplayName(toolName);
     }

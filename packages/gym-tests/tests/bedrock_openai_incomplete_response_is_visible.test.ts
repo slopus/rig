@@ -45,7 +45,7 @@ describe("Bedrock OpenAI response semantics", () => {
                     };
                 },
             },
-            modelId: "openai/gpt-5.5",
+            modelId: "openai/gpt-5.6-sol",
             providerId: "bedrock",
             timeoutMs: 30_000,
         });
@@ -100,7 +100,7 @@ describe("Bedrock OpenAI response semantics", () => {
                     };
                 },
             },
-            modelId: "openai/gpt-5.5",
+            modelId: "openai/gpt-5.6-sol",
             providerId: "bedrock",
             timeoutMs: 30_000,
         });
@@ -129,7 +129,7 @@ enabled = true
 region = "us-east-1"
 
 [providers.bedrock.model_overrides]
-"openai/gpt-5.5" = { endpoint = "BEDROCK_GYM_ENDPOINT" }
+"openai/gpt-5.6-sol" = { endpoint = "BEDROCK_GYM_ENDPOINT" }
 `;
 }
 

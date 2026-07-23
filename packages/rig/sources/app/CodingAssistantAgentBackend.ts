@@ -7,7 +7,7 @@ import type {
     ContentBlock,
     UserMessage,
 } from "../agent/index.js";
-import type { Model, Provider, ServiceTier } from "../providers/types.js";
+import type { Model, Provider, ServiceTier } from "@slopus/rig-execution";
 import type { PermissionMode } from "../permissions/index.js";
 import type { GoalStatus, SessionGoal } from "../goals/index.js";
 import type {

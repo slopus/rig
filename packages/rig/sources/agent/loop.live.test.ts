@@ -15,7 +15,7 @@ import {
     type StopReason,
     type StreamOptions,
     type Usage,
-} from "../providers/types.js";
+} from "@slopus/rig-execution";
 
 describe("agent loop live", () => {
     it("executes mock tools and feeds rendered tool answers back to the model", async () => {

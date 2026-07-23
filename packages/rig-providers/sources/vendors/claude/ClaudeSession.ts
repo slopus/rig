@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import {
     query as defaultClaudeSdkQuery,
-    type SDKPartialAssistantMessage,
     type SDKResultMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 
@@ -20,6 +19,7 @@ import type { SessionModelConfiguration } from "@/core/SessionModelConfiguration
 import type { SessionSkill } from "@/core/SessionSkill.js";
 import type { SessionTool } from "@/core/SessionTool.js";
 import { withInitialSessionMessages } from "@/core/withInitialSessionMessages.js";
+import { resolveClaudeModelId } from "@/vendors/claude/impl/resolveClaudeModelId.js";
 import type { ClaudeCredential } from "@/vendors/VendorCredential.js";
 import { ClaudePromptQueue } from "@/vendors/claude/impl/ClaudePromptQueue.js";
 import { ClaudeToolBridge } from "@/vendors/claude/impl/ClaudeToolBridge.js";
@@ -28,8 +28,6 @@ import {
     createClaudeSessionReplay,
     type ClaudeSessionReplay,
 } from "@/vendors/claude/impl/createClaudeSessionReplay.js";
-import { renderClaudeSystemPrompt } from "@/vendors/claude/impl/renderClaudeSystemPrompt.js";
-import { resolveClaudeSystemPrompt } from "@/vendors/claude/impl/resolveClaudeSystemPrompt.js";
 import { resolveClaudeTools } from "@/vendors/claude/impl/resolveClaudeTools.js";
 import { toClaudeSdkOptions } from "@/vendors/claude/impl/toClaudeSdkOptions.js";
 import { toClaudeRetryEvent } from "@/vendors/claude/impl/toClaudeRetryEvent.js";
@@ -175,7 +173,9 @@ export class ClaudeSession extends BaseSession {
     }
 
     private async *streamRun(request: SessionRunRequest): AsyncGenerator<SessionEvent> {
-        const model = request.model ?? this.activeModel ?? this.model;
+        const requestedModel = request.model ?? this.activeModel ?? this.model;
+        const model =
+            requestedModel === undefined ? undefined : resolveClaudeModelId(requestedModel);
         if (model === undefined) throw new Error("A model is required for Claude inference.");
         this.activeModel = model;
         const effort = request.effort ?? this.activeEffort;
@@ -224,20 +224,12 @@ export class ClaudeSession extends BaseSession {
         const modelConfiguration = this.modelConfigurations?.[options.model];
         const skills = modelConfiguration?.skills ?? this.skills ?? [];
         const tools = modelConfiguration?.tools ?? this.tools ?? resolveClaudeTools(options.model);
-        const systemPrompt = renderClaudeSystemPrompt(resolveClaudeSystemPrompt(options.model), {
-            cwd: this.cwd,
-            env: this.env,
-        });
+        const systemPrompt = "";
         const configuredContext =
             modelConfiguration === undefined
                 ? options.context
                 : {
-                      instructions: [
-                          modelConfiguration.context.instructions,
-                          options.context.instructions,
-                      ]
-                          .filter(Boolean)
-                          .join("\n\n"),
+                      instructions: modelConfiguration.context.instructions,
                       messages: [
                           ...modelConfiguration.context.messages.filter(
                               (message) => message.role === "system",

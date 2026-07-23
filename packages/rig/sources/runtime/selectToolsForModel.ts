@@ -1,12 +1,10 @@
 import type { AnyDefinedTool } from "../agent/types.js";
-import type { Model, Provider } from "../providers/types.js";
+import type { Model, Provider } from "@slopus/rig-execution";
 import { claudeCodeTools } from "../tools/claude/index.js";
-import { codexTools } from "../tools/codex/index.js";
+import { assembleCodexTools } from "../agent/tools/codex/assembleCodexTools.js";
+import { codexCollaborationTools } from "../agent/tools/codex/assembleCodexTools.js";
 import { grokBuildTools } from "../tools/grok/index.js";
-import { kimiCodeTools } from "../tools/kimi/index.js";
-import { piTools } from "../tools/pi/index.js";
 import { createGeminiTools } from "../tools/gemini/createGeminiTools.js";
-import { resolveModelProfileForProvider } from "../profiles/impl/resolveModelProfileForProvider.js";
 
 export interface SelectToolsForModelOptions {
     geminiApiKey?: string;
@@ -17,25 +15,22 @@ export interface SelectToolsForModelOptions {
 export function selectToolsForModel(
     options: SelectToolsForModelOptions,
 ): readonly AnyDefinedTool[] {
-    const toolProfile = options.provider.toolProfile(options.model);
-    const profile = resolveModelProfileForProvider(options.provider, options.model);
+    const toolType =
+        options.provider.type === "bedrock"
+            ? options.model.id.startsWith("anthropic/")
+                ? "claude"
+                : "codex"
+            : options.provider.type;
+    const collaborationNames = new Set(codexCollaborationTools.map((tool) => tool.name));
     const baseTools =
-        profile !== undefined && profile.toolProfile === toolProfile
-            ? profile.tools.base
-            : (() => {
-                  switch (toolProfile) {
-                      case "claude":
-                          return claudeCodeTools;
-                      case "codex":
-                          return codexTools;
-                      case "grok":
-                          return grokBuildTools;
-                      case "kimi":
-                          return kimiCodeTools;
-                      case "pi":
-                          return piTools;
-                  }
-              })();
+        toolType === "claude"
+            ? claudeCodeTools
+            : toolType === "grok"
+              ? grokBuildTools
+              : assembleCodexTools(
+                    options.model.id,
+                    options.provider.type ?? options.provider.id,
+                ).filter((tool) => !collaborationNames.has(tool.name));
     if (options.geminiApiKey === undefined) return baseTools;
 
     return [...baseTools, ...createGeminiTools(options.geminiApiKey)];

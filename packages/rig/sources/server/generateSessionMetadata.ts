@@ -1,5 +1,5 @@
-import type { Model, Provider, StreamOptions } from "../providers/types.js";
-import { toLocalDate } from "../providers/toLocalDate.js";
+import type { Model, Provider, StreamOptions } from "@slopus/rig-execution";
+import { toLocalDate } from "../executor/toLocalDate.js";
 
 const METADATA_PROMPT = `Create settled session metadata from the visible conversation.
 

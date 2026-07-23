@@ -2,8 +2,8 @@
 import { Type } from "@sinclair/typebox";
 
 import { defineTool } from "../../agent/types.js";
-import { humanizeTaskName } from "../codex/humanizeTaskName.js";
-import { requireSubagentContext } from "../codex/requireSubagentContext.js";
+import { humanizeTaskName } from "../../agent/tools/codex/impl/humanizeTaskName.js";
+import { requireSubagentContext } from "../../agent/tools/codex/impl/requireSubagentContext.js";
 
 export const grokFollowupSubagentTool = defineTool({
     name: "followup_subagent",

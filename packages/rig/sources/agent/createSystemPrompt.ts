@@ -6,13 +6,10 @@ import { loadSkillInstructions } from "./skills/loadSkillInstructions.js";
 import { formatSkillsForPrompt } from "./skills/formatSkillsForPrompt.js";
 import { systemMessageToText } from "./systemMessageToText.js";
 import type { AnyDefinedTool, Message } from "./types.js";
-import type { Model, Provider } from "../providers/types.js";
+import type { Model, Provider } from "@slopus/rig-execution";
 import { createSecretInstructions } from "../secrets/index.js";
 import type { DurableSkillDefinition } from "../external-skills/types.js";
-import { computeProfileSystemPrompt } from "../profiles/impl/computeProfileSystemPrompt.js";
-import { createProfilePromptContext } from "../profiles/impl/createProfilePromptContext.js";
-import { resolveModelProfileForProvider } from "../profiles/impl/resolveModelProfileForProvider.js";
-import { RIG_AGENT_TOOL_INSTRUCTIONS } from "../profiles/codex/appends/rigAgentToolInstructions.js";
+import { RIG_AGENT_TOOL_INSTRUCTIONS } from "./rigAgentToolInstructions.js";
 
 export interface CreateSystemPromptOptions {
     appendSystemPrompt?: string;
@@ -31,23 +28,7 @@ export interface CreateSystemPromptOptions {
 export async function createSystemPrompt(
     options: CreateSystemPromptOptions,
 ): Promise<string | undefined> {
-    const profile = resolveModelProfileForProvider(options.provider, options.model);
-    const promptContext = await createProfilePromptContext({
-        agentContext: options.context,
-        ...(options.effort === undefined ? {} : { effort: options.effort }),
-        model: options.model,
-        profile,
-        provider: options.provider,
-    });
-    if (options.systemPrompt !== undefined) {
-        const exactPrompt = computeProfileSystemPrompt(profile, promptContext, {
-            originalOverride: options.systemPrompt,
-        });
-        const skillInstructions = formatSkillsForPrompt([], options.durableSkills ?? []);
-        if (skillInstructions === undefined) return exactPrompt;
-        return `${exactPrompt}\n\n${skillInstructions}`;
-    }
-    const parts: string[] = [computeProfileSystemPrompt(profile, promptContext)];
+    const parts: string[] = [];
 
     if (options.instructions !== undefined && options.instructions.length > 0) {
         parts.push(options.instructions);
@@ -82,7 +63,7 @@ export async function createSystemPrompt(
         }
     }
 
-    if (options.tools?.some((tool) => tool.codeMode?.namespace === "rig") === true) {
+    if (options.tools?.some((tool) => tool.namespace?.name === "rig") === true) {
         parts.push(RIG_AGENT_TOOL_INSTRUCTIONS);
     }
 
