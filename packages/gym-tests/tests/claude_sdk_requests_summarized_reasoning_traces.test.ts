@@ -78,7 +78,7 @@ describe("Claude SDK reasoning traces", () => {
         const payload = JSON.parse(
             Buffer.from(exchange!.request.body).toString("utf8"),
         ) as AnthropicRequestPayload;
-        expect(payload.max_tokens).toBe(128_000);
+        expect(payload.max_tokens).toBe(64_000);
         expect(payload.output_config).toMatchObject({ effort: "max" });
         expect(payload.thinking).toEqual({
             type: "adaptive",

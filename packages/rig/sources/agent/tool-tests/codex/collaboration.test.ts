@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 
 import type { ManagedSubagent, SpawnSubagentRequest } from "../../index.js";
-import { claudeSendMessageTool } from "../../../tools/claude/SendMessage.js";
+import { claudeSendMessageTool } from "../../tools/claude/SendMessage.js";
 import { createJustBashToolHarness } from "../../../tools/testing/createJustBashToolHarness.js";
 import { assembleCodexTools } from "../../tools/codex/assembleCodexTools.js";
 import { codexV1SpawnAgentTool } from "../../tools/codex/v1/spawn_agent.js";
@@ -149,15 +149,13 @@ describe("Codex collaboration tools", () => {
 
     it("spawns a plaintext v2 subagent through an explicit non-GPT provider", async () => {
         const harness = createJustBashToolHarness();
-        const spawn = vi.fn(
-            async (_request: SpawnSubagentRequest, _signal?: AbortSignal) => ({
-                output: "The subagent is running in the background.",
-                path: "/root/review_claude",
-                sessionId: "agent-claude",
-                status: "running" as const,
-                taskName: "review_claude",
-            }),
-        );
+        const spawn = vi.fn(async (_request: SpawnSubagentRequest, _signal?: AbortSignal) => ({
+            output: "The subagent is running in the background.",
+            path: "/root/review_claude",
+            sessionId: "agent-claude",
+            status: "running" as const,
+            taskName: "review_claude",
+        }));
         const managed: ManagedSubagent = {
             description: "Review claude",
             path: "/root/review_claude",
@@ -349,14 +347,14 @@ describe("Codex collaboration tools", () => {
 
         await expect(
             codexV1SpawnAgentTool.execute(
-            {
-                agent_type: "worker",
-                fork_context: false,
-                message: "Inspect the Bedrock implementation.",
-                service_tier: "priority",
-            },
-            harness.context,
-            { toolCallId: "tool-v1" },
+                {
+                    agent_type: "worker",
+                    fork_context: false,
+                    message: "Inspect the Bedrock implementation.",
+                    service_tier: "priority",
+                },
+                harness.context,
+                { toolCallId: "tool-v1" },
             ),
         ).resolves.toEqual({ agent_id: "agent-1", nickname: "delegated_task" });
         expect(spawn).toHaveBeenCalledWith(

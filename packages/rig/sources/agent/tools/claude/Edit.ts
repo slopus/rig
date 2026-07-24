@@ -19,16 +19,22 @@ export const claudeEditTool = defineTool({
     name: "Edit",
     label: "Edit",
     description: CLAUDE_EDIT_DESCRIPTION,
-    arguments: Type.Object({
-        file_path: Type.String({ description: "The absolute path to the file to modify" }),
-        old_string: Type.String({ description: "The text to replace" }),
-        new_string: Type.String({
-            description: "The text to replace it with (must be different from old_string)",
-        }),
-        replace_all: Type.Optional(
-            Type.Boolean({ description: "Replace all occurrences of old_string (default false)" }),
-        ),
-    }),
+    arguments: Type.Object(
+        {
+            file_path: Type.String({ description: "The absolute path to the file to modify" }),
+            old_string: Type.String({ description: "The text to replace" }),
+            new_string: Type.String({
+                description: "The text to replace it with (must be different from old_string)",
+            }),
+            replace_all: Type.Optional(
+                Type.Boolean({
+                    default: false,
+                    description: "Replace all occurrences of old_string (default false)",
+                }),
+            ),
+        },
+        { additionalProperties: false },
+    ),
     returnType: editFileReturnSchema,
     describeAutoPermissionAction: ({ file_path }, context) =>
         describeFileAutoPermissionAction(file_path, context, "editing"),

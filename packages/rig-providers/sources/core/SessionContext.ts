@@ -50,6 +50,8 @@ export interface SessionToolResultMessage {
     readonly role: "tool";
     readonly callId: string;
     readonly content: string;
+    /** Whether the caller reported that the tool invocation failed. */
+    readonly isError?: boolean;
     /** Ordered multimodal content. When present, providers use this instead of content. */
     readonly input?: SessionInputContent;
     /** Opaque provider metadata persisted with this tool result. */

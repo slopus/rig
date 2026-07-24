@@ -13,8 +13,8 @@ import {
     type Usage,
 } from "@slopus/rig-execution";
 import { createJustBashToolHarness } from "../tools/testing/createJustBashToolHarness.js";
-import { claudeAskUserQuestionTool } from "../tools/claude/AskUserQuestion.js";
-import { claudeBashTool } from "../tools/claude/Bash.js";
+import { claudeAskUserQuestionTool } from "./tools/claude/AskUserQuestion.js";
+import { claudeBashTool } from "./tools/claude/Bash.js";
 import { codexExecCommandTool } from "./tools/codex/exec_command.js";
 import { grokRunTerminalCommandTool } from "../tools/grok/run_terminal_command.js";
 

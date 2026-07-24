@@ -14,7 +14,7 @@ export function stampCodexWebSocketRequest(
             : {};
     clientMetadata["x-codex-ws-stream-request-start-ms"] = Date.now().toString();
     if (turnState !== undefined) clientMetadata["x-codex-turn-state"] = turnState;
-    if (isCodexV2Model(String(stamped.model))) {
+    if (isCodexV2Model(String(stamped.model)) && stamped.tools === undefined) {
         clientMetadata.ws_request_header_x_openai_internal_codex_responses_lite = "true";
     }
     stamped.client_metadata = clientMetadata;

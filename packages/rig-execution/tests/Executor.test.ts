@@ -228,6 +228,82 @@ describe("Executor", () => {
         expect(native.sessions).toHaveLength(1);
     });
 
+    it("serializes the complete inference lifecycle", async () => {
+        let releaseFirst = () => {};
+        const firstGate = new Promise<void>((resolve) => {
+            releaseFirst = resolve;
+        });
+        let resolveFirstStarted = () => {};
+        const firstStarted = new Promise<void>((resolve) => {
+            resolveFirstStarted = resolve;
+        });
+        let activeInferences = 0;
+        let maximumActiveInferences = 0;
+        let startedInferences = 0;
+        class SerialSession extends BaseSession {
+            constructor(id: string) {
+                super(id);
+            }
+
+            override async compact(): Promise<SessionCompaction> {
+                throw new Error("Not used");
+            }
+
+            override destroy(): void {}
+
+            override async *run(): AsyncGenerator<SessionEvent> {
+                startedInferences += 1;
+                activeInferences += 1;
+                maximumActiveInferences = Math.max(maximumActiveInferences, activeInferences);
+                try {
+                    if (startedInferences === 1) {
+                        resolveFirstStarted();
+                        await firstGate;
+                    }
+                    yield { type: "done", state: "normal" };
+                } finally {
+                    activeInferences -= 1;
+                }
+            }
+        }
+        class SerialProvider extends BaseProvider {
+            static override readonly name = "serial";
+            static override readonly inputTypes = ["text"] as const;
+            static override readonly outputTypes = ["text"] as const;
+            readonly sessionInstance = new SerialSession("serial-session");
+
+            override async session() {
+                return this.sessionInstance;
+            }
+        }
+        const native = new SerialProvider();
+        const executor = new Executor(
+            [
+                {
+                    id: "codex",
+                    native,
+                    profiles: [profile("codex", "codex", "openai/sol", "Sol")],
+                },
+            ],
+            { environment: TEST_ENVIRONMENT },
+        );
+        const request = {
+            context: { messages: [] },
+            selection: { modelId: "openai/sol", providerId: "codex" },
+        };
+
+        const first = collect(executor.run(request));
+        await firstStarted;
+        const second = collect(executor.run(request));
+        await Promise.resolve();
+        expect(startedInferences).toBe(1);
+        releaseFirst();
+        await Promise.all([first, second]);
+
+        expect(startedInferences).toBe(2);
+        expect(maximumActiveInferences).toBe(1);
+    });
+
     it("substitutes the configured identity inside execution-owned prompts", async () => {
         const native = new RecordingProvider();
         const executor = new Executor(
@@ -313,6 +389,46 @@ describe("Executor", () => {
         );
         expect(native.sessions).toHaveLength(2);
     });
+
+    it("runs text-only auxiliary inference through the selected native provider", async () => {
+        const selected = new AuxiliaryProvider();
+        const other = new AuxiliaryProvider();
+        const executor = new Executor(
+            [
+                {
+                    id: "work-claude",
+                    native: selected,
+                    profiles: [profile("work-claude", "claude", "anthropic/opus", "Opus")],
+                },
+                {
+                    id: "other-claude",
+                    native: other,
+                    profiles: [profile("other-claude", "claude", "anthropic/sonnet", "Sonnet")],
+                },
+            ],
+            { environment: TEST_ENVIRONMENT },
+        );
+
+        await expect(
+            executor.runClaudeAuxiliaryQuery(executor.models[0]!, {
+                prompt: "Summarize this page.",
+                systemPrompt: "",
+            }),
+        ).resolves.toEqual({
+            content: [{ type: "text", text: "SELECTED" }],
+        });
+
+        expect(selected.sessions).toHaveLength(1);
+        expect(selected.sessions[0]?.requests).toHaveLength(1);
+        expect(selected.sessions[0]?.requests[0]).toMatchObject({
+            model: "anthropic/opus",
+            context: {
+                messages: [{ role: "user", content: "Summarize this page." }],
+            },
+        });
+        expect(selected.sessions[0]?.destroyed).toBe(true);
+        expect(other.sessions).toHaveLength(0);
+    });
 });
 
 class RecordingProvider extends BaseProvider {
@@ -352,6 +468,42 @@ class RecordingSession extends BaseSession {
 
     override async *run(request: SessionRunRequest): AsyncGenerator<SessionEvent> {
         this.requests.push(request);
+        yield { type: "done", state: "normal" };
+    }
+}
+
+class AuxiliaryProvider extends BaseProvider {
+    static override readonly name = "auxiliary";
+    static override readonly inputTypes = ["text"] as const;
+    static override readonly outputTypes = ["text"] as const;
+    readonly sessions: AuxiliarySession[] = [];
+
+    override async session(id: string) {
+        const session = new AuxiliarySession(id);
+        this.sessions.push(session);
+        return session;
+    }
+}
+
+class AuxiliarySession extends BaseSession {
+    destroyed = false;
+    readonly requests: SessionRunRequest[] = [];
+
+    constructor(id: string) {
+        super(id);
+    }
+
+    override async compact(): Promise<SessionCompaction> {
+        throw new Error("Not used");
+    }
+
+    override destroy(): void {
+        this.destroyed = true;
+    }
+
+    override async *run(request: SessionRunRequest): AsyncGenerator<SessionEvent> {
+        this.requests.push(request);
+        yield { type: "text_delta", delta: "SELECTED" };
         yield { type: "done", state: "normal" };
     }
 }

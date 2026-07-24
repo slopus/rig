@@ -6,7 +6,11 @@
  */
 
 import type { TSchema } from "@sinclair/typebox";
-import type { ProviderQuota } from "@slopus/rig-providers";
+import type {
+    ClaudeAuxiliaryQueryRequest,
+    ClaudeAuxiliaryQueryResponse,
+    ProviderQuota,
+} from "@slopus/rig-providers";
 
 export type ProfileProviderType = "bedrock" | "claude" | "codex" | "grok";
 export interface ProfilePromptContext {
@@ -220,6 +224,7 @@ export interface ProviderCompactionOptions<
 /** Streaming events emitted while building an assistant message. */
 export type AssistantMessageEvent =
     | { type: "start"; partial: AssistantMessage }
+    | { type: "reset"; partial: AssistantMessage }
     | { type: "text_start"; contentIndex: number; partial: AssistantMessage }
     | { type: "text_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
     | { type: "text_end"; contentIndex: number; content: string; partial: AssistantMessage }
@@ -257,6 +262,10 @@ export interface Provider {
         | undefined;
     close?(): Promise<void> | void;
     quota: ((options?: { fresh?: boolean }) => Promise<ProviderQuota>) | undefined;
+    runClaudeAuxiliaryQuery?(
+        model: Model,
+        request: ClaudeAuxiliaryQueryRequest,
+    ): Promise<ClaudeAuxiliaryQueryResponse>;
     stream<TThinkingLevel extends string>(
         model: Model<TThinkingLevel>,
         context: Context,
@@ -294,6 +303,10 @@ export function defineProvider(provider: {
     ) => ProfilePromptContext | Promise<ProfilePromptContext>;
     close?(): Promise<void> | void;
     quota?: (options?: { fresh?: boolean }) => Promise<ProviderQuota>;
+    runClaudeAuxiliaryQuery?(
+        model: Model,
+        request: ClaudeAuxiliaryQueryRequest,
+    ): Promise<ClaudeAuxiliaryQueryResponse>;
     stream<TThinkingLevel extends string>(
         model: Model<TThinkingLevel>,
         context: Context,

@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 
-import { defineTool } from "../../agent/types.js";
-import { taskStatusSchema } from "./taskSchemas.js";
+import { defineTool } from "../../types.js";
+import { taskStatusSchema } from "../../../tools/claude/taskSchemas.js";
 
 const taskSummarySchema = Type.Object({
     id: Type.String(),

@@ -54,6 +54,7 @@ export function codexExecution(options: {
             }
             return new CodexProvider({
                 credential,
+                parallelToolCalls: true,
                 ...(baseUrl === undefined ? {} : { endpoint: baseUrl }),
                 ...(transport === "auto" || transport === "sse" || transport === "websocket"
                     ? { transport }

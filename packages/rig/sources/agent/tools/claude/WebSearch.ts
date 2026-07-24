@@ -1,10 +1,12 @@
 import { Type } from "@sinclair/typebox";
 
-import { defineTool } from "../../agent/types.js";
-import { quoteVisibleExact } from "../../permissions/quoteVisibleExact.js";
-import { formatWebSearchOutput } from "./webSearch/formatWebSearchOutput.js";
-import { performWebSearch } from "./webSearch/performWebSearch.js";
-import type { WebSearchInput, WebSearchOutput } from "./webSearch/types.js";
+import { defineTool } from "../../types.js";
+import { quoteVisibleExact } from "../../../permissions/quoteVisibleExact.js";
+import { formatWebSearchOutput } from "../../../tools/claude/webSearch/formatWebSearchOutput.js";
+import { performWebSearch } from "../../../tools/claude/webSearch/performWebSearch.js";
+import type { WebSearchInput, WebSearchOutput } from "../../../tools/claude/webSearch/types.js";
+import type { Model, Provider } from "@slopus/rig-execution";
+import { selectClaudeWebToolModel } from "../../../tools/claude/selectClaudeWebToolModel.js";
 
 const searchResultSchema = Type.Object({
     tool_use_id: Type.String({ description: "ID of the web search tool use" }),
@@ -26,7 +28,12 @@ const claudeWebSearchReturnSchema = Type.Object({
 });
 
 export interface ClaudeWebSearchDependencies {
-    search?: (input: WebSearchInput, signal?: AbortSignal) => Promise<WebSearchOutput>;
+    search?: (
+        input: WebSearchInput,
+        provider: Provider,
+        model: Model,
+        signal?: AbortSignal,
+    ) => Promise<WebSearchOutput>;
 }
 
 export function createClaudeWebSearchTool(dependencies: ClaudeWebSearchDependencies = {}) {
@@ -36,19 +43,22 @@ export function createClaudeWebSearchTool(dependencies: ClaudeWebSearchDependenc
         name: "WebSearch",
         label: "WebSearch",
         description: createWebSearchDescription(),
-        arguments: Type.Object({
-            query: Type.String({ minLength: 2, description: "The search query to use" }),
-            allowed_domains: Type.Optional(
-                Type.Array(Type.String(), {
-                    description: "Only include search results from these domains",
-                }),
-            ),
-            blocked_domains: Type.Optional(
-                Type.Array(Type.String(), {
-                    description: "Never include search results from these domains",
-                }),
-            ),
-        }),
+        arguments: Type.Object(
+            {
+                query: Type.String({ minLength: 2, description: "The search query to use" }),
+                allowed_domains: Type.Optional(
+                    Type.Array(Type.String(), {
+                        description: "Only include search results from these domains",
+                    }),
+                ),
+                blocked_domains: Type.Optional(
+                    Type.Array(Type.String(), {
+                        description: "Never include search results from these domains",
+                    }),
+                ),
+            },
+            { additionalProperties: false },
+        ),
         returnType: claudeWebSearchReturnSchema,
         requiresAutoOrFullAccess: true,
         describeAutoPermissionAction: ({ query }) =>
@@ -64,12 +74,17 @@ export function createClaudeWebSearchTool(dependencies: ClaudeWebSearchDependenc
                 );
             }
 
+            if (execution.provider === undefined || execution.model === undefined) {
+                throw new Error("WebSearch requires the active provider and model.");
+            }
             return search(
                 {
                     query,
                     ...(allowed_domains !== undefined ? { allowed_domains } : {}),
                     ...(blocked_domains !== undefined ? { blocked_domains } : {}),
                 },
+                execution.provider,
+                selectClaudeWebToolModel(execution.provider, execution.model),
                 execution.signal,
             );
         },

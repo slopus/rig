@@ -4,6 +4,11 @@ import type { SessionOptions } from "@/core/SessionOptions.js";
 import type { ClaudeCredential } from "@/vendors/VendorCredential.js";
 import { ClaudeSession, type ClaudeSdkQuery } from "@/vendors/claude/ClaudeSession.js";
 import { resolveClaudeModelId } from "@/vendors/claude/impl/resolveClaudeModelId.js";
+import type {
+    ClaudeAuxiliaryQueryRequest,
+    ClaudeAuxiliaryQueryResponse,
+} from "@/vendors/claude/ClaudeAuxiliaryQuery.js";
+import { runClaudeAuxiliaryQuery } from "@/vendors/claude/impl/runClaudeAuxiliaryQuery.js";
 
 export interface ClaudeProviderOptions {
     credential: ClaudeCredential;
@@ -47,6 +52,23 @@ export class ClaudeProvider extends BaseProvider {
                 ? {}
                 : { pathToClaudeCodeExecutable: this.pathToClaudeCodeExecutable }),
             ...(this.query === undefined ? {} : { query: this.query }),
+        });
+    }
+
+    runAuxiliaryQuery(
+        model: string,
+        request: ClaudeAuxiliaryQueryRequest,
+    ): Promise<ClaudeAuxiliaryQueryResponse> {
+        return runClaudeAuxiliaryQuery({
+            credential: this.credential,
+            cwd: this.cwd,
+            ...(this.env === undefined ? {} : { env: this.env }),
+            model: resolveClaudeModelId(model),
+            ...(this.pathToClaudeCodeExecutable === undefined
+                ? {}
+                : { pathToClaudeCodeExecutable: this.pathToClaudeCodeExecutable }),
+            ...(this.query === undefined ? {} : { query: this.query }),
+            request,
         });
     }
 }

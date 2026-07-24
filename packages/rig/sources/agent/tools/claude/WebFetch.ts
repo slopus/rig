@@ -1,14 +1,16 @@
 import { Type } from "@sinclair/typebox";
 
-import { defineTool } from "../../agent/types.js";
-import { quoteVisibleExact } from "../../permissions/quoteVisibleExact.js";
+import { defineTool } from "../../types.js";
+import { quoteVisibleExact } from "../../../permissions/quoteVisibleExact.js";
 import {
     applyPromptToMarkdown,
     MAX_WEB_FETCH_MARKDOWN_LENGTH,
-} from "./webFetch/applyPromptToMarkdown.js";
-import { getUrlMarkdownContent } from "./webFetch/getUrlMarkdownContent.js";
-import { isPreapprovedWebFetchUrl } from "./webFetch/isPreapprovedWebFetchUrl.js";
-import type { WebFetchResponse } from "./webFetch/types.js";
+} from "../../../tools/claude/webFetch/applyPromptToMarkdown.js";
+import { getUrlMarkdownContent } from "../../../tools/claude/webFetch/getUrlMarkdownContent.js";
+import { isPreapprovedWebFetchUrl } from "../../../tools/claude/webFetch/isPreapprovedWebFetchUrl.js";
+import type { WebFetchResponse } from "../../../tools/claude/webFetch/types.js";
+import type { Model, Provider } from "@slopus/rig-execution";
+import { selectClaudeWebToolModel } from "../../../tools/claude/selectClaudeWebToolModel.js";
 
 const CLAUDE_WEB_FETCH_DESCRIPTION = `IMPORTANT: WebFetch WILL FAIL for authenticated or private URLs. Before using this tool, check whether the URL points to an authenticated service such as Google Docs, Confluence, Jira, or GitHub. If so, look for a specialized MCP tool that provides authenticated access.
 
@@ -44,6 +46,8 @@ export interface ClaudeWebFetchDependencies {
     applyPrompt?: (
         prompt: string,
         markdown: string,
+        provider: Provider,
+        model: Model,
         signal: AbortSignal | undefined,
         isPreapprovedDomain: boolean,
     ) => Promise<string>;
@@ -59,10 +63,13 @@ export function createClaudeWebFetchTool(dependencies: ClaudeWebFetchDependencie
         name: "WebFetch",
         label: "WebFetch",
         description: CLAUDE_WEB_FETCH_DESCRIPTION,
-        arguments: Type.Object({
-            url: Type.String({ description: "The URL to fetch content from" }),
-            prompt: Type.String({ description: "The prompt to run on the fetched content" }),
-        }),
+        arguments: Type.Object(
+            {
+                url: Type.String({ description: "The URL to fetch content from" }),
+                prompt: Type.String({ description: "The prompt to run on the fetched content" }),
+            },
+            { additionalProperties: false },
+        ),
         returnType: claudeWebFetchReturnSchema,
         requiresAutoOrFullAccess: true,
         describeAutoPermissionAction: ({ url }) =>
@@ -99,12 +106,28 @@ To complete your request, use WebFetch again with these parameters:
             }
 
             const isPreapproved = isPreapprovedWebFetchUrl(url);
-            let result =
+            let result: string;
+            // Match current Claude Code: trusted short Markdown is already model-ready and skips
+            // auxiliary inference, while every other response is processed by the requested prompt.
+            if (
                 isPreapproved &&
                 response.contentType.includes("text/markdown") &&
                 response.content.length < MAX_WEB_FETCH_MARKDOWN_LENGTH
-                    ? response.content
-                    : await applyPrompt(prompt, response.content, execution.signal, isPreapproved);
+            ) {
+                result = response.content;
+            } else {
+                if (execution.provider === undefined || execution.model === undefined) {
+                    throw new Error("WebFetch requires the active provider and model.");
+                }
+                result = await applyPrompt(
+                    prompt,
+                    response.content,
+                    execution.provider,
+                    selectClaudeWebToolModel(execution.provider, execution.model),
+                    execution.signal,
+                    isPreapproved,
+                );
+            }
             if (response.persistedPath !== undefined) {
                 result += `\n\n[Binary content (${response.contentType}, ${formatFileSize(response.persistedSize ?? response.bytes)}) also saved to ${response.persistedPath}]`;
             }

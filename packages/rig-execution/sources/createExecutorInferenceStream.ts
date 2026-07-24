@@ -44,6 +44,7 @@ async function* streamExecutorInference(options: {
     let terminal = false;
     let activeTextIndex: number | undefined;
     let activeThinkingIndex: number | undefined;
+    let blockCheckpoint: AssistantMessage | undefined;
     const activeTools = new Map<string, number>();
     const responseItems: string[] = [];
 
@@ -56,35 +57,51 @@ async function* streamExecutorInference(options: {
 
     try {
         const effort = toReasoningEffort(options.streamOptions?.thinking);
-        const events = committedSessionEvents(
-            toSessionEvents(
-                options.executor.run({
-                    context: { messages: toSessionMessages(options.context.messages) },
-                    tools: toRigProviderSessionTools(options.context.tools ?? [], {
-                        lockCodexCollaboration:
-                            options.executor.type === "codex" &&
-                            options.model.id.startsWith("openai/"),
-                    }),
-                    ...(options.streamOptions?.signal === undefined
-                        ? {}
-                        : { abort: options.streamOptions.signal }),
-                    ...(effort === undefined ? {} : { effort }),
-                    selection: {
-                        modelId: options.model.id,
-                        providerId: options.providerId,
-                    },
-                    ...(options.streamOptions?.serviceTier === "fast"
-                        ? { serviceTier: "priority" }
-                        : {}),
-                    contextInstructions: options.context.systemPrompt ?? "",
-                    ...(options.context.systemPromptOverride === undefined
-                        ? {}
-                        : { systemPrompt: options.context.systemPromptOverride }),
+        const events = toSessionEvents(
+            options.executor.run({
+                context: { messages: toSessionMessages(options.context.messages) },
+                tools: toRigProviderSessionTools(options.context.tools ?? [], {
+                    lockCodexCollaboration:
+                        options.executor.type === "codex" && options.model.id.startsWith("openai/"),
                 }),
-            ),
+                ...(options.streamOptions?.signal === undefined
+                    ? {}
+                    : { abort: options.streamOptions.signal }),
+                ...(effort === undefined ? {} : { effort }),
+                selection: {
+                    modelId: options.model.id,
+                    providerId: options.providerId,
+                },
+                ...(options.streamOptions?.serviceTier === "fast"
+                    ? { serviceTier: "priority" }
+                    : {}),
+                contextInstructions: options.context.systemPrompt ?? "",
+                ...(options.context.systemPromptOverride === undefined
+                    ? {}
+                    : { systemPrompt: options.context.systemPromptOverride }),
+            }),
         );
 
         for await (const event of events) {
+            if (event.type === "block_start") {
+                blockCheckpoint = snapshot();
+                continue;
+            }
+            if (event.type === "block_reset") {
+                partial =
+                    blockCheckpoint ?? emptyAssistantMessage(options.model, options.providerId);
+                activeTextIndex = undefined;
+                activeThinkingIndex = undefined;
+                activeTools.clear();
+                responseItems.splice(0, responseItems.length, ...(partial.responseItems ?? []));
+                blockCheckpoint = undefined;
+                yield { type: "reset", partial: snapshot() };
+                continue;
+            }
+            if (event.type === "block_end") {
+                blockCheckpoint = undefined;
+                continue;
+            }
             if (event.type === "text_delta") {
                 if (activeTextIndex === undefined) {
                     activeTextIndex = partial.content.length;
@@ -291,26 +308,6 @@ async function* toSessionEvents(events: AsyncIterable<ExecutorEvent>) {
     }
 }
 
-async function* committedSessionEvents(
-    events: AsyncIterable<SessionEvent>,
-): AsyncGenerator<SessionEvent> {
-    let pending: SessionEvent[] | undefined;
-    for await (const event of events) {
-        if (event.type === "block_start") {
-            pending = [];
-        } else if (event.type === "block_reset") {
-            pending = undefined;
-        } else if (event.type === "block_end") {
-            for (const committed of pending ?? []) yield committed;
-            pending = undefined;
-        } else if (pending === undefined) {
-            yield event;
-        } else {
-            pending.push(event);
-        }
-    }
-}
-
 function toSessionMessages(messages: Context["messages"]): SessionMessage[] {
     return messages.map((message): SessionMessage => {
         if (message.role === "user") {
@@ -356,6 +353,7 @@ function toSessionMessages(messages: Context["messages"]): SessionMessage[] {
                     .map((content) => content.text)
                     .join(""),
                 input,
+                isError: message.isError,
                 ...(message.vendor === undefined ? {} : { vendor: message.vendor }),
             };
         }

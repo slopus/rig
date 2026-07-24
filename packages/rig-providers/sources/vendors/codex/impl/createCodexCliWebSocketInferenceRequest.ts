@@ -5,7 +5,7 @@ import { responseInputItems } from "@/vendors/codex/impl/responseInputItems.js";
 export function createCodexCliWebSocketInferenceRequest(
     request: CodexResponseRequest,
 ): CodexResponseRequest {
-    if (!isCodexV2Model(String(request.model))) return request;
+    if (!isCodexV2Model(String(request.model)) || request.tools !== undefined) return request;
     const inference = structuredClone(request);
     const input = responseInputItems(inference.input);
     const instructionIndex = input.findIndex(

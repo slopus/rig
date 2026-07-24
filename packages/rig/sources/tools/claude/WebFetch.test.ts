@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createJustBashToolHarness } from "../testing/createJustBashToolHarness.js";
-import { createClaudeWebFetchTool } from "./WebFetch.js";
+import { createClaudeWebFetchTool } from "../../agent/tools/claude/WebFetch.js";
+import { modelAnthropicFable5, modelAnthropicOpus48 } from "@slopus/rig-execution";
+import type { Model } from "@slopus/rig-execution";
 
 describe("Claude Code WebFetch tool", () => {
     it("declares that network access requires Auto or Full access", () => {
@@ -26,13 +28,27 @@ describe("Claude Code WebFetch tool", () => {
         });
         const harness = createJustBashToolHarness();
 
-        const result = await harness.runTool(tool, {
-            url: "https://example.com/docs",
-            prompt: "Return the title",
-        });
+        const result = await tool.execute(
+            {
+                url: "https://example.com/docs",
+                prompt: "Return the title",
+            },
+            harness.context,
+            {
+                model: modelAnthropicFable5,
+                provider: providerWithModels([modelAnthropicFable5, modelAnthropicOpus48]),
+            },
+        );
 
         expect(fetchPage).toHaveBeenCalledWith("https://example.com/docs", undefined);
-        expect(applyPrompt).toHaveBeenCalledWith("Return the title", "# Example", undefined, false);
+        expect(applyPrompt).toHaveBeenCalledWith(
+            "Return the title",
+            "# Example",
+            expect.objectContaining({ id: "work-claude" }),
+            modelAnthropicOpus48,
+            undefined,
+            false,
+        );
         expect(result).toEqual({
             bytes: 42,
             code: 200,
@@ -100,4 +116,58 @@ describe("Claude Code WebFetch tool", () => {
         ).rejects.toThrow("Invalid URL");
         expect(fetchPage).not.toHaveBeenCalled();
     });
+
+    it("summarizes through the selected provider with the preferred model", async () => {
+        const runClaudeAuxiliaryQuery = vi.fn().mockResolvedValue({
+            content: [{ type: "text", text: "Selected provider summary." }],
+        });
+        const tool = createClaudeWebFetchTool({
+            fetchPage: vi.fn().mockResolvedValue({
+                bytes: 42,
+                code: 200,
+                codeText: "OK",
+                content: "# Example",
+                contentType: "text/html",
+            }),
+        });
+        const harness = createJustBashToolHarness();
+
+        const result = await tool.execute(
+            { url: "https://example.com/docs", prompt: "Summarize" },
+            harness.context,
+            {
+                model: modelAnthropicFable5,
+                provider: providerWithModels(
+                    [modelAnthropicFable5, modelAnthropicOpus48],
+                    runClaudeAuxiliaryQuery,
+                ),
+            },
+        );
+
+        expect(result.result).toBe("Selected provider summary.");
+        expect(runClaudeAuxiliaryQuery).toHaveBeenCalledWith(
+            modelAnthropicOpus48,
+            expect.objectContaining({ systemPrompt: "" }),
+        );
+    });
 });
+
+function providerWithModels(
+    models: readonly Model[],
+    runClaudeAuxiliaryQuery?: NonNullable<
+        import("@slopus/rig-execution").Provider["runClaudeAuxiliaryQuery"]
+    >,
+) {
+    return {
+        id: "work-claude",
+        type: "claude" as const,
+        models,
+        serviceTiers: undefined,
+        extendProfilePromptContext: undefined,
+        quota: undefined,
+        ...(runClaudeAuxiliaryQuery === undefined ? {} : { runClaudeAuxiliaryQuery }),
+        stream: () => {
+            throw new Error("Not used");
+        },
+    };
+}

@@ -102,8 +102,10 @@ function toSessionStoreEntries(
 ): SessionStoreEntry[] {
     let parentUuid: string | null = null;
     const assistantUuidByToolCallId = new Map<string, string>();
-    return messages.flatMap((message, index): SessionStoreEntry[] => {
-        if (message.role === "system") return [];
+    const entries: SessionStoreEntry[] = [];
+    for (let index = 0; index < messages.length; index += 1) {
+        const message = messages[index];
+        if (message === undefined || message.role === "system") continue;
         const uuid = stableMessageUuid(options.sessionId, message, index);
         const base = {
             cwd: options.cwd,
@@ -121,40 +123,42 @@ function toSessionStoreEntries(
             for (const call of message.toolCalls ?? []) {
                 assistantUuidByToolCallId.set(call.callId, uuid);
             }
-            return [
-                {
-                    ...base,
-                    message: toSdkAssistantMessage(message, options.model, uuid),
-                    type: "assistant",
-                },
-            ];
+            entries.push({
+                ...base,
+                message: toSdkAssistantMessage(message, options.model, uuid),
+                type: "assistant",
+            });
+            continue;
         }
         if (message.role === "tool") {
+            const toolResults = [message];
+            while (messages[index + 1]?.role === "tool") {
+                toolResults.push(messages[index + 1] as SessionToolResultMessage);
+                index += 1;
+            }
             const sourceToolAssistantUUID = assistantUuidByToolCallId.get(message.callId);
-            return [
-                {
-                    ...base,
-                    isMeta: true,
-                    message: { role: "user", content: [toToolResultBlock(message)] },
-                    ...(sourceToolAssistantUUID === undefined ? {} : { sourceToolAssistantUUID }),
-                    type: "user",
-                },
-            ];
-        }
-        return [
-            {
+            entries.push({
                 ...base,
-                message: {
-                    role: "user",
-                    content: toSdkContent(
-                        message.content,
-                        message.role === "user" ? message.input : undefined,
-                    ),
-                },
+                isMeta: true,
+                message: { role: "user", content: toolResults.map(toToolResultBlock) },
+                ...(sourceToolAssistantUUID === undefined ? {} : { sourceToolAssistantUUID }),
                 type: "user",
+            });
+            continue;
+        }
+        entries.push({
+            ...base,
+            message: {
+                role: "user",
+                content: toSdkContent(
+                    message.content,
+                    message.role === "user" ? message.input : undefined,
+                ),
             },
-        ];
-    });
+            type: "user",
+        });
+    }
+    return entries;
 }
 
 function toSdkUserMessage(message: SessionUserMessage): SDKUserMessage {
@@ -203,6 +207,7 @@ function toToolResultBlock(message: SessionToolResultMessage) {
         type: "tool_result" as const,
         tool_use_id: message.callId,
         content: toSdkContent(message.content, message.input),
+        ...(message.isError === undefined ? {} : { is_error: message.isError }),
     };
 }
 

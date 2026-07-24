@@ -130,6 +130,47 @@ describe("reviewAutoPermission", () => {
         const request = requests[0];
         expect(request?.messages[0]?.content).toContain(`"description":${JSON.stringify(action)}`);
     });
+
+    it("waits for a permission reviewer until the caller aborts", async () => {
+        const model = defineModel({
+            id: "anthropic/stuck-reviewer",
+            name: "Stuck reviewer",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const never = new Promise<never>(() => {});
+        const close = vi.fn(async () => ({ done: true as const, value: undefined }));
+        const provider = defineProvider({
+            id: "claude",
+            models: [model],
+            stream: () =>
+                ({
+                    [Symbol.asyncIterator]() {
+                        return this;
+                    },
+                    next: () => never,
+                    return: close,
+                    result: () => never,
+                }) as unknown as InferenceStream,
+        });
+        const controller = new AbortController();
+
+        const review = reviewAutoPermission({
+            action: 'fetching "https://example.com"',
+            args: { url: "https://example.com" },
+            messages: [],
+            model,
+            now: () => 0,
+            provider,
+            signal: controller.signal,
+            toolName: "WebFetch",
+        });
+        await Promise.resolve();
+        controller.abort();
+
+        await expect(review).rejects.toThrow("Permission review was stopped.");
+        expect(close).toHaveBeenCalledOnce();
+    });
 });
 
 function oversizedUserHistory(): Message[] {

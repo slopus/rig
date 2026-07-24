@@ -2,6 +2,7 @@ import { visibleWidth, type TUI } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 
 import { Agent } from "../agent/Agent.js";
+import type { AgentLoopEvent } from "../agent/loop.js";
 import type { ProtocolHttpClient } from "../client/ProtocolHttpClient.js";
 import { RemoteAgent } from "../client/RemoteAgent.js";
 import { createJustBashToolHarness } from "../tools/testing/createJustBashToolHarness.js";
@@ -682,7 +683,7 @@ describe("CodingAssistantApp", () => {
             type: "run_finished",
         });
         app.applySessionEvent({
-            createdAt: 4,
+            createdAt: 5,
             data: { runId: "current-run" },
             id: "current-started",
             sessionId: "session-1",
@@ -5218,6 +5219,111 @@ describe("CodingAssistantApp", () => {
         expect(composerLines.length).toBeGreaterThanOrEqual(1);
     });
 
+    it("removes tentative reasoning, text, and tool rows when inference resets", () => {
+        const model = defineModel({
+            id: "anthropic/test",
+            name: "Claude Test",
+            thinkingLevels: ["high"],
+            defaultThinkingLevel: "high",
+        });
+        const provider = defineProvider({
+            id: "claude",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            processManager: new NativeProcessManager(),
+            sessionBacked: true,
+            showReasoning: true,
+            tui: fakeTui(),
+        });
+        const partial: AssistantMessage = {
+            api: "claude",
+            content: [
+                { type: "thinking", thinking: "Tentative reasoning" },
+                { type: "text", text: "Tentative answer" },
+                {
+                    type: "toolCall",
+                    id: "tentative-tool",
+                    name: "Bash",
+                    arguments: { command: "echo tentative" },
+                },
+            ],
+            model: model.id,
+            provider: provider.id,
+            role: "assistant",
+            stopReason: "toolUse",
+            timestamp: 1,
+            usage: zeroUsage(),
+        };
+        const apply = (id: string, event: AgentLoopEvent) =>
+            app.applySessionEvent({
+                createdAt: 1,
+                data: { event, runId: "run-1" },
+                id,
+                sessionId: "session-1",
+                type: "agent_event",
+            });
+
+        app.applySessionEvent({
+            createdAt: 0,
+            data: { runId: "run-1" },
+            id: "reset-run-started",
+            sessionId: "session-1",
+            type: "run_started",
+        });
+        apply("thinking-start", { type: "thinking_start", contentIndex: 0, partial });
+        apply("thinking-delta", {
+            type: "thinking_delta",
+            contentIndex: 0,
+            delta: "Tentative reasoning",
+            partial,
+        });
+        apply("text-start", { type: "text_start", contentIndex: 1, partial });
+        apply("text-delta", {
+            type: "text_delta",
+            contentIndex: 1,
+            delta: "Tentative answer",
+            partial,
+        });
+        apply("tool-start", { type: "toolcall_start", contentIndex: 2, partial });
+        apply("tool-end", {
+            type: "toolcall_end",
+            contentIndex: 2,
+            toolCall: partial.content[2] as Extract<
+                AssistantMessage["content"][number],
+                { type: "toolCall" }
+            >,
+            partial,
+        });
+
+        const tentative = stripAnsi(app.render(100).join("\n"));
+        expect(tentative).toContain("Tentative reasoning");
+        expect(tentative).toContain("Tentative answer");
+        expect(tentative).toContain("echo tentative");
+
+        apply("inference-reset", {
+            type: "reset",
+            partial: { ...partial, content: [], stopReason: "stop" },
+        });
+
+        const reset = stripAnsi(app.render(100).join("\n"));
+        expect(reset).not.toContain("Tentative reasoning");
+        expect(reset).not.toContain("Tentative answer");
+        expect(reset).not.toContain("echo tentative");
+        expect(reset).toContain("Working");
+    });
+
     it("renders multiline assistant output as one marked message", async () => {
         const model = defineModel({
             id: "openai/gpt-test",
@@ -5504,9 +5610,17 @@ describe("CodingAssistantApp", () => {
             }),
             cwd: harness.context.fs.cwd,
             processManager: new NativeProcessManager(),
+            sessionBacked: true,
             tui: fakeTui(),
         });
 
+        app.applySessionEvent({
+            createdAt: 0,
+            data: { runId: "run-1" },
+            id: "mcp-run-started",
+            sessionId: "session-1",
+            type: "run_started",
+        });
         app.applySessionEvent({
             createdAt: 1,
             data: {
@@ -5584,8 +5698,39 @@ describe("CodingAssistantApp", () => {
             sessionId: "session-1",
             type: "agent_event",
         });
+        const reviewedOnly = stripAnsi(app.render(120).join("\n"));
+        expect(reviewedOnly).toContain("Needs approval: This changes external issue state.");
+        expect(reviewedOnly).toContain("Reviewing permissions");
+        expect(reviewedOnly).not.toContain("Waiting for approval");
         app.applySessionEvent({
             createdAt: 3,
+            data: {
+                requestId: "mcp-pending:permission",
+                questions: [
+                    {
+                        header: "Permission",
+                        id: "permission",
+                        multiSelect: false,
+                        options: [
+                            {
+                                label: "Allow once",
+                                description: "Permit closing this ticket once.",
+                            },
+                            {
+                                label: "Deny",
+                                description: "Reject this tool call.",
+                            },
+                        ],
+                        question: "Allow closing ticket 42?",
+                    },
+                ],
+            },
+            id: "mcp-user-input",
+            sessionId: "session-1",
+            type: "user_input_requested",
+        });
+        app.applySessionEvent({
+            createdAt: 4,
             data: {
                 event: {
                     display: "Waiting for approval",
@@ -5619,7 +5764,7 @@ describe("CodingAssistantApp", () => {
         expect(raw).toContain("\x1b[31m\x1b[1m•");
 
         app.applySessionEvent({
-            createdAt: 4,
+            createdAt: 5,
             data: {
                 errorMessage: "The daemon restarted during the tool call.",
                 modelLocked: false,
@@ -7611,6 +7756,84 @@ describe("CodingAssistantApp", () => {
                 answers: { question_1: ["Email", "Push"] },
             }),
         );
+    });
+
+    it("restores a pending approval after replaying completed historical runs", () => {
+        const model = defineModel({
+            id: "anthropic/test",
+            name: "Claude Test",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "claude",
+            models: [model],
+            stream() {
+                return streamText("unused");
+            },
+        });
+        const harness = createJustBashToolHarness();
+        const permissionRequest = {
+            requestId: "edit-1:permission",
+            questions: [
+                {
+                    header: "Permission",
+                    id: "permission",
+                    multiSelect: false,
+                    options: [
+                        { label: "Allow once", description: "Permit this edit once." },
+                        { label: "Deny", description: "Reject this edit." },
+                    ],
+                    question: "Allow editing /tmp/rig_tool_test.txt?",
+                },
+            ],
+        };
+        const app = new CodingAssistantApp({
+            agent: new Agent({
+                provider,
+                modelId: model.id,
+                context: harness.context,
+                printToConsole: false,
+            }),
+            cwd: harness.context.fs.cwd,
+            initialSessionEvents: [
+                {
+                    createdAt: 1,
+                    data: { runId: "old-run" },
+                    id: "old-start",
+                    sessionId: "session-1",
+                    type: "run_started",
+                },
+                {
+                    createdAt: 2,
+                    data: {
+                        modelLocked: false,
+                        runId: "old-run",
+                        stopReason: "stop",
+                    },
+                    id: "old-finished",
+                    sessionId: "session-1",
+                    type: "run_finished",
+                },
+                {
+                    createdAt: 3,
+                    data: { runId: "current-run" },
+                    id: "current-start",
+                    sessionId: "session-1",
+                    type: "run_started",
+                },
+            ],
+            initialUserInputs: [permissionRequest],
+            processManager: new NativeProcessManager(),
+            respondUserInput: vi.fn(async () => undefined),
+            sessionBacked: true,
+            tui: fakeTui(),
+        });
+
+        const rendered = stripAnsi(app.render(100).join("\n"));
+        expect(rendered).toContain("Allow editing /tmp/rig_tool_test.txt?");
+        expect(rendered).toContain("Allow once");
+        expect(rendered).toContain("Deny");
     });
 
     it("submits optional structured questions without an answer", async () => {

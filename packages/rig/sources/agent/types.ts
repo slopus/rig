@@ -5,7 +5,7 @@
 import type { Static, TSchema } from "@sinclair/typebox";
 
 import type { AgentContext } from "./context/AgentContext.js";
-import type { Tool as ExecutorTool, Usage } from "@slopus/rig-execution";
+import type { Model, Provider, Tool as ExecutorTool, Usage } from "@slopus/rig-execution";
 import type { ToolResultPresentation } from "./ToolResultPresentation.js";
 import type { ToolCallPresentation } from "./ToolCallPresentation.js";
 import type { UserInputResponse } from "../user-input/types.js";
@@ -134,10 +134,14 @@ export type Lock<TArgs> = LockConstant | LockForArgs<TArgs>;
 export interface ToolExecutionOptions {
     /** Canonical model context immediately before this tool invocation. */
     messages?: readonly Message[];
+    /** Model selected for the active agent turn. */
+    model?: Model;
     onProgress?: (display: string) => void;
     /** Reports a short ephemeral activity label while the tool remains active. */
     onStatus?: (status: string) => void;
     signal?: AbortSignal;
+    /** Exact provider selected for the active agent turn. */
+    provider?: Provider;
     toolBatchId?: string;
     toolCallId?: string;
     toolCallIndex?: number;

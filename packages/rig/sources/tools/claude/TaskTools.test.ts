@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { InMemorySessionStore } from "../../server/InMemorySessionStore.js";
 import { createJustBashToolHarness } from "../testing/createJustBashToolHarness.js";
-import { claudeTaskCreateTool } from "./TaskCreate.js";
-import { claudeTaskGetTool } from "./TaskGet.js";
-import { claudeTaskListTool } from "./TaskList.js";
-import { claudeTaskUpdateTool } from "./TaskUpdate.js";
+import { claudeTaskCreateTool } from "../../agent/tools/claude/TaskCreate.js";
+import { claudeTaskGetTool } from "../../agent/tools/claude/TaskGet.js";
+import { claudeTaskListTool } from "../../agent/tools/claude/TaskList.js";
+import { claudeTaskUpdateTool } from "../../agent/tools/claude/TaskUpdate.js";
 
 describe("Claude task tools", () => {
     it("creates, links, updates, lists, and deletes persistent session tasks", async () => {

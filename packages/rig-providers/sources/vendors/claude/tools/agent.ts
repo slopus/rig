@@ -6,7 +6,7 @@ export const claude_agent_tool: SessionTool = {
     name: "Agent",
     type: "local",
     description:
-        "Start a subagent for a focused, self-contained task. Run it in the foreground when its result is needed immediately, or in the background to keep working while it runs.",
+        "Start a subagent for a focused, self-contained task. Agents run in the background by default and report back when they finish. Set run_in_background to false when the result is needed immediately.",
     parameters: Type.Object({
         context: Type.Optional(
             Type.Union([Type.Literal("parent"), Type.Literal("task")], {
@@ -36,7 +36,7 @@ export const claude_agent_tool: SessionTool = {
         run_in_background: Type.Optional(
             Type.Boolean({
                 description:
-                    "Set to true to run the subagent in the background. A completion notification will arrive later.",
+                    "Agents run in the background by default. Set to false to wait for the result before continuing.",
             }),
         ),
     }),
@@ -46,7 +46,7 @@ export const claude_agent_tool_sonnet: SessionTool = {
     name: "Agent",
     type: "local",
     description:
-        "Start a subagent for a focused, self-contained task. Run it in the foreground when its result is needed immediately, or in the background to keep working while it runs.",
+        "Start a subagent for a focused, self-contained task. Agents run in the background by default and report back when they finish. Set run_in_background to false when the result is needed immediately.",
     parameters: Type.Object({
         context: Type.Optional(
             Type.Union([Type.Literal("parent"), Type.Literal("task")], {
@@ -76,7 +76,7 @@ export const claude_agent_tool_sonnet: SessionTool = {
         run_in_background: Type.Optional(
             Type.Boolean({
                 description:
-                    "Set to true to run the subagent in the background. A completion notification will arrive later.",
+                    "Agents run in the background by default. Set to false to wait for the result before continuing.",
             }),
         ),
     }),

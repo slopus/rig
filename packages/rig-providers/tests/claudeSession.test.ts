@@ -227,7 +227,12 @@ describe("ClaudeSession", () => {
                             content: "",
                             toolCalls: [{ callId: "call-1", name: "Read", arguments: "{}" }],
                         },
-                        { role: "tool", callId: "call-1", content: "TOOL_RESULT" },
+                        {
+                            role: "tool",
+                            callId: "call-1",
+                            content: "TOOL_RESULT",
+                            isError: true,
+                        },
                     ],
                 },
             }),
@@ -245,6 +250,7 @@ describe("ClaudeSession", () => {
                                 type: "tool_result",
                                 tool_use_id: "call-1",
                                 content: "TOOL_RESULT",
+                                is_error: true,
                             },
                         ],
                     },
@@ -255,6 +261,162 @@ describe("ClaudeSession", () => {
             type: "user",
             message: { content: "Continue from the supplied tool result." },
         });
+    });
+
+    it("replays after a user message interrupts a completed tool batch", async () => {
+        const credential = await ClaudeAuthTokenCredential.tryLoad({ authToken: "test-token" });
+        if (credential === null) throw new Error("Expected test credential.");
+        const firstClose = vi.fn();
+        const query = vi.fn<ClaudeSdkQuery>((parameters) => {
+            if (query.mock.calls.length === 1) return fakeToolCallQuery(firstClose);
+            return fakeQuery("RECOVERED");
+        });
+        const session = new ClaudeSession("interrupted-tool-session", {
+            context: { instructions: "", messages: [] },
+            credential,
+            cwd: "/tmp/rig-claude-interrupted-tool-test",
+            model: "sonnet[1m]",
+            query,
+            skills: [],
+            tools: [
+                {
+                    name: "Bash",
+                    type: "local",
+                    parameters: Type.Object({ command: Type.String() }),
+                },
+            ],
+        });
+
+        await expect(
+            collectSessionEvents(
+                session.run({
+                    context: { messages: [{ role: "user", content: "Run a command." }] },
+                }),
+            ),
+        ).resolves.toContainEqual({ type: "done", state: "tool_call" });
+
+        const events = await collectSessionEvents(
+            session.run({
+                context: {
+                    messages: [
+                        { role: "user", content: "Run a command." },
+                        {
+                            role: "assistant",
+                            content: "",
+                            toolCalls: [
+                                {
+                                    callId: "call-1",
+                                    name: "Bash",
+                                    arguments: '{"command":"echo done"}',
+                                },
+                            ],
+                        },
+                        {
+                            role: "tool",
+                            callId: "call-1",
+                            content: "done",
+                        },
+                        { role: "user", content: "What are the last messages?" },
+                    ],
+                },
+            }),
+        );
+
+        expect(query).toHaveBeenCalledTimes(2);
+        expect(firstClose).toHaveBeenCalledOnce();
+        expect(textFromSessionEvents(events)).toBe("RECOVERED");
+        expect(events.at(-1)).toEqual({ type: "done", state: "normal" });
+    });
+
+    it("replays parallel tool results as one complete Claude user turn", async () => {
+        let capturedEntries: unknown;
+        const credential = await ClaudeAuthTokenCredential.tryLoad({ authToken: "test-token" });
+        if (credential === null) throw new Error("Expected test credential.");
+        const session = new ClaudeSession("parallel-tool-replay-session", {
+            context: { instructions: "", messages: [] },
+            credential,
+            cwd: "/tmp/rig-claude-parallel-tool-replay-test",
+            model: "sonnet[1m]",
+            query: ((parameters) => {
+                async function* messages() {
+                    capturedEntries = await parameters.options?.sessionStore?.load({
+                        projectKey: "test",
+                        sessionId: parameters.options.resume ?? "parallel-tool-replay-session",
+                    });
+                    yield* fakeQuery("RECOVERED_PARALLEL_BATCH");
+                }
+                const generator = messages();
+                return Object.assign(generator, { close: () => {} });
+            }) as ClaudeSdkQuery,
+            skills: [],
+            tools: [
+                {
+                    name: "Read",
+                    type: "local",
+                    parameters: Type.Object({ file_path: Type.String() }),
+                },
+                {
+                    name: "Glob",
+                    type: "local",
+                    parameters: Type.Object({ pattern: Type.String() }),
+                },
+            ],
+        });
+
+        const events = await collectSessionEvents(
+            session.run({
+                context: {
+                    messages: [
+                        { role: "user", content: "Run both tools." },
+                        {
+                            role: "assistant",
+                            content: "",
+                            toolCalls: [
+                                {
+                                    callId: "parallel-read",
+                                    name: "Read",
+                                    arguments: '{"file_path":"/tmp/a"}',
+                                },
+                                {
+                                    callId: "parallel-glob",
+                                    name: "Glob",
+                                    arguments: '{"pattern":"**/*.md"}',
+                                },
+                            ],
+                        },
+                        {
+                            role: "tool",
+                            callId: "parallel-read",
+                            content: "read result",
+                        },
+                        {
+                            role: "tool",
+                            callId: "parallel-glob",
+                            content: "glob result",
+                        },
+                        { role: "user", content: "Continue." },
+                    ],
+                },
+            }),
+        );
+
+        expect(capturedEntries).toHaveLength(3);
+        expect(capturedEntries).toMatchObject([
+            { type: "user", message: { role: "user", content: "Run both tools." } },
+            { type: "assistant" },
+            {
+                type: "user",
+                isMeta: true,
+                message: {
+                    role: "user",
+                    content: [
+                        { type: "tool_result", tool_use_id: "parallel-read" },
+                        { type: "tool_result", tool_use_id: "parallel-glob" },
+                    ],
+                },
+            },
+        ]);
+        expect(textFromSessionEvents(events)).toBe("RECOVERED_PARALLEL_BATCH");
     });
 
     it("removes the abort listener when SDK query construction throws", async () => {
@@ -285,6 +447,144 @@ describe("ClaudeSession", () => {
         ).rejects.toThrow("SDK construction failed.");
         expect(addAbortListener).toHaveBeenCalledOnce();
         expect(removeAbortListener).toHaveBeenCalledOnce();
+    });
+
+    it("stops immediately when the Claude SDK does not settle after interruption", async () => {
+        const credential = await ClaudeAuthTokenCredential.tryLoad({ authToken: "test-token" });
+        if (credential === null) throw new Error("Expected test credential.");
+        const started = deferred<void>();
+        const never = new Promise<never>(() => {});
+        const close = vi.fn();
+        const interrupt = vi.fn(() => never);
+        const session = new ClaudeSession("stuck-abort-session", {
+            context: { instructions: "", messages: [] },
+            credential,
+            cwd: "/tmp/rig-claude-stuck-abort-test",
+            model: "sonnet[1m]",
+            query: (() => ({
+                [Symbol.asyncIterator]() {
+                    return this;
+                },
+                close,
+                interrupt,
+                next() {
+                    started.resolve();
+                    return never;
+                },
+            })) as unknown as ClaudeSdkQuery,
+            skills: [],
+            tools: [],
+        });
+        const controller = new AbortController();
+        const eventsPromise = collectSessionEvents(
+            session.run({
+                abort: controller.signal,
+                context: { messages: [{ role: "user", content: "Keep waiting." }] },
+            }),
+        );
+
+        await started.promise;
+        controller.abort();
+
+        await expect(settlesBeforeNextTurn(eventsPromise)).resolves.toContainEqual({
+            type: "block_reset",
+        });
+        expect(interrupt).toHaveBeenCalledOnce();
+        expect(close).toHaveBeenCalledOnce();
+    });
+
+    it("starts a new Claude SDK session after abort", async () => {
+        const credential = await ClaudeAuthTokenCredential.tryLoad({ authToken: "test-token" });
+        if (credential === null) throw new Error("Expected test credential.");
+        const started = deferred<void>();
+        const sdkSessionIds: string[] = [];
+        const query = vi.fn<ClaudeSdkQuery>((parameters) => {
+            sdkSessionIds.push(parameters.options?.sessionId ?? parameters.options?.resume ?? "");
+            if (query.mock.calls.length > 1) return fakeQuery("NEW_SESSION_RECOVERED");
+            const never = new Promise<never>(() => {});
+            return {
+                [Symbol.asyncIterator]() {
+                    return this;
+                },
+                close: vi.fn(),
+                interrupt: vi.fn(),
+                next() {
+                    started.resolve();
+                    return never;
+                },
+            } as unknown as ReturnType<ClaudeSdkQuery>;
+        });
+        const session = new ClaudeSession("rotate-after-abort-session", {
+            context: { instructions: "", messages: [] },
+            credential,
+            cwd: "/tmp/rig-claude-rotate-after-abort-test",
+            model: "sonnet[1m]",
+            query,
+            skills: [],
+            tools: [],
+        });
+        const controller = new AbortController();
+        const firstRun = collectSessionEvents(
+            session.run({
+                abort: controller.signal,
+                context: { messages: [{ role: "user", content: "Keep waiting." }] },
+            }),
+        );
+
+        await started.promise;
+        controller.abort();
+        await expect(firstRun).resolves.toContainEqual({ type: "block_reset" });
+        const secondRun = await collectSessionEvents(
+            session.run({
+                context: {
+                    messages: [
+                        { role: "user", content: "Keep waiting." },
+                        { role: "user", content: "Continue." },
+                    ],
+                },
+            }),
+        );
+
+        expect(sdkSessionIds).toHaveLength(2);
+        expect(sdkSessionIds[0]).not.toBe(sdkSessionIds[1]);
+        expect(textFromSessionEvents(secondRun)).toBe("NEW_SESSION_RECOVERED");
+    });
+
+    it("closes a Claude query when abort fires during query construction", async () => {
+        const credential = await ClaudeAuthTokenCredential.tryLoad({ authToken: "test-token" });
+        if (credential === null) throw new Error("Expected test credential.");
+        const controller = new AbortController();
+        const close = vi.fn();
+        const session = new ClaudeSession("construction-abort-session", {
+            context: { instructions: "", messages: [] },
+            credential,
+            cwd: "/tmp/rig-claude-construction-abort-test",
+            model: "sonnet[1m]",
+            query: (() => {
+                controller.abort();
+                return {
+                    [Symbol.asyncIterator]() {
+                        return this;
+                    },
+                    close,
+                    next: vi.fn(() => new Promise<never>(() => {})),
+                };
+            }) as unknown as ClaudeSdkQuery,
+            skills: [],
+            tools: [],
+        });
+
+        await expect(
+            settlesBeforeNextTurn(
+                collectSessionEvents(
+                    session.run({
+                        abort: controller.signal,
+                        context: { messages: [{ role: "user", content: "Keep waiting." }] },
+                    }),
+                ),
+            ),
+        ).resolves.toContainEqual({ type: "block_reset" });
+        expect(close).toHaveBeenCalledOnce();
     });
 
     it("replays user and tool-result images as native Claude image blocks", async () => {
@@ -559,6 +859,29 @@ describe("ClaudeSession", () => {
     });
 });
 
+async function settlesBeforeNextTurn<T>(promise: Promise<T>): Promise<T> {
+    return Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+            setImmediate(() => reject(new Error("The aborted Claude query outlived its turn.")));
+        }),
+    ]);
+}
+
+function deferred<T>(): {
+    promise: Promise<T>;
+    resolve: (value?: T) => void;
+} {
+    let resolvePromise: (value: T | PromiseLike<T>) => void = () => {};
+    const promise = new Promise<T>((resolve) => {
+        resolvePromise = resolve;
+    });
+    return {
+        promise,
+        resolve: (value) => resolvePromise(value as T),
+    };
+}
+
 function fakeNativeCompactQuery(
     parameters: Parameters<ClaudeSdkQuery>[0],
     summary: string,
@@ -639,4 +962,54 @@ function fakeQuery(text: string): ReturnType<ClaudeSdkQuery> {
     return Object.assign(generator, {
         close: () => {},
     }) as unknown as ReturnType<ClaudeSdkQuery>;
+}
+
+function fakeToolCallQuery(close: () => void): ReturnType<ClaudeSdkQuery> {
+    async function* messages() {
+        yield {
+            type: "stream_event",
+            event: {
+                type: "content_block_start",
+                index: 0,
+                content_block: {
+                    type: "tool_use",
+                    id: "call-1",
+                    name: "Bash",
+                    input: {},
+                },
+            },
+            parent_tool_use_id: null,
+            uuid: "tool-start",
+            session_id: "session-id",
+        };
+        yield {
+            type: "stream_event",
+            event: {
+                type: "content_block_delta",
+                index: 0,
+                delta: {
+                    type: "input_json_delta",
+                    partial_json: '{"command":"echo done"}',
+                },
+            },
+            parent_tool_use_id: null,
+            uuid: "tool-delta",
+            session_id: "session-id",
+        };
+        yield {
+            type: "stream_event",
+            event: { type: "content_block_stop", index: 0 },
+            parent_tool_use_id: null,
+            uuid: "tool-stop",
+            session_id: "session-id",
+        };
+        yield {
+            type: "stream_event",
+            event: { type: "message_stop" },
+            parent_tool_use_id: null,
+            uuid: "message-stop",
+            session_id: "session-id",
+        };
+    }
+    return Object.assign(messages(), { close }) as unknown as ReturnType<ClaudeSdkQuery>;
 }

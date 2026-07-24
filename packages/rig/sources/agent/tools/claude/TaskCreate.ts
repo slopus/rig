@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 
-import { defineTool } from "../../agent/types.js";
-import { taskMetadataSchema } from "./taskSchemas.js";
+import { defineTool } from "../../types.js";
+import { taskMetadataSchema } from "../../../tools/claude/taskSchemas.js";
 
 export const claudeTaskCreateTool = defineTool({
     name: "TaskCreate",

@@ -758,13 +758,13 @@ export class InMemorySession {
         }
         this.#activeRun?.controller.abort();
         this.#restoredActiveRunId = undefined;
+        const event = this.#append("abort_requested", runId !== undefined ? { runId } : {});
         await Promise.all([
             this.#killRuntimeProcesses(),
             stopDescendants,
             ...discardedQueue.map((queued) => this.#closeDebugLog(queued)),
         ]);
         continuation?.resolveReady();
-        const event = this.#append("abort_requested", runId !== undefined ? { runId } : {});
         for (const queuedRunId of queuedRunIds) {
             this.#append("run_error", {
                 errorMessage: "The queued run was stopped.",
@@ -2559,6 +2559,15 @@ export class InMemorySession {
         };
     }
 
+    lastErrorMessage(): string | undefined {
+        const events = this.events.since(undefined) ?? [];
+        for (let index = events.length - 1; index >= 0; index -= 1) {
+            const event = events[index];
+            if (event?.type === "run_error") return event.data.errorMessage;
+        }
+        return undefined;
+    }
+
     waitForRun(runId: string): Promise<SessionRunCompletion> {
         const completed = this.#completionForRun(runId);
         if (completed !== undefined) {
@@ -3588,6 +3597,7 @@ export class InMemorySession {
                 encryptedMessages: false,
                 followUp: (target, message, effort, encryptedMessage) =>
                     agentManager.followUp(this.id, target, message, effort, encryptedMessage),
+                inspect: (target) => agentManager.inspect(this.id, target),
                 interrupt: (target) => agentManager.interrupt(this.id, target),
                 list: (pathPrefix) => agentManager.list(this.id, pathPrefix),
                 maxDepth: agentManager.maxDepth,

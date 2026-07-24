@@ -2,9 +2,11 @@ import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { Type } from "@sinclair/typebox";
 import { describe, expect, it, vi } from "vitest";
 
-import { Agent, createNodeAgentContext } from "../agent/index.js";
+import { Agent, createNodeAgentContext, type AnyDefinedTool } from "../agent/index.js";
+import { defineTool } from "../agent/types.js";
 import type { CodingAssistantRuntime } from "../runtime/CodingAssistantRuntime.js";
 import type { CreateCodingAssistantAgentOptions } from "../runtime/createCodingAssistantAgent.js";
 import { NativeProcessManager } from "../processes/index.js";
@@ -102,6 +104,93 @@ describe("InMemorySession abort", () => {
 
         await expect(session.abort()).resolves.toEqual({ aborted: true });
         expect(stopDescendants).toHaveBeenCalledWith(session.id);
+    });
+
+    it("publishes interrupted tools and the stopped run before provider cleanup settles", async () => {
+        const model = defineModel({
+            defaultThinkingLevel: "off",
+            id: "test/immediate-abort",
+            name: "Immediate abort",
+            thinkingLevels: ["off"],
+        });
+        const provider = defineProvider({
+            id: "test",
+            models: [model],
+            stream() {
+                return inferenceStreamFor({
+                    ...assistantMessage("", model.id),
+                    content: ["first", "second"].map((name) => ({
+                        arguments: {},
+                        id: `call-${name}`,
+                        name,
+                        type: "toolCall" as const,
+                    })),
+                    stopReason: "toolUse",
+                });
+            },
+        });
+        const toolsStarted = deferred<void>();
+        let startedCount = 0;
+        const never = new Promise<never>(() => {});
+        const tools = ["first", "second"].map((name) =>
+            defineTool({
+                name,
+                label: name,
+                description: `Run ${name}.`,
+                interruptionMessage: `${name} was stopped.`,
+                arguments: Type.Object({}),
+                returnType: Type.Object({}),
+                shouldReviewInAutoMode: () => false,
+                execute() {
+                    startedCount += 1;
+                    if (startedCount === 2) toolsStarted.resolve();
+                    return never;
+                },
+                toLLM: () => [],
+                toUI: () => name,
+                locks: [],
+            }),
+        );
+        const descendantsStopped = deferred<number>();
+        const stopDescendants = vi.fn(() => descendantsStopped.promise);
+        const session = new InMemorySession({
+            agentManager: { stopDescendants } as unknown as AgentSessionManager,
+            createEventId: createEventIdFactory(),
+            createRuntime: (options) => createRuntime(options, provider, tools),
+            modelCatalog: {
+                defaultModelId: model.id,
+                defaultProviderId: provider.id,
+                models: [model],
+                providers: [{ models: [model], providerId: provider.id }],
+            },
+            request: { cwd: "/tmp/rig-immediate-abort", modelId: model.id },
+        });
+        const submitted = session.submit({ text: "Run both tools." });
+        await toolsStarted.promise;
+
+        const abort = session.abort();
+        await expect(settlesBeforeNextTurn(session.waitForRun(submitted.runId))).resolves.toEqual({
+            status: "aborted",
+        });
+
+        const events = session.events.since(undefined) ?? [];
+        const abortRequested = events.findIndex((event) => event.type === "abort_requested");
+        const toolEnds = events.flatMap((event, index) =>
+            event.type === "agent_event" && event.data.event.type === "tool_execution_end"
+                ? [index]
+                : [],
+        );
+        const runFinished = events.findIndex(
+            (event) => event.type === "run_finished" && event.data.runId === submitted.runId,
+        );
+        expect(abortRequested).toBeGreaterThanOrEqual(0);
+        expect(toolEnds).toHaveLength(2);
+        expect(toolEnds.every((index) => index < runFinished)).toBe(true);
+        expect(runFinished).toBeGreaterThan(toolEnds.at(-1) ?? -1);
+        expect(stopDescendants).toHaveBeenCalledOnce();
+
+        descendantsStopped.resolve(1);
+        await expect(abort).resolves.toMatchObject({ aborted: true });
     });
 
     it("stops tracked processes even after the agent run is already idle", async () => {
@@ -705,6 +794,7 @@ function testCatalog(): ModelCatalog {
 function createRuntime(
     options: CreateCodingAssistantAgentOptions,
     provider: ReturnType<typeof defineProvider>,
+    tools: readonly AnyDefinedTool[] = [],
 ): CodingAssistantRuntime {
     const processManager = new NativeProcessManager();
     const context = createNodeAgentContext({ cwd: options.cwd, processManager });
@@ -714,13 +804,22 @@ function createRuntime(
             modelId: options.modelId ?? provider.models[0]?.id ?? "",
             printToConsole: false,
             provider,
-            tools: [],
+            tools,
         }),
         context,
         cwd: options.cwd,
         processManager,
         executor: provider,
     };
+}
+
+async function settlesBeforeNextTurn<T>(promise: Promise<T>): Promise<T> {
+    return Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+            setImmediate(() => reject(new Error("The aborted session outlived its turn.")));
+        }),
+    ]);
 }
 
 function createSession(
@@ -777,6 +876,18 @@ function gatedToolCallStream(
         },
         async result() {
             await release;
+            return message;
+        },
+    };
+}
+
+function inferenceStreamFor(message: AssistantMessage): InferenceStream {
+    return {
+        async *[Symbol.asyncIterator]() {
+            yield { partial: message, type: "start" as const };
+            yield { message, reason: "toolUse" as const, type: "done" as const };
+        },
+        async result() {
             return message;
         },
     };

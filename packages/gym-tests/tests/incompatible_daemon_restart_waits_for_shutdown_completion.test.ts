@@ -10,7 +10,7 @@ afterEach(async () => {
 });
 
 describe("restarting an incompatible daemon", () => {
-    it("waits for the old daemon to finish cleanup before starting its replacement", async () => {
+    it("starts the replacement after the old server stops even if its process lingers", async () => {
         const gym = await createGym({
             mode: "docker",
             entrypoint: ["sh", "/workspace/restart-incompatible-daemon.sh"],
@@ -19,6 +19,7 @@ describe("restarting an incompatible daemon", () => {
                 RIG_SERVER_SOCKET_PATH: "/tmp/rig-r013.sock",
             },
             files: {
+                "keep-retired-daemon-alive.cjs": keepRetiredDaemonAliveScript,
                 "restart-incompatible-daemon.sh": restartIncompatibleDaemonScript,
             },
             inference(request, callIndex) {
@@ -96,8 +97,17 @@ const holdDaemonShutdownCommand =
 
 const restartIncompatibleDaemonScript = `#!/bin/sh
 set -eu
-RIG_DEVELOPMENT_BUILD_ID=older-source node /app/packages/rig/dist/main.js exec --permission-mode full_access "Start the daemon shutdown hold." > /workspace/old-client.log 2>&1 &
+RIG_DEVELOPMENT_BUILD_ID=older-source node --require /workspace/keep-retired-daemon-alive.cjs /app/packages/rig/dist/main.js exec --permission-mode full_access "Start the daemon shutdown hold." > /workspace/old-client.log 2>&1 &
 while [ ! -e /workspace/daemon-shutdown-hold-ready ]; do sleep 0.05; done
 node -e 'const fs=require("node:fs"); const registry=JSON.parse(fs.readFileSync(process.env.RIG_SERVER_DIRECTORY + "/server.json", "utf8")); fs.writeFileSync("/workspace/original-daemon-pid", String(registry.pid));'
 RIG_DEVELOPMENT_BUILD_ID=current-source exec node /app/packages/rig/dist/main.js
+`;
+
+const keepRetiredDaemonAliveScript = `
+if (
+    process.env.RIG_DEVELOPMENT_BUILD_ID === "older-source" &&
+    process.argv.includes("--server")
+) {
+    setInterval(() => undefined, 1_000);
+}
 `;

@@ -1,6 +1,6 @@
 import type { AnyDefinedTool } from "../agent/types.js";
 import type { Model, Provider } from "@slopus/rig-execution";
-import { claudeCodeTools } from "../tools/claude/index.js";
+import { claudeTools } from "../agent/tools/claude/assembleClaudeTools.js";
 import { assembleCodexTools } from "../agent/tools/codex/assembleCodexTools.js";
 import { codexCollaborationTools } from "../agent/tools/codex/assembleCodexTools.js";
 import { grokBuildTools } from "../tools/grok/index.js";
@@ -24,14 +24,18 @@ export function selectToolsForModel(
     const collaborationNames = new Set(codexCollaborationTools.map((tool) => tool.name));
     const baseTools =
         toolType === "claude"
-            ? claudeCodeTools
+            ? claudeTools
             : toolType === "grok"
               ? grokBuildTools
               : assembleCodexTools(
                     options.model.id,
                     options.provider.type ?? options.provider.id,
                 ).filter((tool) => !collaborationNames.has(tool.name));
-    if (options.geminiApiKey === undefined) return baseTools;
+    const providerTools =
+        options.provider.type === "bedrock"
+            ? baseTools.filter((tool) => tool.name !== "WebSearch")
+            : baseTools;
+    if (options.geminiApiKey === undefined) return providerTools;
 
-    return [...baseTools, ...createGeminiTools(options.geminiApiKey)];
+    return [...providerTools, ...createGeminiTools(options.geminiApiKey)];
 }

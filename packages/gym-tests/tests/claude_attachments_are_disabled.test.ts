@@ -7,7 +7,7 @@ import {
     type InterceptedHttpRequest,
 } from "@slopus/rig-gym";
 
-const MODEL = "claude-sonnet-4-6";
+const MODEL = "claude-sonnet-5";
 const running = new Set<Gym>();
 
 afterEach(async () => {

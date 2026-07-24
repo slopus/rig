@@ -1,8 +1,8 @@
 import { Type } from "@sinclair/typebox";
 
+import { findManagedSubagent } from "../../../context/findManagedSubagent.js";
 import { defineTool } from "../../../types.js";
 import { codexAgentStatusSchema } from "../impl/codexAgentStatusSchema.js";
-import { findManagedSubagent } from "../impl/findManagedSubagent.js";
 import { requireSubagentContext } from "../impl/requireSubagentContext.js";
 import { toCodexAgentStatus } from "../impl/toCodexAgentStatus.js";
 

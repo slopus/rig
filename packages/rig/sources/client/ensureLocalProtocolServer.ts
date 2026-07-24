@@ -66,7 +66,7 @@ export async function ensureLocalProtocolServer(
                 }
             }
             options.onStatus?.("Restarting local daemon.");
-            await stopLocalProtocolServer(client, paths.registryPath);
+            await stopLocalProtocolServer(client);
         }
     }
 

@@ -8,7 +8,7 @@ export function createCodexCliSseRequest(
     request: CodexResponseRequest,
     tools: readonly SessionTool[],
 ): CodexResponseRequest {
-    if (!isCodexV2Model(String(request.model))) return request;
+    if (!isCodexV2Model(String(request.model)) || request.tools !== undefined) return request;
     const sseRequest = structuredClone(request);
     sseRequest.input = [
         {

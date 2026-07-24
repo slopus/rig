@@ -64,6 +64,7 @@ retry behavior, or compaction.
 | SSE full-context requests                                         | Live multi-turn goldens          |
 | Native compaction and Sol-to-Terra or 5.6-to-5.5 switching        | Live multi-turn goldens          |
 | Ordered reasoning, custom tools, tool search, and block rollback  | Mocked provider tests            |
+| Parallel 5.6 tool-call batches over SSE and WebSocket             | Live provider tests              |
 | Retry, idle timeout, turn state, and WebSocket-to-SSE fallback    | Vanilla source and mocked tests  |
 | Vanilla automatic compaction threshold and model-switch trigger   | Vanilla source and live traces   |
 | Absence of provider-owned automatic compaction in Rig             | Provider tests                   |
@@ -192,6 +193,14 @@ For 5.5, tools are top-level request definitions and parallel tool calls are ena
 Responses Lite, tools arrive through a developer `additional_tools` item, the top-level `tools`
 field is omitted, parallel tool calls are disabled in the captured request, and reasoning uses
 `context: "all_turns"`.
+
+`CodexProviderOptions.parallelToolCalls` is an explicit Rig adaptation. Leaving it undefined
+preserves the captured model-specific contracts and keeps the golden fixtures authoritative.
+Setting it to `true` makes 5.6 use the ordinary Responses envelope with top-level instructions and
+tools, omits the Responses Lite SSE header or WebSocket metadata marker, and enables parallel tool
+calls. The real service rejects `parallel_tool_calls: true` when the Lite marker is present, so
+changing the field without changing the envelope is invalid. Rig's production Codex executor opts
+into the standard envelope; live tests verify two calls in one response over both transports.
 
 Bedrock/Mantle uses SSE and a 5.5-style envelope. Adjacent developer messages are merged before
 submission. The selected model uses the `openai.` Bedrock name, and Mantle-specific client headers

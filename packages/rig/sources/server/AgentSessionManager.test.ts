@@ -594,7 +594,7 @@ describe("AgentSessionManager", () => {
     });
 
     it("runs background agents, reports completion, and keeps them available for follow-up", async () => {
-        let status: "completed" | "running" = "running";
+        let status: "completed" | "error" | "running" = "running";
         let resolveCompletion: ((value: { status: "completed" }) => void) | undefined;
         const completion = new Promise<{ status: "completed" }>((resolve) => {
             resolveCompletion = resolve;
@@ -617,6 +617,7 @@ describe("AgentSessionManager", () => {
             }),
             id: "child-1",
             isSubagent: () => true,
+            lastErrorMessage: () => "The child provider rejected the request.",
             snapshot: () => ({
                 snapshot: {
                     messages: [
@@ -695,6 +696,18 @@ describe("AgentSessionManager", () => {
             displayText: 'Background work "Inspect code" completed.',
             text: expect.stringContaining("The inspection is complete."),
         });
+        expect(manager.inspect("root-1", "inspect_code")).toMatchObject({
+            output: "The inspection is complete.",
+            sessionId: "child-1",
+            status: "completed",
+        });
+        status = "error";
+        expect(manager.inspect("root-1", "inspect_code")).toMatchObject({
+            output: "The child provider rejected the request.",
+            sessionId: "child-1",
+            status: "error",
+        });
+        status = "completed";
 
         expect(
             manager.followUp("root-1", "inspect_code", "Check one more file.", "high"),

@@ -43,21 +43,26 @@ export const claudeReadTool = defineTool({
     name: "Read",
     label: "Read",
     description: CLAUDE_READ_DESCRIPTION,
-    arguments: Type.Object({
-        file_path: Type.String({ description: "The absolute path to the file to read" }),
-        offset: Type.Optional(
-            Type.Number({
-                description:
-                    "The line number to start reading from. Only provide if the file is too large to read at once",
-            }),
-        ),
-        limit: Type.Optional(
-            Type.Number({
-                description:
-                    "The number of lines to read. Only provide if the file is too large to read at once.",
-            }),
-        ),
-    }),
+    arguments: Type.Object(
+        {
+            file_path: Type.String({ description: "The absolute path to the file to read" }),
+            offset: Type.Optional(
+                Type.Integer({
+                    description:
+                        "The line number to start reading from. Only provide if the file is too large to read at once",
+                    minimum: 0,
+                }),
+            ),
+            limit: Type.Optional(
+                Type.Integer({
+                    description:
+                        "The number of lines to read. Only provide if the file is too large to read at once.",
+                    exclusiveMinimum: 0,
+                }),
+            ),
+        },
+        { additionalProperties: false },
+    ),
     returnType: claudeReadReturnSchema,
     describeAutoPermissionAction: ({ file_path }, context) =>
         describeFileAutoPermissionAction(file_path, context, "reading"),

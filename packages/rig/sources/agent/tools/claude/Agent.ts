@@ -1,6 +1,6 @@
 import { Type } from "@sinclair/typebox";
 
-import { defineTool } from "../agent/types.js";
+import { defineTool } from "../../types.js";
 
 const completedAgentResultSchema = Type.Object({
     output: Type.String(),
@@ -19,11 +19,11 @@ const backgroundAgentResultSchema = Type.Object({
     taskName: Type.String(),
 });
 
-export const agentTool = defineTool({
+export const claudeAgentTool = defineTool({
     name: "Agent",
     label: "Agent",
     description:
-        "Start a subagent for a focused, self-contained task. Run it in the foreground when its result is needed immediately, or in the background to keep working while it runs.",
+        "Start a subagent for a focused, self-contained task. Agents run in the background by default and report back when they finish. Set run_in_background to false when the result is needed immediately.",
     arguments: Type.Object({
         context: Type.Optional(
             Type.Union([Type.Literal("parent"), Type.Literal("task")], {
@@ -55,7 +55,7 @@ export const agentTool = defineTool({
         run_in_background: Type.Optional(
             Type.Boolean({
                 description:
-                    "Set to true to run the subagent in the background. A completion notification will arrive later.",
+                    "Agents run in the background by default. Set to false to wait for the result before continuing.",
             }),
         ),
     }),
@@ -69,13 +69,16 @@ export const agentTool = defineTool({
             model,
             prompt,
             provider,
-            run_in_background,
+            run_in_background = true,
         },
         context,
         execution,
     ) => {
         if (context.subagents === undefined || !context.subagents.canSpawn) {
             throw new Error("This agent has reached the maximum subagent depth.");
+        }
+        if (provider !== undefined && model === undefined) {
+            throw new Error("The provider argument requires an explicit model.");
         }
         const result = await context.subagents.spawn(
             {

@@ -1,15 +1,26 @@
 import { createServer } from "node:http";
-import type { TSchema } from "@sinclair/typebox";
+import { Type, type TSchema } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
 
 import { ClaudeAuthTokenCredential } from "@/vendors/claude/ClaudeAuthTokenCredential.js";
 import { ClaudeSession } from "@/vendors/claude/ClaudeSession.js";
 import { renderClaudeSystemPrompt } from "@/vendors/claude/impl/renderClaudeSystemPrompt.js";
 import { claude_opus_4_8_system_prompt } from "@/vendors/claude/prompts/claude_opus_4_8_system_prompt.js";
-import { claude_tools } from "@/vendors/claude/tools/index.js";
+import type { SessionTool } from "@/core/SessionTool.js";
 import { collectSessionEvents, textFromSessionEvents } from "./helpers/collectSessionEvents.js";
 
 const live = process.env.RIG_LIVE_TEST === "1" && process.env.ANTHROPIC_AUTH_TOKEN;
+const liveTools: readonly SessionTool[] = [
+    {
+        type: "local",
+        name: "Read",
+        description: "Read one file during the live provider check.",
+        parameters: Type.Object(
+            { file_path: Type.String({ description: "Absolute file path." }) },
+            { additionalProperties: false },
+        ),
+    },
+];
 
 describe.skipIf(!live)("Claude live session", () => {
     it(
@@ -82,6 +93,7 @@ describe.skipIf(!live)("Claude live session", () => {
                     ANTHROPIC_BASE_URL: `http://127.0.0.1:${address.port}`,
                 },
                 model: "opus[1m]",
+                tools: liveTools,
             });
             try {
                 await collectSessionEvents(
@@ -102,7 +114,7 @@ describe.skipIf(!live)("Claude live session", () => {
                 })}\n\nWire-specific instructions.`,
             );
             expect(capturedRequest?.tools.map(({ name }) => name).sort()).toEqual(
-                claude_tools.map(({ name }) => name).sort(),
+                liveTools.map(({ name }) => name).sort(),
             );
             expect(capturedRequest?.tools.every(({ description }) => description.length > 0)).toBe(
                 true,
@@ -115,7 +127,7 @@ describe.skipIf(!live)("Claude live session", () => {
                     }))
                     .sort((left, right) => left.name.localeCompare(right.name)),
             ).toEqual(
-                claude_tools
+                liveTools
                     .map(({ name, parameters }) => ({
                         name,
                         input_schema: normalizeJsonSchema(parameters),

@@ -1,45 +1,53 @@
-import { requestAnthropicMessage } from "../../../executor/requestAnthropicMessage.js";
+import type { Model, Provider } from "@slopus/rig-execution";
+import type { BetaContentBlock } from "@anthropic-ai/sdk/resources/beta/messages/messages.mjs";
 import { makeWebSearchOutput } from "./makeWebSearchOutput.js";
 import type { WebSearchInput, WebSearchOutput } from "./types.js";
 
 export async function performWebSearch(
     input: WebSearchInput,
+    provider: Provider,
+    model: Model,
     signal?: AbortSignal,
 ): Promise<WebSearchOutput> {
+    const auxiliaryProvider = provider as Provider & {
+        runClaudeAuxiliaryQuery?: (
+            model: Model,
+            request: {
+                prompt: string;
+                signal?: AbortSignal;
+                systemPrompt: string;
+                tools?: readonly "WebSearch"[];
+            },
+        ) => Promise<{ content: readonly unknown[] }>;
+    };
+    if (auxiliaryProvider.runClaudeAuxiliaryQuery === undefined) {
+        throw new Error(
+            `The selected provider '${provider.id}' does not support Claude web helper inference.`,
+        );
+    }
     const startedAt = performance.now();
-    const response = await requestAnthropicMessage(
-        {
-            max_tokens: 4096,
-            messages: [
-                {
-                    role: "user",
-                    content: `Perform a web search for the query: ${input.query}`,
-                },
-            ],
-            model: "claude-haiku-4-5-20251001",
-            system: "You are an assistant for performing a web search tool use.",
-            thinking: { type: "disabled" },
-            tool_choice: { type: "tool", name: "web_search" },
-            tools: [
-                {
-                    type: "web_search_20250305",
-                    name: "web_search",
-                    max_uses: 8,
-                    ...(input.allowed_domains !== undefined
-                        ? { allowed_domains: input.allowed_domains }
-                        : {}),
-                    ...(input.blocked_domains !== undefined
-                        ? { blocked_domains: input.blocked_domains }
-                        : {}),
-                },
-            ],
-        },
-        signal,
-    );
+    const response = await auxiliaryProvider.runClaudeAuxiliaryQuery(model, {
+        prompt: makeSearchPrompt(input),
+        ...(signal === undefined ? {} : { signal }),
+        systemPrompt: "You are an assistant for performing a web search tool use.",
+        tools: ["WebSearch"],
+    });
 
     return makeWebSearchOutput(
-        response.content,
+        response.content as BetaContentBlock[],
         input.query,
         (performance.now() - startedAt) / 1000,
     );
+}
+
+function makeSearchPrompt(input: WebSearchInput): string {
+    const filters = [
+        input.allowed_domains === undefined
+            ? undefined
+            : `Only include these domains: ${input.allowed_domains.join(", ")}`,
+        input.blocked_domains === undefined
+            ? undefined
+            : `Exclude these domains: ${input.blocked_domains.join(", ")}`,
+    ].filter(Boolean);
+    return [`Perform a web search for the query: ${input.query}`, ...filters].join("\n");
 }

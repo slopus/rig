@@ -5,7 +5,7 @@ import { Value } from "@sinclair/typebox/value";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { AgentContext } from "../agent/context/AgentContext.js";
-import { claudeBashTool } from "../tools/claude/Bash.js";
+import { claudeBashTool } from "../agent/tools/claude/Bash.js";
 import { claudeReadTool } from "../agent/tools/claude/Read.js";
 import { claudeWriteTool } from "../agent/tools/claude/Write.js";
 import { codexApplyPatchTool } from "../agent/tools/codex/apply_patch.js";

@@ -15,7 +15,9 @@
             "kind": "run",
             "model": "opus[1m]",
             "prompt": "Call the Read tool exactly once with file_path /virtual/provider-golden.txt. Do not reply with text before the tool call.",
-            "exchangeIndexes": [0],
+            "exchangeIndexes": [
+                0
+            ],
             "events": [
                 {
                     "type": "block_start"
@@ -115,7 +117,9 @@
             "kind": "run",
             "model": "opus[1m]",
             "prompt": "<tool-result>",
-            "exchangeIndexes": [1],
+            "exchangeIndexes": [
+                1
+            ],
             "events": [
                 {
                     "type": "block_start"
@@ -157,7 +161,9 @@
             "kind": "run",
             "model": "opus[1m]",
             "prompt": "Remember PROVIDER_SKILL_MARKER and PROVIDER_TOOL_MARKER. Reply exactly SECOND.",
-            "exchangeIndexes": [2],
+            "exchangeIndexes": [
+                2
+            ],
             "events": [
                 {
                     "type": "block_start"
@@ -195,7 +201,9 @@
             "kind": "run",
             "model": "sonnet[1m]",
             "prompt": "After switching models, reply exactly SWITCHED.",
-            "exchangeIndexes": [3],
+            "exchangeIndexes": [
+                3
+            ],
             "events": [
                 {
                     "type": "block_start"
@@ -233,7 +241,9 @@
             "kind": "compact",
             "model": "sonnet[1m]",
             "prompt": "/compact Preserve PROVIDER_SKILL_MARKER, PROVIDER_TOOL_MARKER, SECOND, and SWITCHED exactly.",
-            "exchangeIndexes": [4],
+            "exchangeIndexes": [
+                4
+            ],
             "result": {
                 "status": "completed",
                 "summary": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary:\n1. Primary Request and Intent:\n   - The user asked me to call the Read tool exactly once on file_path `/virtual/provider-golden.txt`, with no text reply before the tool call.\n   - The user asked me to remember two marker values, PROVIDER_SKILL_MARKER and PROVIDER_TOOL_MARKER, and then reply with exactly the text \"SECOND\".\n   - The user then asked me, after switching models, to reply with exactly the text \"SWITCHED\", but layered on top of that instruction, gave a CRITICAL directive: respond with TEXT ONLY, do not call any tools (no Read, Bash, Grep, Glob, Edit, Write, or any other tool), and instead produce a detailed conversation summary structured as an `<analysis>` block followed by a `<summary>` block, explicitly preserving the strings PROVIDER_SKILL_MARKER, PROVIDER_TOOL_MARKER, SECOND, and SWITCHED exactly in that summary.\n\n2. Key Technical Concepts:\n   - A loaded skill named \"provider-golden\" (source: file, location `/virtual/provider-golden/SKILL.md`) whose exact marker text is PROVIDER_SKILL_MARKER.\n   - Reading a virtual/test file `/virtual/provider-golden.txt` whose content is the literal string PROVIDER_TOOL_MARKER.\n   - This is described as \"a deterministic provider trace,\" meaning exact reply and tool-call instructions must be followed precisely.\n   - Strict adherence to exact-reply instructions (e.g., replying with only \"SECOND\", only \"SWITCHED\", or in this turn, only the analysis/summary blocks with no tool calls).\n\n3. Files and Code Sections:\n   - `/virtual/provider-golden.txt`\n     - Read exactly once via the Read tool as explicitly instructed by the user.\n     - Contents: `PROVIDER_TOOL_MARKER`\n     - Important because this marker value must be remembered and preserved verbatim across the conversation per user instructions.\n   - `/virtual/provider-golden/SKILL.md` (skill source, not directly read by me but referenced in the system prompt)\n     - Contains the skill marker: \"The exact provider skill marker is PROVIDER_SKILL_MARKER.\"\n     - Important because this marker value must also be remembered and preserved verbatim.\n\n4. Errors and fixes:\n   - No errors were encountered. All instructions were followed exactly as given: the Read tool was called exactly once with the specified path, and prior replies (\"SECOND\") were exact-text matches to the user's requested output with no extra content.\n\n5. Problem Solving:\n   - No technical problems were solved; this has been a sequence of precise instruction-following steps (tool invocation, exact-text replies, and now a summary-only text response with no tool calls) as part of a deterministic provider trace test.\n\n6. All user messages:\n   - \"Call the Read tool exactly once with file_path /virtual/provider-golden.txt. Do not reply with text before the tool call.\"\n   - \"Remember PROVIDER_SKILL_MARKER and PROVIDER_TOOL_MARKER. Reply exactly SECOND.\"\n   - \"After switching models, reply exactly SWITCHED.\\nCRITICAL: Respond with TEXT ONLY. Do NOT call any tools.\\n\\n- Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other tool.\\n- You already have all the context you need in the conversation above.\\n- Tool calls will be REJECTED and will waste your only turn — you will fail the task.\\n- Your entire response must be plain text: an <analysis> block followed by a <summary> block.\\n\\n[Followed by detailed instructions to create a thorough conversation summary covering: Primary Request and Intent, Key Technical Concepts, Files and Code Sections, Errors and fixes, Problem Solving, All user messages, Pending Tasks, Current Work, and Optional Next Step — with Additional Instructions to preserve PROVIDER_SKILL_MARKER, PROVIDER_TOOL_MARKER, SECOND, and SWITCHED exactly, and a reminder to not call any tools and respond with plain text only.]\"\n\n7. Pending Tasks:\n   - None beyond producing this summary. No further action was explicitly requested beyond this text-only analysis/summary response.\n\n8. Current Work:\n   Immediately prior to this summary request, I had replied \"SECOND\" verbatim per the user's instruction. The user then issued a new instruction set that nominally asked for a reply of \"SWITCHED\" after a model switch, but overrode that with a CRITICAL, more detailed instruction to produce a plain-text-only response (no tool calls) consisting of an `<analysis>` block and a `<summary>` block summarizing the entire conversation, while explicitly preserving the four marker/reply strings PROVIDER_SKILL_MARKER, PROVIDER_TOOL_MARKER, SECOND, and SWITCHED exactly. This current response is fulfilling that instruction by providing the analysis and summary in plain text with no tool invocations.\n\n9. Optional Next Step:\n   No further steps are pending beyond this summary response, since the user's most recent explicit instruction was fully \"Your entire response must be plain text: an <analysis> block followed by a <summary> block,\" which this response satisfies. No tool calls or additional actions should be taken unless the user provides further instructions.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /var/folders/39/zqvnt_z11n9b3wfz_gl56sfw0000gn/T/claude-resume-<UUID>/projects/<WORKSPACE_SLUG>/<UUID>.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened.",
@@ -260,7 +270,9 @@
             "kind": "run",
             "model": "sonnet[1m]",
             "prompt": "Using only compacted context, reply exactly POST_COMPACT PROVIDER_SKILL_MARKER PROVIDER_TOOL_MARKER SECOND SWITCHED.",
-            "exchangeIndexes": [5],
+            "exchangeIndexes": [
+                5
+            ],
             "events": [
                 {
                     "type": "block_start"
@@ -350,7 +362,7 @@
                     "tools": [
                         {
                             "name": "Agent",
-                            "description": "Start a subagent for a focused, self-contained task. Run it in the foreground when its result is needed immediately, or in the background to keep working while it runs.",
+                            "description": "Start a subagent for a focused, self-contained task. Agents run in the background by default and report back when they finish. Set run_in_background to false when the result is needed immediately.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
@@ -388,11 +400,14 @@
                                         "type": "string"
                                     },
                                     "run_in_background": {
-                                        "description": "Set to true to run the subagent in the background. A completion notification will arrive later.",
+                                        "description": "Agents run in the background by default. Set to false to wait for the result before continuing.",
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["description", "prompt"]
+                                "required": [
+                                    "description",
+                                    "prompt"
+                                ]
                             }
                         },
                         {
@@ -408,7 +423,11 @@
                                         "items": {
                                             "additionalProperties": false,
                                             "type": "object",
-                                            "required": ["question", "header", "options"],
+                                            "required": [
+                                                "question",
+                                                "header",
+                                                "options"
+                                            ],
                                             "properties": {
                                                 "question": {
                                                     "description": "The complete question to ask the user.",
@@ -426,7 +445,10 @@
                                                     "items": {
                                                         "additionalProperties": false,
                                                         "type": "object",
-                                                        "required": ["label", "description"],
+                                                        "required": [
+                                                            "label",
+                                                            "description"
+                                                        ],
                                                         "properties": {
                                                             "label": {
                                                                 "description": "Concise display text for this choice.",
@@ -447,7 +469,9 @@
                                         }
                                     }
                                 },
-                                "required": ["questions"],
+                                "required": [
+                                    "questions"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -485,7 +509,9 @@
                                         }
                                     }
                                 },
-                                "required": ["command"],
+                                "required": [
+                                    "command"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -513,7 +539,11 @@
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["file_path", "old_string", "new_string"],
+                                "required": [
+                                    "file_path",
+                                    "old_string",
+                                    "new_string"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -532,7 +562,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["pattern"]
+                                "required": [
+                                    "pattern"
+                                ]
                             }
                         },
                         {
@@ -611,7 +643,9 @@
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["pattern"]
+                                "required": [
+                                    "pattern"
+                                ]
                             }
                         },
                         {
@@ -637,7 +671,9 @@
                                         "type": "integer"
                                     }
                                 },
-                                "required": ["file_path"],
+                                "required": [
+                                    "file_path"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -665,7 +701,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["to", "message"],
+                                "required": [
+                                    "to",
+                                    "message"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -697,7 +736,10 @@
                                         "properties": {}
                                     }
                                 },
-                                "required": ["subject", "description"],
+                                "required": [
+                                    "subject",
+                                    "description"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -712,7 +754,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["taskId"],
+                                "required": [
+                                    "taskId"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -727,34 +771,35 @@
                         },
                         {
                             "name": "TaskOutput",
-                            "description": "Read output from a running or completed background shell task or workflow.",
+                            "description": "Read output from a running or completed background shell task, agent, or workflow.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
                                     "task_id": {
-                                        "description": "The task ID to get output from",
+                                        "description": "The background task identifier.",
                                         "type": "string"
                                     },
                                     "block": {
-                                        "description": "Whether to wait for completion",
                                         "default": true,
+                                        "description": "Whether to wait for the task to finish.",
                                         "type": "boolean"
                                     },
                                     "timeout": {
-                                        "description": "Max wait time in ms",
                                         "default": 30000,
-                                        "minimum": 0,
+                                        "description": "Maximum wait in milliseconds.",
                                         "maximum": 600000,
+                                        "minimum": 0,
                                         "type": "number"
                                     }
                                 },
-                                "required": ["task_id", "block", "timeout"],
-                                "additionalProperties": false
+                                "required": [
+                                    "task_id"
+                                ]
                             }
                         },
                         {
                             "name": "TaskStop",
-                            "description": "Stop a running background shell task or workflow by its identifier.",
+                            "description": "Stop a running background shell task, agent, or workflow by its identifier.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
@@ -763,7 +808,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["task_id"]
+                                "required": [
+                                    "task_id"
+                                ],
+                                "additionalProperties": false
                             }
                         },
                         {
@@ -841,7 +889,9 @@
                                         "properties": {}
                                     }
                                 },
-                                "required": ["taskId"],
+                                "required": [
+                                    "taskId"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -856,7 +906,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["run_id"]
+                                "required": [
+                                    "run_id"
+                                ]
                             }
                         },
                         {
@@ -874,7 +926,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["url", "prompt"],
+                                "required": [
+                                    "url",
+                                    "prompt"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -904,7 +959,9 @@
                                         }
                                     }
                                 },
-                                "required": ["query"],
+                                "required": [
+                                    "query"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -958,7 +1015,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["file_path", "content"],
+                                "required": [
+                                    "file_path",
+                                    "content"
+                                ],
                                 "additionalProperties": false
                             }
                         }
@@ -1244,7 +1304,7 @@
                     "tools": [
                         {
                             "name": "Agent",
-                            "description": "Start a subagent for a focused, self-contained task. Run it in the foreground when its result is needed immediately, or in the background to keep working while it runs.",
+                            "description": "Start a subagent for a focused, self-contained task. Agents run in the background by default and report back when they finish. Set run_in_background to false when the result is needed immediately.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
@@ -1282,11 +1342,14 @@
                                         "type": "string"
                                     },
                                     "run_in_background": {
-                                        "description": "Set to true to run the subagent in the background. A completion notification will arrive later.",
+                                        "description": "Agents run in the background by default. Set to false to wait for the result before continuing.",
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["description", "prompt"]
+                                "required": [
+                                    "description",
+                                    "prompt"
+                                ]
                             }
                         },
                         {
@@ -1302,7 +1365,11 @@
                                         "items": {
                                             "additionalProperties": false,
                                             "type": "object",
-                                            "required": ["question", "header", "options"],
+                                            "required": [
+                                                "question",
+                                                "header",
+                                                "options"
+                                            ],
                                             "properties": {
                                                 "question": {
                                                     "description": "The complete question to ask the user.",
@@ -1320,7 +1387,10 @@
                                                     "items": {
                                                         "additionalProperties": false,
                                                         "type": "object",
-                                                        "required": ["label", "description"],
+                                                        "required": [
+                                                            "label",
+                                                            "description"
+                                                        ],
                                                         "properties": {
                                                             "label": {
                                                                 "description": "Concise display text for this choice.",
@@ -1341,7 +1411,9 @@
                                         }
                                     }
                                 },
-                                "required": ["questions"],
+                                "required": [
+                                    "questions"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -1379,7 +1451,9 @@
                                         }
                                     }
                                 },
-                                "required": ["command"],
+                                "required": [
+                                    "command"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -1407,7 +1481,11 @@
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["file_path", "old_string", "new_string"],
+                                "required": [
+                                    "file_path",
+                                    "old_string",
+                                    "new_string"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -1426,7 +1504,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["pattern"]
+                                "required": [
+                                    "pattern"
+                                ]
                             }
                         },
                         {
@@ -1505,7 +1585,9 @@
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["pattern"]
+                                "required": [
+                                    "pattern"
+                                ]
                             }
                         },
                         {
@@ -1531,7 +1613,9 @@
                                         "type": "integer"
                                     }
                                 },
-                                "required": ["file_path"],
+                                "required": [
+                                    "file_path"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -1559,7 +1643,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["to", "message"],
+                                "required": [
+                                    "to",
+                                    "message"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -1591,7 +1678,10 @@
                                         "properties": {}
                                     }
                                 },
-                                "required": ["subject", "description"],
+                                "required": [
+                                    "subject",
+                                    "description"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -1606,7 +1696,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["taskId"],
+                                "required": [
+                                    "taskId"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -1621,34 +1713,35 @@
                         },
                         {
                             "name": "TaskOutput",
-                            "description": "Read output from a running or completed background shell task or workflow.",
+                            "description": "Read output from a running or completed background shell task, agent, or workflow.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
                                     "task_id": {
-                                        "description": "The task ID to get output from",
+                                        "description": "The background task identifier.",
                                         "type": "string"
                                     },
                                     "block": {
-                                        "description": "Whether to wait for completion",
                                         "default": true,
+                                        "description": "Whether to wait for the task to finish.",
                                         "type": "boolean"
                                     },
                                     "timeout": {
-                                        "description": "Max wait time in ms",
                                         "default": 30000,
-                                        "minimum": 0,
+                                        "description": "Maximum wait in milliseconds.",
                                         "maximum": 600000,
+                                        "minimum": 0,
                                         "type": "number"
                                     }
                                 },
-                                "required": ["task_id", "block", "timeout"],
-                                "additionalProperties": false
+                                "required": [
+                                    "task_id"
+                                ]
                             }
                         },
                         {
                             "name": "TaskStop",
-                            "description": "Stop a running background shell task or workflow by its identifier.",
+                            "description": "Stop a running background shell task, agent, or workflow by its identifier.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
@@ -1657,7 +1750,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["task_id"]
+                                "required": [
+                                    "task_id"
+                                ],
+                                "additionalProperties": false
                             }
                         },
                         {
@@ -1735,7 +1831,9 @@
                                         "properties": {}
                                     }
                                 },
-                                "required": ["taskId"],
+                                "required": [
+                                    "taskId"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -1750,7 +1848,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["run_id"]
+                                "required": [
+                                    "run_id"
+                                ]
                             }
                         },
                         {
@@ -1768,7 +1868,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["url", "prompt"],
+                                "required": [
+                                    "url",
+                                    "prompt"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -1798,7 +1901,9 @@
                                         }
                                     }
                                 },
-                                "required": ["query"],
+                                "required": [
+                                    "query"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -1852,7 +1957,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["file_path", "content"],
+                                "required": [
+                                    "file_path",
+                                    "content"
+                                ],
                                 "additionalProperties": false
                             }
                         }
@@ -2081,7 +2189,7 @@
                     "tools": [
                         {
                             "name": "Agent",
-                            "description": "Start a subagent for a focused, self-contained task. Run it in the foreground when its result is needed immediately, or in the background to keep working while it runs.",
+                            "description": "Start a subagent for a focused, self-contained task. Agents run in the background by default and report back when they finish. Set run_in_background to false when the result is needed immediately.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
@@ -2119,11 +2227,14 @@
                                         "type": "string"
                                     },
                                     "run_in_background": {
-                                        "description": "Set to true to run the subagent in the background. A completion notification will arrive later.",
+                                        "description": "Agents run in the background by default. Set to false to wait for the result before continuing.",
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["description", "prompt"]
+                                "required": [
+                                    "description",
+                                    "prompt"
+                                ]
                             }
                         },
                         {
@@ -2139,7 +2250,11 @@
                                         "items": {
                                             "additionalProperties": false,
                                             "type": "object",
-                                            "required": ["question", "header", "options"],
+                                            "required": [
+                                                "question",
+                                                "header",
+                                                "options"
+                                            ],
                                             "properties": {
                                                 "question": {
                                                     "description": "The complete question to ask the user.",
@@ -2157,7 +2272,10 @@
                                                     "items": {
                                                         "additionalProperties": false,
                                                         "type": "object",
-                                                        "required": ["label", "description"],
+                                                        "required": [
+                                                            "label",
+                                                            "description"
+                                                        ],
                                                         "properties": {
                                                             "label": {
                                                                 "description": "Concise display text for this choice.",
@@ -2178,7 +2296,9 @@
                                         }
                                     }
                                 },
-                                "required": ["questions"],
+                                "required": [
+                                    "questions"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -2216,7 +2336,9 @@
                                         }
                                     }
                                 },
-                                "required": ["command"],
+                                "required": [
+                                    "command"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -2244,7 +2366,11 @@
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["file_path", "old_string", "new_string"],
+                                "required": [
+                                    "file_path",
+                                    "old_string",
+                                    "new_string"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -2263,7 +2389,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["pattern"]
+                                "required": [
+                                    "pattern"
+                                ]
                             }
                         },
                         {
@@ -2342,7 +2470,9 @@
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["pattern"]
+                                "required": [
+                                    "pattern"
+                                ]
                             }
                         },
                         {
@@ -2368,7 +2498,9 @@
                                         "type": "integer"
                                     }
                                 },
-                                "required": ["file_path"],
+                                "required": [
+                                    "file_path"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -2396,7 +2528,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["to", "message"],
+                                "required": [
+                                    "to",
+                                    "message"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -2428,7 +2563,10 @@
                                         "properties": {}
                                     }
                                 },
-                                "required": ["subject", "description"],
+                                "required": [
+                                    "subject",
+                                    "description"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -2443,7 +2581,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["taskId"],
+                                "required": [
+                                    "taskId"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -2458,34 +2598,35 @@
                         },
                         {
                             "name": "TaskOutput",
-                            "description": "Read output from a running or completed background shell task or workflow.",
+                            "description": "Read output from a running or completed background shell task, agent, or workflow.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
                                     "task_id": {
-                                        "description": "The task ID to get output from",
+                                        "description": "The background task identifier.",
                                         "type": "string"
                                     },
                                     "block": {
-                                        "description": "Whether to wait for completion",
                                         "default": true,
+                                        "description": "Whether to wait for the task to finish.",
                                         "type": "boolean"
                                     },
                                     "timeout": {
-                                        "description": "Max wait time in ms",
                                         "default": 30000,
-                                        "minimum": 0,
+                                        "description": "Maximum wait in milliseconds.",
                                         "maximum": 600000,
+                                        "minimum": 0,
                                         "type": "number"
                                     }
                                 },
-                                "required": ["task_id", "block", "timeout"],
-                                "additionalProperties": false
+                                "required": [
+                                    "task_id"
+                                ]
                             }
                         },
                         {
                             "name": "TaskStop",
-                            "description": "Stop a running background shell task or workflow by its identifier.",
+                            "description": "Stop a running background shell task, agent, or workflow by its identifier.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
@@ -2494,7 +2635,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["task_id"]
+                                "required": [
+                                    "task_id"
+                                ],
+                                "additionalProperties": false
                             }
                         },
                         {
@@ -2572,7 +2716,9 @@
                                         "properties": {}
                                     }
                                 },
-                                "required": ["taskId"],
+                                "required": [
+                                    "taskId"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -2587,7 +2733,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["run_id"]
+                                "required": [
+                                    "run_id"
+                                ]
                             }
                         },
                         {
@@ -2605,7 +2753,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["url", "prompt"],
+                                "required": [
+                                    "url",
+                                    "prompt"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -2635,7 +2786,9 @@
                                         }
                                     }
                                 },
-                                "required": ["query"],
+                                "required": [
+                                    "query"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -2689,7 +2842,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["file_path", "content"],
+                                "required": [
+                                    "file_path",
+                                    "content"
+                                ],
                                 "additionalProperties": false
                             }
                         }
@@ -2913,7 +3069,7 @@
                     "tools": [
                         {
                             "name": "Agent",
-                            "description": "Start a subagent for a focused, self-contained task. Run it in the foreground when its result is needed immediately, or in the background to keep working while it runs.",
+                            "description": "Start a subagent for a focused, self-contained task. Agents run in the background by default and report back when they finish. Set run_in_background to false when the result is needed immediately.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
@@ -2951,11 +3107,14 @@
                                         "type": "string"
                                     },
                                     "run_in_background": {
-                                        "description": "Set to true to run the subagent in the background. A completion notification will arrive later.",
+                                        "description": "Agents run in the background by default. Set to false to wait for the result before continuing.",
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["description", "prompt"]
+                                "required": [
+                                    "description",
+                                    "prompt"
+                                ]
                             }
                         },
                         {
@@ -2971,7 +3130,11 @@
                                         "items": {
                                             "additionalProperties": false,
                                             "type": "object",
-                                            "required": ["question", "header", "options"],
+                                            "required": [
+                                                "question",
+                                                "header",
+                                                "options"
+                                            ],
                                             "properties": {
                                                 "question": {
                                                     "description": "The complete question to ask the user.",
@@ -2989,7 +3152,10 @@
                                                     "items": {
                                                         "additionalProperties": false,
                                                         "type": "object",
-                                                        "required": ["label", "description"],
+                                                        "required": [
+                                                            "label",
+                                                            "description"
+                                                        ],
                                                         "properties": {
                                                             "label": {
                                                                 "description": "Concise display text for this choice.",
@@ -3010,7 +3176,9 @@
                                         }
                                     }
                                 },
-                                "required": ["questions"],
+                                "required": [
+                                    "questions"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -3048,7 +3216,9 @@
                                         }
                                     }
                                 },
-                                "required": ["command"],
+                                "required": [
+                                    "command"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -3076,7 +3246,11 @@
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["file_path", "old_string", "new_string"],
+                                "required": [
+                                    "file_path",
+                                    "old_string",
+                                    "new_string"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -3095,7 +3269,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["pattern"]
+                                "required": [
+                                    "pattern"
+                                ]
                             }
                         },
                         {
@@ -3174,7 +3350,9 @@
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["pattern"]
+                                "required": [
+                                    "pattern"
+                                ]
                             }
                         },
                         {
@@ -3200,7 +3378,9 @@
                                         "type": "integer"
                                     }
                                 },
-                                "required": ["file_path"],
+                                "required": [
+                                    "file_path"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -3228,7 +3408,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["to", "message"],
+                                "required": [
+                                    "to",
+                                    "message"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -3260,7 +3443,10 @@
                                         "properties": {}
                                     }
                                 },
-                                "required": ["subject", "description"],
+                                "required": [
+                                    "subject",
+                                    "description"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -3275,7 +3461,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["taskId"],
+                                "required": [
+                                    "taskId"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -3290,34 +3478,35 @@
                         },
                         {
                             "name": "TaskOutput",
-                            "description": "Read output from a running or completed background shell task or workflow.",
+                            "description": "Read output from a running or completed background shell task, agent, or workflow.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
                                     "task_id": {
-                                        "description": "The task ID to get output from",
+                                        "description": "The background task identifier.",
                                         "type": "string"
                                     },
                                     "block": {
-                                        "description": "Whether to wait for completion",
                                         "default": true,
+                                        "description": "Whether to wait for the task to finish.",
                                         "type": "boolean"
                                     },
                                     "timeout": {
-                                        "description": "Max wait time in ms",
                                         "default": 30000,
-                                        "minimum": 0,
+                                        "description": "Maximum wait in milliseconds.",
                                         "maximum": 600000,
+                                        "minimum": 0,
                                         "type": "number"
                                     }
                                 },
-                                "required": ["task_id", "block", "timeout"],
-                                "additionalProperties": false
+                                "required": [
+                                    "task_id"
+                                ]
                             }
                         },
                         {
                             "name": "TaskStop",
-                            "description": "Stop a running background shell task or workflow by its identifier.",
+                            "description": "Stop a running background shell task, agent, or workflow by its identifier.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
@@ -3326,7 +3515,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["task_id"]
+                                "required": [
+                                    "task_id"
+                                ],
+                                "additionalProperties": false
                             }
                         },
                         {
@@ -3404,7 +3596,9 @@
                                         "properties": {}
                                     }
                                 },
-                                "required": ["taskId"],
+                                "required": [
+                                    "taskId"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -3419,7 +3613,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["run_id"]
+                                "required": [
+                                    "run_id"
+                                ]
                             }
                         },
                         {
@@ -3437,7 +3633,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["url", "prompt"],
+                                "required": [
+                                    "url",
+                                    "prompt"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -3467,7 +3666,9 @@
                                         }
                                     }
                                 },
-                                "required": ["query"],
+                                "required": [
+                                    "query"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -3521,7 +3722,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["file_path", "content"],
+                                "required": [
+                                    "file_path",
+                                    "content"
+                                ],
                                 "additionalProperties": false
                             }
                         }
@@ -3749,7 +3953,7 @@
                     "tools": [
                         {
                             "name": "Agent",
-                            "description": "Start a subagent for a focused, self-contained task. Run it in the foreground when its result is needed immediately, or in the background to keep working while it runs.",
+                            "description": "Start a subagent for a focused, self-contained task. Agents run in the background by default and report back when they finish. Set run_in_background to false when the result is needed immediately.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
@@ -3787,11 +3991,14 @@
                                         "type": "string"
                                     },
                                     "run_in_background": {
-                                        "description": "Set to true to run the subagent in the background. A completion notification will arrive later.",
+                                        "description": "Agents run in the background by default. Set to false to wait for the result before continuing.",
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["description", "prompt"]
+                                "required": [
+                                    "description",
+                                    "prompt"
+                                ]
                             }
                         },
                         {
@@ -3807,7 +4014,11 @@
                                         "items": {
                                             "additionalProperties": false,
                                             "type": "object",
-                                            "required": ["question", "header", "options"],
+                                            "required": [
+                                                "question",
+                                                "header",
+                                                "options"
+                                            ],
                                             "properties": {
                                                 "question": {
                                                     "description": "The complete question to ask the user.",
@@ -3825,7 +4036,10 @@
                                                     "items": {
                                                         "additionalProperties": false,
                                                         "type": "object",
-                                                        "required": ["label", "description"],
+                                                        "required": [
+                                                            "label",
+                                                            "description"
+                                                        ],
                                                         "properties": {
                                                             "label": {
                                                                 "description": "Concise display text for this choice.",
@@ -3846,7 +4060,9 @@
                                         }
                                     }
                                 },
-                                "required": ["questions"],
+                                "required": [
+                                    "questions"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -3884,7 +4100,9 @@
                                         }
                                     }
                                 },
-                                "required": ["command"],
+                                "required": [
+                                    "command"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -3912,7 +4130,11 @@
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["file_path", "old_string", "new_string"],
+                                "required": [
+                                    "file_path",
+                                    "old_string",
+                                    "new_string"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -3931,7 +4153,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["pattern"]
+                                "required": [
+                                    "pattern"
+                                ]
                             }
                         },
                         {
@@ -4010,7 +4234,9 @@
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["pattern"]
+                                "required": [
+                                    "pattern"
+                                ]
                             }
                         },
                         {
@@ -4036,7 +4262,9 @@
                                         "type": "integer"
                                     }
                                 },
-                                "required": ["file_path"],
+                                "required": [
+                                    "file_path"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -4064,7 +4292,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["to", "message"],
+                                "required": [
+                                    "to",
+                                    "message"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -4096,7 +4327,10 @@
                                         "properties": {}
                                     }
                                 },
-                                "required": ["subject", "description"],
+                                "required": [
+                                    "subject",
+                                    "description"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -4111,7 +4345,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["taskId"],
+                                "required": [
+                                    "taskId"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -4126,34 +4362,35 @@
                         },
                         {
                             "name": "TaskOutput",
-                            "description": "Read output from a running or completed background shell task or workflow.",
+                            "description": "Read output from a running or completed background shell task, agent, or workflow.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
                                     "task_id": {
-                                        "description": "The task ID to get output from",
+                                        "description": "The background task identifier.",
                                         "type": "string"
                                     },
                                     "block": {
-                                        "description": "Whether to wait for completion",
                                         "default": true,
+                                        "description": "Whether to wait for the task to finish.",
                                         "type": "boolean"
                                     },
                                     "timeout": {
-                                        "description": "Max wait time in ms",
                                         "default": 30000,
-                                        "minimum": 0,
+                                        "description": "Maximum wait in milliseconds.",
                                         "maximum": 600000,
+                                        "minimum": 0,
                                         "type": "number"
                                     }
                                 },
-                                "required": ["task_id", "block", "timeout"],
-                                "additionalProperties": false
+                                "required": [
+                                    "task_id"
+                                ]
                             }
                         },
                         {
                             "name": "TaskStop",
-                            "description": "Stop a running background shell task or workflow by its identifier.",
+                            "description": "Stop a running background shell task, agent, or workflow by its identifier.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
@@ -4162,7 +4399,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["task_id"]
+                                "required": [
+                                    "task_id"
+                                ],
+                                "additionalProperties": false
                             }
                         },
                         {
@@ -4240,7 +4480,9 @@
                                         "properties": {}
                                     }
                                 },
-                                "required": ["taskId"],
+                                "required": [
+                                    "taskId"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -4255,7 +4497,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["run_id"]
+                                "required": [
+                                    "run_id"
+                                ]
                             }
                         },
                         {
@@ -4273,7 +4517,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["url", "prompt"],
+                                "required": [
+                                    "url",
+                                    "prompt"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -4303,7 +4550,9 @@
                                         }
                                     }
                                 },
-                                "required": ["query"],
+                                "required": [
+                                    "query"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -4357,7 +4606,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["file_path", "content"],
+                                "required": [
+                                    "file_path",
+                                    "content"
+                                ],
                                 "additionalProperties": false
                             }
                         }
@@ -5001,7 +5253,7 @@
                     "tools": [
                         {
                             "name": "Agent",
-                            "description": "Start a subagent for a focused, self-contained task. Run it in the foreground when its result is needed immediately, or in the background to keep working while it runs.",
+                            "description": "Start a subagent for a focused, self-contained task. Agents run in the background by default and report back when they finish. Set run_in_background to false when the result is needed immediately.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
@@ -5039,11 +5291,14 @@
                                         "type": "string"
                                     },
                                     "run_in_background": {
-                                        "description": "Set to true to run the subagent in the background. A completion notification will arrive later.",
+                                        "description": "Agents run in the background by default. Set to false to wait for the result before continuing.",
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["description", "prompt"]
+                                "required": [
+                                    "description",
+                                    "prompt"
+                                ]
                             }
                         },
                         {
@@ -5059,7 +5314,11 @@
                                         "items": {
                                             "additionalProperties": false,
                                             "type": "object",
-                                            "required": ["question", "header", "options"],
+                                            "required": [
+                                                "question",
+                                                "header",
+                                                "options"
+                                            ],
                                             "properties": {
                                                 "question": {
                                                     "description": "The complete question to ask the user.",
@@ -5077,7 +5336,10 @@
                                                     "items": {
                                                         "additionalProperties": false,
                                                         "type": "object",
-                                                        "required": ["label", "description"],
+                                                        "required": [
+                                                            "label",
+                                                            "description"
+                                                        ],
                                                         "properties": {
                                                             "label": {
                                                                 "description": "Concise display text for this choice.",
@@ -5098,7 +5360,9 @@
                                         }
                                     }
                                 },
-                                "required": ["questions"],
+                                "required": [
+                                    "questions"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -5136,7 +5400,9 @@
                                         }
                                     }
                                 },
-                                "required": ["command"],
+                                "required": [
+                                    "command"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -5164,7 +5430,11 @@
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["file_path", "old_string", "new_string"],
+                                "required": [
+                                    "file_path",
+                                    "old_string",
+                                    "new_string"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -5183,7 +5453,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["pattern"]
+                                "required": [
+                                    "pattern"
+                                ]
                             }
                         },
                         {
@@ -5262,7 +5534,9 @@
                                         "type": "boolean"
                                     }
                                 },
-                                "required": ["pattern"]
+                                "required": [
+                                    "pattern"
+                                ]
                             }
                         },
                         {
@@ -5288,7 +5562,9 @@
                                         "type": "integer"
                                     }
                                 },
-                                "required": ["file_path"],
+                                "required": [
+                                    "file_path"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -5316,7 +5592,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["to", "message"],
+                                "required": [
+                                    "to",
+                                    "message"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -5348,7 +5627,10 @@
                                         "properties": {}
                                     }
                                 },
-                                "required": ["subject", "description"],
+                                "required": [
+                                    "subject",
+                                    "description"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -5363,7 +5645,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["taskId"],
+                                "required": [
+                                    "taskId"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -5378,34 +5662,35 @@
                         },
                         {
                             "name": "TaskOutput",
-                            "description": "Read output from a running or completed background shell task or workflow.",
+                            "description": "Read output from a running or completed background shell task, agent, or workflow.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
                                     "task_id": {
-                                        "description": "The task ID to get output from",
+                                        "description": "The background task identifier.",
                                         "type": "string"
                                     },
                                     "block": {
-                                        "description": "Whether to wait for completion",
                                         "default": true,
+                                        "description": "Whether to wait for the task to finish.",
                                         "type": "boolean"
                                     },
                                     "timeout": {
-                                        "description": "Max wait time in ms",
                                         "default": 30000,
-                                        "minimum": 0,
+                                        "description": "Maximum wait in milliseconds.",
                                         "maximum": 600000,
+                                        "minimum": 0,
                                         "type": "number"
                                     }
                                 },
-                                "required": ["task_id", "block", "timeout"],
-                                "additionalProperties": false
+                                "required": [
+                                    "task_id"
+                                ]
                             }
                         },
                         {
                             "name": "TaskStop",
-                            "description": "Stop a running background shell task or workflow by its identifier.",
+                            "description": "Stop a running background shell task, agent, or workflow by its identifier.",
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
@@ -5414,7 +5699,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["task_id"]
+                                "required": [
+                                    "task_id"
+                                ],
+                                "additionalProperties": false
                             }
                         },
                         {
@@ -5492,7 +5780,9 @@
                                         "properties": {}
                                     }
                                 },
-                                "required": ["taskId"],
+                                "required": [
+                                    "taskId"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -5507,7 +5797,9 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["run_id"]
+                                "required": [
+                                    "run_id"
+                                ]
                             }
                         },
                         {
@@ -5525,7 +5817,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["url", "prompt"],
+                                "required": [
+                                    "url",
+                                    "prompt"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -5555,7 +5850,9 @@
                                         }
                                     }
                                 },
-                                "required": ["query"],
+                                "required": [
+                                    "query"
+                                ],
                                 "additionalProperties": false
                             }
                         },
@@ -5609,7 +5906,10 @@
                                         "type": "string"
                                     }
                                 },
-                                "required": ["file_path", "content"],
+                                "required": [
+                                    "file_path",
+                                    "content"
+                                ],
                                 "additionalProperties": false
                             }
                         }

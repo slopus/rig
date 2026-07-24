@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createJustBashToolHarness } from "../testing/createJustBashToolHarness.js";
-import { claudeAskUserQuestionTool } from "./AskUserQuestion.js";
+import { claudeAskUserQuestionTool } from "../../agent/tools/claude/AskUserQuestion.js";
 
 describe("Claude AskUserQuestion tool", () => {
     it("maps multi-select answers back to Claude's question-keyed result", async () => {

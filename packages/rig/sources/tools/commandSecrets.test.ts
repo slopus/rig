@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentContext, BashRunOptions, BashSessionSnapshot } from "../agent/index.js";
-import { claudeBashTool } from "./claude/Bash.js";
+import { claudeBashTool } from "../agent/tools/claude/Bash.js";
 import { codexExecCommandTool } from "../agent/tools/codex/exec_command.js";
 import { grokRunTerminalCommandTool } from "./grok/run_terminal_command.js";
 

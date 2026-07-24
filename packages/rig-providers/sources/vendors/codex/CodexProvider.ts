@@ -23,6 +23,8 @@ export interface CodexProviderOptions {
     credential: CodexProviderCredential;
     endpoint?: string;
     model?: string;
+    /** Enables multi-call batches; Codex v2 uses standard Responses instead of Responses Lite. */
+    parallelToolCalls?: boolean;
     region?: string;
     /** Maximum stream reconnection attempts per transport, matching upstream Codex. */
     streamMaxRetries?: number;
@@ -41,6 +43,7 @@ export class CodexProvider extends ResponsesProvider {
     readonly credential: CodexProviderCredential;
     readonly endpoint: string;
     readonly model: string | undefined;
+    readonly parallelToolCalls: boolean | undefined;
     readonly streamMaxRetries: number;
     readonly streamIdleTimeoutMs: number;
     readonly transport: CodexTransport;
@@ -64,6 +67,7 @@ export class CodexProvider extends ResponsesProvider {
                   ? CODEX_CHATGPT_ENDPOINT
                   : CODEX_API_ENDPOINT);
         this.model = options.model === undefined ? undefined : resolveCodexModelId(options.model);
+        this.parallelToolCalls = options.parallelToolCalls;
         this.streamMaxRetries = resolveCodexStreamMaxRetries(options.streamMaxRetries);
         this.streamIdleTimeoutMs = resolveCodexStreamIdleTimeout(options.streamIdleTimeoutMs);
         this.transport = isBedrock ? "sse" : (options.transport ?? "auto");
@@ -79,6 +83,9 @@ export class CodexProvider extends ResponsesProvider {
             endpoint: this.endpoint,
             installationId,
             ...(this.model === undefined ? {} : { model: this.model }),
+            ...(this.parallelToolCalls === undefined
+                ? {}
+                : { parallelToolCalls: this.parallelToolCalls }),
             streamMaxRetries: this.streamMaxRetries,
             streamIdleTimeoutMs: this.streamIdleTimeoutMs,
             transport: this.transport,

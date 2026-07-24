@@ -1,7 +1,6 @@
 import type { AnyDefinedTool } from "../agent/types.js";
 import type { Model, Provider } from "@slopus/rig-execution";
-import { agentTool } from "../tools/Agent.js";
-import { claudeCollaborationTools } from "../tools/claude/index.js";
+import { claudeCollaborationTools } from "../agent/tools/claude/assembleClaudeTools.js";
 import { assembleCodexTools } from "../agent/tools/codex/assembleCodexTools.js";
 import { codexCollaborationTools } from "../agent/tools/codex/assembleCodexTools.js";
 import { grokCollaborationTools } from "../tools/grok/index.js";
@@ -19,7 +18,7 @@ export function selectCollaborationToolsForModel(options: {
                 : "codex"
             : options.provider.type;
     return toolType === "claude"
-        ? [agentTool, ...claudeCollaborationTools]
+        ? claudeCollaborationTools
         : toolType === "grok"
           ? grokCollaborationTools
           : assembleCodexTools(

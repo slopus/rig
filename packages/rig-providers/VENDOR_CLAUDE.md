@@ -48,17 +48,15 @@ Rig's shared `AgentContext` and permission boundary.
 
 ## System prompt and skills
 
-The complete model-specific Rig prompts live in `sources/vendors/claude/prompts/` and are
-selected by `impl/resolveClaudeSystemPrompt.ts`. Runtime placeholders such as the working
-directory, shell, platform, and OS version are expanded by
-`impl/renderClaudeSystemPrompt.ts`.
+The complete model-specific runtime prompts live in `rig-execution`. The provider receives
+the already assembled instructions through `SessionContext`; prompt files in this package
+are test assets, not runtime prompt sources.
 
 `impl/toClaudeSdkOptions.ts` assembles the supplied prompt in this order:
 
-1. model-specific base prompt;
-2. session instructions;
-3. system messages from the session context;
-4. Rig skill metadata.
+1. session instructions assembled by the executor;
+2. system messages from the session context;
+3. Rig skill metadata.
 
 The SDK adds its own small SDK identity and billing blocks on the final Anthropic request.
 The Rig prompt remains a distinct complete system block; the provider golden fixture
@@ -70,10 +68,15 @@ agent-loop concern.
 
 ## MCP tools and schemas
 
-Default tool definitions are model-specific and live one tool per file in
-`sources/vendors/claude/tools/`. `impl/resolveClaudeTools.ts` selects the Sonnet set for
-Sonnet models and the shared Fable/Opus set otherwise. A caller-provided tool set or
-model-specific configuration overrides these defaults.
+The provider has no default tool catalog. The Rig agent owns Claude definitions one tool
+per file under `packages/rig/sources/agent/tools/claude/`, converts them to `SessionTool`,
+and supplies the exact set for each run. The same caller-owned set remains stable across
+compatible model switches.
+
+Independent model-specific golden definitions remain one tool per file under
+`sources/vendors/claude/tools/`. They are test and trace-capture assets, not runtime
+fallbacks. The parity tests compare their complete tool names and model-facing argument
+shapes with the executable Rig tools, and compare changed contracts exactly.
 
 `impl/toClaudeSdkOptions.ts` creates an in-process MCP server named `rig`. Its `tools/list`
 handler returns each `SessionTool` description and TypeBox schema directly as MCP
@@ -88,7 +91,9 @@ The SDK receives:
 
 The MCP call handler waits on `ClaudeToolBridge`. Rig returns the emitted call to its own
 agent loop, executes it through the shared permission boundary, and supplies the committed
-result to that pending MCP call on the next run. The SDK query stays alive throughout.
+result to that pending MCP call on the next run. The bridge keeps resolver and early-answer
+maps keyed by tool-call ID, so either side may arrive first and every parallel call settles
+exactly once. The SDK query stays alive throughout.
 
 ## Streaming and external tools
 
@@ -106,13 +111,16 @@ corresponding tool-result message. On a live query, `ClaudeToolBridge` resolves 
 pending MCP request with text and image content and the same SDK process continues.
 Reconstructed sessions retain `sourceToolAssistantUUID`, which lets vanilla Claude
 associate results with their tool-use assistant.
+Rig also preserves the tool result's `isError` bit through both the live MCP response and
+the reconstructed Claude `tool_result.is_error` block.
 
 Vanilla `conversationRecovery.ts` behavior is used only when a session must be reconstructed,
 such as after a model or compaction configuration change. Normal tool continuation does not
 interrupt or replay the query.
 
-Multiple parallel tool results are represented as separate replay entries linked to the
-originating assistant. The next explicit Rig prompt starts the next user turn.
+Multiple parallel tool results are grouped into one Claude user replay entry containing every
+`tool_result` block and linked to the originating assistant. The next explicit Rig prompt
+starts the next user turn.
 
 ## Multi-turn replay, images, and model switching
 
@@ -129,7 +137,7 @@ A run-level model overrides the active model and is retained for later turns and
 compaction. Replay serializes historical assistant entries with the currently selected
 model because the SDK entry type requires a model; the actual next request uses the
 selected model. The real provider trace switches from Opus to Sonnet and verifies the
-Sonnet prompt and tools on the wire.
+selected prompt and stable caller-owned tools on the wire.
 
 ## Retries
 
@@ -180,10 +188,12 @@ traffic. The complete environment is applied both to the SDK subprocess and to
 does not set `DISABLE_COMPACT`, so an outer-loop request can still invoke native manual
 `/compact`.
 
-Rig abort signals interrupt the active turn without normally closing the reusable query.
-The listener is removed on normal completion, error, synchronous query-construction
-failure, or cancellation. The active prompt queue, MCP bridge, SDK query, and subprocess
-are closed by `destroy()`, or when model, effort, tools, prompt, or compaction mode changes.
+Rig abort signals immediately stop the active turn, close the prompt queue, MCP bridge, SDK
+query, and subprocess, and rotate the private SDK session ID. The next prompt therefore starts
+a fresh Claude SDK session instead of resuming a query that may still be waiting for tool
+results. The listener is removed on normal completion, error, synchronous query-construction
+failure, or cancellation. The same resources are also closed by `destroy()`, or when model,
+effort, tools, prompt, or compaction mode changes.
 
 ## Trace and test coverage
 

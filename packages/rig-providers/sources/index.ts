@@ -71,6 +71,10 @@ export type { ProviderModality } from "@/core/ProviderModality.js";
 export { PROVIDER_MODALITIES } from "@/core/ProviderModality.js";
 export { GrokProvider, type GrokProviderOptions } from "@/vendors/grok/GrokProvider.js";
 export { ClaudeProvider, type ClaudeProviderOptions } from "@/vendors/claude/ClaudeProvider.js";
+export type {
+    ClaudeAuxiliaryQueryRequest,
+    ClaudeAuxiliaryQueryResponse,
+} from "@/vendors/claude/ClaudeAuxiliaryQuery.js";
 export {
     createClaudeQuotaLoader,
     type CreateClaudeQuotaLoaderOptions,
@@ -86,10 +90,6 @@ export {
     type ClaudeSdkQuery,
     type ClaudeSessionOptions,
 } from "@/vendors/claude/ClaudeSession.js";
-export { claude_fable_5_system_prompt } from "@/vendors/claude/prompts/claude_fable_5_system_prompt.js";
-export { claude_opus_4_8_system_prompt } from "@/vendors/claude/prompts/claude_opus_4_8_system_prompt.js";
-export { claude_sonnet_5_system_prompt } from "@/vendors/claude/prompts/claude_sonnet_5_system_prompt.js";
-export { claude_sonnet_tools, claude_tools } from "@/vendors/claude/tools/index.js";
 export { GROK_DEFAULT_ENDPOINT } from "@/vendors/grok/impl/grokConstants.js";
 export { GrokSession, type GrokSessionOptions } from "@/vendors/grok/GrokSession.js";
 export type { GrokToolVendor } from "@/vendors/grok/GrokToolVendor.js";

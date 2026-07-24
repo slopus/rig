@@ -1,8 +1,8 @@
 import { Type } from "@sinclair/typebox";
 
-import { defineTool } from "../agent/types.js";
+import { defineTool } from "../../types.js";
 
-export const sendMessageTool = defineTool({
+export const claudeSendMessageTool = defineTool({
     name: "SendMessage",
     label: "SendMessage",
     description:

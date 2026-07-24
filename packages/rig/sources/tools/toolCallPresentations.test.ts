@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AnyDefinedTool } from "../agent/types.js";
-import { claudeBashTool } from "./claude/Bash.js";
+import { claudeBashTool } from "../agent/tools/claude/Bash.js";
 import { claudeGlobTool } from "../agent/tools/claude/Glob.js";
 import { claudeGrepTool } from "../agent/tools/claude/Grep.js";
 import { claudeReadTool } from "../agent/tools/claude/Read.js";

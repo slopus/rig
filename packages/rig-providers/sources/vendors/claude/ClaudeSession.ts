@@ -32,11 +32,12 @@ import {
     createClaudeSessionReplay,
     type ClaudeSessionReplay,
 } from "@/vendors/claude/impl/createClaudeSessionReplay.js";
-import { resolveClaudeTools } from "@/vendors/claude/impl/resolveClaudeTools.js";
 import { toClaudeSdkOptions } from "@/vendors/claude/impl/toClaudeSdkOptions.js";
 import { toClaudeRetryEvent } from "@/vendors/claude/impl/toClaudeRetryEvent.js";
 
 export type ClaudeSdkQuery = typeof defaultClaudeSdkQuery;
+
+const CLAUDE_QUERY_ABORTED = Symbol("claude_query_aborted");
 
 export interface ClaudeSessionOptions {
     context: SessionContext;
@@ -67,7 +68,7 @@ export class ClaudeSession extends BaseSession {
         | Readonly<Record<string, SessionModelConfiguration>>
         | undefined;
     private context: SessionContext;
-    private readonly sdkSessionId = randomUUID();
+    private sdkSessionId = randomUUID();
     private readonly query: ClaudeSdkQuery;
     private activeQuery: ReturnType<ClaudeSdkQuery> | undefined;
     private activeQueryKey: string | undefined;
@@ -227,7 +228,7 @@ export class ClaudeSession extends BaseSession {
         yield { type: "block_start" };
         const modelConfiguration = this.modelConfigurations?.[options.model];
         const skills = modelConfiguration?.skills ?? this.skills ?? [];
-        const tools = modelConfiguration?.tools ?? this.tools ?? resolveClaudeTools(options.model);
+        const tools = modelConfiguration?.tools ?? this.tools ?? [];
         const systemPrompt = "";
         const configuredContext =
             modelConfiguration === undefined
@@ -248,10 +249,14 @@ export class ClaudeSession extends BaseSession {
             systemPrompt,
             tools,
         });
+        const interruptedAfterToolBatch =
+            this.lastQueryToolCalls.length > 0 &&
+            configuredContext.messages.at(-1)?.role === "user";
         const continuingQuery =
             this.activeQuery !== undefined &&
             this.activePromptQueue !== undefined &&
-            this.activeQueryKey === queryKey;
+            this.activeQueryKey === queryKey &&
+            !interruptedAfterToolBatch;
         if (!continuingQuery) this.closeActiveQuery();
         const { abort: _abort, ...sdkRequestOptions } = options;
         const replay = createClaudeSessionReplay({
@@ -267,8 +272,23 @@ export class ClaudeSession extends BaseSession {
             // Applied below after the live tool bridge is installed.
         }
         let stream = this.activeQuery;
+        let resolveAbort = () => {};
+        let invalidatedAfterAbort = false;
+        const aborted = new Promise<typeof CLAUDE_QUERY_ABORTED>((resolve) => {
+            resolveAbort = () => resolve(CLAUDE_QUERY_ABORTED);
+        });
+        const invalidateAfterAbort = () => {
+            this.closeActiveQuery();
+            if (invalidatedAfterAbort) return;
+            invalidatedAfterAbort = true;
+            this.sdkSessionId = randomUUID();
+        };
         const abort = () => {
-            if (typeof stream?.interrupt === "function") void stream.interrupt();
+            resolveAbort();
+            if (typeof stream?.interrupt === "function") {
+                void Promise.resolve(stream.interrupt()).catch(() => undefined);
+            }
+            invalidateAfterAbort();
         };
         options.abort?.addEventListener("abort", abort, { once: true });
         const activeTools = new Map<number, SessionToolCall>();
@@ -314,9 +334,12 @@ export class ClaudeSession extends BaseSession {
                 this.activeQuery = this.query({ prompt: promptQueue, options: sdkOptions });
                 stream = this.activeQuery;
             } else {
-                const resolvedToolResult = trailingToolResults(configuredContext.messages).some(
-                    (message) => this.activeToolBridge?.resolve(message) === true,
-                );
+                const toolResults = trailingToolResults(configuredContext.messages);
+                const resolvedToolResult =
+                    this.activeToolBridge?.resolveAll(toolResults) === true;
+                if (toolResults.length > 0 && !resolvedToolResult) {
+                    throw new Error("Claude could not match every result in the tool batch.");
+                }
                 if (!resolvedToolResult) {
                     this.activePromptQueue?.enqueue(
                         createClaudeLivePromptMessage(configuredContext.messages),
@@ -325,7 +348,12 @@ export class ClaudeSession extends BaseSession {
             }
             if (stream === undefined) throw new Error("Claude SDK query was not created.");
             for (;;) {
-                const next = await stream.next();
+                const next = await nextClaudeMessage(stream, aborted, options.abort);
+                if (next === CLAUDE_QUERY_ABORTED) {
+                    invalidateAfterAbort();
+                    yield { type: "block_reset" };
+                    return;
+                }
                 if (next.done) {
                     if (options.compaction && nativeCompactionCompleted) break;
                     this.closeActiveQuery();
@@ -333,6 +361,7 @@ export class ClaudeSession extends BaseSession {
                 }
                 const message = next.value;
                 if (options.abort?.aborted) {
+                    invalidateAfterAbort();
                     yield { type: "block_reset" };
                     return;
                 }
@@ -500,7 +529,8 @@ export class ClaudeSession extends BaseSession {
             yield { type: "block_end" };
             yield { type: "done", state: sawToolCall ? "tool_call" : "normal" };
         } catch (error) {
-            this.closeActiveQuery();
+            if (options.abort?.aborted) invalidateAfterAbort();
+            else this.closeActiveQuery();
             yield { type: "block_reset" };
             if (options.abort?.aborted) return;
             const rawMessage = error instanceof Error ? error.message : String(error);
@@ -539,6 +569,14 @@ export class ClaudeSession extends BaseSession {
         this.activeQueryKey = undefined;
         this.activeReplay = undefined;
     }
+}
+
+async function nextClaudeMessage(
+    stream: ReturnType<ClaudeSdkQuery>,
+    aborted: Promise<typeof CLAUDE_QUERY_ABORTED>,
+    signal: AbortSignal | undefined,
+): Promise<Awaited<ReturnType<typeof stream.next>> | typeof CLAUDE_QUERY_ABORTED> {
+    return signal?.aborted ? CLAUDE_QUERY_ABORTED : Promise.race([stream.next(), aborted]);
 }
 
 function trailingToolResults(

@@ -17,6 +17,7 @@ export function createCodexCliRequest(options: {
     clientMetadata: Readonly<Record<string, string>>;
     effort?: SessionReasoningEffort;
     model: string;
+    parallelToolCalls?: boolean;
     promptCacheKey: string;
     skills: readonly SessionSkill[];
     serviceTier?: SessionServiceTier;
@@ -29,7 +30,8 @@ export function createCodexCliRequest(options: {
     request.tool_choice = "auto";
     request.client_metadata = { ...options.clientMetadata };
     if (options.serviceTier !== undefined) request.service_tier = options.serviceTier;
-    if (isCodexV2Model(options.model)) {
+    const useResponsesLite = isCodexV2Model(options.model) && options.parallelToolCalls !== true;
+    if (useResponsesLite) {
         request.parallel_tool_calls = false;
         if (request.reasoning !== undefined)
             request.reasoning = { ...request.reasoning, context: "all_turns" };
@@ -44,7 +46,7 @@ export function createCodexCliRequest(options: {
         ];
         delete request.tools;
     } else {
-        request.parallel_tool_calls = true;
+        request.parallel_tool_calls = options.parallelToolCalls ?? true;
         request.tools = toCodexToolDefinitions(options.tools) as never;
     }
     return request;
@@ -58,7 +60,7 @@ export function createCodexCliWarmupRequest(
     setCodexRequestKind(warmup, "prewarm");
     warmup.generate = false;
     const model = String(warmup.model);
-    if (isCodexV2Model(model)) {
+    if (isCodexV2Model(model) && warmup.tools === undefined) {
         const instructions = responseInputItems(warmup.input).filter(
             (item) =>
                 typeof item === "object" &&

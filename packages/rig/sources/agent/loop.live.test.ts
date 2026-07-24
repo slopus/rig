@@ -159,7 +159,8 @@ describe("agent loop live", () => {
         expect(streamOptions).toHaveLength(2);
         expect(streamOptions[0]?.thinking).toBe("high");
 
-        expect(contexts[0]?.systemPrompt).toBe("Use tools when needed.");
+        expect(contexts[0]?.systemPrompt).toContain("Use tools when needed.");
+        expect(contexts[0]?.systemPrompt).toContain("You are in Full access mode.");
         expect(contexts[0]?.tools?.map((tool) => tool.name)).toEqual(["add", "shout"]);
 
         expect(addExecute).toHaveBeenCalledExactlyOnceWith(
@@ -171,11 +172,11 @@ describe("agent loop live", () => {
                 fs: expect.objectContaining({ cwd: "/workspace" }),
                 bash: expect.objectContaining({ cwd: "/workspace" }),
             }),
-            {
+            expect.objectContaining({
                 onProgress: expect.any(Function),
                 onStatus: expect.any(Function),
                 toolCallId: "call-add",
-            },
+            }),
         );
         expect(addToLLM).toHaveBeenCalledExactlyOnceWith({ total: 7 });
         expect(addToUI).toHaveBeenCalledExactlyOnceWith(
@@ -191,11 +192,11 @@ describe("agent loop live", () => {
                 fs: expect.objectContaining({ cwd: "/workspace" }),
                 bash: expect.objectContaining({ cwd: "/workspace" }),
             }),
-            {
+            expect.objectContaining({
                 onProgress: expect.any(Function),
                 onStatus: expect.any(Function),
                 toolCallId: "call-shout",
-            },
+            }),
         );
         expect(shoutToLLM).toHaveBeenCalledExactlyOnceWith({
             shouted: "DUBLIN",
@@ -731,7 +732,160 @@ describe("agent loop live", () => {
             ],
         });
     });
+
+    it("finishes an aborted run without waiting for provider stream cleanup", async () => {
+        const model = defineModel({
+            id: "mock/model",
+            name: "Mock Model",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const started = deferred<void>();
+        const never = new Promise<never>(() => {});
+        const provider = defineProvider({
+            id: "mock",
+            models: [model],
+            stream() {
+                return {
+                    [Symbol.asyncIterator]() {
+                        return {
+                            next() {
+                                started.resolve();
+                                return never;
+                            },
+                        };
+                    },
+                    result() {
+                        return never;
+                    },
+                };
+            },
+        });
+        const controller = new AbortController();
+        const harness = createJustBashToolHarness();
+        const resultPromise = runAgentLoop({
+            provider,
+            modelId: model.id,
+            tools: [],
+            messages: [
+                {
+                    role: "user",
+                    id: "user-1",
+                    blocks: [{ type: "text", text: "Wait forever." }],
+                },
+            ],
+            context: harness.context,
+            signal: controller.signal,
+        });
+
+        await started.promise;
+        controller.abort();
+
+        await expect(settlesBeforeNextTurn(resultPromise)).resolves.toMatchObject({
+            stopReason: "aborted",
+        });
+    });
+
+    it("publishes every interrupted tool result before finishing without waiting for cleanup", async () => {
+        const model = defineModel({
+            id: "mock/model",
+            name: "Mock Model",
+            thinkingLevels: ["off"],
+            defaultThinkingLevel: "off",
+        });
+        const provider = defineProvider({
+            id: "mock",
+            models: [model],
+            stream() {
+                return streamFor(
+                    assistantMessage(
+                        ["first", "second"].map((name) => ({
+                            type: "toolCall" as const,
+                            id: `call-${name}`,
+                            name,
+                            arguments: {},
+                        })),
+                        "toolUse",
+                    ),
+                );
+            },
+        });
+        const started = deferred<void>();
+        let startedCount = 0;
+        const never = new Promise<never>(() => {});
+        const createWaitingTool = (name: string) =>
+            defineTool({
+                name,
+                label: name,
+                description: `Run ${name}.`,
+                interruptionMessage: `${name} was stopped.`,
+                arguments: Type.Object({}),
+                returnType: Type.Object({}),
+                shouldReviewInAutoMode: () => false,
+                execute() {
+                    startedCount += 1;
+                    if (startedCount === 2) started.resolve();
+                    return never;
+                },
+                toLLM: () => [],
+                toUI: () => name,
+                locks: [],
+            });
+        const controller = new AbortController();
+        const completedToolIds: string[] = [];
+        const harness = createJustBashToolHarness();
+        const resultPromise = runAgentLoop({
+            provider,
+            modelId: model.id,
+            tools: [createWaitingTool("first"), createWaitingTool("second")],
+            messages: [
+                {
+                    role: "user",
+                    id: "user-1",
+                    blocks: [{ type: "text", text: "Run both tools." }],
+                },
+            ],
+            context: harness.context,
+            signal: controller.signal,
+            onEvent(event) {
+                if (event.type === "tool_execution_end") {
+                    completedToolIds.push(event.result.toolCallId);
+                }
+            },
+        });
+
+        await started.promise;
+        controller.abort();
+
+        const result = await settlesBeforeNextTurn(resultPromise);
+        expect(result.stopReason).toBe("aborted");
+        expect(completedToolIds).toEqual(["call-first", "call-second"]);
+        expect(result.messages.at(-1)).toMatchObject({
+            role: "agent",
+            blocks: [
+                {
+                    display: "first was stopped.",
+                    failure: { kind: "interrupted" },
+                    toolCallId: "call-first",
+                },
+                {
+                    display: "second was stopped.",
+                    failure: { kind: "interrupted" },
+                    toolCallId: "call-second",
+                },
+            ],
+        });
+    });
 });
+
+async function settlesBeforeNextTurn<T>(promise: Promise<T>): Promise<T> {
+    return Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+            setImmediate(() => reject(new Error("The aborted operation outlived its turn.")));
+        }),
+    ]);
+}
 
 function delay(ms: number): Promise<void> {
     return new Promise((resolve) => {

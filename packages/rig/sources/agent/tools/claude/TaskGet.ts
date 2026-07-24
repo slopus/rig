@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 
-import { defineTool } from "../../agent/types.js";
-import { sessionTaskSchema } from "./taskSchemas.js";
+import { defineTool } from "../../types.js";
+import { sessionTaskSchema } from "../../../tools/claude/taskSchemas.js";
 
 export const claudeTaskGetTool = defineTool({
     name: "TaskGet",

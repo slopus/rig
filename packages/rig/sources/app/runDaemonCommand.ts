@@ -21,7 +21,7 @@ export async function runDaemonCommand(command: DaemonCommand): Promise<void> {
     const connection = await connectToExistingDaemon();
     if (command === "reload") {
         if (connection !== undefined) {
-            await stopLocalProtocolServer(connection.client, connection.registryPath);
+            await stopLocalProtocolServer(connection.client);
         }
         const reloaded = await ensureLocalProtocolServer({
             confirmRestart: async () => true,
@@ -59,7 +59,6 @@ async function connectToExistingDaemon(): Promise<
     | {
           client: ProtocolHttpClient;
           health: HealthResponse;
-          registryPath: string;
       }
     | undefined
 > {
@@ -75,7 +74,7 @@ async function connectToExistingDaemon(): Promise<
     });
     try {
         const health = await client.health();
-        return { client, health, registryPath: paths.registryPath };
+        return { client, health };
     } catch {
         return undefined;
     }

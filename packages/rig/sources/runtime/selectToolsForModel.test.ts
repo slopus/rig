@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { selectToolsForModel } from "./selectToolsForModel.js";
-import { modelXaiGrokBuild } from "@slopus/rig-execution";
+import { modelAnthropicSonnet46, modelXaiGrokBuild } from "@slopus/rig-execution";
 import { defineProvider } from "@slopus/rig-execution";
 import { grokBuildTools } from "../tools/grok/index.js";
 
@@ -17,6 +17,26 @@ describe("selectToolsForModel", () => {
         });
 
         expect(selectToolsForModel({ model: modelXaiGrokBuild, provider })).toBe(grokBuildTools);
+    });
+
+    it("keeps WebFetch but omits unsupported WebSearch for Bedrock Claude models", () => {
+        const tools = selectToolsForModel({
+            model: modelAnthropicSonnet46,
+            provider: {
+                id: "bedrock",
+                type: "bedrock",
+                models: [modelAnthropicSonnet46],
+                serviceTiers: undefined,
+                extendProfilePromptContext: undefined,
+                quota: undefined,
+                stream: () => {
+                    throw new Error("Not used");
+                },
+            },
+        });
+
+        expect(tools.map((tool) => tool.name)).toContain("WebFetch");
+        expect(tools.map((tool) => tool.name)).not.toContain("WebSearch");
     });
 
     it("adds every universal Gemini tool to every provider-owned tool profile", () => {

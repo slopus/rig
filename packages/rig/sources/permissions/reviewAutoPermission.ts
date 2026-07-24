@@ -6,6 +6,7 @@ import {
     type AutoPermissionReview,
 } from "./parseAutoPermissionReview.js";
 import { shouldAllowAutoPermissionReview } from "./shouldAllowAutoPermissionReview.js";
+import { ABORTED_BY_SIGNAL, raceWithAbort } from "../utils/raceWithAbort.js";
 
 // This follows Codex's guardian contract: assess risk and user authorization separately,
 // use a dedicated no-tools inference call, and fail closed on uncertainty or malformed output.
@@ -36,6 +37,7 @@ export async function reviewAutoPermission(options: {
         tool: options.toolName,
         arguments: options.args,
     });
+    if (options.signal?.aborted) throw new Error("Permission review was stopped.");
     try {
         const stream = options.provider.stream(
             options.model,
@@ -55,10 +57,19 @@ export async function reviewAutoPermission(options: {
                 ...(options.startDate === undefined ? {} : { startDate: options.startDate }),
             },
         );
-        for await (const _event of stream) {
-            if (options.signal?.aborted) throw new Error("Permission review was stopped.");
+        const iterator = stream[Symbol.asyncIterator]();
+        const consume = (async () => {
+            for (;;) {
+                const next = await iterator.next();
+                if (next.done) break;
+            }
+            return stream.result();
+        })();
+        const response = await raceWithAbort(consume, options.signal);
+        if (response === ABORTED_BY_SIGNAL) {
+            void iterator.return?.().catch(() => undefined);
+            throw new Error("Permission review was stopped.");
         }
-        const response = await stream.result();
         if (response.stopReason === "aborted" || options.signal?.aborted) {
             throw new Error("Permission review was stopped.");
         }

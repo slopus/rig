@@ -1,7 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 
-import { defineTool } from "../../agent/types.js";
-import type { UserInputResponse } from "../../user-input/index.js";
+import { defineTool } from "../../types.js";
+import type { UserInputResponse } from "../../../user-input/index.js";
 
 const optionSchema = Type.Object(
     {

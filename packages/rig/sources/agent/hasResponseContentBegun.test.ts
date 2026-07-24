@@ -6,6 +6,7 @@ import type { AssistantMessageEvent } from "@slopus/rig-execution";
 describe("hasResponseContentBegun", () => {
     it.each([
         "start",
+        "reset",
         "done",
         "error",
         "text_start",

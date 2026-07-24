@@ -182,6 +182,26 @@ export class AgentSessionManager {
         return previous;
     }
 
+    inspect(parentSessionId: string, target: string): ManagedSubagent {
+        const child = this.#resolveTarget(parentSessionId, target);
+        const agent = this.#managedSubagent(child);
+        if (
+            agent.status === "completed" ||
+            agent.status === "error" ||
+            agent.status === "aborted"
+        ) {
+            return {
+                ...agent,
+                output: this.#completionOutput(
+                    child,
+                    agent.status,
+                    agent.status === "error" ? child.lastErrorMessage() : undefined,
+                ),
+            };
+        }
+        return agent;
+    }
+
     async pauseDescendants(parentSessionId: string): Promise<number> {
         const parent = this.#repository.get(parentSessionId);
         if (parent === undefined) return 0;

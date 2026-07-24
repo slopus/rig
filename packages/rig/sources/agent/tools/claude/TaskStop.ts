@@ -1,15 +1,19 @@
 import { Type } from "@sinclair/typebox";
 
-import { defineTool } from "../../agent/types.js";
-import { parseBackgroundTaskId } from "./parseBackgroundTaskId.js";
+import { resolveManagedSubagent } from "../../context/resolveManagedSubagent.js";
+import { defineTool } from "../../types.js";
+import { parseBackgroundTaskId } from "../../../tools/claude/parseBackgroundTaskId.js";
 
 export const claudeTaskStopTool = defineTool({
     name: "TaskStop",
     label: "TaskStop",
-    description: "Stop a running background shell task or workflow by its identifier.",
-    arguments: Type.Object({
-        task_id: Type.String({ description: "The background task identifier." }),
-    }),
+    description: "Stop a running background shell task, agent, or workflow by its identifier.",
+    arguments: Type.Object(
+        {
+            task_id: Type.String({ description: "The background task identifier." }),
+        },
+        { additionalProperties: false },
+    ),
     returnType: Type.Union([
         Type.Object({
             command: Type.String(),
@@ -23,9 +27,28 @@ export const claudeTaskStopTool = defineTool({
             task_id: Type.String(),
             task_type: Type.Literal("workflow"),
         }),
+        Type.Object({
+            command: Type.String(),
+            message: Type.String(),
+            task_id: Type.String(),
+            task_type: Type.Literal("local_agent"),
+        }),
     ]),
     shouldReviewInAutoMode: () => false,
     execute: async ({ task_id: id }, context) => {
+        const agent = resolveManagedSubagent(context.subagents, id);
+        if (agent !== undefined && context.subagents !== undefined) {
+            if (agent.status !== "running" && agent.status !== "suspended") {
+                throw new Error("The background agent is not running.");
+            }
+            context.subagents.interrupt(agent.sessionId);
+            return {
+                command: agent.description,
+                message: "The background agent was stopped.",
+                task_id: agent.sessionId,
+                task_type: "local_agent" as const,
+            };
+        }
         if (id.startsWith("workflow:")) {
             const run = context.workflows?.stop(id.slice("workflow:".length));
             if (run === undefined) throw new Error("The workflow run was not found.");

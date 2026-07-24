@@ -128,7 +128,10 @@ function createClaudeMcpServer(
     instance.server.setRequestHandler(ListToolsRequestSchema, async () => ({
         tools: tools.map((tool) => ({
             name: tool.name,
-            description: tool.description ?? "",
+            description:
+                tool.description === undefined || tool.description.trim().length === 0
+                    ? `Run ${tool.name} through Rig.`
+                    : tool.description,
             inputSchema: tool.parameters ?? Type.Object({}, { additionalProperties: false }),
         })),
     }));

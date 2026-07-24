@@ -1,7 +1,4 @@
-import type {
-    ManagedSubagent,
-    SubagentContext,
-} from "../../../context/SubagentContext.js";
+import type { ManagedSubagent, SubagentContext } from "./SubagentContext.js";
 
 export function findManagedSubagent(
     subagents: SubagentContext,

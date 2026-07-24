@@ -67,9 +67,6 @@ export async function runLocalProtocolServer(
         if (stopping) return;
         stopping = true;
         taskDrain?.beginClose();
-        const serverClosed = new Promise<void>((resolve) => {
-            server.close(() => resolve());
-        });
         void (async () => {
             if (store !== undefined) {
                 try {
@@ -82,6 +79,9 @@ export async function runLocalProtocolServer(
                     );
                 }
             }
+            const serverClosed = new Promise<void>((resolve) => {
+                server.close(() => resolve());
+            });
             server.closeAllConnections();
             await serverClosed;
             resolveStopped?.();

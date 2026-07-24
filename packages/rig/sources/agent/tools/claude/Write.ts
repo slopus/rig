@@ -18,12 +18,16 @@ export const claudeWriteTool = defineTool({
     name: "Write",
     label: "Write",
     description: CLAUDE_WRITE_DESCRIPTION,
-    arguments: Type.Object({
-        file_path: Type.String({
-            description: "The absolute path to the file to write (must be absolute, not relative)",
-        }),
-        content: Type.String({ description: "The content to write to the file" }),
-    }),
+    arguments: Type.Object(
+        {
+            file_path: Type.String({
+                description:
+                    "The absolute path to the file to write (must be absolute, not relative)",
+            }),
+            content: Type.String({ description: "The content to write to the file" }),
+        },
+        { additionalProperties: false },
+    ),
     returnType: textOutputSchema,
     describeAutoPermissionAction: ({ file_path }, context) =>
         describeFileAutoPermissionAction(file_path, context, "writing"),

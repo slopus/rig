@@ -56,5 +56,10 @@ export function routeProviderThroughGym(provider: Provider, env: NodeJS.ProcessE
                   quota: (options?: Parameters<NonNullable<Provider["quota"]>>[0]) =>
                       provider.quota!(options),
               }),
+        ...(provider.runClaudeAuxiliaryQuery === undefined
+            ? {}
+            : {
+                  runClaudeAuxiliaryQuery: provider.runClaudeAuxiliaryQuery.bind(provider),
+              }),
     };
 }

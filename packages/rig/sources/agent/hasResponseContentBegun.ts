@@ -3,6 +3,7 @@ import type { AssistantMessageEvent } from "@slopus/rig-execution";
 export function hasResponseContentBegun(event: AssistantMessageEvent): boolean {
     if (
         event.type === "start" ||
+        event.type === "reset" ||
         event.type === "done" ||
         event.type === "error" ||
         event.type === "text_start" ||

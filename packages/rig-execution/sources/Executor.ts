@@ -2,6 +2,9 @@ import { release } from "node:os";
 
 import {
     areProviderModelsCompatible,
+    ClaudeProvider,
+    type ClaudeAuxiliaryQueryRequest,
+    type ClaudeAuxiliaryQueryResponse,
     type BaseProvider,
     type BaseSession,
     type SessionContext,
@@ -17,6 +20,7 @@ import type {
 import type { ExecutorProvider } from "@/ExecutorProvider.js";
 import { DEFAULT_IDENTITY, type Identity } from "@/Identity.js";
 import { createExecutorInferenceStream } from "@/createExecutorInferenceStream.js";
+import { runProviderAuxiliaryText } from "@/runProviderAuxiliaryText.js";
 import type { ExecutorEnvironment } from "@/prompts/ExecutorEnvironment.js";
 import { assembleSystemPrompt } from "@/prompts/assembleSystemPrompt.js";
 import type {
@@ -48,6 +52,7 @@ export class Executor {
     private readonly profilesByKey = new Map<string, ExecutorModelProfile>();
     private readonly providersById = new Map<string, ExecutorProvider>();
     private readonly nativeProviders = new Map<string, Promise<BaseProvider>>();
+    private inferencePending: Promise<void> = Promise.resolve();
     private sessionResolutionPending: Promise<void> = Promise.resolve();
     private sessionSequence = 0;
 
@@ -159,79 +164,122 @@ export class Executor {
         });
     }
 
+    async runClaudeAuxiliaryQuery(
+        model: Model,
+        request: ClaudeAuxiliaryQueryRequest,
+    ): Promise<ClaudeAuxiliaryQueryResponse> {
+        const releaseInference = await this.acquireInference();
+        try {
+            const profile = this.profile({ modelId: model.id, providerId: this.id });
+            const native = await this.resolveNative(this.selectedProvider, profile);
+            if (!(native instanceof ClaudeProvider)) {
+                if ((request.tools?.length ?? 0) > 0) {
+                    throw new Error(
+                        `The selected provider '${this.id}' does not support Claude web search.`,
+                    );
+                }
+                return runProviderAuxiliaryText({
+                    model: profile.id,
+                    native,
+                    request,
+                });
+            }
+            return native.runAuxiliaryQuery(profile.id, request);
+        } finally {
+            releaseInference();
+        }
+    }
+
     async *run(request: ExecutorRunRequest): AsyncGenerator<ExecutorEvent> {
-        const profile = this.profile(request.selection);
-        const resolution = await this.serializeSessionResolution(async () => {
-            if (
-                this.active !== undefined &&
-                !areProviderModelsCompatible(
-                    toCompatibilitySelection(this.active.profile),
-                    toCompatibilitySelection(profile),
-                )
-            ) {
-                return {
-                    type: "reset_required" as const,
-                    current: toSelection(this.active.profile),
-                    requested: request.selection,
-                    message: `Reset the executor before switching from '${this.active.profile.id}' to incompatible model '${profile.id}'.`,
-                };
+        const releaseInference = await this.acquireInference();
+        try {
+            const profile = this.profile(request.selection);
+            const resolution = await this.serializeSessionResolution(async () => {
+                if (
+                    this.active !== undefined &&
+                    !areProviderModelsCompatible(
+                        toCompatibilitySelection(this.active.profile),
+                        toCompatibilitySelection(profile),
+                    )
+                ) {
+                    return {
+                        type: "reset_required" as const,
+                        current: toSelection(this.active.profile),
+                        requested: request.selection,
+                        message: `Reset the executor before switching from '${this.active.profile.id}' to incompatible model '${profile.id}'.`,
+                    };
+                }
+
+                const tools = request.tools ?? [];
+                const toolsKey = JSON.stringify(tools);
+                const instructions = assembleSystemPrompt({
+                    ...(request.contextInstructions === undefined
+                        ? {}
+                        : { contextInstructions: request.contextInstructions }),
+                    environment: this.environment,
+                    identity: this.identity,
+                    profile,
+                    profiles: this.profiles,
+                    ...(request.systemPrompt === undefined
+                        ? {}
+                        : { systemPrompt: request.systemPrompt }),
+                });
+                const context = { ...request.context, instructions };
+                const active = await this.resolveSession(
+                    profile,
+                    context,
+                    request.contextInstructions,
+                    request.systemPrompt,
+                    tools,
+                    toolsKey,
+                );
+                active.context = context;
+                return active;
+            });
+            if ("type" in resolution) {
+                yield resolution;
+                return;
             }
 
-            const tools = request.tools ?? [];
-            const toolsKey = JSON.stringify(tools);
-            const instructions = assembleSystemPrompt({
-                ...(request.contextInstructions === undefined
-                    ? {}
-                    : { contextInstructions: request.contextInstructions }),
-                environment: this.environment,
-                identity: this.identity,
-                profile,
-                profiles: this.profiles,
-                ...(request.systemPrompt === undefined
-                    ? {}
-                    : { systemPrompt: request.systemPrompt }),
+            yield* resolution.session.run({
+                ...(request.abort === undefined ? {} : { abort: request.abort }),
+                context: { messages: request.context.messages },
+                ...(request.effort === undefined ? {} : { effort: request.effort }),
+                model: profile.id,
+                ...(request.serviceTier === undefined ? {} : { serviceTier: request.serviceTier }),
             });
-            const context = { ...request.context, instructions };
-            const active = await this.resolveSession(
-                profile,
-                context,
-                request.contextInstructions,
-                request.systemPrompt,
-                tools,
-                toolsKey,
-            );
-            active.context = context;
-            return active;
-        });
-        if ("type" in resolution) {
-            yield resolution;
-            return;
+        } finally {
+            releaseInference();
         }
-
-        yield* resolution.session.run({
-            ...(request.abort === undefined ? {} : { abort: request.abort }),
-            context: { messages: request.context.messages },
-            ...(request.effort === undefined ? {} : { effort: request.effort }),
-            model: profile.id,
-            ...(request.serviceTier === undefined ? {} : { serviceTier: request.serviceTier }),
-        });
     }
 
     async compact(options: { instructions?: string; signal?: AbortSignal } = {}) {
-        if (this.active === undefined) throw new Error("Executor has no active session.");
-        return this.active.session.compact({
-            ...(options.instructions === undefined ? {} : { instructions: options.instructions }),
-            ...(options.signal === undefined ? {} : { signal: options.signal }),
-        });
+        const releaseInference = await this.acquireInference();
+        try {
+            if (this.active === undefined) throw new Error("Executor has no active session.");
+            return this.active.session.compact({
+                ...(options.instructions === undefined
+                    ? {}
+                    : { instructions: options.instructions }),
+                ...(options.signal === undefined ? {} : { signal: options.signal }),
+            });
+        } finally {
+            releaseInference();
+        }
     }
 
     async reset(selection?: ExecutorSelection): Promise<void> {
         if (selection !== undefined) this.profile(selection);
-        await this.serializeSessionResolution(async () => {
-            const active = this.active;
-            this.active = undefined;
-            if (active !== undefined) await active.session.destroy();
-        });
+        const releaseInference = await this.acquireInference();
+        try {
+            await this.serializeSessionResolution(async () => {
+                const active = this.active;
+                this.active = undefined;
+                if (active !== undefined) await active.session.destroy();
+            });
+        } finally {
+            releaseInference();
+        }
     }
 
     async destroy(): Promise<void> {
@@ -334,6 +382,16 @@ export class Executor {
         } finally {
             release();
         }
+    }
+
+    private async acquireInference(): Promise<() => void> {
+        const previous = this.inferencePending;
+        let release!: () => void;
+        this.inferencePending = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        await previous;
+        return release;
     }
 
     private resolveNative(

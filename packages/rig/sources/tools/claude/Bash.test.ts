@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { createJustBashToolHarness } from "../testing/createJustBashToolHarness.js";
-import { claudeBashTool } from "./Bash.js";
-import { claudeTaskOutputTool } from "./TaskOutput.js";
-import { claudeTaskStopTool } from "./TaskStop.js";
+import { claudeBashTool } from "../../agent/tools/claude/Bash.js";
+import { claudeTaskOutputTool } from "../../agent/tools/claude/TaskOutput.js";
+import { claudeTaskStopTool } from "../../agent/tools/claude/TaskStop.js";
 
 describe("Claude Code Bash tool", () => {
     it("allows steering to interrupt passive task-output waits", () => {

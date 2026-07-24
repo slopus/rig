@@ -42,6 +42,7 @@ import { getCodexModelProperties } from "@/vendors/codex/impl/getCodexModelPrope
 import { getCodexTurnKey } from "@/vendors/codex/impl/getCodexTurnKey.js";
 import { isCodexContextWindowError } from "@/vendors/codex/impl/isCodexContextWindowError.js";
 import { isCodexUnauthorizedError } from "@/vendors/codex/impl/isCodexUnauthorizedError.js";
+import { isCodexV2Model } from "@/vendors/codex/impl/isCodexV2Model.js";
 import { isCodexWebSocketUnavailableError } from "@/vendors/codex/impl/isCodexWebSocketUnavailableError.js";
 import { isRetryableCodexStreamError } from "@/vendors/codex/impl/isRetryableCodexStreamError.js";
 import { preserveCodexCompactionMessages } from "@/vendors/codex/impl/preserveCodexCompactionMessages.js";
@@ -73,6 +74,7 @@ export interface CodexSessionOptions {
     installationId: string;
     model?: string;
     modelConfigurations?: Readonly<Record<string, SessionModelConfiguration>>;
+    parallelToolCalls?: boolean;
     skills?: readonly SessionSkill[];
     /** Maximum stream reconnection attempts per transport, matching upstream Codex. */
     streamMaxRetries?: number;
@@ -86,6 +88,7 @@ export class CodexSession extends BaseSession {
     credential: CodexProviderCredential;
     readonly endpoint: string;
     readonly model: string | undefined;
+    readonly parallelToolCalls: boolean | undefined;
     readonly skills: readonly SessionSkill[];
     readonly streamMaxRetries: number;
     readonly streamIdleTimeoutMs: number;
@@ -119,6 +122,7 @@ export class CodexSession extends BaseSession {
         this.endpoint = options.endpoint;
         this.installationId = options.installationId;
         this.model = options.model;
+        this.parallelToolCalls = options.parallelToolCalls;
         this.activeModel = options.model;
         this.skills = options.skills ?? [];
         this.streamMaxRetries = resolveCodexStreamMaxRetries(options.streamMaxRetries);
@@ -608,6 +612,9 @@ export class CodexSession extends BaseSession {
             context,
             effort,
             model,
+            ...(this.parallelToolCalls === undefined
+                ? {}
+                : { parallelToolCalls: this.parallelToolCalls }),
             promptCacheKey: this.id,
             skills: configuration.skills ?? [],
             ...(serviceTier === undefined ? {} : { serviceTier }),
@@ -681,6 +688,7 @@ export class CodexSession extends BaseSession {
                         this.turnState,
                         this.windowId,
                         typeof turnMetadata === "string" ? turnMetadata : undefined,
+                        isCodexV2Model(model) && sseRequest.tools === undefined,
                     ),
                     ...(signal === undefined ? {} : { signal }),
                 },

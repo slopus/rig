@@ -437,6 +437,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #running = false;
     #activeToolCallIds = new Set<string>();
     #awaitingApprovalToolCallIds = new Set<string>();
+    #reviewingPermissionToolCallIds = new Set<string>();
     #stoppedToolCallIds = new Set<string>();
     #seenToolCallIds = new Set<string>();
     #statusText = "Idle";
@@ -561,10 +562,6 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#submit(value);
         };
 
-        for (const request of options.initialUserInputs ?? []) {
-            this.#enqueueUserInputRequest(request);
-        }
-
         for (const notice of options.initialNotices ?? []) {
             this.#appendEntry({ role: "event", text: notice.text, title: notice.title });
         }
@@ -587,6 +584,12 @@ export class CodingAssistantApp implements Component, Focusable {
             }
         } finally {
             this.#replayingInitialSessionEvents = false;
+        }
+        // The session snapshot is authoritative for pending questions. Restore it only
+        // after historical run events have replayed so an older run_finished event cannot
+        // clear an approval that is still pending on the current run.
+        for (const request of options.initialUserInputs ?? []) {
+            this.#enqueueUserInputRequest(request);
         }
         this.#observedShellProcesses = options.initialBackgroundProcesses ?? [];
         this.#backgroundProcesses = this.#observedShellProcesses;
@@ -645,6 +648,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#stopCursorBlink();
         this.#activeToolCallIds.clear();
         this.#awaitingApprovalToolCallIds.clear();
+        this.#reviewingPermissionToolCallIds.clear();
         this.#runningToolCallIds.clear();
         this.#toolStatusByCallId.clear();
         this.#fileMentionAutocomplete?.clear();
@@ -940,6 +944,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#markActiveToolCallsStopped();
             this.#activeToolCallIds.clear();
             this.#awaitingApprovalToolCallIds.clear();
+            this.#reviewingPermissionToolCallIds.clear();
             this.#runningToolCallIds.clear();
             this.#toolStatusByCallId.clear();
             this.#clearUserInputRequests();
@@ -969,6 +974,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#markActiveToolCallsStopped();
             this.#activeToolCallIds.clear();
             this.#awaitingApprovalToolCallIds.clear();
+            this.#reviewingPermissionToolCallIds.clear();
             this.#runningToolCallIds.clear();
             this.#toolStatusByCallId.clear();
             this.#clearUserInputRequests();
@@ -999,6 +1005,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#toolCallEntryIdsByContentIndex.clear();
             this.#activeToolCallIds.clear();
             this.#awaitingApprovalToolCallIds.clear();
+            this.#reviewingPermissionToolCallIds.clear();
             this.#runningToolCallIds.clear();
             this.#toolStatusByCallId.clear();
             this.#usage = zeroUsage();
@@ -1047,6 +1054,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#toolCallEntryIdsByContentIndex.clear();
             this.#activeToolCallIds.clear();
             this.#awaitingApprovalToolCallIds.clear();
+            this.#reviewingPermissionToolCallIds.clear();
             this.#runningToolCallIds.clear();
             this.#toolStatusByCallId.clear();
             this.#directShellCommandsBySessionId.clear();
@@ -1942,6 +1950,7 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#toolCallEntryIdsByContentIndex.clear();
             this.#activeToolCallIds.clear();
             this.#awaitingApprovalToolCallIds.clear();
+            this.#reviewingPermissionToolCallIds.clear();
             this.#runningToolCallIds.clear();
             this.#toolStatusByCallId.clear();
             this.#appendEntry({ role: "system", text: "Transcript cleared." });
@@ -2512,6 +2521,7 @@ export class CodingAssistantApp implements Component, Focusable {
                     this.#toolCallEntryIdsByContentIndex.clear();
                     this.#activeToolCallIds.clear();
                     this.#awaitingApprovalToolCallIds.clear();
+                    this.#reviewingPermissionToolCallIds.clear();
                     this.#runningToolCallIds.clear();
                     this.#toolStatusByCallId.clear();
                     this.#usage = zeroUsage();
@@ -2594,6 +2604,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#toolCallEntryIdsByContentIndex.clear();
         this.#activeToolCallIds.clear();
         this.#awaitingApprovalToolCallIds.clear();
+        this.#reviewingPermissionToolCallIds.clear();
         this.#runningToolCallIds.clear();
         this.#toolStatusByCallId.clear();
         this.#activityStartedAtMs = this.#lastUserInputAtMs ?? this.#now();
@@ -2678,6 +2689,7 @@ export class CodingAssistantApp implements Component, Focusable {
                 this.#toolCallEntryIdsByContentIndex.clear();
                 this.#activeToolCallIds.clear();
                 this.#awaitingApprovalToolCallIds.clear();
+                this.#reviewingPermissionToolCallIds.clear();
                 this.#runningToolCallIds.clear();
                 this.#toolStatusByCallId.clear();
                 const turnElapsedMs =
@@ -3112,6 +3124,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#markActiveToolCallsStopped();
         this.#activeToolCallIds.clear();
         this.#awaitingApprovalToolCallIds.clear();
+        this.#reviewingPermissionToolCallIds.clear();
         this.#runningToolCallIds.clear();
         this.#toolStatusByCallId.clear();
         this.#stopActivityAnimation();
@@ -3170,6 +3183,9 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#thinkingEntryIdsByContentIndex.clear();
             this.#streamingThinkingEntryIds.clear();
             this.#toolCallEntryIdsByContentIndex.clear();
+        } else if (event.type === "reset") {
+            this.#resetStreamedInference();
+            this.#statusText = "Running";
         } else if (event.type === "inference_retry") {
             this.#statusText =
                 event.reason === "connection_lost"
@@ -3241,6 +3257,7 @@ export class CodingAssistantApp implements Component, Focusable {
             for (const toolCallId of rejectedIds) {
                 this.#activeToolCallIds.delete(toolCallId);
                 this.#awaitingApprovalToolCallIds.delete(toolCallId);
+                this.#reviewingPermissionToolCallIds.delete(toolCallId);
                 this.#runningToolCallIds.delete(toolCallId);
                 this.#toolStatusByCallId.delete(toolCallId);
                 if (!this.#entries.some((entry) => entry.id === toolCallId)) {
@@ -3251,8 +3268,10 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#statusText = "Working";
         } else if (event.type === "permission_review") {
             if (event.decision === "ask") {
-                this.#awaitingApprovalToolCallIds.add(event.toolCallId);
-                this.#statusText = "Waiting for approval";
+                if (!this.#awaitingApprovalToolCallIds.has(event.toolCallId)) {
+                    this.#reviewingPermissionToolCallIds.add(event.toolCallId);
+                }
+                this.#refreshToolActivityStatus();
                 const toolEntry = this.#entries.find((entry) => entry.id === event.toolCallId);
                 if (toolEntry !== undefined) {
                     toolEntry.permissionReview = `Needs approval: ${event.reason} Risk: ${humanizePermissionReviewLevel(event.risk)}. User authorization: ${humanizePermissionReviewLevel(event.userAuthorization)}.`;
@@ -3306,6 +3325,9 @@ export class CodingAssistantApp implements Component, Focusable {
         for (const toolCallId of this.#awaitingApprovalToolCallIds) {
             this.#stoppedToolCallIds.add(toolCallId);
         }
+        for (const toolCallId of this.#reviewingPermissionToolCallIds) {
+            this.#stoppedToolCallIds.add(toolCallId);
+        }
     }
 
     #appendAbortNotice(): void {
@@ -3313,6 +3335,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#markActiveToolCallsStopped();
         this.#activeToolCallIds.clear();
         this.#awaitingApprovalToolCallIds.clear();
+        this.#reviewingPermissionToolCallIds.clear();
         this.#runningToolCallIds.clear();
         this.#toolStatusByCallId.clear();
         if (this.#abortNotified) {
@@ -3692,6 +3715,27 @@ export class CodingAssistantApp implements Component, Focusable {
             return !pending;
         });
         this.#streamedToolCallEntries.clear();
+    }
+
+    #resetStreamedInference(): void {
+        const entryIds = new Set(this.#thinkingEntryIdsByContentIndex.values());
+        if (this.#streamEntryId !== undefined) entryIds.add(this.#streamEntryId);
+        for (const entry of this.#streamedToolCallEntries) {
+            entryIds.add(entry.id);
+            this.#activeToolCallIds.delete(entry.id);
+            this.#awaitingApprovalToolCallIds.delete(entry.id);
+            this.#reviewingPermissionToolCallIds.delete(entry.id);
+            this.#runningToolCallIds.delete(entry.id);
+            this.#seenToolCallIds.delete(entry.id);
+            this.#stoppedToolCallIds.delete(entry.id);
+            this.#toolStatusByCallId.delete(entry.id);
+        }
+        this.#entries = this.#entries.filter((entry) => !entryIds.has(entry.id));
+        this.#streamEntryId = undefined;
+        this.#streamedToolCallEntries.clear();
+        this.#thinkingEntryIdsByContentIndex.clear();
+        this.#streamingThinkingEntryIds.clear();
+        this.#toolCallEntryIdsByContentIndex.clear();
     }
 
     #renderHeader(width: number): string[] {
@@ -4412,6 +4456,12 @@ export class CodingAssistantApp implements Component, Focusable {
         ) {
             return;
         }
+        if (request.requestId.endsWith(":permission")) {
+            const toolCallId = request.requestId.slice(0, -":permission".length);
+            this.#reviewingPermissionToolCallIds.delete(toolCallId);
+            this.#awaitingApprovalToolCallIds.add(toolCallId);
+            this.#refreshToolActivityStatus();
+        }
         this.#userInputRequests.push(request);
         this.#openNextUserInputRequest();
     }
@@ -4439,6 +4489,7 @@ export class CodingAssistantApp implements Component, Focusable {
         const active = this.#activeUserInput;
         const question = active?.request.questions[active.questionIndex];
         if (active === undefined || question === undefined) return;
+        const isPermissionRequest = active.request.requestId.endsWith(":permission");
 
         const items = question.options.map((option, index) => ({
             value: `option:${index}`,
@@ -4467,7 +4518,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
         this.#showInlineSelectionPanel(
             createSelectionPanel({
-                cancelDisabled: true,
+                cancelDisabled: !isPermissionRequest,
                 theme: this.#theme,
                 title: question.header,
                 subtitle: `${question.question} · ${active.questionIndex + 1} of ${active.request.questions.length}`,
@@ -4505,7 +4556,11 @@ export class CodingAssistantApp implements Component, Focusable {
                     this.#openUserInputQuestion();
                     this.#requestRender();
                 },
-                onCancel: () => {},
+                onCancel: () => {
+                    if (!isPermissionRequest) return;
+                    this.#closeSelectionPanel();
+                    this.#handleMainComposerEscape();
+                },
             }),
         );
         this.#requestRender();
@@ -4574,7 +4629,9 @@ export class CodingAssistantApp implements Component, Focusable {
         const wasFreeform = this.#freeformUserInput?.requestId === requestId;
         if (requestId.endsWith(":permission")) {
             const toolCallId = requestId.slice(0, -":permission".length);
-            if (this.#awaitingApprovalToolCallIds.delete(toolCallId)) {
+            const wasReviewing = this.#reviewingPermissionToolCallIds.delete(toolCallId);
+            const wasAwaiting = this.#awaitingApprovalToolCallIds.delete(toolCallId);
+            if (wasReviewing || wasAwaiting) {
                 this.#refreshToolActivityStatus();
             }
         }
@@ -4700,6 +4757,7 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#moveActiveToolEntryToTranscriptTail(block.toolCallId);
         this.#activeToolCallIds.delete(block.toolCallId);
         this.#awaitingApprovalToolCallIds.delete(block.toolCallId);
+        this.#reviewingPermissionToolCallIds.delete(block.toolCallId);
         this.#runningToolCallIds.delete(block.toolCallId);
         this.#toolStatusByCallId.delete(block.toolCallId);
         if (block.isError === true && block.failure?.kind === "interrupted") {
@@ -5389,6 +5447,10 @@ export class CodingAssistantApp implements Component, Focusable {
     #refreshToolActivityStatus(): void {
         if (this.#awaitingApprovalToolCallIds.size > 0) {
             this.#statusText = "Waiting for approval";
+            return;
+        }
+        if (this.#reviewingPermissionToolCallIds.size > 0) {
+            this.#statusText = "Reviewing permissions";
             return;
         }
         if (this.#runningToolCallIds.size === 0) {

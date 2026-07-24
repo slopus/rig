@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createJustBashToolHarness } from "../testing/createJustBashToolHarness.js";
-import { createClaudeWebSearchTool } from "./WebSearch.js";
+import { createClaudeWebSearchTool } from "../../agent/tools/claude/WebSearch.js";
+import { modelAnthropicFable5, modelAnthropicSonnet5 } from "@slopus/rig-execution";
+import type { Model } from "@slopus/rig-execution";
 
 describe("Claude Code WebSearch tool", () => {
     it("declares that network access requires Auto or Full access", () => {
@@ -25,16 +27,25 @@ describe("Claude Code WebSearch tool", () => {
         const tool = createClaudeWebSearchTool({ search });
         const harness = createJustBashToolHarness();
 
-        const result = await harness.runTool(tool, {
-            query: "current docs 2026",
-            allowed_domains: ["example.com"],
-        });
+        const result = await tool.execute(
+            {
+                query: "current docs 2026",
+                allowed_domains: ["example.com"],
+            },
+            harness.context,
+            {
+                model: modelAnthropicFable5,
+                provider: providerWithModels([modelAnthropicFable5, modelAnthropicSonnet5]),
+            },
+        );
 
         expect(search).toHaveBeenCalledWith(
             {
                 query: "current docs 2026",
                 allowed_domains: ["example.com"],
             },
+            expect.objectContaining({ id: "work-claude" }),
+            modelAnthropicSonnet5,
             undefined,
         );
         expect(tool.toLLM(result)[0]).toMatchObject({
@@ -73,11 +84,62 @@ describe("Claude Code WebSearch tool", () => {
         const harness = createJustBashToolHarness();
 
         await expect(
-            harness.runTool(tool, {
-                query: "current docs 2026",
-                allowed_domains: [],
-                blocked_domains: [],
-            }),
+            tool.execute(
+                {
+                    query: "current docs 2026",
+                    allowed_domains: [],
+                    blocked_domains: [],
+                },
+                harness.context,
+                {
+                    model: modelAnthropicFable5,
+                    provider: providerWithModels([modelAnthropicFable5]),
+                },
+            ),
         ).resolves.toMatchObject({ query: "current docs 2026" });
     });
+
+    it("uses the selected provider's auxiliary query with the preferred model", async () => {
+        const runClaudeAuxiliaryQuery = vi.fn().mockResolvedValue({
+            content: [{ type: "text", text: "Current docs." }],
+        });
+        const tool = createClaudeWebSearchTool();
+        const harness = createJustBashToolHarness();
+
+        await tool.execute({ query: "current docs 2026" }, harness.context, {
+            model: modelAnthropicFable5,
+            provider: providerWithModels(
+                [modelAnthropicFable5, modelAnthropicSonnet5],
+                runClaudeAuxiliaryQuery,
+            ),
+        });
+
+        expect(runClaudeAuxiliaryQuery).toHaveBeenCalledWith(
+            modelAnthropicSonnet5,
+            expect.objectContaining({
+                prompt: "Perform a web search for the query: current docs 2026",
+                tools: ["WebSearch"],
+            }),
+        );
+    });
 });
+
+function providerWithModels(
+    models: readonly Model[],
+    runClaudeAuxiliaryQuery?: NonNullable<
+        import("@slopus/rig-execution").Provider["runClaudeAuxiliaryQuery"]
+    >,
+) {
+    return {
+        id: "work-claude",
+        type: "claude" as const,
+        models,
+        serviceTiers: undefined,
+        extendProfilePromptContext: undefined,
+        quota: undefined,
+        ...(runClaudeAuxiliaryQuery === undefined ? {} : { runClaudeAuxiliaryQuery }),
+        stream: () => {
+            throw new Error("Not used");
+        },
+    };
+}

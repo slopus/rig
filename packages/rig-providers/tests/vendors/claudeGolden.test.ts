@@ -10,6 +10,7 @@ import type { SessionEvent } from "@/core/SessionEvent.js";
 import { ClaudeAuthTokenCredential } from "@/vendors/claude/ClaudeAuthTokenCredential.js";
 import { ClaudeSession } from "@/vendors/claude/ClaudeSession.js";
 import { resolveClaudeModelId } from "@/vendors/claude/impl/resolveClaudeModelId.js";
+import { resolveClaudeTools } from "@/vendors/claude/impl/resolveClaudeTools.js";
 import { createClaudeTestInstructions } from "./createClaudeTestInstructions.js";
 
 describe("Claude provider golden", () => {
@@ -104,6 +105,7 @@ describe("Claude provider golden", () => {
                         }),
                         messages: [],
                     },
+                    tools: resolveClaudeTools(golden.scenario.initialModel),
                 },
                 [resolveClaudeModelId(golden.scenario.switchedModel)]: {
                     context: {
@@ -113,6 +115,7 @@ describe("Claude provider golden", () => {
                         }),
                         messages: [],
                     },
+                    tools: resolveClaudeTools(golden.scenario.switchedModel),
                 },
             },
             model: golden.scenario.initialModel,
@@ -124,6 +127,7 @@ describe("Claude provider golden", () => {
                     location: "/virtual/provider-golden/SKILL.md",
                 },
             ],
+            tools: resolveClaudeTools(golden.scenario.initialModel),
         });
 
         try {

@@ -19,6 +19,7 @@ export interface DisabledSubagentProvider {
 
 export interface ManagedSubagent {
     description: string;
+    output?: string;
     path: string;
     sessionId: string;
     status: SubagentRunStatus;
@@ -66,6 +67,7 @@ export interface SubagentContext {
         effort?: string,
         encryptedMessage?: string,
     ): ManagedSubagent;
+    inspect?(target: string): ManagedSubagent;
     interrupt(target: string): ManagedSubagent;
     list(pathPrefix?: string): readonly ManagedSubagent[];
     maxDepth: number;

@@ -1,10 +1,12 @@
 import { Type, type Static } from "@sinclair/typebox";
 
-import { defineTool } from "../../agent/types.js";
-import { readSessionWithProgress } from "../utils/readSessionWithProgress.js";
-import { boundShellOutput } from "../utils/boundShellOutput.js";
-import { parseBackgroundTaskId } from "./parseBackgroundTaskId.js";
-import { serializeWorkflowValue } from "../../workflows/index.js";
+import { resolveManagedSubagent } from "../../context/resolveManagedSubagent.js";
+import { waitForManagedSubagent } from "../../context/waitForManagedSubagent.js";
+import { defineTool } from "../../types.js";
+import { readSessionWithProgress } from "../../../tools/utils/readSessionWithProgress.js";
+import { boundShellOutput } from "../../../tools/utils/boundShellOutput.js";
+import { parseBackgroundTaskId } from "../../../tools/claude/parseBackgroundTaskId.js";
+import { serializeWorkflowValue } from "../../../workflows/index.js";
 
 const backgroundTaskSchema = Type.Object({
     command: Type.String(),
@@ -37,26 +39,45 @@ const workflowTaskSchema = Type.Object({
     task_type: Type.Literal("workflow"),
 });
 
+const agentTaskSchema = Type.Object({
+    description: Type.String(),
+    output: Type.String(),
+    status: Type.Union([
+        Type.Literal("aborted"),
+        Type.Literal("completed"),
+        Type.Literal("error"),
+        Type.Literal("running"),
+        Type.Literal("suspended"),
+    ]),
+    task_id: Type.String(),
+    task_type: Type.Literal("local_agent"),
+});
+
 const taskOutputReturnSchema = Type.Object({
     retrieval_status: Type.Union([
         Type.Literal("not_ready"),
         Type.Literal("success"),
         Type.Literal("timeout"),
     ]),
-    task: Type.Union([backgroundTaskSchema, workflowTaskSchema, Type.Null()]),
+    task: Type.Union([agentTaskSchema, backgroundTaskSchema, workflowTaskSchema, Type.Null()]),
 });
 
 export const claudeTaskOutputTool = defineTool({
     name: "TaskOutput",
     label: "TaskOutput",
-    description: "Read output from a running or completed background shell task or workflow.",
+    description:
+        "Read output from a running or completed background shell task, agent, or workflow.",
     arguments: Type.Object({
         task_id: Type.String({ description: "The background task identifier." }),
         block: Type.Optional(
-            Type.Boolean({ description: "Whether to wait for the task to finish." }),
+            Type.Boolean({
+                default: true,
+                description: "Whether to wait for the task to finish.",
+            }),
         ),
         timeout: Type.Optional(
             Type.Number({
+                default: 30_000,
                 description: "Maximum wait in milliseconds.",
                 maximum: 600_000,
                 minimum: 0,
@@ -72,6 +93,32 @@ export const claudeTaskOutputTool = defineTool({
         context,
         execution,
     ): Promise<Static<typeof taskOutputReturnSchema>> => {
+        const listedAgent = resolveManagedSubagent(context.subagents, task_id);
+        if (listedAgent !== undefined && context.subagents !== undefined) {
+            const agent = block
+                ? await waitForManagedSubagent(
+                      context.subagents,
+                      task_id,
+                      timeout,
+                      execution.signal,
+                  )
+                : listedAgent;
+            const stillRunning = agent.status === "running";
+            return {
+                retrieval_status: stillRunning
+                    ? block
+                        ? ("timeout" as const)
+                        : ("not_ready" as const)
+                    : ("success" as const),
+                task: {
+                    description: agent.description,
+                    output: agent.output ?? "",
+                    status: agent.status,
+                    task_id: agent.sessionId,
+                    task_type: "local_agent" as const,
+                },
+            };
+        }
         if (task_id.startsWith("workflow:")) {
             const runId = task_id.slice("workflow:".length);
             let run = context.workflows?.get(runId);
@@ -141,15 +188,26 @@ export const claudeTaskOutputTool = defineTool({
     toLLM: (result) => [{ type: "text", text: JSON.stringify(result) }],
     toUI: (result) => {
         const isWorkflow = result.task?.task_type === "workflow";
+        const isAgent = result.task?.task_type === "local_agent";
         if (result.retrieval_status === "success") {
-            return isWorkflow ? "Workflow output is ready." : "Background command output is ready.";
+            return isWorkflow
+                ? "Workflow output is ready."
+                : isAgent
+                  ? "Background agent output is ready."
+                  : "Background command output is ready.";
         }
         if (result.retrieval_status === "timeout") {
             return isWorkflow
                 ? "Workflow is still running after the wait."
-                : "Background task is still running after the wait.";
+                : isAgent
+                  ? "Background agent is still running after the wait."
+                  : "Background task is still running after the wait.";
         }
-        return isWorkflow ? "Workflow is still running." : "Background task is still running.";
+        return isWorkflow
+            ? "Workflow is still running."
+            : isAgent
+              ? "Background agent is still running."
+              : "Background task is still running.";
     },
     locks: [],
 });

@@ -7,8 +7,10 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { ClaudeAuthTokenCredential } from "@/vendors/claude/ClaudeAuthTokenCredential.js";
+import { ClaudeOAuthCredential } from "@/vendors/claude/ClaudeOAuthCredential.js";
 import { ClaudeSession } from "@/vendors/claude/ClaudeSession.js";
 import { resolveClaudeModelId } from "@/vendors/claude/impl/resolveClaudeModelId.js";
+import { resolveClaudeTools } from "@/vendors/claude/impl/resolveClaudeTools.js";
 import type { SessionMessage, SessionToolCall } from "@/core/SessionContext.js";
 import type { SessionEvent } from "@/core/SessionEvent.js";
 import { createClaudeTestInstructions } from "./createClaudeTestInstructions.js";
@@ -62,8 +64,10 @@ await listen(server);
 const address = server.address();
 if (address === null || typeof address === "string") throw new Error("Missing capture port.");
 
-const credential = await ClaudeAuthTokenCredential.tryLoad({ env: process.env });
-if (credential === null) throw new Error("Missing ANTHROPIC_AUTH_TOKEN.");
+const credential =
+    (await ClaudeAuthTokenCredential.tryLoad({ env: process.env })) ??
+    (await ClaudeOAuthCredential.tryLoad({ env: process.env }));
+if (credential === null) throw new Error("Missing Claude Code credentials.");
 const providerEnv = {
     ...process.env,
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${address.port}`,
@@ -87,6 +91,7 @@ const session = new ClaudeSession(sessionId, {
                 }),
                 messages: [],
             },
+            tools: resolveClaudeTools(initialModel),
         },
         [resolveClaudeModelId(switchedModel)]: {
             context: {
@@ -96,9 +101,11 @@ const session = new ClaudeSession(sessionId, {
                 }),
                 messages: [],
             },
+            tools: resolveClaudeTools(switchedModel),
         },
     },
     model: initialModel,
+    tools: resolveClaudeTools(initialModel),
     skills: [
         {
             name: "provider-golden",

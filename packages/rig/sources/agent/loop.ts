@@ -15,6 +15,7 @@ import { normalizeToolCallArguments } from "./normalizeToolCallArguments.js";
 import { prepareProviderMessageImages } from "./prepareProviderMessageImages.js";
 import { presentToolCall, type PresentedToolCall } from "./presentToolCall.js";
 import { replaceLastTurnToolResultImages } from "./replaceLastTurnToolResultImages.js";
+import { ABORTED_BY_SIGNAL, raceWithAbort } from "../utils/raceWithAbort.js";
 import { createProviderPrompt, type ProviderPrompt } from "./createProviderPrompt.js";
 import { ToolLockManager } from "./ToolLockManager.js";
 import { toToolExecutionEndResult } from "./toToolExecutionEndResult.js";
@@ -267,23 +268,42 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                 toProviderContext(providerPrompt, preparedProviderMessages, providerTools),
                 toStreamOptions(options, startDate),
             );
-
-            for await (const event of stream) {
-                if (event.type === "start") {
-                    pendingStartEvent = event;
-                    continue;
+            const iterator = stream[Symbol.asyncIterator]();
+            const consume = async () => {
+                for (;;) {
+                    const next = await iterator.next();
+                    if (next.done) break;
+                    if (options.signal?.aborted) {
+                        throw new Error("Provider stream was aborted.");
+                    }
+                    const event = next.value;
+                    if (event.type === "start") {
+                        pendingStartEvent = event;
+                        continue;
+                    }
+                    if (event.type === "error") {
+                        deferredErrorEvents.push(event);
+                        continue;
+                    }
+                    if (pendingStartEvent !== undefined) {
+                        await options.onEvent?.(pendingStartEvent);
+                        pendingStartEvent = undefined;
+                    }
+                    await options.onEvent?.(event);
                 }
-                if (event.type === "error") {
-                    deferredErrorEvents.push(event);
-                    continue;
-                }
-                if (pendingStartEvent !== undefined) {
-                    await options.onEvent?.(pendingStartEvent);
-                    pendingStartEvent = undefined;
-                }
-                await options.onEvent?.(event);
+                return stream.result();
+            };
+            const outcome = await raceWithAbort(consume(), options.signal);
+            if (outcome === ABORTED_BY_SIGNAL) {
+                void Promise.resolve(iterator.return?.()).catch(() => undefined);
+                await appendSteering(options, transcript, contextTranscript, providerMessages, now);
+                return {
+                    messages: transcript,
+                    contextMessages: contextTranscript,
+                    stopReason: "aborted",
+                };
             }
-            assistantMessage = await stream.result();
+            assistantMessage = outcome;
         } catch (error) {
             if (options.signal?.aborted) {
                 await appendSteering(options, transcript, contextTranscript, providerMessages, now);
@@ -493,162 +513,207 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<AgentL
                 providerMessages,
                 idFactory,
                 now,
+                onEvent: options.onEvent,
                 onMessage: options.onMessage,
             });
             await appendSteering(options, transcript, contextTranscript, providerMessages, now);
             return interrupted;
         }
 
-        const preparedPermissions = new Map(
-            await Promise.all(
-                toolCalls.map(
-                    async (toolCall) =>
-                        [
-                            toolCall.id,
-                            await prepareToolPermission(toolCall, toolsByName, toolContext, {
-                                messages: transcript,
-                                model,
-                                now,
-                                onPermissionReview: (review) =>
-                                    ignoreOptionalFailure(() =>
-                                        options.onEvent?.({
-                                            type: "permission_review",
-                                            toolCallId: toolCall.id,
-                                            ...review,
-                                        }),
-                                    ),
-                                provider: options.provider,
-                                startDate,
-                                ...(options.signal === undefined ? {} : { signal: options.signal }),
-                            }),
-                        ] as const,
-                ),
-            ),
+        const preparedPermissionEntries = await raceWithAbort(
+            (async () => {
+                const entries: [string, PreparedToolPermission][] = [];
+                for (const toolCall of toolCalls) {
+                    entries.push([
+                        toolCall.id,
+                        await prepareToolPermission(toolCall, toolsByName, toolContext, {
+                            messages: transcript,
+                            model,
+                            now,
+                            onPermissionReview: (review) =>
+                                options.signal?.aborted
+                                    ? Promise.resolve()
+                                    : ignoreOptionalFailure(() =>
+                                          options.onEvent?.({
+                                              type: "permission_review",
+                                              toolCallId: toolCall.id,
+                                              ...review,
+                                          }),
+                                      ),
+                            provider: options.provider,
+                            startDate,
+                            ...(options.signal === undefined ? {} : { signal: options.signal }),
+                        }),
+                    ]);
+                }
+                return entries;
+            })(),
+            options.signal,
         );
+        if (preparedPermissionEntries === ABORTED_BY_SIGNAL) {
+            const interrupted = await appendInterruptedToolResults({
+                toolCalls,
+                toolsByName,
+                transcript,
+                contextTranscript,
+                providerMessages,
+                idFactory,
+                now,
+                onEvent: options.onEvent,
+                onMessage: options.onMessage,
+            });
+            await appendSteering(options, transcript, contextTranscript, providerMessages, now);
+            return interrupted;
+        }
+        const preparedPermissions = new Map(preparedPermissionEntries);
         const executeToolCalls = (calls: readonly ProviderToolCall[]) =>
             Promise.all(
                 calls.map(async (toolCall) => {
-                    if (options.signal?.aborted) {
-                        return {
-                            completedBeforeAbort: false,
-                            result: interruptedToolResultBlock(toolCall, toolsByName),
+                    const interrupted = () => ({
+                        completedBeforeAbort: false,
+                        result: interruptedToolResultBlock(toolCall, toolsByName),
+                        toolCall,
+                    });
+                    const operation = (async () => {
+                        if (options.signal?.aborted) return interrupted();
+                        await ignoreOptionalFailure(() =>
+                            options.debug?.record("tool-call", {
+                                iteration,
+                                toolCall,
+                            }),
+                        );
+                        if (options.signal?.aborted) return interrupted();
+                        await ignoreOptionalFailure(() =>
+                            options.onEvent?.({
+                                type: "tool_execution_start",
+                                toolCall: presentedToolCalls.get(toolCall.id) ?? toolCall,
+                            }),
+                        );
+                        if (options.signal?.aborted) return interrupted();
+                        const toolCallIndex = toolCalls.indexOf(toolCall);
+                        const preparedPermission = await resolvePermissionPrompt(
                             toolCall,
-                        };
-                    }
+                            preparedPermissions.get(toolCall.id) ?? { kind: "skip" },
+                            toolContext,
+                            {
+                                batchId: agentMessage.id,
+                                toolCallIndex,
+                                ...(options.signal === undefined ? {} : { signal: options.signal }),
+                            },
+                        );
+                        return toolLocks.run(
+                            resolveToolLockKeys(toolCall, toolsByName),
+                            async () => {
+                                if (options.signal?.aborted) return interrupted();
+                                const tool = resolveTool(toolCall, toolsByName);
+                                const executionSignal = tool?.steerable
+                                    ? combineAbortSignals(
+                                          options.signal,
+                                          options.getSteeringSignal?.(),
+                                      )
+                                    : options.signal;
+                                const result = await executeToolCall(
+                                    toolCall,
+                                    toolsByName,
+                                    toolContext,
+                                    {
+                                        batchId: agentMessage.id,
+                                        messages: transcript,
+                                        model,
+                                        now,
+                                        toolCallIndex,
+                                        onProgress: (display) => {
+                                            if (options.signal?.aborted) return;
+                                            void ignoreOptionalFailure(() =>
+                                                options.onEvent?.({
+                                                    type: "tool_execution_progress",
+                                                    display,
+                                                    toolCallId: toolCall.id,
+                                                }),
+                                            );
+                                        },
+                                        onStatus: (status) => {
+                                            if (options.signal?.aborted) return;
+                                            void ignoreOptionalFailure(() =>
+                                                options.onEvent?.({
+                                                    type: "tool_execution_status",
+                                                    status,
+                                                    toolCallId: toolCall.id,
+                                                }),
+                                            );
+                                        },
+                                        onPermissionReview: (review) =>
+                                            options.signal?.aborted
+                                                ? Promise.resolve()
+                                                : ignoreOptionalFailure(() =>
+                                                      options.onEvent?.({
+                                                          type: "permission_review",
+                                                          toolCallId: toolCall.id,
+                                                          ...review,
+                                                      }),
+                                                  ),
+                                        onRawResult: (rawResult) =>
+                                            options.signal?.aborted
+                                                ? Promise.resolve()
+                                                : ignoreOptionalFailure(() =>
+                                                      options.debug?.record("tool-raw-result", {
+                                                          iteration,
+                                                          rawResult,
+                                                          toolCall,
+                                                      }),
+                                                  ),
+                                        onError: (error) =>
+                                            ignoreOptionalFailure(() =>
+                                                options.debug?.record("tool-error", {
+                                                    error,
+                                                    iteration,
+                                                    toolCall,
+                                                }),
+                                            ),
+                                        provider: options.provider,
+                                        preparedPermission,
+                                        ...(executionSignal === undefined
+                                            ? {}
+                                            : { signal: executionSignal }),
+                                    },
+                                );
+                                return {
+                                    completedBeforeAbort: options.signal?.aborted !== true,
+                                    result,
+                                    toolCall,
+                                };
+                            },
+                        );
+                    })();
+                    const raced = await raceWithAbort(operation, options.signal);
+                    const outcome = raced === ABORTED_BY_SIGNAL ? interrupted() : raced;
+                    const durableResult = outcome.completedBeforeAbort
+                        ? outcome.result
+                        : interruptedToolResultBlock(toolCall, toolsByName);
                     await ignoreOptionalFailure(() =>
-                        options.debug?.record("tool-call", {
+                        options.debug?.record("tool-result", {
                             iteration,
+                            result: durableResult,
                             toolCall,
                         }),
                     );
                     await ignoreOptionalFailure(() =>
                         options.onEvent?.({
-                            type: "tool_execution_start",
-                            toolCall: presentedToolCalls.get(toolCall.id) ?? toolCall,
+                            type: "tool_execution_end",
+                            result: toToolExecutionEndResult(durableResult),
                         }),
                     );
-                    const toolCallIndex = toolCalls.indexOf(toolCall);
-                    const preparedPermission = await resolvePermissionPrompt(
-                        toolCall,
-                        preparedPermissions.get(toolCall.id) ?? { kind: "skip" },
-                        toolContext,
-                        {
-                            batchId: agentMessage.id,
-                            toolCallIndex,
-                            ...(options.signal === undefined ? {} : { signal: options.signal }),
-                        },
+                    await ignoreOptionalFailure(() =>
+                        options.onEvent?.({
+                            type: "background_processes_changed",
+                            processes: toolContext.bash.activeSessions?.() ?? [],
+                            running: toolContext.bash.activeSessionCount?.() ?? 0,
+                        }),
                     );
-                    return toolLocks.run(resolveToolLockKeys(toolCall, toolsByName), async () => {
-                        if (options.signal?.aborted) {
-                            return {
-                                completedBeforeAbort: false,
-                                result: interruptedToolResultBlock(toolCall, toolsByName),
-                                toolCall,
-                            };
-                        }
-                        const tool = resolveTool(toolCall, toolsByName);
-                        const executionSignal = tool?.steerable
-                            ? combineAbortSignals(options.signal, options.getSteeringSignal?.())
-                            : options.signal;
-                        const result = await executeToolCall(toolCall, toolsByName, toolContext, {
-                            batchId: agentMessage.id,
-                            messages: transcript,
-                            model,
-                            now,
-                            toolCallIndex,
-                            onProgress: (display) => {
-                                void ignoreOptionalFailure(() =>
-                                    options.onEvent?.({
-                                        type: "tool_execution_progress",
-                                        display,
-                                        toolCallId: toolCall.id,
-                                    }),
-                                );
-                            },
-                            onStatus: (status) => {
-                                void ignoreOptionalFailure(() =>
-                                    options.onEvent?.({
-                                        type: "tool_execution_status",
-                                        status,
-                                        toolCallId: toolCall.id,
-                                    }),
-                                );
-                            },
-                            onPermissionReview: (review) =>
-                                ignoreOptionalFailure(() =>
-                                    options.onEvent?.({
-                                        type: "permission_review",
-                                        toolCallId: toolCall.id,
-                                        ...review,
-                                    }),
-                                ),
-                            onRawResult: (rawResult) =>
-                                ignoreOptionalFailure(() =>
-                                    options.debug?.record("tool-raw-result", {
-                                        iteration,
-                                        rawResult,
-                                        toolCall,
-                                    }),
-                                ),
-                            onError: (error) =>
-                                ignoreOptionalFailure(() =>
-                                    options.debug?.record("tool-error", {
-                                        error,
-                                        iteration,
-                                        toolCall,
-                                    }),
-                                ),
-                            provider: options.provider,
-                            preparedPermission,
-                            ...(executionSignal === undefined ? {} : { signal: executionSignal }),
-                        });
-                        const completedBeforeAbort = options.signal?.aborted !== true;
-                        const durableResult =
-                            options.signal?.aborted && !completedBeforeAbort
-                                ? interruptedToolResultBlock(toolCall, toolsByName)
-                                : result;
-                        await ignoreOptionalFailure(() =>
-                            options.debug?.record("tool-result", {
-                                iteration,
-                                result: durableResult,
-                                toolCall,
-                            }),
-                        );
-                        await ignoreOptionalFailure(() =>
-                            options.onEvent?.({
-                                type: "tool_execution_end",
-                                result: toToolExecutionEndResult(durableResult),
-                            }),
-                        );
-                        await ignoreOptionalFailure(() =>
-                            options.onEvent?.({
-                                type: "background_processes_changed",
-                                processes: toolContext.bash.activeSessions?.() ?? [],
-                                running: toolContext.bash.activeSessionCount?.() ?? 0,
-                            }),
-                        );
-                        return { completedBeforeAbort, result, toolCall };
-                    });
+                    return {
+                        ...outcome,
+                        result: durableResult,
+                    };
                 }),
             );
         const immediateCalls = toolCalls.filter(
@@ -788,11 +853,20 @@ async function appendInterruptedToolResults(options: {
     providerMessages: ProviderMessage[];
     idFactory: () => string;
     now: () => number;
+    onEvent: ((event: AgentLoopEvent) => void | Promise<void>) | undefined;
     onMessage: ((message: Message) => void | Promise<void>) | undefined;
 }): Promise<AgentLoopResult> {
     const toolResultBlocks = options.toolCalls.map((toolCall) =>
         interruptedToolResultBlock(toolCall, options.toolsByName),
     );
+    for (const resultBlock of toolResultBlocks) {
+        await ignoreOptionalFailure(() =>
+            options.onEvent?.({
+                type: "tool_execution_end",
+                result: toToolExecutionEndResult(resultBlock),
+            }),
+        );
+    }
     for (const resultBlock of toolResultBlocks) {
         options.providerMessages.push(toProviderToolResultMessage(resultBlock, options.now));
     }
@@ -1208,8 +1282,10 @@ async function executeToolCall(
             context: AgentContext,
             options: {
                 messages?: readonly Message[];
+                model?: Model;
                 onProgress?: (display: string) => void;
                 onStatus?: (status: string) => void;
+                provider?: Provider;
                 signal?: AbortSignal;
                 toolBatchId?: string;
                 toolCallId?: string;
@@ -1218,14 +1294,18 @@ async function executeToolCall(
         ) => Promise<unknown> | unknown;
         const executionOptions: {
             messages?: readonly Message[];
+            model?: Model;
             onProgress?: (display: string) => void;
             onStatus?: (status: string) => void;
+            provider?: Provider;
             signal?: AbortSignal;
             toolBatchId?: string;
             toolCallId?: string;
             toolCallIndex?: number;
         } = {
             messages: options.messages,
+            model: options.model,
+            provider: options.provider,
             toolCallId: toolCall.id,
         };
         if (tool.execution === "durable") {
