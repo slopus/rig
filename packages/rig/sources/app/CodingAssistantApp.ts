@@ -366,6 +366,7 @@ export class CodingAssistantApp implements Component, Focusable {
 
     #abortController: AbortController | undefined;
     #abortNotified = false;
+    #activeLocalSessionRunId: string | undefined;
     #activeRun: Promise<void> | undefined;
     #activeUserInput: ActiveUserInput | undefined;
     #answeringUserInputRequestId: string | undefined;
@@ -394,6 +395,7 @@ export class CodingAssistantApp implements Component, Focusable {
     #nextSteeringSubmissionId = 1;
     #steeringInterruptIntent: SteeringInterruptIntent | undefined;
     #activeSessionRunId: string | undefined;
+    #latestSessionRunId: string | undefined;
     #activeTurnEntryStart: number | undefined;
     #interruptRequestInFlight = false;
     #interruptSettlementRunId: string | undefined;
@@ -691,6 +693,9 @@ export class CodingAssistantApp implements Component, Focusable {
         }
         if (event.type === "message_submitted") {
             this.#modelLocked = true;
+            if (event.data.delivery === "run") {
+                this.#latestSessionRunId = event.data.runId;
+            }
             const notificationPrefix = "Background work ";
             if (event.data.source === "notification") {
                 if (this.#consumeRenderedCompletionNotice(event.data.displayText)) return;
@@ -724,6 +729,9 @@ export class CodingAssistantApp implements Component, Focusable {
                 if (
                     this.#reconcileSubmittedUserEntry(event.data.message.id, event.data.displayText)
                 ) {
+                    if (this.#activeRun !== undefined) {
+                        this.#activeLocalSessionRunId ??= event.data.runId;
+                    }
                     return;
                 }
             }
@@ -788,6 +796,10 @@ export class CodingAssistantApp implements Component, Focusable {
             this.#usageRequestVersion += 1;
             this.#abortNotified = false;
             this.#activeSessionRunId = event.data.runId;
+            this.#latestSessionRunId = event.data.runId;
+            if (this.#activeRun !== undefined) {
+                this.#activeLocalSessionRunId ??= event.data.runId;
+            }
             this.#activeTurnEntryStart = this.#entries.length;
             this.#setRunning(true);
             this.#deferredTurnSeparator = true;
@@ -994,6 +1006,7 @@ export class CodingAssistantApp implements Component, Focusable {
             const discardedQueuedPrompts = this.#discardLocalPromptsForBoundary();
             this.#sessionMutationBoundaryApplied = true;
             this.#activeSessionRunId = undefined;
+            this.#latestSessionRunId = undefined;
             this.#activeTurnEntryStart = undefined;
             this.#interruptSettlementRunId = undefined;
             this.#setRunning(false);
@@ -1041,6 +1054,7 @@ export class CodingAssistantApp implements Component, Focusable {
             const discardedQueuedPrompts = this.#discardLocalPromptsForBoundary();
             this.#sessionMutationBoundaryApplied = true;
             this.#activeSessionRunId = undefined;
+            this.#latestSessionRunId = undefined;
             this.#interruptSettlementRunId = undefined;
             this.#setRunning(false);
             this.#pendingSteeringMessages = [];
@@ -2605,6 +2619,7 @@ export class CodingAssistantApp implements Component, Focusable {
     async #runPrompt(prompt: PendingPrompt): Promise<void> {
         const controller = new AbortController();
         const runToken = ++this.#runToken;
+        this.#activeLocalSessionRunId = undefined;
         this.#abortController = controller;
         this.#abortNotified = false;
         this.#setRunning(true);
@@ -2624,6 +2639,11 @@ export class CodingAssistantApp implements Component, Focusable {
         this.#requestRender();
 
         let turnCompleted = false;
+        const hasNewerSessionRun = () =>
+            this.#sessionBacked &&
+            this.#activeLocalSessionRunId !== undefined &&
+            this.#latestSessionRunId !== undefined &&
+            this.#latestSessionRunId !== this.#activeLocalSessionRunId;
         try {
             await this.#refreshSkillCommands({ force: true });
             if (!this.#isCurrentRun(runToken)) {
@@ -2663,6 +2683,8 @@ export class CodingAssistantApp implements Component, Focusable {
             if (!this.#isCurrentRun(runToken)) {
                 return;
             }
+            if (this.#sessionBacked) this.#activeLocalSessionRunId ??= result.runId;
+            if (hasNewerSessionRun()) return;
 
             if (result.stopReason === "aborted") {
                 this.#statusText = "Idle";
@@ -2679,6 +2701,7 @@ export class CodingAssistantApp implements Component, Focusable {
             if (!this.#isCurrentRun(runToken)) {
                 return;
             }
+            if (hasNewerSessionRun()) return;
             if (controller.signal.aborted) {
                 this.#statusText = "Idle";
                 this.#appendAbortNotice();
@@ -2692,24 +2715,28 @@ export class CodingAssistantApp implements Component, Focusable {
                 if (this.#abortController === controller) {
                     this.#abortController = undefined;
                 }
-                this.#setRunning(false);
-                this.#discardPendingToolCallEntries();
-                this.#stopActivityAnimation();
-                this.#streamEntryId = undefined;
-                this.#thinkingEntryIdsByContentIndex.clear();
-                this.#streamingThinkingEntryIds.clear();
-                this.#toolCallEntryIdsByContentIndex.clear();
-                this.#activeToolCallIds.clear();
-                this.#awaitingApprovalToolCallIds.clear();
-                this.#reviewingPermissionToolCallIds.clear();
-                this.#runningToolCallIds.clear();
-                this.#toolStatusByCallId.clear();
-                const turnElapsedMs =
-                    !this.#sessionBacked && turnCompleted
-                        ? this.#elapsedSinceLastUserInput(this.#now())
-                        : undefined;
-                if (turnElapsedMs !== undefined) this.#appendTurnCompletion(turnElapsedMs);
-                else this.#activeTurnEntryStart = undefined;
+                const preserveSessionRun = hasNewerSessionRun();
+                this.#activeLocalSessionRunId = undefined;
+                if (!preserveSessionRun) {
+                    this.#setRunning(false);
+                    this.#discardPendingToolCallEntries();
+                    this.#stopActivityAnimation();
+                    this.#streamEntryId = undefined;
+                    this.#thinkingEntryIdsByContentIndex.clear();
+                    this.#streamingThinkingEntryIds.clear();
+                    this.#toolCallEntryIdsByContentIndex.clear();
+                    this.#activeToolCallIds.clear();
+                    this.#awaitingApprovalToolCallIds.clear();
+                    this.#reviewingPermissionToolCallIds.clear();
+                    this.#runningToolCallIds.clear();
+                    this.#toolStatusByCallId.clear();
+                    const turnElapsedMs =
+                        !this.#sessionBacked && turnCompleted
+                            ? this.#elapsedSinceLastUserInput(this.#now())
+                            : undefined;
+                    if (turnElapsedMs !== undefined) this.#appendTurnCompletion(turnElapsedMs);
+                    else this.#activeTurnEntryStart = undefined;
+                }
                 this.#requestRender();
             }
         }
@@ -2991,6 +3018,12 @@ export class CodingAssistantApp implements Component, Focusable {
         if (local === undefined) return;
         this.#inFlightSteeringSubmissions.delete(local.id);
         if (local.invalidated) return;
+        if (response?.delivery === "run") {
+            local.invalidated = true;
+            this.#tryRequestSteeringInterrupt(local.runId);
+            this.#requestRender();
+            return;
+        }
 
         if (response !== undefined) local.runId = response.runId;
         local.accepted ||= accepted;
@@ -3120,6 +3153,14 @@ export class CodingAssistantApp implements Component, Focusable {
     #abortActiveRun(options: { silent?: boolean } = {}): boolean {
         if (!this.#running || this.#abortController === undefined) {
             return false;
+        }
+        if (
+            this.#sessionBacked &&
+            this.#activeSessionRunId !== undefined &&
+            this.#activeLocalSessionRunId !== this.#activeSessionRunId
+        ) {
+            this.#requestSessionInterrupt(false);
+            return true;
         }
 
         const controller = this.#abortController;

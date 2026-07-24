@@ -2370,6 +2370,24 @@ export class InMemorySession {
 
     steer(request: SteerMessageRequest): SteerMessageResponse {
         this.#assertAcceptingWork();
+        if (request.clientSubmissionId !== undefined) {
+            const existingEvent = this.events.messageSubmission(request.clientSubmissionId);
+            if (existingEvent !== undefined) {
+                return {
+                    delivery: existingEvent.data.delivery ?? "run",
+                    eventId: existingEvent.id,
+                    runId: existingEvent.data.runId,
+                    sessionId: this.id,
+                };
+            }
+        }
+        const activeRun = this.#activeRun;
+        if (
+            activeRun === undefined ||
+            (request.expectedRunId !== undefined && activeRun.runId !== request.expectedRunId)
+        ) {
+            return { ...this.submit(request), delivery: "run" };
+        }
         if (
             request.externalTools !== undefined ||
             request.skills !== undefined ||
@@ -2380,13 +2398,6 @@ export class InMemorySession {
             );
         }
         this.#restartMetadataSettlement();
-        const activeRun = this.#activeRun;
-        if (activeRun === undefined) {
-            throw new Error("There is no active run to steer.");
-        }
-        if (request.expectedRunId !== undefined && activeRun.runId !== request.expectedRunId) {
-            throw new Error("The intended run is no longer active.");
-        }
         const displayText = request.displayText ?? request.text;
         const blocks: readonly ContentBlock[] = request.content ?? [
             { type: "text", text: request.text },
@@ -2414,7 +2425,12 @@ export class InMemorySession {
                 messageIds: [userMessage.id],
                 runId: activeRun.runId,
             });
-            return { eventId: event.id, runId: activeRun.runId, sessionId: this.id };
+            return {
+                delivery: "steer",
+                eventId: event.id,
+                runId: activeRun.runId,
+                sessionId: this.id,
+            };
         }
         const pending = agent.status === "running";
         if (pending) {
@@ -2442,6 +2458,7 @@ export class InMemorySession {
             });
         }
         return {
+            delivery: "steer",
             eventId: event.id,
             runId: activeRun.runId,
             sessionId: this.id,
@@ -2498,6 +2515,7 @@ export class InMemorySession {
             });
         }
         return {
+            delivery: "steer",
             eventId: event.id,
             runId: activeRun.runId,
             sessionId: this.id,

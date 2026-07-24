@@ -78,6 +78,7 @@ import type { ExternalToolCall } from "../external-tools/index.js";
 import { connectRemoteTerminalWebSocket } from "./connectRemoteTerminalWebSocket.js";
 import { RemoteTerminalAttachment } from "./RemoteTerminalAttachment.js";
 import { RemoteTerminalClientReplica } from "./RemoteTerminalClientReplica.js";
+import { waitForGymSessionEventBarrier } from "./waitForGymSessionEventBarrier.js";
 
 export interface ProtocolHttpClientOptions {
     socketPath: string;
@@ -716,6 +717,7 @@ export class ProtocolHttpClient {
                                 continue;
                             }
                             application = application.then(async () => {
+                                await waitForGymSessionEventBarrier(event, options.signal);
                                 await options.onEvent(event);
                                 cursor = event.id;
                             });

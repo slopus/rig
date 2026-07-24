@@ -469,7 +469,9 @@ export interface SteerMessageRequest extends SubmitMessageRequest {
     clientSubmissionId?: string;
     expectedRunId?: string;
 }
-export type SteerMessageResponse = SubmitMessageResponse;
+export interface SteerMessageResponse extends SubmitMessageResponse {
+    delivery: "run" | "steer";
+}
 
 export interface ChangeModelRequest {
     effort?: string;

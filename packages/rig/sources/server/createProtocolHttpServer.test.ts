@@ -1056,14 +1056,31 @@ describe("createProtocolHttpServer", () => {
         }
     });
 
-    it("rejects steering when the session has no active run", async () => {
-        const { client, close } = await startServer();
+    it("queues steering as a new run when the session has no active run", async () => {
+        const { client, close, store } = await startServer();
         try {
             const created = await client.createSession({ cwd: "/tmp/rig-protocol-test" });
 
-            await expect(
-                client.steerMessage(created.session.id, { text: "Change direction." }),
-            ).rejects.toThrow("There is no active run to steer.");
+            const accepted = await client.steerMessage(created.session.id, {
+                clientSubmissionId: "queued-after-finish",
+                expectedRunId: "finished-run",
+                text: "Continue in a new turn.",
+            });
+
+            expect(accepted).toMatchObject({ delivery: "run" });
+            expect(
+                store
+                    .get(created.session.id)
+                    ?.events.since(undefined)
+                    ?.find((event) => event.id === accepted.eventId),
+            ).toMatchObject({
+                data: {
+                    delivery: "run",
+                    message: { id: "queued-after-finish" },
+                    runId: accepted.runId,
+                },
+                type: "message_submitted",
+            });
         } finally {
             await close();
         }

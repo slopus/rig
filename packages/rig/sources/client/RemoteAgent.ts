@@ -108,11 +108,11 @@ export class RemoteAgent implements CodingAssistantAgentBackend {
                     const submitted = events.find(
                         (event) =>
                             event.type === "message_submitted" &&
-                            event.data.delivery === "steer" &&
                             event.data.message.id === options.clientSubmissionId,
                     );
                     if (submitted?.type === "message_submitted") {
                         return {
+                            delivery: submitted.data.delivery ?? "run",
                             eventId: submitted.id,
                             runId: submitted.data.runId,
                             sessionId: submitted.sessionId,

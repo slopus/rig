@@ -351,7 +351,7 @@ describe("InMemorySession abort", () => {
         const session = createSession(provider, model, "/tmp/rig-applied-steering");
         const submitted = session.submit({ text: "Start the applied steering run." });
         await firstInferenceStarted.promise;
-        session.steer({
+        const accepted = session.steer({
             clientSubmissionId: "already-applied",
             expectedRunId: submitted.runId,
             text: "Use this exactly once.",
@@ -379,6 +379,13 @@ describe("InMemorySession abort", () => {
         await expect(session.waitForRun(submitted.runId)).resolves.toEqual({
             status: "completed",
         });
+        expect(
+            session.steer({
+                clientSubmissionId: "already-applied",
+                expectedRunId: submitted.runId,
+                text: "Use this exactly once.",
+            }),
+        ).toEqual(accepted);
 
         expect(contexts).toHaveLength(3);
         expect(
@@ -602,7 +609,7 @@ describe("InMemorySession abort", () => {
         expect(stopDescendants).toHaveBeenCalledOnce();
     });
 
-    it("does not steer or abort a replacement run when the expected run already finished", async () => {
+    it("queues behind a replacement run when the expected run already finished", async () => {
         const replacementStarted = deferred<void>();
         let streams = 0;
         const model = defineModel({
@@ -638,12 +645,11 @@ describe("InMemorySession abort", () => {
         const replacement = session.submit({ text: "Keep replacement running." });
         await replacementStarted.promise;
 
-        expect(() =>
-            session.steer({
-                expectedRunId: first.runId,
-                text: "Do not apply this to the replacement.",
-            }),
-        ).toThrow("The intended run is no longer active.");
+        const queued = session.steer({
+            expectedRunId: first.runId,
+            text: "Run this after the replacement.",
+        });
+        expect(queued).toMatchObject({ delivery: "run" });
         await expect(session.abort({ expectedRunId: first.runId })).resolves.toEqual({
             aborted: false,
         });
@@ -659,6 +665,14 @@ describe("InMemorySession abort", () => {
                         event.type === "message_submitted" && event.data.delivery === "steer",
                 ),
         ).toHaveLength(0);
+        expect(
+            session.events
+                .since(undefined)
+                ?.find(
+                    (event) =>
+                        event.type === "message_submitted" && event.data.runId === queued.runId,
+                ),
+        ).toMatchObject({ data: { delivery: "run" } });
         await expect(
             session.abort({
                 continuePendingSteering: true,

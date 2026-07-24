@@ -94,6 +94,7 @@ describe("RemoteAgent", () => {
             defaultThinkingLevel: "off",
         });
         const steerMessage = vi.fn(async () => ({
+            delivery: "steer" as const,
             eventId: "event-2" as const,
             runId: "run-1",
             sessionId: "session-1",
@@ -112,55 +113,59 @@ describe("RemoteAgent", () => {
         });
     });
 
-    it("reconciles a lost steering response by client submission ID without replaying", async () => {
-        const model = defineModel({
-            id: "openai/test",
-            name: "Test model",
-            thinkingLevels: ["off"],
-            defaultThinkingLevel: "off",
-        });
-        const submitted = {
-            createdAt: 2,
-            data: {
-                delivery: "steer" as const,
-                displayText: "Change direction.",
-                message: {
-                    blocks: [{ text: "Change direction.", type: "text" as const }],
-                    id: "client-steer-1",
-                    role: "user" as const,
+    it.each(["steer", "run"] as const)(
+        "reconciles a lost %s delivery by client submission ID without replaying",
+        async (delivery) => {
+            const model = defineModel({
+                id: "openai/test",
+                name: "Test model",
+                thinkingLevels: ["off"],
+                defaultThinkingLevel: "off",
+            });
+            const submitted = {
+                createdAt: 2,
+                data: {
+                    delivery,
+                    displayText: "Change direction.",
+                    message: {
+                        blocks: [{ text: "Change direction.", type: "text" as const }],
+                        id: "client-steer-1",
+                        role: "user" as const,
+                    },
+                    runId: "run-1",
                 },
-                runId: "run-1",
-            },
-            id: "event-2",
-            sessionId: "session-1",
-            type: "message_submitted" as const,
-        };
-        const durableEvents: SessionEvent[] = [];
-        const steerMessage = vi.fn(async () => {
-            durableEvents.push(submitted);
-            throw new Error("socket closed after commit");
-        });
-        const getEvents = vi.fn(async () => ({ events: [...durableEvents] }));
-        const agent = new RemoteAgent({
-            client: { getEvents, steerMessage } as unknown as ProtocolHttpClient,
-            context: createJustBashToolHarness().context,
-            session: { ...protocolSession(model), status: "running" },
-        });
+                id: "event-2",
+                sessionId: "session-1",
+                type: "message_submitted" as const,
+            };
+            const durableEvents: SessionEvent[] = [];
+            const steerMessage = vi.fn(async () => {
+                durableEvents.push(submitted);
+                throw new Error("socket closed after commit");
+            });
+            const getEvents = vi.fn(async () => ({ events: [...durableEvents] }));
+            const agent = new RemoteAgent({
+                client: { getEvents, steerMessage } as unknown as ProtocolHttpClient,
+                context: createJustBashToolHarness().context,
+                session: { ...protocolSession(model), status: "running" },
+            });
 
-        await expect(
-            agent.steer("Change direction.", {
-                clientSubmissionId: "client-steer-1",
-                displayText: "Change direction.",
-            }),
-        ).resolves.toEqual({
-            eventId: "event-2",
-            runId: "run-1",
-            sessionId: "session-1",
-        });
-        expect(steerMessage).toHaveBeenCalledOnce();
-        expect(getEvents).toHaveBeenCalledOnce();
-        expect(durableEvents).toEqual([submitted]);
-    });
+            await expect(
+                agent.steer("Change direction.", {
+                    clientSubmissionId: "client-steer-1",
+                    displayText: "Change direction.",
+                }),
+            ).resolves.toEqual({
+                delivery,
+                eventId: "event-2",
+                runId: "run-1",
+                sessionId: "session-1",
+            });
+            expect(steerMessage).toHaveBeenCalledOnce();
+            expect(getEvents).toHaveBeenCalledOnce();
+            expect(durableEvents).toEqual([submitted]);
+        },
+    );
 
     it("keeps session steering out of the snapshot until the daemon applies it", () => {
         const model = defineModel({

@@ -83,12 +83,51 @@ describe("InMemorySession", () => {
         ).toHaveLength(0);
     });
 
-    it("rejects steering when no run is active", () => {
+    it("queues steering as a new run when no run is active", () => {
         const session = new InMemorySessionStore().create({ cwd: "/tmp/rig-session-test" });
 
-        expect(() => session.steer({ text: "Change direction." })).toThrow(
-            "There is no active run to steer.",
-        );
+        const accepted = session.steer({
+            clientSubmissionId: "queued-after-finish",
+            expectedRunId: "finished-run",
+            text: "Continue in a new turn.",
+        });
+
+        expect(accepted).toMatchObject({ delivery: "run" });
+        expect(
+            session.events.since(undefined)?.find((event) => event.id === accepted.eventId),
+        ).toMatchObject({
+            data: {
+                delivery: "run",
+                message: { id: "queued-after-finish" },
+                runId: accepted.runId,
+            },
+            type: "message_submitted",
+        });
+    });
+
+    it("keeps the original run delivery when retrying a committed submission through steering", () => {
+        const session = new InMemorySessionStore().create({ cwd: "/tmp/rig-session-test" });
+        const submitted = session.submit({
+            clientSubmissionId: "committed-run",
+            text: "Continue in a new turn.",
+        });
+
+        expect(
+            session.steer({
+                clientSubmissionId: "committed-run",
+                expectedRunId: "finished-run",
+                text: "Continue in a new turn.",
+            }),
+        ).toEqual({ ...submitted, delivery: "run" });
+        expect(
+            session.events
+                .since(undefined)
+                ?.filter(
+                    (event) =>
+                        event.type === "message_submitted" &&
+                        event.data.message.id === "committed-run",
+                ),
+        ).toHaveLength(1);
     });
 
     it("wakes an idle session for a notification", () => {

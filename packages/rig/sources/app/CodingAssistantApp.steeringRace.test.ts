@@ -90,6 +90,202 @@ describe("CodingAssistantApp steering submit and Escape race", () => {
         expect(abort).toHaveBeenCalledWith({ expectedRunId: "run-1" });
     });
 
+    it("starts a new run when the previous run finishes before steering reaches the daemon", async () => {
+        const firstRun = deferred<{
+            contextMessages: [];
+            messages: [];
+            runId: string;
+            stopReason: "stop";
+        }>();
+        const steer = vi.fn(async () => ({
+            delivery: "run" as const,
+            eventId: "queued-message",
+            runId: "run-2",
+            sessionId: "session-1",
+        }));
+        const send = vi.fn(() => firstRun.promise);
+        const abort = vi.fn(async () => ({ aborted: true }));
+        const { app } = createRaceApp({ abort, send, startRun: false, steer });
+        const text = "Use the configured token.";
+
+        submit(app, "Finish the first run.");
+        await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+        app.applySessionEvent({
+            createdAt: 1,
+            data: { runId: "run-1" },
+            id: "first-run-started",
+            sessionId: "session-1",
+            type: "run_started",
+        });
+        submit(app, text);
+        await vi.waitFor(() => expect(steer).toHaveBeenCalledOnce());
+        const messageId = steeringMessageId(steer);
+        app.applySessionEvent({
+            createdAt: 2,
+            data: {
+                delivery: "run",
+                displayText: text,
+                message: {
+                    blocks: [{ text, type: "text" }],
+                    id: messageId,
+                    role: "user",
+                },
+                runId: "run-2",
+            },
+            id: "queued-message",
+            sessionId: "session-1",
+            type: "message_submitted",
+        });
+
+        app.applySessionEvent({
+            createdAt: 3,
+            data: { modelLocked: true, runId: "run-1", stopReason: "stop" },
+            id: "run-finished",
+            sessionId: "session-1",
+            type: "run_finished",
+        });
+        app.applySessionEvent({
+            createdAt: 4,
+            data: { runId: "run-2" },
+            id: "next-run-started",
+            sessionId: "session-1",
+            type: "run_started",
+        });
+        app.handleInput("\x1b");
+        await vi.waitFor(() =>
+            expect(abort).toHaveBeenCalledExactlyOnceWith({ expectedRunId: "run-2" }),
+        );
+        firstRun.resolve({
+            contextMessages: [],
+            messages: [],
+            runId: "run-1",
+            stopReason: "stop",
+        });
+        await app.waitForIdle();
+        expect(stripAnsi(app.render(100).join("\n"))).toContain("esc to interrupt");
+
+        app.applySessionEvent({
+            createdAt: 5,
+            data: { modelLocked: true, runId: "run-2", stopReason: "stop" },
+            id: "next-run-finished",
+            sessionId: "session-1",
+            type: "run_finished",
+        });
+
+        const rendered = stripAnsi(app.render(100).join("\n"));
+        expect(send).toHaveBeenCalledOnce();
+        expect(rendered.match(new RegExp(`› ${text}`, "gu"))).toHaveLength(1);
+        expect(rendered).toContain("› Ask Rig to do anything");
+        expect(rendered).not.toContain("There is no active run to steer");
+        expect(rendered).not.toContain("The intended run is no longer active");
+    });
+
+    it.each(["finished", "errored"] as const)(
+        "does not let a stale send settlement overwrite a newer run that already %s",
+        async (newerOutcome) => {
+            const firstRun = deferred<{
+                contextMessages: [];
+                messages: [];
+                runId: string;
+                stopReason: "aborted" | "stop";
+            }>();
+            const steer = vi.fn(async () => ({
+                delivery: "run" as const,
+                eventId: "queued-message",
+                runId: "run-2",
+                sessionId: "session-1",
+            }));
+            const send = vi.fn(() => firstRun.promise);
+            const abort = vi.fn(async () => ({ aborted: true }));
+            const { app } = createRaceApp({ abort, send, startRun: false, steer });
+            const text = "Run after the completed response.";
+
+            submit(app, "Finish the first run.");
+            await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+            app.applySessionEvent({
+                createdAt: 1,
+                data: { runId: "run-1" },
+                id: "first-run-started",
+                sessionId: "session-1",
+                type: "run_started",
+            });
+            submit(app, text);
+            await vi.waitFor(() => expect(steer).toHaveBeenCalledOnce());
+            const messageId = steeringMessageId(steer);
+            app.applySessionEvent({
+                createdAt: 2,
+                data: {
+                    delivery: "run",
+                    displayText: text,
+                    message: {
+                        blocks: [{ text, type: "text" }],
+                        id: messageId,
+                        role: "user",
+                    },
+                    runId: "run-2",
+                },
+                id: "queued-message",
+                sessionId: "session-1",
+                type: "message_submitted",
+            });
+            app.applySessionEvent({
+                createdAt: 3,
+                data: { modelLocked: true, runId: "run-1", stopReason: "stop" },
+                id: "first-run-finished",
+                sessionId: "session-1",
+                type: "run_finished",
+            });
+            app.applySessionEvent({
+                createdAt: 4,
+                data: { runId: "run-2" },
+                id: "next-run-started",
+                sessionId: "session-1",
+                type: "run_started",
+            });
+            app.applySessionEvent(
+                newerOutcome === "finished"
+                    ? {
+                          createdAt: 5,
+                          data: { modelLocked: true, runId: "run-2", stopReason: "stop" },
+                          id: "next-run-finished",
+                          sessionId: "session-1",
+                          type: "run_finished",
+                      }
+                    : {
+                          createdAt: 5,
+                          data: {
+                              errorMessage: "RUN_TWO_ERROR",
+                              modelLocked: true,
+                              runId: "run-2",
+                          },
+                          id: "next-run-error",
+                          sessionId: "session-1",
+                          type: "run_error",
+                      },
+            );
+
+            if (newerOutcome === "finished") {
+                firstRun.resolve({
+                    contextMessages: [],
+                    messages: [],
+                    runId: "run-1",
+                    stopReason: "aborted",
+                });
+            } else {
+                firstRun.reject(new Error("STALE_RUN_ONE_ERROR"));
+            }
+            await app.waitForIdle();
+
+            const rendered = stripAnsi(app.render(100).join("\n"));
+            expect(rendered.match(new RegExp(`› ${text}`, "gu"))).toHaveLength(1);
+            expect(rendered).not.toContain("STALE_RUN_ONE_ERROR");
+            expect(rendered).not.toContain("Session interrupted");
+            if (newerOutcome === "errored") {
+                expect(rendered.match(/RUN_TWO_ERROR/gu)).toHaveLength(1);
+            }
+        },
+    );
+
     it.each(["session_reset", "session_rewound"] as const)(
         "does not resurrect a steering interrupt after %s",
         async (boundaryType) => {
