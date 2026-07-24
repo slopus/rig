@@ -516,7 +516,7 @@ export class CodexSession extends BaseSession {
                         };
                     }
                 }
-                yield { type: "block_end" };
+                yield { type: "block_stop" };
                 if (terminal !== undefined) yield terminal;
                 return;
             } catch (error) {

@@ -5,6 +5,49 @@ import { createExecutorInferenceStream } from "@/createExecutorInferenceStream.j
 import { defineModel } from "@/types.js";
 
 describe("createExecutorInferenceStream", () => {
+    it("forwards provider retry progress without restarting inference", async () => {
+        const executor = {
+            run: async function* () {
+                yield { type: "block_start" } as const;
+                yield {
+                    type: "retrying",
+                    attempt: 2,
+                    reason: "Claude API overloaded (HTTP 529).",
+                } as const;
+                yield { type: "block_stop" } as const;
+                yield { type: "done", state: "normal" } as const;
+            },
+        } as unknown as Executor;
+        const stream = createExecutorInferenceStream({
+            context: { messages: [] },
+            executor,
+            model: defineModel({
+                id: "anthropic/test",
+                name: "Test",
+                thinkingLevels: ["off"],
+                defaultThinkingLevel: "off",
+            }),
+            providerId: "claude",
+        });
+        const events = [];
+
+        for await (const event of stream) events.push(event);
+
+        expect(events.map((event) => event.type)).toEqual([
+            "start",
+            "block_start",
+            "retrying",
+            "block_stop",
+            "done",
+        ]);
+        expect(events).toContainEqual({
+            type: "retrying",
+            attempt: 2,
+            reason: "Claude API overloaded (HTTP 529).",
+        });
+        await expect(stream.result()).resolves.toMatchObject({ stopReason: "stop" });
+    });
+
     it("streams tentative provider blocks and rolls them back on reset", async () => {
         const executor = {
             run: async function* () {
@@ -47,6 +90,7 @@ describe("createExecutorInferenceStream", () => {
 
         expect(events.map((event) => event.type)).toEqual([
             "start",
+            "block_start",
             "thinking_start",
             "thinking_delta",
             "text_start",
@@ -54,7 +98,7 @@ describe("createExecutorInferenceStream", () => {
             "toolcall_start",
             "toolcall_delta",
             "toolcall_end",
-            "reset",
+            "block_reset",
             "error",
         ]);
         expect(events.find((event) => event.type === "text_delta")).toMatchObject({
@@ -69,6 +113,9 @@ describe("createExecutorInferenceStream", () => {
                 name: "Bash",
                 arguments: { command: "echo tentative" },
             },
+        });
+        expect(events.find((event) => event.type === "block_reset")).toMatchObject({
+            partial: { content: [] },
         });
         await expect(stream.result()).resolves.toMatchObject({
             content: [],

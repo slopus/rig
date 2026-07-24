@@ -769,7 +769,7 @@ describe("Codex CLI mode WebSocket goldens", () => {
             "block_reset",
             "retrying",
             "block_start",
-            "block_end",
+            "block_stop",
             "done",
         ]);
         expect(events.at(-1)).toMatchObject({ type: "done", state: "normal" });
@@ -813,7 +813,7 @@ describe("Codex CLI mode WebSocket goldens", () => {
             "block_reset",
             "retrying",
             "block_start",
-            "block_end",
+            "block_stop",
             "done",
         ]);
         expect(events.at(-1)).toMatchObject({ type: "done", state: "normal" });
@@ -1335,7 +1335,7 @@ describe("Codex CLI mode WebSocket goldens", () => {
             "block_reset",
             "retrying",
             "block_start",
-            "block_end",
+            "block_stop",
             "done",
         ]);
         expect(events.at(-1)).toMatchObject({ type: "done", state: "normal" });
@@ -1447,7 +1447,7 @@ function blockLifecycle(events: readonly { type: string }[]): string[] {
         .filter(
             (type) =>
                 type === "block_start" ||
-                type === "block_end" ||
+                type === "block_stop" ||
                 type === "block_reset" ||
                 type === "retrying" ||
                 type === "done",

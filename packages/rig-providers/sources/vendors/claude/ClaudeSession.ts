@@ -460,7 +460,7 @@ export class ClaudeSession extends BaseSession {
                     if (event.type === "message_stop" && sawToolCall) {
                         this.lastQueryToolCalls = [...activeTools.values()];
                         yield { type: "token_usage", usage };
-                        yield { type: "block_end" };
+                        yield { type: "block_stop" };
                         yield { type: "done", state: "tool_call" };
                         return;
                     }
@@ -526,7 +526,7 @@ export class ClaudeSession extends BaseSession {
             }
             this.lastQueryToolCalls = [...activeTools.values()];
             yield { type: "token_usage", usage };
-            yield { type: "block_end" };
+            yield { type: "block_stop" };
             yield { type: "done", state: sawToolCall ? "tool_call" : "normal" };
         } catch (error) {
             if (options.abort?.aborted) invalidateAfterAbort();

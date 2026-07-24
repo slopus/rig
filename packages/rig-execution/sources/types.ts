@@ -224,7 +224,10 @@ export interface ProviderCompactionOptions<
 /** Streaming events emitted while building an assistant message. */
 export type AssistantMessageEvent =
     | { type: "start"; partial: AssistantMessage }
-    | { type: "reset"; partial: AssistantMessage }
+    | { type: "block_start" }
+    | { type: "block_stop" }
+    | { type: "block_reset"; partial: AssistantMessage }
+    | { type: "retrying"; attempt: number; reason: string }
     | { type: "text_start"; contentIndex: number; partial: AssistantMessage }
     | { type: "text_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
     | { type: "text_end"; contentIndex: number; content: string; partial: AssistantMessage }

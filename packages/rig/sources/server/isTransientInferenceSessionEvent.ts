@@ -2,6 +2,9 @@ import type { SessionEvent } from "../protocol/index.js";
 
 export const TRANSIENT_INFERENCE_EVENT_TYPES = [
     "start",
+    "block_start",
+    "block_stop",
+    "retrying",
     "text_start",
     "text_delta",
     "text_end",

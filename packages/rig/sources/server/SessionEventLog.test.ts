@@ -58,6 +58,17 @@ describe("SessionEventLog", () => {
         expect(listener).toHaveBeenCalledExactlyOnceWith(event(DURABLE));
     });
 
+    it("replays a block reset after a disconnected client saw tentative output", () => {
+        const log = new SessionEventLog({ events: [event(FIRST)] });
+        const reset = blockResetEvent(DURABLE);
+
+        log.append(transientEvent(OMITTED, "tentative"));
+        log.append(reset);
+
+        expect(log.since(OMITTED)).toEqual([reset]);
+        expect(log.since(undefined)).toContainEqual(reset);
+    });
+
     it("indexes durable message submissions from restored and appended events", () => {
         const restored = messageSubmittedEvent(FIRST, "restored-message");
         const appended = messageSubmittedEvent(DURABLE, "appended-message");
@@ -159,4 +170,42 @@ function transientEvent(id: string, delta: string): SessionEvent {
         sessionId: "session-1",
         type: "agent_event",
     } as SessionEvent;
+}
+
+function blockResetEvent(id: string): SessionEvent {
+    return {
+        createdAt: 1_700_000_000_000,
+        data: {
+            event: {
+                partial: {
+                    api: "test",
+                    content: [],
+                    model: "openai/test",
+                    provider: "codex",
+                    role: "assistant",
+                    stopReason: "stop",
+                    timestamp: 1_700_000_000_000,
+                    usage: {
+                        cacheRead: 0,
+                        cacheWrite: 0,
+                        cost: {
+                            cacheRead: 0,
+                            cacheWrite: 0,
+                            input: 0,
+                            output: 0,
+                            total: 0,
+                        },
+                        input: 0,
+                        output: 0,
+                        totalTokens: 0,
+                    },
+                },
+                type: "block_reset",
+            },
+            runId: "run-1",
+        },
+        id,
+        sessionId: "session-1",
+        type: "agent_event",
+    };
 }

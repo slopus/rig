@@ -15,7 +15,7 @@ export type SessionProviderError =
 /** Streaming events emitted during a single session run. */
 export type SessionEvent =
     | { type: "block_start" }
-    | { type: "block_end" }
+    | { type: "block_stop" }
     | { type: "block_reset" }
     | { type: "text_delta"; delta: string }
     | { type: "reasoning_delta"; delta: string }

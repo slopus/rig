@@ -115,12 +115,6 @@ export type AgentLoopEvent =
           messageIds: readonly string[];
       }
     | {
-          type: "inference_retry";
-          attempt: number;
-          maxAttempts: number;
-          reason: "connection_lost" | "incomplete_response";
-      }
-    | {
           type: "tool_execution_start";
           toolCall: PresentedToolCall;
       }

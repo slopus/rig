@@ -124,6 +124,17 @@ export function createGymProvider(options: CreateGymProviderOptions) {
                 };
                 yield { type: "start", partial: message };
 
+                for (const retry of reply.providerRetries ?? []) {
+                    yield {
+                        type: "retrying",
+                        attempt: retry.attempt,
+                        reason: retry.reason,
+                    };
+                    if (retry.delayMs !== undefined) {
+                        await delay(retry.delayMs, streamOptions);
+                    }
+                }
+
                 for (const block of reply.content) {
                     const contentIndex = message.content.length;
                     const stopped = yield* eventsForBlock(

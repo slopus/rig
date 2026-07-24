@@ -298,7 +298,7 @@ persist assistant text, tool calls, tool results, tool-call vendor metadata, enc
 and opaque `responseItems`. The next full-context request uses opaque items when available and
 reconstructs function, custom, or tool-search items only when they are absent.
 
-`block_start`, `block_end`, and `block_reset` are Rig's rollback adapter, not native Responses
+`block_start`, `block_stop`, and `block_reset` are Rig's rollback adapter, not native Responses
 events. A run starts one tentative block. Successful inference ends it. A retry, fallback,
 failure, or cancellation resets it so already emitted deltas can be removed before a replacement
 attempt. A block has no declared type and does not constrain the provider's output-item

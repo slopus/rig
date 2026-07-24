@@ -83,6 +83,10 @@ queue.
 | `event.type`     | Meaning                                                         | Additional fields                     |
 | ---------------- | --------------------------------------------------------------- | ------------------------------------- |
 | `start`          | Assistant message generation started.                           | `partial`                             |
+| `block_start`    | A tentative provider response block started.                    | None                                  |
+| `block_stop`     | The current provider response block committed.                  | None                                  |
+| `block_reset`    | The current tentative provider response block was rolled back.  | `partial`                             |
+| `retrying`       | The provider is retrying inference.                             | `attempt`, `reason`                   |
 | `text_start`     | A text content block started.                                   | `contentIndex`, `partial`             |
 | `text_delta`     | More text arrived for a content block.                          | `contentIndex`, `delta`, `partial`    |
 | `text_end`       | A text content block completed.                                 | `contentIndex`, `content`, `partial`  |
@@ -99,9 +103,11 @@ The terminal `done` and `error` stream events are not global queue entries. The
 fully materialized message is subsequently emitted as `agent_message`, and the
 run outcome is emitted as `run_finished` or `run_error`.
 
-Inference message stream events are not written to `session_events`. Restoring
-uses the canonical `agent_message`, transcript message, and run lifecycle
-records as its durable history.
+Presentation-only inference message stream events are not written to
+`session_events`. A `block_reset` is retained so reconnecting clients can erase
+rolled-back output. Restoring completed turns uses the canonical
+`agent_message`, transcript message, and run lifecycle records as its durable
+history.
 
 Session event IDs are ordered UUIDv7 cursors. After a restart, a cursor that
 identified a live-only inference stream event resumes at the first later
@@ -115,7 +121,6 @@ cursors beyond the session's last issued event remain invalid and return 409.
 | ------------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | `context_compacted`            | Older model context was summarized automatically.                      | `compactedMessageCount`, `estimatedTokensBefore`, `estimatedTokensAfter`, `reason`       |
 | `inference_iteration_start`    | A new model inference iteration started within the run.                | `iteration`                                                                              |
-| `inference_retry`              | An incomplete provider response is being retried.                      | `attempt`, `maxAttempts`, `reason`                                                       |
 | `steering_applied`             | Queued steering messages were incorporated into the model context.     | `messageIds`                                                                             |
 | `tool_execution_start`         | Execution of a model-requested tool began.                             | `toolCall`                                                                               |
 | `tool_execution_end`           | Tool execution finished.                                               | `result`, containing `type`, `toolCallId`, `toolName`, `display`, and optional `isError` |

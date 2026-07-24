@@ -16,6 +16,39 @@ describe("isTransientInferenceSessionEvent", () => {
         }
     });
 
+    it("keeps rollback events durable so disconnected clients can recover", () => {
+        expect(
+            isTransientInferenceSessionEvent(
+                agentEvent({
+                    partial: {
+                        api: "test",
+                        content: [],
+                        model: "openai/test",
+                        provider: "codex",
+                        role: "assistant",
+                        stopReason: "stop",
+                        timestamp: 1,
+                        usage: {
+                            cacheRead: 0,
+                            cacheWrite: 0,
+                            cost: {
+                                cacheRead: 0,
+                                cacheWrite: 0,
+                                input: 0,
+                                output: 0,
+                                total: 0,
+                            },
+                            input: 0,
+                            output: 0,
+                            totalTokens: 0,
+                        },
+                    },
+                    type: "block_reset",
+                }),
+            ),
+        ).toBe(false);
+    });
+
     it("drops ephemeral tool progress while keeping terminal tool state durable", () => {
         expect(
             isTransientInferenceSessionEvent(

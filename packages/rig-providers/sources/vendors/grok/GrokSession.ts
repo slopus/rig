@@ -311,7 +311,7 @@ export class GrokSession extends BaseSession {
         if (result !== undefined && result.responseItems.length > 0) {
             yield { type: "response_items", items: result.responseItems };
         }
-        yield { type: "block_end" };
+        yield { type: "block_stop" };
         if (terminal !== undefined) yield terminal;
     }
 

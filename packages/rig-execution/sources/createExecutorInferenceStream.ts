@@ -1,11 +1,6 @@
 import type { Executor } from "@/Executor.js";
 import type { ExecutorEvent } from "@/ExecutorEvent.js";
-import type {
-    SessionEvent,
-    SessionMessage,
-    SessionReasoningEffort,
-    SessionTool,
-} from "@slopus/rig-providers";
+import type { SessionMessage, SessionReasoningEffort, SessionTool } from "@slopus/rig-providers";
 
 import { createInferenceStream } from "@/createInferenceStream.js";
 import { parseOpenAIToolArguments } from "@/parseOpenAIToolArguments.js";
@@ -85,6 +80,7 @@ async function* streamExecutorInference(options: {
         for await (const event of events) {
             if (event.type === "block_start") {
                 blockCheckpoint = snapshot();
+                yield { type: "block_start" };
                 continue;
             }
             if (event.type === "block_reset") {
@@ -95,11 +91,20 @@ async function* streamExecutorInference(options: {
                 activeTools.clear();
                 responseItems.splice(0, responseItems.length, ...(partial.responseItems ?? []));
                 blockCheckpoint = undefined;
-                yield { type: "reset", partial: snapshot() };
+                yield { type: "block_reset", partial: snapshot() };
                 continue;
             }
-            if (event.type === "block_end") {
+            if (event.type === "block_stop") {
                 blockCheckpoint = undefined;
+                yield { type: "block_stop" };
+                continue;
+            }
+            if (event.type === "retrying") {
+                yield {
+                    type: "retrying",
+                    attempt: event.attempt,
+                    reason: event.reason,
+                };
                 continue;
             }
             if (event.type === "text_delta") {

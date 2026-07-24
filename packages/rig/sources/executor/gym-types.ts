@@ -22,6 +22,11 @@ export interface GymInferenceResponse {
     errorAfterContentStart?: boolean;
     errorAfterTextDeltas?: number;
     errorMessage?: string;
+    providerRetries?: readonly {
+        attempt: number;
+        delayMs?: number;
+        reason: string;
+    }[];
     providerError?: ProviderError;
     responseModel?: string;
     stopReason?: StopReason;

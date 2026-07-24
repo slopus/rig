@@ -410,6 +410,11 @@ interface GymInferenceResponse {
     errorAfterContentStart?: boolean;
     errorAfterTextDeltas?: number;
     errorMessage?: string;
+    providerRetries?: readonly {
+        attempt: number;
+        delayMs?: number;
+        reason: string;
+    }[];
     providerError?: ProviderError;
     responseModel?: string;
     stopReason?: StopReason;
@@ -429,6 +434,7 @@ interface GymInferenceResponse {
 - `disconnectAfterTextDeltas` throws a transport-shaped stream error after the requested number of text deltas, preserving the emitted partial message.
 - `errorAfterContentStart` emits the first block's structural start event, then skips its payload events. Pair it with an error stop reason to reproduce a connection failure after an empty content marker.
 - `errorAfterTextDeltas` stops text streaming after the requested number of deltas. Pair it with an error stop reason to reproduce a connection failure after a deterministic visible prefix.
+- `providerRetries` emits provider-owned retry progress before content. Optional per-retry delays keep the live retry status observable.
 - `thinkingDeltaChunkSize` splits thinking blocks into deterministic streaming deltas of at most that many UTF-16 code units.
 - `thinkingDeltaDelayMs` pauses between thinking deltas and respects abort signals. Pair it with `thinkingDeltaChunkSize` for live reasoning-stream scenarios.
 - `textDeltaChunkSize` splits text blocks into deterministic streaming deltas of at most that many UTF-16 code units.

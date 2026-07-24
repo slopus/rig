@@ -1043,7 +1043,7 @@ describe("Agent", () => {
 
         expect(result.stopReason).toBe("error");
         expect(requestCount).toBe(1);
-        expect(observedEventTypes).not.toContain("inference_retry");
+        expect(observedEventTypes).not.toContain("retrying");
         expect(result.messages.at(-1)).toMatchObject({
             role: "agent",
             blocks: [{ type: "text", text: "partial answer" }],

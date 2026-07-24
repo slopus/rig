@@ -5408,8 +5408,11 @@ describe("CodingAssistantApp", () => {
         expect(tentative).toContain("echo tentative");
 
         apply("inference-reset", {
-            type: "reset",
-            partial: { ...partial, content: [], stopReason: "stop" },
+            partial: {
+                ...partial,
+                content: [],
+            },
+            type: "block_reset",
         });
 
         const reset = stripAnsi(app.render(100).join("\n"));

@@ -12,7 +12,7 @@ describe("committedSessionEvents", () => {
             { type: "retrying", attempt: 1, reason: "retry" },
             { type: "block_start" },
             { type: "text_delta", delta: "kept" },
-            { type: "block_end" },
+            { type: "block_stop" },
             { type: "done", state: "normal" },
         ];
 
@@ -36,7 +36,7 @@ describe("committedSessionEvents", () => {
         expect(() =>
             committedSessionEvents([{ type: "block_start" }, { type: "block_start" }]),
         ).toThrow("A session event block is already open.");
-        expect(() => committedSessionEvents([{ type: "block_end" }])).toThrow(
+        expect(() => committedSessionEvents([{ type: "block_stop" }])).toThrow(
             "No session event block is open.",
         );
     });
