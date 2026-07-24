@@ -141,6 +141,10 @@ export async function createGym(options: GymOptions): Promise<Gym> {
                   ]
                 : undefined;
         const processStartedAt = performance.now();
+        const localCommand =
+            options.entrypoint === undefined
+                ? [process.execPath, ...localRunnerArguments, ...(options.args ?? [])]
+                : [...options.entrypoint, ...(options.args ?? [])];
         const pty =
             execution === "docker"
                 ? spawn(
@@ -173,7 +177,7 @@ export async function createGym(options: GymOptions): Promise<Gym> {
                           rows,
                       },
                   )
-                : spawn(process.execPath, [...localRunnerArguments, ...(options.args ?? [])], {
+                : spawn(localCommand[0] ?? process.execPath, localCommand.slice(1), {
                       cols,
                       cwd: workspacePath,
                       env: localEnvironment ?? {},

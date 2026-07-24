@@ -8,9 +8,6 @@ export function resolveGymExecution(options: GymOptions): "docker" | "local" {
     if (execution === "local" && options.dockerSocket === true) {
         throw new Error('Gym option "dockerSocket" requires mode: "docker".');
     }
-    if (execution === "local" && options.entrypoint !== undefined) {
-        throw new Error('Gym option "entrypoint" requires mode: "docker".');
-    }
     if (execution === "local" && options.image !== undefined) {
         throw new Error('Gym option "image" requires mode: "docker".');
     }

@@ -25,6 +25,7 @@ import { createSerialTaskQueue } from "./createSerialTaskQueue.js";
 import { createStopOnceHandler } from "./createStopOnceHandler.js";
 import { createStartupStatusCardModel } from "./createStartupStatusCardModel.js";
 import { ensureSessionCanResume } from "./ensureSessionCanResume.js";
+import { installTerminalCrashCleanup } from "./installTerminalCrashCleanup.js";
 import { providerQuotaToStartupStatusUsage } from "./providerQuotaToStartupStatusUsage.js";
 import { readPackageVersion } from "../readPackageVersion.js";
 import { resolveTerminalTheme } from "./resolveTerminalTheme.js";
@@ -122,10 +123,23 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         tui,
         version: readPackageVersion(),
     });
-    startup.start();
-    tui.setTerminalColorSchemeNotifications(true);
-    terminal.write("\x1b[?1004h");
-    const terminalBackground = tui.queryTerminalBackgroundColor({ timeoutMs: 250 });
+    const terminalCrashCleanup = installTerminalCrashCleanup({ terminal, tui });
+    let terminalBackground: ReturnType<TUI["queryTerminalBackgroundColor"]>;
+    try {
+        startup.start();
+        tui.setTerminalColorSchemeNotifications(true);
+        terminal.write("\x1b[?1004h");
+        terminalBackground = tui.queryTerminalBackgroundColor({ timeoutMs: 250 });
+    } catch (error) {
+        try {
+            startup.stop();
+        } catch {
+            // Preserve the startup failure while restoring the terminal below.
+        }
+        terminalCrashCleanup.restore();
+        terminalCrashCleanup.uninstall();
+        throw error;
+    }
 
     const { history, localServer, modelCatalog, session, sessionTerminal } = await (async () => {
         let sessionTerminal: SessionTerminalConnection | undefined;
@@ -168,10 +182,14 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
                 sessionTerminal,
             };
         } catch (error) {
+            try {
+                startup.stop();
+            } catch {
+                // Preserve the connection failure while restoring the terminal below.
+            }
+            terminalCrashCleanup.restore();
+            terminalCrashCleanup.uninstall();
             await sessionTerminal?.close().catch(() => undefined);
-            startup.stop();
-            terminal.write("\x1b[?1004l");
-            tui.stop();
             throw error;
         }
     })();
@@ -188,9 +206,13 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
                 localServer.client.getCurrentProviderQuota(session.session.id),
             ),
         ]).catch((error: unknown) => {
-            startup.stop();
-            terminal.write("\x1b[?1004l");
-            tui.stop();
+            try {
+                startup.stop();
+            } catch {
+                // Preserve the session failure while restoring the terminal below.
+            }
+            terminalCrashCleanup.restore();
+            terminalCrashCleanup.uninstall();
             throw error;
         });
         const context = createNodeAgentContext({
@@ -423,10 +445,14 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
         process.on("SIGINT", stop);
         process.on("SIGTERM", stop);
 
+        let appExitedNormally = false;
         try {
             app.start({ tuiAlreadyStarted: true });
             await app.waitForExit();
+            appExitedNormally = true;
         } finally {
+            if (!appExitedNormally) terminalCrashCleanup.restore();
+            terminalCrashCleanup.uninstall();
             stopWatchingTerminalTheme();
             process.off("SIGINT", stop);
             process.off("SIGTERM", stop);
@@ -437,6 +463,10 @@ export async function runApp(options: RunAppOptions = {}): Promise<void> {
             console.error(`Session: ${session.session.id}`);
             console.error(`Resume: ${resumeCommand}`);
         }
+    } catch (error) {
+        terminalCrashCleanup.restore();
+        terminalCrashCleanup.uninstall();
+        throw error;
     } finally {
         await sessionTerminal.close().catch(() => undefined);
     }
