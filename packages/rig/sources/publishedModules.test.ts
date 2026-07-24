@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
 const packageDirectory = fileURLToPath(new URL("../", import.meta.url));
+const packageVersionModule = "@slopus/rig/package-version";
 const require = createRequire(import.meta.url);
 
 describe("published modules", () => {
@@ -120,7 +121,9 @@ export type RigTypes = [
         const manifest = JSON.parse(
             await readFile(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
         ) as { version: string };
-        const version = await import("@slopus/rig/package-version");
+        const version = (await import(packageVersionModule)) as {
+            readPackageVersion(): string;
+        };
         expect(version.readPackageVersion()).toBe(manifest.version);
         expect(require.resolve("@slopus/rig/dist/main.js")).toBe(
             fileURLToPath(new URL("../dist/main.js", import.meta.url)),
