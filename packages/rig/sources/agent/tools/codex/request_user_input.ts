@@ -107,10 +107,7 @@ export const codexRequestUserInputTool = defineTool({
     parseExecutorToolArguments: (argumentsValue) => {
         if (typeof argumentsValue !== "object" || argumentsValue === null) return {};
         const normalized = { ...argumentsValue };
-        if (
-            "autoResolutionMs" in normalized &&
-            typeof normalized.autoResolutionMs === "number"
-        ) {
+        if ("autoResolutionMs" in normalized && typeof normalized.autoResolutionMs === "number") {
             normalized.autoResolutionMs = Math.max(
                 MIN_AUTO_RESOLUTION_MS,
                 Math.min(MAX_AUTO_RESOLUTION_MS, normalized.autoResolutionMs),

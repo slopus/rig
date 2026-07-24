@@ -7,9 +7,7 @@ import type {
 import type { CodexResponseRequest } from "@/vendors/codex/impl/CodexResponseRequest.js";
 import { responseInputItems } from "@/vendors/codex/impl/responseInputItems.js";
 
-export function createCodexBedrockRequest(
-    request: CodexResponseRequest,
-): CodexResponseRequest {
+export function createCodexBedrockRequest(request: CodexResponseRequest): CodexResponseRequest {
     const output: CodexResponseRequest = structuredClone(request);
     const normalizedInput = responseInputItems(output.input).map((item): ResponseInputItem => {
         if (!isStringInputMessage(item)) return item;
@@ -20,10 +18,7 @@ export function createCodexBedrockRequest(
     });
     output.input = normalizedInput.reduce<ResponseInputItem[]>((items, item) => {
         const previous = items.at(-1);
-        if (
-            isDeveloperContentMessage(previous) &&
-            isDeveloperContentMessage(item)
-        ) {
+        if (isDeveloperContentMessage(previous) && isDeveloperContentMessage(item)) {
             previous.content.push(...item.content);
         } else {
             items.push(item);

@@ -1,10 +1,7 @@
 import type { SessionTool } from "@/core/SessionTool.js";
 import type { CodexToolDefinitionVendor } from "@/vendors/codex/CodexToolVendor.js";
 import { toJsonSchema } from "@/vendors/codex/impl/toJsonSchema.js";
-import type {
-    NamespaceTool,
-    Tool,
-} from "openai/resources/responses/responses.js";
+import type { NamespaceTool, Tool } from "openai/resources/responses/responses.js";
 
 export function toCodexToolDefinitions(tools: readonly SessionTool[]): Tool[] {
     const nativeNamespaceDescriptions = new Map([

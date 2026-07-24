@@ -46,8 +46,6 @@ export const codexWaitAgentTool = defineTool({
     },
     toLLM: (result) => [{ type: "text", text: JSON.stringify(result) }],
     toUI: (result) =>
-        result.timed_out
-            ? "No subagent updates arrived before the wait ended."
-            : result.message,
+        result.timed_out ? "No subagent updates arrived before the wait ended." : result.message,
     locks: [],
 });

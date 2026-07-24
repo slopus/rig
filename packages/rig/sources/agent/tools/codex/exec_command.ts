@@ -35,13 +35,10 @@ export const codexExecCommandTool = defineTool({
                     }),
                 ),
                 sandbox_permissions: Type.Optional(
-                    Type.Union(
-                        [Type.Literal("use_default"), Type.Literal("require_escalated")],
-                        {
+                    Type.Union([Type.Literal("use_default"), Type.Literal("require_escalated")], {
                         description:
                             "Per-command sandbox override. Defaults to `use_default`; use `require_escalated` for unsandboxed execution.",
-                        },
-                    ),
+                    }),
                 ),
                 shell: Type.Optional(
                     Type.String({

@@ -78,10 +78,7 @@ describe("Claude background agent task output", () => {
                     };
                 }
 
-                if (
-                    lastMessage?.role === "toolResult" &&
-                    lastMessage.toolName === "TaskOutput"
-                ) {
+                if (lastMessage?.role === "toolResult" && lastMessage.toolName === "TaskOutput") {
                     expect(JSON.parse(lastText)).toMatchObject({
                         retrieval_status: "success",
                         task: {

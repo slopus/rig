@@ -335,8 +335,7 @@ export class ClaudeSession extends BaseSession {
                 stream = this.activeQuery;
             } else {
                 const toolResults = trailingToolResults(configuredContext.messages);
-                const resolvedToolResult =
-                    this.activeToolBridge?.resolveAll(toolResults) === true;
+                const resolvedToolResult = this.activeToolBridge?.resolveAll(toolResults) === true;
                 if (toolResults.length > 0 && !resolvedToolResult) {
                     throw new Error("Claude could not match every result in the tool batch.");
                 }

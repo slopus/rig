@@ -1,6 +1,4 @@
-import type {
-    ResponseInputItem,
-} from "openai/resources/responses/responses.js";
+import type { ResponseInputItem } from "openai/resources/responses/responses.js";
 
 import type { SessionTool } from "@/core/SessionTool.js";
 import type { CodexResponseRequest } from "@/vendors/codex/impl/CodexResponseRequest.js";
@@ -32,10 +30,7 @@ export function fitCodexCompactionRequest(
     }
 
     while (estimate(fitted, tools, contextWindow) >= contextWindow) {
-        const lastUser = input.findLast(
-            (item) =>
-                "role" in item && item.role === "user",
-        );
+        const lastUser = input.findLast((item) => "role" in item && item.role === "user");
         const removableIndex = input.findIndex((item) => {
             if (item === lastUser) return false;
             return (
@@ -52,17 +47,14 @@ export function fitCodexCompactionRequest(
         input = input.filter(
             (item, index) =>
                 index !== removableIndex &&
-                (callId === undefined ||
-                    !("call_id" in item) ||
-                    item.call_id !== callId),
+                (callId === undefined || !("call_id" in item) || item.call_id !== callId),
         );
         fitted.input = input;
     }
 
     while (estimate(fitted, tools, contextWindow) >= contextWindow) {
         const item = input.findLast(
-            (candidate) =>
-                "role" in candidate && candidate.role === "user",
+            (candidate) => "role" in candidate && candidate.role === "user",
         );
         if (item === undefined) break;
         const text = messageText(item);
