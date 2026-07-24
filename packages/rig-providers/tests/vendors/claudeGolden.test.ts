@@ -336,10 +336,14 @@ function normalize(value: unknown, cwd: string): unknown {
                     (identifier) =>
                         `<${identifier.slice(0, identifier.indexOf("_")).toUpperCase()}_ID>`,
                 )
+                .replace(/(?<="device_id":")[0-9a-f]{64}(?=")/giu, "<DEVICE_ID>")
                 .replace(
                     /You have been invoked in the following environment: +(?=\n)/gu,
                     "You have been invoked in the following environment:",
                 )
+                .replace(/(?<= - Platform: )[^\n]+/gu, "<PLATFORM>")
+                .replace(/(?<= - Shell: )[^\n]+/gu, "<SHELL>")
+                .replace(/(?<= - OS Version: )[^\n]+/gu, "<OS_VERSION>")
                 .replace(/(?<=Today's date is )\d{4}-\d{2}-\d{2}(?=\.)/gu, "<CURRENT_DATE>")
                 .replace(/(?<=current date is )\d{4}-\d{2}-\d{2}/gu, "<CURRENT_DATE>");
         }
