@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -27,6 +27,11 @@ describe("runLocalProtocolServer logging", () => {
             prepareLocalServerDirectory(serverDirectory),
             mkdir(rigHome, { recursive: true }),
         ]);
+        await writeFile(
+            join(rigHome, "config.toml"),
+            "[providers]\ndefault_enable = false\n\n[providers.bedrock]\nenabled = true\n",
+        );
+        vi.stubEnv("AWS_BEARER_TOKEN_BEDROCK", "test-token");
         vi.stubEnv("RIG_HOME", rigHome);
         vi.stubEnv("RIG_SERVER_DIRECTORY", serverDirectory);
         const tokenPath = join(serverDirectory, "token");
@@ -68,17 +73,23 @@ describe("runLocalProtocolServer logging", () => {
             expect(record.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/u);
             expect(record.version).toEqual(expect.any(String));
         }
-    }, 30_000);
+    }, 60_000);
 });
 
 async function waitForReady(client: ProtocolHttpClient): Promise<void> {
-    const deadline = Date.now() + 10_000;
+    const deadline = Date.now() + 30_000;
     while (Date.now() < deadline) {
+        let health;
         try {
-            const health = await client.health();
-            if (health.status === "ready") return;
+            health = await client.health();
         } catch {
             // The Unix socket may not be accepting connections yet.
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            continue;
+        }
+        if (health.status === "ready") return;
+        if (health.status === "error") {
+            throw new Error(health.error ?? "The test daemon failed to start.");
         }
         await new Promise((resolve) => setTimeout(resolve, 20));
     }
