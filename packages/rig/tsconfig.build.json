@@ -1,9 +1,11 @@
 {
     "extends": "./tsconfig.json",
     "compilerOptions": {
+        "declarationMap": false,
+        "emitDeclarationOnly": true,
         "noEmit": false,
         "rootDir": "sources"
     },
-    "include": ["sources/**/*.ts"],
-    "exclude": ["sources/**/*.test.ts"]
+    "files": ["sources/types.ts", "sources/readPackageVersion.ts"],
+    "include": []
 }

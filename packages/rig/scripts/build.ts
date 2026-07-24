@@ -1,8 +1,11 @@
+import { execFile } from "node:child_process";
 import { cp, mkdir, rm } from "node:fs/promises";
 import { builtinModules } from "node:module";
+import { promisify } from "node:util";
 
 import { build } from "esbuild";
 
+const execFileAsync = promisify(execFile);
 const externalPackages = [
     "@anthropic-ai/claude-agent-sdk",
     "@anthropic-ai/sandbox-runtime",
@@ -27,17 +30,22 @@ const externalPackages = [
 
 await rm("dist", { force: true, recursive: true });
 await mkdir("dist", { recursive: true });
+await execFileAsync("tsc", ["-p", "tsconfig.build.json"]);
 const result = await build({
     banner: {
         js: 'import { createRequire as createBundleRequire } from "node:module"; const require = createBundleRequire(import.meta.url);',
     },
     bundle: true,
-    entryPoints: ["sources/main.ts"],
+    entryNames: "[name]",
+    entryPoints: {
+        main: "sources/main.ts",
+        readPackageVersion: "sources/readPackageVersion.ts",
+    },
     external: externalPackages,
     format: "esm",
     legalComments: "none",
     metafile: true,
-    outfile: "dist/main.js",
+    outdir: "dist",
     packages: "bundle",
     platform: "node",
     target: "node20",

@@ -23,6 +23,31 @@
         "THIRD-PARTY-NOTICES.md"
     ],
     "type": "module",
+    "exports": {
+        "./types": {
+            "types": "./dist/types.d.ts"
+        },
+        "./package-version": {
+            "types": "./dist/readPackageVersion.d.ts",
+            "import": "./dist/readPackageVersion.js",
+            "default": "./dist/readPackageVersion.js"
+        },
+        "./dist/main.js": "./dist/main.js",
+        "./dist/readPackageVersion.js": {
+            "types": "./dist/readPackageVersion.d.ts",
+            "import": "./dist/readPackageVersion.js",
+            "default": "./dist/readPackageVersion.js"
+        },
+        "./dist/protocol/index.js": {
+            "types": "./dist/types.d.ts"
+        },
+        "./dist/terminal/index.js": {
+            "types": "./dist/types.d.ts"
+        },
+        "./dist/external-tools/index.js": {
+            "types": "./dist/types.d.ts"
+        }
+    },
     "publishConfig": {
         "access": "public"
     },
