@@ -88,7 +88,7 @@ describe("Grok SSE goldens", () => {
 
                 expect(capturedBody).toEqual(golden.request);
                 expect(projectHeaders(capturedHeaders!)).toEqual({
-                    ...golden.http.headers,
+                    ...projectHeaders(golden.http.headers),
                     "x-authenticateresponse": undefined,
                     "x-grok-client-mode": undefined,
                     "x-xai-token-auth": undefined,
@@ -102,7 +102,10 @@ describe("Grok SSE goldens", () => {
                             turnIndex: 1,
                         }),
                     ),
-                ).toEqual({ ...golden.http.headers, "content-type": undefined });
+                ).toEqual({
+                    ...projectHeaders(golden.http.headers),
+                    "content-type": undefined,
+                });
             } finally {
                 server.close();
             }
@@ -168,7 +171,13 @@ function projectHeaders(
     return Object.fromEntries(
         names.map((name) => {
             const value = headers[name];
-            return [name, Array.isArray(value) ? value.join(", ") : value];
+            const projected = Array.isArray(value) ? value.join(", ") : value;
+            return [
+                name,
+                name === "user-agent"
+                    ? projected?.replace(/\([^()]+\)$/u, "(<PLATFORM>)")
+                    : projected,
+            ];
         }),
     );
 }

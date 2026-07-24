@@ -174,7 +174,9 @@ describe("Claude provider golden", () => {
             // proves completion; this replay verifies its exact wire request and
             // resumes from the captured native summary.
             if (compacted.status === "completed") {
-                expect(normalize(compacted.summary, cwd)).toBe(golden.turns[4].result.summary);
+                expect(normalize(compacted.summary, cwd)).toBe(
+                    normalize(golden.turns[4].result.summary, cwd),
+                );
             } else {
                 expect(compacted).toMatchObject({
                     kind: "inference_error",
@@ -317,6 +319,10 @@ function normalize(value: unknown, cwd: string): unknown {
                 .replaceAll(cwd, "<WORKSPACE>")
                 .replaceAll(home, "<HOME>")
                 .replaceAll(homeRelativeCwd, "<WORKSPACE>")
+                .replace(
+                    /(?:\/tmp|\/var\/folders\/[^/\s"]+\/[^/\s"]+\/T)(?=\/claude-resume-)/gu,
+                    "<TMP>",
+                )
                 .replace(
                     /[^/\s"]*rig-claude-provider-(?:trace|golden)-[^/\s"]+/gu,
                     "<WORKSPACE_SLUG>",
