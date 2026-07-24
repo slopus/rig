@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { CodexProvider } from "@/vendors/codex/CodexProvider.js";
 import { formatCodexUserAgent } from "@/vendors/codex/impl/codexUserAgent.js";
 import { isRetryableCodexStreamError } from "@/vendors/codex/impl/isRetryableCodexStreamError.js";
+import { isCodexPreviousResponseNotFoundError } from "@/vendors/codex/impl/isCodexPreviousResponseNotFoundError.js";
 import { isCodexWebSocketUnavailableError } from "@/vendors/codex/impl/isCodexWebSocketUnavailableError.js";
 import { resolveCodexInstallationId } from "@/vendors/codex/impl/resolveCodexInstallationId.js";
 import { resolveCodexInstallationIdAt } from "@/vendors/codex/impl/resolveCodexInstallationIdAt.js";
@@ -16,6 +17,32 @@ import { resolveCodexStreamMaxRetries } from "@/vendors/codex/impl/resolveCodexS
 import { waitForCodexRetry } from "@/vendors/codex/impl/waitForCodexRetry.js";
 
 describe("Codex stream retries", () => {
+    it("recognizes a missing previous response from structured and serialized API errors", () => {
+        const responseError = {
+            type: "invalid_request_error",
+            code: "previous_response_not_found",
+            message: "Previous response was not found.",
+            param: "previous_response_id",
+        };
+
+        expect(
+            isCodexPreviousResponseNotFoundError({
+                error: responseError,
+                status: 400,
+            }),
+        ).toBe(true);
+        expect(
+            isCodexPreviousResponseNotFoundError(
+                new Error(JSON.stringify({ type: "error", error: responseError, status: 400 })),
+            ),
+        ).toBe(true);
+        expect(
+            isCodexPreviousResponseNotFoundError(
+                Object.assign(new Error("invalid request"), { status: 400 }),
+            ),
+        ).toBe(false);
+    });
+
     it("formats the native user agent from runtime identity", () => {
         expect(
             formatCodexUserAgent({

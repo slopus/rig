@@ -256,6 +256,10 @@ The first request sends a `response.create` warmup with `generate: false` and wa
 `additional_tools` prefix. The following inference request can then send only the remaining
 input with the warmup response ID.
 
+The previous response snapshot is consumed when Rig constructs an incremental request, matching
+Codex's `LastResponse::take()` behavior. It is not retained until that request succeeds, so any
+retry after an error necessarily rebuilds and sends complete durable context.
+
 For later requests, vanilla compares every context-bearing request property other than `input`,
 stream delivery options, and client metadata. It then checks that:
 
@@ -278,6 +282,10 @@ The OpenAI SDK reports a send on an already-closed cached socket through its `er
 than by throwing from `send()`. Rig binds that error to the active provider stream so the normal
 rollback and retry path creates a fresh connection; it must never escape as an unhandled process
 rejection.
+
+If the backend rejects a cached ID with `previous_response_not_found`, Rig discards that response
+chain and retries once with the complete durable context. The failed request has produced no
+response content or tool effects, so this replay is safe and does not consume a transport retry.
 
 Rig ignores only `internal_chat_message_metadata_passthrough` during prefix comparison.
 Response-item IDs remain significant, so changing an otherwise equal opaque item's ID forces a

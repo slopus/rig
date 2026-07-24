@@ -12,6 +12,7 @@ const websocket = vi.hoisted(() => ({
     failToolCallMidstreamOnce: false,
     failTerminalOnce: false,
     holdWarmupOpenOnce: false,
+    missingPreviousResponseFailures: 0,
     endMidstreamOnce: false,
     emitTextResponses: false,
     unavailableOnce: false,
@@ -83,6 +84,28 @@ vi.mock("openai/resources/responses/ws", () => ({
             }
             if (this.socket.readyState !== 1) throw new Error("cannot send on a closed WebSocket");
             websocket.sent.push(structuredClone(request));
+            if (
+                websocket.missingPreviousResponseFailures > 0 &&
+                request.previous_response_id !== undefined
+            ) {
+                websocket.missingPreviousResponseFailures -= 1;
+                const responseError = {
+                    type: "invalid_request_error",
+                    code: "previous_response_not_found",
+                    message: `Previous response with id '${String(request.previous_response_id)}' not found.`,
+                    param: "previous_response_id",
+                };
+                this.messages.push({
+                    type: "error",
+                    error: Object.assign(
+                        new Error(
+                            JSON.stringify({ type: "error", error: responseError, status: 400 }),
+                        ),
+                        { error: responseError, status: 400 },
+                    ),
+                });
+                return;
+            }
             if (websocket.holdWarmupOpenOnce && request.generate === false) {
                 websocket.holdWarmupOpenOnce = false;
                 return;
@@ -396,6 +419,7 @@ describe("Codex CLI mode WebSocket goldens", () => {
         websocket.failToolCallMidstreamOnce = false;
         websocket.failTerminalOnce = false;
         websocket.holdWarmupOpenOnce = false;
+        websocket.missingPreviousResponseFailures = 0;
         websocket.endMidstreamOnce = false;
         websocket.emitTextResponses = false;
         websocket.unavailableOnce = false;
@@ -597,6 +621,49 @@ describe("Codex CLI mode WebSocket goldens", () => {
                 content: "second",
             },
         ]);
+        session.destroy();
+    });
+
+    it("replays full context when the remote previous response is missing", async () => {
+        const prompt = codexCliPrompt("gpt-5.6-sol", "websocket");
+        const session = await codexProvider("websocket", 0, true).session("<SESSION_ID>", {
+            context: { instructions: prompt.instructions, messages: [] },
+            skills: codexSkills,
+            tools: codexCliTools("gpt-5.6-sol"),
+        });
+        const first = { role: "user" as const, content: "first" };
+        await drain(session.run({ context: { messages: [first] }, effort: "low" }));
+        websocket.missingPreviousResponseFailures = 1;
+
+        const events = [];
+        for await (const event of session.run({
+            context: {
+                messages: [first, { role: "user", content: "second" }],
+            },
+            effort: "low",
+        })) {
+            events.push(event);
+        }
+
+        expect(blockLifecycle(events)).toEqual([
+            "block_start",
+            "block_reset",
+            "retrying",
+            "block_start",
+            "block_stop",
+            "done",
+        ]);
+        expect(events.at(-1)).toEqual({ type: "done", state: "normal" });
+        expect(events).toContainEqual({
+            type: "retrying",
+            attempt: 1,
+            reason: "Previous Codex response was unavailable; replaying full context.",
+        });
+        expect(websocket.sent).toHaveLength(4);
+        expect(websocket.sent[2]!.previous_response_id).toBe("response");
+        expect(websocket.sent[3]!.previous_response_id).toBeUndefined();
+        expect(JSON.stringify(websocket.sent[3]!.input)).toContain("first");
+        expect(JSON.stringify(websocket.sent[3]!.input)).toContain("second");
         session.destroy();
     });
 
@@ -1647,7 +1714,11 @@ function blockLifecycle(events: readonly { type: string }[]): string[] {
         );
 }
 
-function codexProvider(transport: "auto" | "websocket", streamMaxRetries: number): CodexProvider {
+function codexProvider(
+    transport: "auto" | "websocket",
+    streamMaxRetries: number,
+    parallelToolCalls?: boolean,
+): CodexProvider {
     return new CodexProvider({
         credential: {
             name: "codex-session",
@@ -1655,6 +1726,7 @@ function codexProvider(transport: "auto" | "websocket", streamMaxRetries: number
         } as never,
         endpoint: "http://localhost.invalid/backend-api/codex",
         model: "gpt-5.6-sol",
+        ...(parallelToolCalls === undefined ? {} : { parallelToolCalls }),
         streamMaxRetries,
         transport,
     });

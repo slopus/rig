@@ -41,6 +41,7 @@ import { getCodexIncrementalInput } from "@/vendors/codex/impl/getCodexIncrement
 import { getCodexModelProperties } from "@/vendors/codex/impl/getCodexModelProperties.js";
 import { getCodexTurnKey } from "@/vendors/codex/impl/getCodexTurnKey.js";
 import { isCodexContextWindowError } from "@/vendors/codex/impl/isCodexContextWindowError.js";
+import { isCodexPreviousResponseNotFoundError } from "@/vendors/codex/impl/isCodexPreviousResponseNotFoundError.js";
 import { isCodexUnauthorizedError } from "@/vendors/codex/impl/isCodexUnauthorizedError.js";
 import { isCodexV2Model } from "@/vendors/codex/impl/isCodexV2Model.js";
 import { isCodexWebSocketUnavailableError } from "@/vendors/codex/impl/isCodexWebSocketUnavailableError.js";
@@ -213,6 +214,7 @@ export class CodexSession extends BaseSession {
         );
         let useSse = this.transport === "sse" || (this.transport === "auto" && this.forceSse);
         let contextWindowRetries = 0;
+        let previousResponseRecoveries = 0;
         let transportRetries = 0;
         let unauthorizedRecoveryStep = 0;
         const maxRetries = Math.min(this.streamMaxRetries, CODEX_COMPACTION_MAX_RETRIES);
@@ -258,6 +260,14 @@ export class CodexSession extends BaseSession {
                         this.replaceCredential(recovered);
                         continue;
                     }
+                }
+                if (
+                    !useSse &&
+                    previousResponseRecoveries < 1 &&
+                    isCodexPreviousResponseNotFoundError(error)
+                ) {
+                    previousResponseRecoveries += 1;
+                    continue;
                 }
                 if (
                     isCodexContextWindowError(error) &&
@@ -449,6 +459,7 @@ export class CodexSession extends BaseSession {
         let useSse = this.transport === "sse" || (this.transport === "auto" && this.forceSse);
         let transportRetries = 0;
         let reportedAttempt = 0;
+        let previousResponseRecoveries = 0;
         let unauthorizedRecoveryStep = 0;
 
         for (;;) {
@@ -541,6 +552,20 @@ export class CodexSession extends BaseSession {
                         this.replaceCredential(recovered);
                         continue;
                     }
+                }
+                if (
+                    !useSse &&
+                    previousResponseRecoveries < 1 &&
+                    isCodexPreviousResponseNotFoundError(error)
+                ) {
+                    previousResponseRecoveries += 1;
+                    reportedAttempt += 1;
+                    yield {
+                        type: "retrying",
+                        attempt: reportedAttempt,
+                        reason: "Previous Codex response was unavailable; replaying full context.",
+                    };
+                    continue;
                 }
                 if (
                     isRetryableCodexStreamError(error) &&
@@ -757,13 +782,20 @@ export class CodexSession extends BaseSession {
         const canContinue =
             !this.websocketNeedsFullRequest &&
             (!this.websocketInferenceStarted || incrementalInput !== undefined);
-        const inferenceRequest = canContinue
-            ? createCodexCliWebSocketInferenceRequest(request)
-            : createCodexCliSseRequest(request, tools);
+        // Codex builds a separate ResponseCreateWsRequest from its durable request. Keep the same
+        // ownership boundary even when a request-shaping helper has no transformations to apply.
+        const inferenceRequest = structuredClone(
+            canContinue
+                ? createCodexCliWebSocketInferenceRequest(request)
+                : createCodexCliSseRequest(request, tools),
+        );
         if (incrementalInput !== undefined) inferenceRequest.input = incrementalInput;
         if (canContinue && this.previousResponseId !== undefined) {
             inferenceRequest.previous_response_id = this.previousResponseId;
         }
+        // Match Codex's LastResponse::take() behavior: a response chain is single-use once an
+        // incremental request is constructed. Any retry must rebuild complete durable context.
+        this.clearWebsocketResponseChain();
         this.websocketInferenceStarted = true;
         this.websocketNeedsFullRequest = false;
         for await (const event of withCodexStreamIdleTimeout({
