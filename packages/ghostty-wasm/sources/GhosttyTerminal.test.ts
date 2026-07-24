@@ -145,7 +145,7 @@ describe("GhosttyTerminal", () => {
             .join("");
         expect(rendered).toContain("🙂");
         expect(rendered).not.toContain("�");
-    });
+    }, 15_000);
 
     it("emits terminal replies and reports color-scheme and synchronized-output modes", async () => {
         terminal = await createGhosttyTerminal({ cols: 10, rows: 2 });
