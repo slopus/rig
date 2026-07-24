@@ -13,6 +13,8 @@ export async function* createCodexWebSocketStream(options: {
     turnState?: string;
 }): AsyncGenerator<ResponseStreamEvent> {
     if (options.signal?.aborted) throw new DOMException("Request was aborted", "AbortError");
+    if (options.socket.socket.readyState >= 2)
+        throw new Error("Codex WebSocket closed before the request could be sent.");
     const iterator = options.socket[Symbol.asyncIterator]();
     const abort = (): void => options.socket.close({ code: 1000, reason: "aborted" });
     options.signal?.addEventListener("abort", abort, { once: true });

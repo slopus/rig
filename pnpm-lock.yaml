@@ -97,12 +97,18 @@ importers:
       '@types/node':
         specifier: ^24.0.10
         version: 24.13.2
+      '@types/ws':
+        specifier: 8.18.1
+        version: 8.18.1
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
         version: 3.2.6(@types/debug@4.1.13)(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)(yaml@2.9.0)
+      ws:
+        specifier: ^8.21.1
+        version: 8.21.1
 
   packages/rig:
     dependencies:

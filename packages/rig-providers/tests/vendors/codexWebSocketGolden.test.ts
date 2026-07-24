@@ -10,6 +10,7 @@ const websocket = vi.hoisted(() => ({
     midstreamFailures: 0,
     failToolCallMidstreamOnce: false,
     failTerminalOnce: false,
+    holdWarmupOpenOnce: false,
     endMidstreamOnce: false,
     emitTextResponses: false,
     unavailableOnce: false,
@@ -59,13 +60,19 @@ vi.mock("openai/resources/responses/ws", () => ({
     ResponsesWS: class MockResponsesWS {
         readonly socket = { readyState: 1 };
         private messages: any[] = [];
+        private resolveNext: ((result: IteratorResult<any, undefined>) => void) | undefined;
 
         constructor(_client: unknown, options?: { headers?: Record<string, string> }) {
             websocket.connectionHeaders.push(structuredClone(options?.headers ?? {}));
         }
 
         send(request: Record<string, any>): void {
+            if (this.socket.readyState !== 1) throw new Error("cannot send on a closed WebSocket");
             websocket.sent.push(structuredClone(request));
+            if (websocket.holdWarmupOpenOnce && request.generate === false) {
+                websocket.holdWarmupOpenOnce = false;
+                return;
+            }
             if (websocket.turnState !== undefined && request.generate !== false) {
                 this.messages.push({
                     type: "message",
@@ -305,15 +312,31 @@ vi.mock("openai/resources/responses/ws", () => ({
             });
         }
 
-        close(): void {}
+        close(): void {
+            if (this.socket.readyState >= 2) return;
+            this.socket.readyState = 3;
+            const result = {
+                done: false as const,
+                value: { type: "close", code: 1000 },
+            };
+            const resolve = this.resolveNext;
+            if (resolve === undefined) {
+                this.messages.push(result.value);
+                return;
+            }
+            this.resolveNext = undefined;
+            resolve(result);
+        }
 
         [Symbol.asyncIterator](): AsyncIterator<any> {
             return {
                 next: async () => {
                     const value = this.messages.shift();
-                    return value?.type === "eof"
-                        ? { done: true, value: undefined }
-                        : { done: false, value };
+                    if (value?.type === "eof") return { done: true, value: undefined };
+                    if (value !== undefined) return { done: false, value };
+                    return new Promise<IteratorResult<any, undefined>>((resolve) => {
+                        this.resolveNext = resolve;
+                    });
                 },
                 return: async () => ({ done: true, value: undefined }),
             };
@@ -347,6 +370,7 @@ describe("Codex CLI mode WebSocket goldens", () => {
         websocket.midstreamFailures = 0;
         websocket.failToolCallMidstreamOnce = false;
         websocket.failTerminalOnce = false;
+        websocket.holdWarmupOpenOnce = false;
         websocket.endMidstreamOnce = false;
         websocket.emitTextResponses = false;
         websocket.unavailableOnce = false;
@@ -1409,6 +1433,73 @@ describe("Codex CLI mode WebSocket goldens", () => {
         expect(websocket.sent[2]!.input).toContainEqual(
             expect.objectContaining({ type: "message", role: "developer" }),
         );
+        session.destroy();
+    });
+
+    it("clears a closed warmed WebSocket before an aborted stream stops at block reset", async () => {
+        const prompt = codexCliPrompt("gpt-5.6-sol", "websocket");
+        websocket.failMidstreamOnce = true;
+        const session = await codexProvider("websocket", 0).session("<SESSION_ID>", {
+            context: { instructions: prompt.instructions, messages: [] },
+            skills: codexSkills,
+            tools: codexCliTools("gpt-5.6-sol"),
+        });
+        const controller = new AbortController();
+        for await (const event of session.run({
+            abort: controller.signal,
+            context: { messages: [{ role: "user", content: "abort" }] },
+            effort: "low",
+        })) {
+            if (event.type === "text_delta") controller.abort();
+            if (event.type === "block_reset") break;
+        }
+
+        const recoveryEvents = [];
+        for await (const event of session.run({
+            context: { messages: [{ role: "user", content: "recover" }] },
+            effort: "low",
+        })) {
+            recoveryEvents.push(event);
+        }
+
+        expect(recoveryEvents.at(-1)).toEqual({ type: "done", state: "normal" });
+        expect(JSON.stringify(websocket.sent.at(-1)!.input)).toContain("recover");
+        session.destroy();
+    });
+
+    it("clears a closed WebSocket when warmup abort stops at block reset", async () => {
+        const prompt = codexCliPrompt("gpt-5.6-sol", "websocket");
+        websocket.holdWarmupOpenOnce = true;
+        const session = await codexProvider("websocket", 0).session("<SESSION_ID>", {
+            context: { instructions: prompt.instructions, messages: [] },
+            skills: codexSkills,
+            tools: codexCliTools("gpt-5.6-sol"),
+        });
+        const controller = new AbortController();
+        const aborted = session
+            .run({
+                abort: controller.signal,
+                context: { messages: [{ role: "user", content: "abort warmup" }] },
+                effort: "low",
+            })
+            [Symbol.asyncIterator]();
+        expect(await aborted.next()).toEqual({ done: false, value: { type: "block_start" } });
+        const reset = aborted.next();
+        await vi.waitFor(() => expect(websocket.sent).toHaveLength(1));
+        controller.abort();
+        expect(await reset).toEqual({ done: false, value: { type: "block_reset" } });
+        await aborted.return?.();
+
+        const recoveryEvents = [];
+        for await (const event of session.run({
+            context: { messages: [{ role: "user", content: "recover" }] },
+            effort: "low",
+        })) {
+            recoveryEvents.push(event);
+        }
+
+        expect(recoveryEvents.at(-1)).toEqual({ type: "done", state: "normal" });
+        expect(JSON.stringify(websocket.sent.at(-1)!.input)).toContain("recover");
         session.destroy();
     });
 

@@ -524,8 +524,8 @@ export class CodexSession extends BaseSession {
                 if (terminal !== undefined) yield terminal;
                 return;
             } catch (error) {
-                yield { type: "block_reset" };
                 if (!useSse) this.resetWebsocketConnection("stream did not complete");
+                yield { type: "block_reset" };
                 if (request.abort?.aborted) {
                     yield { type: "done", state: "cancelled" };
                     return;

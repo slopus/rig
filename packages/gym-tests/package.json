@@ -18,11 +18,13 @@
     },
     "devDependencies": {
         "@earendil-works/pi-tui": "^0.80.3",
+        "@slopus/rig-execution": "workspace:*",
         "@slopus/rig-gym": "workspace:*",
         "@slopus/rig-providers": "workspace:*",
-        "@slopus/rig-execution": "workspace:*",
         "@types/node": "^24.0.10",
+        "@types/ws": "8.18.1",
         "typescript": "^5.8.3",
-        "vitest": "^3.2.4"
+        "vitest": "^3.2.4",
+        "ws": "^8.21.1"
     }
 }
