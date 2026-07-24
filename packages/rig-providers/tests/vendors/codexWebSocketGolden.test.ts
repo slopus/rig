@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const websocket = vi.hoisted(() => ({
     beforeOutputFailures: 0,
+    closeBeforeSendOnce: false,
     connectionHeaders: [] as Record<string, string>[],
     emitCustomToolResponse: false,
     failMidstreamOnce: false,
@@ -59,6 +60,7 @@ vi.mock("@/vendors/codex/impl/createCodexClient.js", () => ({
 vi.mock("openai/resources/responses/ws", () => ({
     ResponsesWS: class MockResponsesWS {
         readonly socket = { readyState: 1 };
+        private readonly errorListeners = new Set<(error: Error) => void>();
         private messages: any[] = [];
         private resolveNext: ((result: IteratorResult<any, undefined>) => void) | undefined;
 
@@ -67,6 +69,18 @@ vi.mock("openai/resources/responses/ws", () => ({
         }
 
         send(request: Record<string, any>): void {
+            if (websocket.closeBeforeSendOnce) {
+                websocket.closeBeforeSendOnce = false;
+                this.socket.readyState = 3;
+                const error = Object.assign(new Error("cannot send on a closed WebSocket"), {
+                    name: "WebSocketError",
+                });
+                if (this.errorListeners.size === 0) {
+                    throw new Error("Mock SDK would create an unhandled WebSocket rejection.");
+                }
+                for (const listener of this.errorListeners) listener(error);
+                return;
+            }
             if (this.socket.readyState !== 1) throw new Error("cannot send on a closed WebSocket");
             websocket.sent.push(structuredClone(request));
             if (websocket.holdWarmupOpenOnce && request.generate === false) {
@@ -328,6 +342,16 @@ vi.mock("openai/resources/responses/ws", () => ({
             resolve(result);
         }
 
+        on(event: string, listener: (error: Error) => void): this {
+            if (event === "error") this.errorListeners.add(listener);
+            return this;
+        }
+
+        off(event: string, listener: (error: Error) => void): this {
+            if (event === "error") this.errorListeners.delete(listener);
+            return this;
+        }
+
         [Symbol.asyncIterator](): AsyncIterator<any> {
             return {
                 next: async () => {
@@ -364,6 +388,7 @@ const cases = [
 describe("Codex CLI mode WebSocket goldens", () => {
     beforeEach(() => {
         websocket.beforeOutputFailures = 0;
+        websocket.closeBeforeSendOnce = false;
         websocket.connectionHeaders.splice(0);
         websocket.emitCustomToolResponse = false;
         websocket.failMidstreamOnce = false;
@@ -572,6 +597,83 @@ describe("Codex CLI mode WebSocket goldens", () => {
                 content: "second",
             },
         ]);
+        session.destroy();
+    });
+
+    it("retries on a fresh WebSocket when the initial connection closes before warmup", async () => {
+        const prompt = codexCliPrompt("gpt-5.6-sol", "websocket");
+        const session = await codexProvider("websocket", 1).session("<SESSION_ID>", {
+            context: { instructions: prompt.instructions, messages: [] },
+            skills: codexSkills,
+            tools: codexCliTools("gpt-5.6-sol"),
+        });
+        websocket.closeBeforeSendOnce = true;
+
+        const events = [];
+        for await (const event of session.run({
+            context: { messages: [{ role: "user", content: "first" }] },
+            effort: "low",
+        })) {
+            events.push(event);
+        }
+
+        expect(blockLifecycle(events)).toEqual([
+            "block_start",
+            "block_reset",
+            "retrying",
+            "block_start",
+            "block_stop",
+            "done",
+        ]);
+        expect(events.at(-1)).toEqual({ type: "done", state: "normal" });
+        expect(websocket.connectionHeaders).toHaveLength(2);
+        expect(websocket.sent).toHaveLength(2);
+        session.destroy();
+    });
+
+    it("retries on a fresh WebSocket when the cached connection closes between turns", async () => {
+        const prompt = codexCliPrompt("gpt-5.6-sol", "websocket");
+        const session = await codexProvider("websocket", 1).session("<SESSION_ID>", {
+            context: { instructions: prompt.instructions, messages: [] },
+            skills: codexSkills,
+            tools: codexCliTools("gpt-5.6-sol"),
+        });
+        const first = { role: "user" as const, content: "first" };
+        await drain(
+            session.run({
+                context: { messages: [first] },
+                effort: "low",
+            }),
+        );
+
+        websocket.closeBeforeSendOnce = true;
+        const events = [];
+        for await (const event of session.run({
+            context: {
+                messages: [first, { role: "user", content: "second" }],
+            },
+            effort: "low",
+        })) {
+            events.push(event);
+        }
+
+        expect(blockLifecycle(events)).toEqual([
+            "block_start",
+            "block_reset",
+            "retrying",
+            "block_start",
+            "block_stop",
+            "done",
+        ]);
+        expect(events.at(-1)).toEqual({ type: "done", state: "normal" });
+        expect(websocket.connectionHeaders).toHaveLength(2);
+        expect(websocket.sent).toHaveLength(3);
+        expect(websocket.sent[2]!.previous_response_id).toBeUndefined();
+        expect(websocket.sent[2]!.input).toContainEqual({
+            type: "message",
+            role: "user",
+            content: "second",
+        });
         session.destroy();
     });
 

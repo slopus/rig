@@ -274,6 +274,11 @@ items support full-context replay; they do not restore the in-memory response ch
 After process restart, reconnection, terminal stream failure, or abort, Rig must reconstruct a
 complete request from the caller-provided context. The durable transcript is the authority.
 
+The OpenAI SDK reports a send on an already-closed cached socket through its `error` event rather
+than by throwing from `send()`. Rig binds that error to the active provider stream so the normal
+rollback and retry path creates a fresh connection; it must never escape as an unhandled process
+rejection.
+
 Rig ignores only `internal_chat_message_metadata_passthrough` during prefix comparison.
 Response-item IDs remain significant, so changing an otherwise equal opaque item's ID forces a
 full request without `previous_response_id`.

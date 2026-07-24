@@ -19,10 +19,22 @@ export async function* createCodexWebSocketStream(options: {
     const abort = (): void => options.socket.close({ code: 1000, reason: "aborted" });
     options.signal?.addEventListener("abort", abort, { once: true });
     try {
-        options.socket.send({
-            type: "response.create",
-            ...stampCodexWebSocketRequest(options.request, options.turnState),
-        } as never);
+        let sendError: Error | undefined;
+        // The SDK iterator removes its listener immediately when the socket is already closed,
+        // while send() emits an error instead of throwing. Keep that error on this stream.
+        const onSendError = (error: Error): void => {
+            sendError = error;
+        };
+        options.socket.on("error", onSendError);
+        try {
+            options.socket.send({
+                type: "response.create",
+                ...stampCodexWebSocketRequest(options.request, options.turnState),
+            } as never);
+        } finally {
+            options.socket.off("error", onSendError);
+        }
+        if (sendError !== undefined) throw sendError;
         for (;;) {
             const item = await iterator.next();
             if (item.done) return;
